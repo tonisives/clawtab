@@ -925,28 +925,23 @@ pub fn capture_pane_history(pane_id: &str, lines: u32) -> Result<String, String>
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
-/// Capture the visible pane with ANSI styles preserved, excluding the cursor
-/// row where interactive agents echo user input.
-pub fn capture_pane_activity(
-    pane_id: &str,
-    pane_height: u16,
-    cursor_y: u16,
-) -> Result<String, String> {
-    capture_pane_activities(&[(pane_id, pane_height, cursor_y)])
+/// Capture the full visible pane with ANSI styles and the cursor row preserved.
+pub fn capture_pane_screen(pane_id: &str, pane_height: u16) -> Result<String, String> {
+    capture_pane_screens(&[(pane_id, pane_height)])
         .map(|mut captures| captures.pop().unwrap_or_default())
 }
 
-/// Capture visible activity for many panes through one tmux client. Starting a
+/// Capture full visible screens for many panes through one tmux client. Starting a
 /// tmux process per pane is expensive when the question detector is monitoring
 /// many fallback agents, while tmux can execute the same command queue in one
 /// connection.
-pub fn capture_pane_activities(panes: &[(&str, u16, u16)]) -> Result<Vec<String>, String> {
+pub fn capture_pane_screens(panes: &[(&str, u16)]) -> Result<Vec<String>, String> {
     if panes.is_empty() {
         return Ok(Vec::new());
     }
 
     let mut owned_args = Vec::with_capacity(panes.len() * 15 + 5);
-    for (index, (pane_id, pane_height, _cursor_y)) in panes.iter().enumerate() {
+    for (index, (pane_id, pane_height)) in panes.iter().enumerate() {
         if index > 0 {
             owned_args.push(";".to_string());
         }
@@ -974,7 +969,7 @@ pub fn capture_pane_activities(panes: &[(&str, u16, u16)]) -> Result<Vec<String>
         format!("__CLAWTAB_CAPTURE_{}__", panes.len()),
     ]);
     let args: Vec<&str> = owned_args.iter().map(String::as_str).collect();
-    let output = run(&args, "tmux::capture_pane_activities")
+    let output = run(&args, "tmux::capture_pane_screens")
         .map_err(|e| format!("Failed to capture pane activity: {}", e))?;
 
     if !output.status.success() {
@@ -997,19 +992,7 @@ pub fn capture_pane_activities(panes: &[(&str, u16, u16)]) -> Result<Vec<String>
         }
     }
 
-    Ok(raw_captures
-        .into_iter()
-        .zip(panes)
-        .map(|(captured, (_, _, cursor_y))| {
-            let cursor_line = usize::from(*cursor_y);
-            captured
-                .lines()
-                .enumerate()
-                .filter_map(|(index, line)| (index != cursor_line).then_some(line))
-                .collect::<Vec<_>>()
-                .join("\n")
-        })
-        .collect())
+    Ok(raw_captures)
 }
 
 /// List pane IDs in a specific window. Returns panes like `%12`, `%13`.

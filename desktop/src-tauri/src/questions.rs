@@ -93,19 +93,14 @@ pub fn parse_numbered_options(text: &str) -> Vec<QuestionOption> {
             let lower = line.to_lowercase();
             lower.contains("press enter to confirm") || lower.contains("implement this plan?")
         });
-    let lines: Vec<&str> = text.lines().collect();
-    let tail = if lines.len() > 30 {
-        &lines[lines.len() - 30..]
-    } else {
-        &lines
-    };
 
     // Collect all contiguous groups of numbered items, keep only the last group.
     // This avoids picking up numbered plans/lists that appear before the actual prompt.
+    // Scan the full capture: wrapped approval options can exceed 30 terminal rows.
     let mut groups: Vec<Vec<QuestionOption>> = Vec::new();
     let mut current_group: Vec<QuestionOption> = Vec::new();
 
-    for line in tail {
+    for line in text.lines() {
         let trimmed =
             line.trim_start_matches(|c: char| c.is_whitespace() || ">~`|›»❯▸▶".contains(c));
         if let Some(rest) = trimmed.strip_prefix(|c: char| c.is_ascii_digit()) {
@@ -127,6 +122,11 @@ pub fn parse_numbered_options(text: &str) -> Vec<QuestionOption> {
                                 end -= 1;
                             }
                             label = format!("{}...", label[..end].trim_end());
+                        }
+                        // A new first option starts a new menu, even when earlier
+                        // numbered output and the prompt heading are indented.
+                        if number_str == "1" {
+                            current_group.clear();
                         }
                         current_group.push(QuestionOption {
                             number: number_str.to_string(),
@@ -526,7 +526,7 @@ pub async fn question_detection_loop(
         prune_stale_auto_yes_panes(&auto_yes_panes, &detection.all_pane_ids);
 
         let detected_panes = update_question_cache(&processes, &mut question_cache);
-        evict_stale_cache_entries(&mut question_cache, &detected_panes);
+        evict_stale_cache_entries(&mut question_cache, &detected_panes, &processes);
 
         // Keep detecting auto-yes questions internally so the responder can
         // accept them, but never expose them as pending questions to clients.
@@ -913,19 +913,25 @@ fn try_opencode_question(
 fn evict_stale_cache_entries(
     cache: &mut HashMap<String, CachedQuestion>,
     detected: &HashSet<String>,
+    processes: &[DetectedAgent],
 ) {
-    let stale_panes: Vec<String> = cache
-        .keys()
-        .filter(|p| !detected.contains(p.as_str()))
-        .cloned()
+    let captured_panes: HashSet<&str> = processes
+        .iter()
+        .filter(|process| !process.4.trim().is_empty())
+        .map(|process| process.0.as_str())
         .collect();
-    for pane_id in stale_panes {
-        let entry = cache.get_mut(&pane_id).unwrap();
-        entry.miss_count += 1;
-        if entry.miss_count >= 5 {
-            cache.remove(&pane_id);
+    cache.retain(|pane_id, entry| {
+        if detected.contains(pane_id) {
+            return true;
         }
-    }
+        // A captured screen without a question confirms that the prompt is gone.
+        // Keep the grace period only when capture was skipped, empty, or failed.
+        if captured_panes.contains(pane_id.as_str()) {
+            return false;
+        }
+        entry.miss_count += 1;
+        entry.miss_count < 5
+    });
 }
 
 fn auto_answer_questions(
@@ -1492,27 +1498,25 @@ fn detect_question_processes(
         ));
     }
 
-    let tmux_requests: Vec<(&str, u16, u16)> = capture_requests
+    let tmux_requests: Vec<(&str, u16)> = capture_requests
         .iter()
-        .map(|(_, pane_id, pane_height, cursor_y)| (pane_id.as_str(), *pane_height, *cursor_y))
+        .map(|(_, pane_id, pane_height, _)| (pane_id.as_str(), *pane_height))
         .collect();
-    let captures = crate::tmux::capture_pane_activities(&tmux_requests).unwrap_or_else(|error| {
+    let captures = crate::tmux::capture_pane_screens(&tmux_requests).unwrap_or_else(|error| {
         log::debug!("[questions] batched pane capture failed: {}", error);
         tmux_requests
             .iter()
-            .map(|(pane_id, pane_height, cursor_y)| {
-                crate::tmux::capture_pane_activity(pane_id, *pane_height, *cursor_y)
-                    .unwrap_or_default()
+            .map(|(pane_id, pane_height)| {
+                crate::tmux::capture_pane_screen(pane_id, *pane_height).unwrap_or_default()
             })
             .collect()
     });
-    for ((result_index, _, _, _), activity_visible) in capture_requests.into_iter().zip(captures) {
+    for ((result_index, _, _, cursor_y), visible) in capture_requests.into_iter().zip(captures) {
         // The visible screen contains interactive prompts and TUI repaint
         // activity. Scrollback growth is already available through
         // `history_size`, so a separate history capture would only duplicate
         // work in the hot polling loop.
-        results[result_index].4 = activity_visible.trim().to_string();
-        results[result_index].8 = activity_visible;
+        record_pane_capture(&mut results[result_index], &visible, cursor_y);
     }
 
     DetectionResult {
@@ -1521,12 +1525,25 @@ fn detect_question_processes(
     }
 }
 
+/// Question detection needs the cursor row because it may contain a prompt hint.
+/// Activity tracking excludes it so typing does not count as agent output.
+fn record_pane_capture(process: &mut DetectedAgent, visible: &str, cursor_y: u16) {
+    process.8 = visible
+        .lines()
+        .enumerate()
+        .filter_map(|(index, line)| (index != usize::from(cursor_y)).then_some(line))
+        .collect::<Vec<_>>()
+        .join("\n");
+    process.4 = visible.trim().to_string();
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        filter_auto_yes_questions, find_yes_option, parse_numbered_options, parse_opencode_buttons,
-        resolved_hook_activity, should_capture_question_screen, ActivityTracker, DetectedAgent,
-        HookAgentState, ProcessProvider,
+        evict_stale_cache_entries, filter_auto_yes_questions, find_yes_option,
+        parse_numbered_options, parse_opencode_buttons, record_pane_capture,
+        resolved_hook_activity, should_capture_question_screen, update_question_cache,
+        ActivityTracker, DetectedAgent, HookAgentState, ProcessProvider,
     };
     use crate::agent_hooks::HookPaneState;
     use clawtab_protocol::{ClaudeQuestion, QuestionOption};
@@ -1835,6 +1852,103 @@ $ curl -s https://boards-api.greenhouse.io/v1/boards/slack/jobs | sed -n '1,40p'
         assert_eq!(options[0].label, "Yes, proceed (y)");
         assert_eq!(options[1].number, "2");
         assert_eq!(options[2].number, "3");
+    }
+
+    #[test]
+    fn long_codex_approval_with_hint_on_cursor_row_is_asking() {
+        let text = format!(
+            r#"Would you like to run the following command?
+
+> 1. Yes, proceed (y)
+  2. Yes, and don't ask again for commands that start with `report
+{}  3. No, and tell Codex what to do differently (esc)
+
+  Press enter to confirm or esc to cancel
+"#,
+            "     wrapped command argument\n".repeat(20)
+        );
+        let cursor_y = u16::try_from(text.lines().count() - 1).expect("cursor row");
+        let mut process = agent("%258", "");
+        process.12 = ProcessProvider::Codex;
+        record_pane_capture(&mut process, &text, cursor_y);
+        let mut cache = std::collections::HashMap::new();
+        let detected = update_question_cache(&[process], &mut cache);
+        assert!(detected.contains("%258"));
+        assert_eq!(cache["%258"].question.options.len(), 3);
+        assert_eq!(
+            resolved_hook_activity(HookAgentState::Waiting, detected.contains("%258")),
+            (false, true)
+        );
+    }
+
+    #[test]
+    fn keeps_all_options_in_a_menu_taller_than_thirty_lines() {
+        let text = format!(
+            r#"Earlier plan:
+  1. Inspect the output
+  2. Check the result
+  Would you like to run the following command?
+
+> 1. Yes, proceed (y)
+  2. Yes, and don't ask again for commands that start with `report
+{}  3. No, and tell Codex what to do differently (esc)
+
+  Press enter to confirm or esc to cancel
+"#,
+            "     wrapped command argument\n".repeat(40)
+        );
+        let options = parse_numbered_options(&text);
+        assert_eq!(options.len(), 3);
+        assert_eq!(options[0].label, "Yes, proceed (y)");
+        assert_eq!(find_yes_option(&options).as_deref(), Some("1"));
+    }
+
+    #[test]
+    fn answered_question_clears_on_the_next_successful_capture() {
+        let mut cache = std::collections::HashMap::new();
+        update_question_cache(
+            &[agent("%1", "> 1. Yes\n  2. No\nEnter to select")],
+            &mut cache,
+        );
+        assert!(cache.contains_key("%1"));
+        let processes = [agent("%1", "Running the approved command")];
+        let detected = update_question_cache(&processes, &mut cache);
+        evict_stale_cache_entries(&mut cache, &detected, &processes);
+        assert!(cache.is_empty());
+    }
+
+    #[test]
+    fn failed_capture_keeps_question_until_grace_period_expires() {
+        let mut cache = std::collections::HashMap::new();
+        update_question_cache(
+            &[agent("%1", "> 1. Yes\n  2. No\nEnter to select")],
+            &mut cache,
+        );
+        let processes = [agent("%1", "")];
+        for _ in 0..4 {
+            let detected = update_question_cache(&processes, &mut cache);
+            evict_stale_cache_entries(&mut cache, &detected, &processes);
+            assert!(cache.contains_key("%1"));
+        }
+        let detected = update_question_cache(&processes, &mut cache);
+        evict_stale_cache_entries(&mut cache, &detected, &processes);
+        assert!(cache.is_empty());
+    }
+
+    #[test]
+    fn cursor_input_changes_do_not_count_as_agent_activity() {
+        let mut process = agent("%1", "");
+        let mut tracker = ActivityTracker::default();
+        let now = Instant::now();
+        for (tick, input) in ["", "hello", "hello again"].iter().enumerate() {
+            record_pane_capture(&mut process, &format!("Agent output\n> {input}\n"), 1);
+            let activity = tracker.update(
+                std::slice::from_ref(&process),
+                &HashSet::new(),
+                now + Duration::from_secs(tick as u64),
+            );
+            assert!(!activity[0].working);
+        }
     }
 
     #[test]
