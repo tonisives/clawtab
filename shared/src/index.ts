@@ -136,3 +136,5 @@ export { useJobDetail } from "./hooks/useJobDetail";
 export { useLogBuffer } from "./hooks/useLogBuffer";
 export { useSplitTree } from "./hooks/useSplitTree";
 export type { SplitDragData, UseSplitTreeOptions } from "./hooks/useSplitTree";
+
+export { encodeTerminalInput } from "./util/terminalInput";

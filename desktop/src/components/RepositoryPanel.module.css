@@ -1,0 +1,17 @@
+.dialog { box-sizing: border-box; font-family: system-ui, sans-serif; width: min(1100px, 92vw); height: min(800px, 88vh); color: var(--text-primary, #ddd); background: var(--bg-primary, #18181b); border: 1px solid var(--border-color, #444); border-radius: 10px; padding: 18px; }
+.dialog[open] { display: flex; flex-direction: column; gap: 14px; }
+.dialog::backdrop { background: #0008; }
+.header { display: flex; justify-content: space-between; align-items: center; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.field { display: flex; gap: 8px; align-items: center; max-width: 100%; }
+.toolbar select { max-width: min(65vw, 700px); }
+.diff { flex: 1; min-height: 0; margin: 0; overflow: auto; font-size: 12px; line-height: 1.55; tab-size: 4; }
+.added { color: #80cf96; }
+.removed { color: #ed9999; }
+.hunk { color: #8ab4f8; }
+.error { color: #ed9999; white-space: pre-wrap; }
+.notice { color: #d9ba72; margin: 0; }
+
+.dialog button, .dialog select { font: inherit; font-size: 13px; color: inherit; background: var(--bg-secondary, #27272a); border: 1px solid var(--border-color, #555); border-radius: 5px; padding: 6px 10px; }
+.dialog button { cursor: pointer; }
+.dialog button:disabled, .dialog select:disabled { opacity: 0.5; cursor: default; }

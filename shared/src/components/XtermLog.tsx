@@ -1,3 +1,4 @@
+import { encodeTerminalInput } from "../util/terminalInput";
 import { useRef, useImperativeHandle, forwardRef, useCallback, useState } from "react";
 import { View, StyleSheet, TextInput, Platform, Pressable } from "react-native";
 import { TERMINAL_CUSTOM_GLYPHS, TERMINAL_FONT_FAMILY, TERMINAL_FONT_SIZE, TERMINAL_LINE_HEIGHT } from "../theme/terminal";
@@ -31,22 +32,6 @@ interface XtermLogProps {
   forceDarkTheme?: boolean;
 }
 
-function encodeTerminalInput(text: string): string {
-  if (typeof btoa === "function") return btoa(text);
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-  let output = "";
-  for (let i = 0; i < text.length; i += 3) {
-    const a = text.charCodeAt(i) & 0xff;
-    const b = i + 1 < text.length ? text.charCodeAt(i + 1) & 0xff : 0;
-    const c = i + 2 < text.length ? text.charCodeAt(i + 2) & 0xff : 0;
-    const triplet = (a << 16) | (b << 8) | c;
-    output += chars[(triplet >> 18) & 63];
-    output += chars[(triplet >> 12) & 63];
-    output += i + 1 < text.length ? chars[(triplet >> 6) & 63] : "=";
-    output += i + 2 < text.length ? chars[triplet & 63] : "=";
-  }
-  return output;
-}
 
 function commonPrefixLength(a: string, b: string): number {
   const max = Math.min(a.length, b.length);
@@ -210,9 +195,10 @@ function shouldForwardInput(data) {
   return !(/^\\x1b\\[(?:\\?|>|=)?[0-9;]*[cRn]$/.test(data));
 }
 
+var encodeTerminalInput = ${encodeTerminalInput.toString()};
 term.onData(function(data) {
   if (!shouldForwardInput(data)) return;
-  window.ReactNativeWebView.postMessage(JSON.stringify({type:'data',data:btoa(data)}));
+  window.ReactNativeWebView.postMessage(JSON.stringify({type:'data',data:encodeTerminalInput(data)}));
   var resumeTextKeyboard = shouldResumeIosTextKeyboard(data);
   rememberIosKeyboardContext(data);
   if (resumeTextKeyboard) resumeIosTextKeyboard();
@@ -237,7 +223,7 @@ pasteTarget.addEventListener('paste', function(e) {
   try { text = e.clipboardData.getData('text/plain') || ''; } catch (err) {}
   if (!text) return;
   e.preventDefault();
-  window.ReactNativeWebView.postMessage(JSON.stringify({type:'data',data:btoa(text)}));
+  window.ReactNativeWebView.postMessage(JSON.stringify({type:'data',data:encodeTerminalInput(text)}));
   pasteTarget.value = '';
   try { term.focus(); } catch (err) {}
 });

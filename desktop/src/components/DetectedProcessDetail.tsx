@@ -1,3 +1,4 @@
+import { useRepositoryPanel } from "./RepositoryPanel";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -176,6 +177,9 @@ export function DetectedProcessDetail({
     runAgentAction(actionId, parameters);
   }, [agentActionForm, runAgentAction]);
 
+  let openRepository = useRepositoryPanel();
+  let repositoryMenuItem = { label: "Repository: diff and worktrees", onPress: () => openRepository?.(process.cwd) };
+
   const agentMenuItems = useMemo(() => {
     const items: { label: string; onPress: () => void; disabled?: boolean; hint?: string }[] = [];
     const actionRunActive = !!agentActionRun && ["queued", "running"].includes(agentActionRun.state);
@@ -288,7 +292,7 @@ export function DetectedProcessDetail({
         onInjectSecrets={process.can_inject_secrets ? onInjectSecrets : undefined}
         onSearchSkills={process.can_send_skills ? onSearchSkills : undefined}
         dragHandleProps={dragHandleProps}
-        extraMenuItems={agentMenuItems}
+        extraMenuItems={openRepository ? [repositoryMenuItem, ...agentMenuItems] : agentMenuItems}
       />
       <AgentActionFormModal
         action={agentActionForm}

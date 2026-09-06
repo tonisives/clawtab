@@ -1,3 +1,4 @@
+import { encodeTerminalInput } from "../util/terminalInput";
 import { useRef, useEffect, useImperativeHandle, forwardRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -183,7 +184,7 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
       let dataDisposable: { dispose(): void } | null = null;
       dataDisposable = t.onData((data) => {
         if (!interactiveRef.current) return;
-        onDataRef.current?.(btoa(data));
+        onDataRef.current?.(encodeTerminalInput(data));
       });
 
       return () => {

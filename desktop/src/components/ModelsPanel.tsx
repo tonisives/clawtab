@@ -368,13 +368,13 @@ export let ModelsPanel = () => {
     if (!settings) return
     const enabled = settings.enabled_models ?? {}
     const updates: Record<string, string[]> = {}
-    if ((!enabled.claude || enabled.claude.length === 0) && claudeApiModels.length > 0) {
+    if (enabled.claude === undefined && claudeApiModels.length > 0) {
       updates.claude = claudeApiModels.map(([id]) => id)
     }
-    if ((!enabled.codex || enabled.codex.length === 0) && codexApiModels.length > 0) {
+    if (enabled.codex === undefined && codexApiModels.length > 0) {
       updates.codex = codexApiModels.map(([id]) => id)
     }
-    if ((!enabled.antigravity || enabled.antigravity.length === 0) && antigravityApiModels.length > 0) {
+    if (enabled.antigravity === undefined && antigravityApiModels.length > 0) {
       updates.antigravity = antigravityApiModels.map(([id]) => id)
     }
     if (Object.keys(updates).length === 0) return

@@ -107,6 +107,7 @@ export const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
+  querySummaryRow: { flexDirection: "row", alignItems: "center", zIndex: 100, gap: 8 },
   queryRow: {
     flexDirection: "row",
     alignItems: "center",

@@ -1,0 +1,45 @@
+schema_version: 2
+id: local.session-shortcuts
+name: Session shortcuts
+version: 1.0.0
+actions:
+  - id: toggle-plan
+    title: Toggle plan / normal mode
+    description: Change the idle agent's mode. Claude requires an empty composer.
+    command: [python3, ./run.py, toggle-plan]
+    activation:
+      providers: [codex, claude]
+    capabilities: [agent.read, pane.input]
+    timeout_seconds: 15
+    parameters: []
+  - id: compact
+    title: Compact context
+    description: Request compaction in the current agent. Requires an empty composer.
+    command: [python3, ./run.py, compact]
+    activation:
+      providers: [codex, claude]
+    capabilities: [agent.read, pane.input]
+    timeout_seconds: 15
+    parameters: []
+  - id: fork
+    title: Fork conversation
+    description: Fork the current conversation. Requires an empty composer.
+    command: [python3, ./run.py, fork]
+    activation:
+      providers: [codex, claude]
+    capabilities: [agent.read, pane.input]
+    timeout_seconds: 15
+    parameters: []
+  - id: claude-model
+    title: Set model
+    description: Select an enabled Claude model. Requires an empty composer.
+    command: [python3, ./run.py, model]
+    activation:
+      providers: [claude]
+    capabilities: [agent.read, pane.input]
+    timeout_seconds: 15
+    parameters:
+      - name: model
+        title: Model
+        kind: model
+        required: true

@@ -1,3 +1,4 @@
+import { terminalCache } from "../lib/terminalCache";
 import { create } from "zustand"
 import * as api from "../api/client"
 import { clearCache } from "../lib/jobCache"
@@ -39,9 +40,14 @@ export const useAuthStore = create<AuthState>((set) => ({
           try {
             let refreshed = await api.refreshToken()
             accessToken = refreshed.access_token
-          } catch {
+          } catch (error) {
+            if (!api.isInvalidRefreshError(error)) {
+              set({ isAuthenticated: true, userId, email: emailFromToken(accessToken), loading: false })
+              return
+            }
             await api.clearTokens()
             await clearCache()
+            terminalCache.clear()
             set({ isAuthenticated: false, userId: null, email: null, loading: false })
             return
           }
@@ -57,24 +63,28 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   googleLogin: async (idToken) => {
     await clearCache()
+    terminalCache.clear()
     const resp = await api.googleAuth(idToken)
     set({ isAuthenticated: true, userId: resp.user_id, email: emailFromToken(resp.access_token) })
   },
 
   appleLogin: async (idToken, displayName, email) => {
     await clearCache()
+    terminalCache.clear()
     const resp = await api.appleAuth(idToken, displayName, email)
     set({ isAuthenticated: true, userId: resp.user_id, email: emailFromToken(resp.access_token) })
   },
 
   setAuth: (userId, accessToken) => {
     clearCache()
+    terminalCache.clear()
     set({ isAuthenticated: true, userId, email: emailFromToken(accessToken) })
   },
 
   logout: async () => {
     await api.clearTokens()
     await clearCache()
+    terminalCache.clear()
     set({ isAuthenticated: false, userId: null, email: null })
   },
 
@@ -82,9 +92,11 @@ export const useAuthStore = create<AuthState>((set) => ({
     try {
       await api.refreshToken()
       return true
-    } catch {
+    } catch (error) {
+      if (!api.isInvalidRefreshError(error)) return false
       await api.clearTokens()
       await clearCache()
+      terminalCache.clear()
       set({ isAuthenticated: false, userId: null, email: null })
       return false
     }

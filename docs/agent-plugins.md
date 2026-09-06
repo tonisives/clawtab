@@ -220,3 +220,23 @@ printf '%s' 'Please review the current task.' |
 printf '%s' '{"submitted":true}' |
   "$CLAWTAB_CLI" plugin host result
 ```
+
+## Session shortcuts on mobile
+
+The pane's `...` menu opens **Agent actions and pane details** on mobile, including
+provider-specific plugin parameters, run progress, and cancellation. Native process
+screens and running job screens use the same action list as the wider layout.
+
+`etc/agent-plugins/local.session-shortcuts` contains an optional package for Codex
+and Claude: plan/normal mode, compaction, conversation forking, and Claude model
+selection from desktop's enabled models. Install it in the local plugin directory,
+then review and approve its fingerprint as described above. Codex model selection
+continues to use the separate `local.codex-model` package when installed.
+
+Compaction, forking, and Claude model selection require an idle agent and an empty
+composer. Unknown Claude terminal layouts are rejected instead of appending a
+command to a draft. Shortcut completion means the command was sent; the terminal
+shows any subsequent agent dialog or compaction progress.
+
+The command mappings follow the [Codex CLI command reference](https://developers.openai.com/codex/cli/slash-commands/)
+and [Claude command reference](https://code.claude.com/docs/en/commands).

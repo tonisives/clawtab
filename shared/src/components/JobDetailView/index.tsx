@@ -20,7 +20,7 @@ import type { AgentModelOption, ProcessProvider, ShellPane } from "../../types/p
 import { defaultAgentEffort, isSyntheticAgentModel } from "../../types/process";
 import type { JobUpdate } from "../../types/job";
 import { StatusBadge } from "../StatusBadge";
-import { QueryLabel } from "../QueryLabel";
+import { QuerySummary } from "../QuerySummary";
 import { PaneOverviewModal, type PaneOverviewActions, type PaneOverviewData } from "../PaneOverviewModal";
 import { ReadOnlyXterm } from "../ReadOnlyXterm";
 import { MessageInput } from "../MessageInput";
@@ -736,6 +736,7 @@ export function JobDetailView({
                     ...(onSearchSkills ? [{ type: "item" as const, label: "Send Skill", onPress: () => onSearchSkills() }] : []),
                     ...(onRelease ? [{ type: "item" as const, label: "Release", onPress: () => onRelease() }] : []),
                     ...(onRevealInSidebar ? [{ type: "item" as const, label: "Reveal in Sidebar", onPress: () => onRevealInSidebar() }] : []),
+                    ...(paneOverview ? [{ type: "item" as const, label: "Agent actions and pane details", onPress: () => setShowPaneOverview(true) }] : []),
                     ...(extraMenuItems?.length ? [{ type: "separator" as const }, ...extraMenuItems.map((it) => ({ type: "item" as const, ...it }))] : []),
                     ...(isRunning && !sigintPending && transport.sigintJob ? [{ type: "item" as const, label: "Send C-c", onPress: () => handleAction("sigint") }] : []),
                     ...(isRunning && !sigintPending ? [{ type: "item" as const, label: "Stop", onPress: () => handleAction("stop"), color: colors.danger }] : []),
@@ -780,35 +781,11 @@ export function JobDetailView({
         </View>
       </View>
 
-      {/* Query info for running jobs */}
-      {isRunning && (firstQuery || tokenLabel) ? (
-        <Pressable
-          style={styles.queryRow}
-          onPress={paneOverview ? () => setShowPaneOverview(true) : undefined}
-          disabled={!paneOverview}
-          accessibilityRole={paneOverview ? "button" : undefined}
-          accessibilityLabel={paneOverview ? "Open pane overview for query" : "Query"}
-        >
-          <QueryLabel shortLabel="q" fullLabel="Query" />
-          <Text style={styles.queryLine} numberOfLines={1} ellipsizeMode="tail">{firstQuery ?? ""}</Text>
-          {tokenLabel ? (
-            <Text style={[styles.tokenCount, { color: tokenColor }]} numberOfLines={1}>
-              {tokenLabel}
-            </Text>
-          ) : null}
-        </Pressable>
-      ) : null}
-      {isRunning && lastQuery && lastQuery !== firstQuery ? (
-        <Pressable
-          style={styles.queryRow}
-          onPress={paneOverview ? () => setShowPaneOverview(true) : undefined}
-          disabled={!paneOverview}
-          accessibilityRole={paneOverview ? "button" : undefined}
-          accessibilityLabel={paneOverview ? "Open pane overview for latest query" : "Latest query"}
-        >
-          <QueryLabel shortLabel="l" fullLabel="Latest" />
-          <Text style={styles.queryLineDim} numberOfLines={1} ellipsizeMode="tail">{lastQuery}</Text>
-        </Pressable>
+      {isRunning && (firstQuery || lastQuery || tokenLabel) ? (
+        <View style={styles.querySummaryRow}>
+          <QuerySummary firstQuery={firstQuery} lastQuery={lastQuery} />
+          {tokenLabel ? <Text style={[styles.tokenCount, { color: tokenColor }]}>{tokenLabel}</Text> : null}
+        </View>
       ) : null}
 
       {/* Live Output */}

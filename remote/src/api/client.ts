@@ -85,7 +85,7 @@ async function request<T>(
         message = text;
       }
     }
-    throw new Error(message);
+    throw Object.assign(new Error(message), { status: resp.status });
   }
 
   return resp.json();
@@ -141,7 +141,7 @@ async function backendRequest<T>(
         message = text;
       }
     }
-    throw new Error(message);
+    throw Object.assign(new Error(message), { status: resp.status });
   }
 
   return resp.json();
@@ -156,15 +156,23 @@ export async function refreshToken(): Promise<AuthResponse> {
 
   refreshInFlight = (async () => {
     const token = await storage.getItem(KEYS.refreshToken);
-    if (!token) throw new Error("No refresh token");
+    if (!token) throw Object.assign(new Error("No refresh token"), { status: 401 });
 
-    const resp = await request<AuthResponse>("/auth/refresh", {
-      method: "POST",
-      body: JSON.stringify({ refresh_token: token }),
-    });
+    let controller = new AbortController();
+    let timeout = setTimeout(() => controller.abort(), 15_000);
+    let resp: AuthResponse;
+    try {
+      resp = await request<AuthResponse>("/auth/refresh", {
+        method: "POST",
+        body: JSON.stringify({ refresh_token: token }),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
 
-    await storage.setItem(KEYS.accessToken, resp.access_token);
     await storage.setItem(KEYS.refreshToken, resp.refresh_token);
+    await storage.setItem(KEYS.accessToken, resp.access_token);
 
     return resp;
   })().finally(() => {
@@ -206,10 +214,11 @@ export async function getWsUrl(): Promise<string> {
   let token = await storage.getItem(KEYS.accessToken);
   if (token && isTokenExpiringSoon(token)) {
     try {
-      await refreshToken();
-      token = await storage.getItem(KEYS.accessToken);
-    } catch {
-      // use existing token, will fail with 401 if expired
+      let refreshed = await refreshToken();
+      token = refreshed.access_token;
+    } catch (error) {
+      // Let reconnect backoff recover network failures without using an expired token.
+      throw error;
     }
   }
   const serverUrl = await getServerUrl();
@@ -219,9 +228,9 @@ export async function getWsUrl(): Promise<string> {
 
 export const isTokenExpiringSoon = (token: string): boolean => {
   try {
-    const payload = JSON.parse(atob(token.split(".")[1]));
+    const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
     // refresh if less than 2 minutes remaining
-    return payload.exp * 1000 - Date.now() < 120_000;
+    return typeof payload.exp !== "number" || payload.exp * 1000 - Date.now() < 120_000;
   } catch {
     // Malformed tokens are unusable and should go through refresh recovery.
     return true;
@@ -399,7 +408,7 @@ async function triggersRequest<T>(
         message = text;
       }
     }
-    throw new Error(message);
+    throw Object.assign(new Error(message), { status: resp.status });
   }
 
   return resp.json();
@@ -462,3 +471,7 @@ export async function postAnswer(
     true,
   );
 }
+
+/** Only a rejected refresh credential should end the local login session. */
+export let isInvalidRefreshError = (error: unknown): boolean =>
+  error instanceof Error && "status" in error && (error.status === 400 || error.status === 401);

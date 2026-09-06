@@ -1,3 +1,4 @@
+import { useTerminalSettings } from "../../src/store/terminalSettings";
 import { useEffect, useState, useCallback, useMemo } from "react"
 import {
   View,
@@ -29,6 +30,8 @@ import { UsageProgressBar, parseUsagePercent } from "../../src/components/UsageP
 type SubStatus = api.SubscriptionStatus | null
 
 export default function SettingsScreen({ inModal = false }: { inModal?: boolean }) {
+  let cachePanes = useTerminalSettings((state) => state.cachePanes)
+  let setCachePanes = useTerminalSettings((state) => state.setCachePanes)
   const userId = useAuthStore((s) => s.userId)
   const email = useAuthStore((s) => s.email)
   const logout = useAuthStore((s) => s.logout)
@@ -427,6 +430,13 @@ export default function SettingsScreen({ inModal = false }: { inModal?: boolean 
               )}
             </View>
 
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Terminal cache</Text>
+              <Text style={styles.cacheDescription}>Show recent pane contents immediately while reconnecting. Kept in memory on this device.</Text>
+              <View style={styles.cacheOptions}>
+                {[0, 5, 10].map((count) => <Pressable key={count} onPress={() => setCachePanes(count)} accessibilityRole="radio" accessibilityState={{ checked: cachePanes === count }} style={[styles.cacheOption, cachePanes === count && styles.cacheSelected]}><Text style={styles.cacheLabel}>{count === 0 ? "Off" : `${count} panes`}</Text></Pressable>)}
+              </View>
+            </View>
             <ApiTokensSection />
 
             <View style={styles.section}>
@@ -517,6 +527,11 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
     marginBottom: spacing.sm,
   },
+  cacheDescription: { color: colors.textSecondary, marginBottom: 12 },
+  cacheOptions: { flexDirection: "row", gap: 8 },
+  cacheOption: { padding: 12, borderWidth: 1, borderColor: colors.border, borderRadius: 8 },
+  cacheSelected: { borderColor: colors.accent },
+  cacheLabel: { color: colors.text },
   section: {
     gap: spacing.md,
   },

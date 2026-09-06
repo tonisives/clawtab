@@ -1,3 +1,4 @@
+import { RepositoryProvider } from "../RepositoryPanel";
 import { useCallback, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { RemoteJob } from "@clawtab/shared";
 import type { ShellPane } from "@clawtab/shared";
@@ -485,7 +486,10 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     />
   );
 
+  let openWorktreeShell = async (cwd: string) => { await handleRunAgent("", cwd, "shell"); };
+
   return (
+    <RepositoryProvider onOpenShell={openWorktreeShell}>
     <JobsTabLayout
       detailPane={detailPane}
       dialogs={dialogs}
@@ -515,5 +519,6 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       sidebarCollapsed={sidebarCollapsed}
       split={split}
     />
+    </RepositoryProvider>
   );
 }

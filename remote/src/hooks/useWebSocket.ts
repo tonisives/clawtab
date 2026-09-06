@@ -1,6 +1,8 @@
+import { terminalCache } from "../lib/terminalCache";
+import { useTerminalSettings } from "../store/terminalSettings";
 import { useEffect, useRef, useCallback } from "react";
 import { AppState as RNAppState, Platform } from "react-native";
-import { getWsUrl, getSubscriptionStatus } from "../api/client";
+import { getWsUrl, getSubscriptionStatus, isInvalidRefreshError } from "../api/client";
 import { useAuthStore } from "../store/auth";
 import { useJobsStore } from "../store/jobs";
 import { useNotificationStore } from "../store/notifications";
@@ -48,6 +50,7 @@ export function useWebSocket() {
   const mountedRef = useRef(true);
   const isAuthenticatedRef = useRef(isAuthenticated);
   const appStateRef = useRef(RNAppState.currentState);
+  let backgroundedAtRef = useRef<number | null>(null);
   isAuthenticatedRef.current = isAuthenticated;
 
   // Use ref to break circular dependency between connect and scheduleReconnect
@@ -76,6 +79,10 @@ export function useWebSocket() {
     } catch (e) {
       console.log("[ws] failed to get URL:", e);
       connectingRef.current = false;
+      if (isInvalidRefreshError(e)) {
+        await useAuthStore.getState().logout();
+        return;
+      }
       if (mountedRef.current && isAuthenticatedRef.current) scheduleReconnect();
       return;
     }
@@ -104,7 +111,17 @@ export function useWebSocket() {
     setWs(ws);
     connectingRef.current = false;
 
+    let connectTimeout = setTimeout(() => {
+      if (getWs() !== ws || ws.readyState !== WebSocket.CONNECTING) return;
+      setWs(null);
+      setWsSend(null);
+      setConnected(false);
+      ws.close();
+      scheduleReconnect();
+    }, 15_000);
+
     ws.onopen = () => {
+      clearTimeout(connectTimeout);
       console.log("[ws] connected");
       if (!mountedRef.current || getWs() !== ws) {
         ws.close();
@@ -208,6 +225,7 @@ export function useWebSocket() {
           // Ignored - desktop sends authoritative claude_questions
           break;
         case "desktop_status":
+          if (useWsStore.getState().desktopDeviceId !== msg.device_id) terminalCache.clear();
           setDesktopStatus(msg.device_id, msg.device_name, msg.online);
           if (msg.online && ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type: "list_jobs", id: nextId() }));
@@ -222,9 +240,8 @@ export function useWebSocket() {
             resolveRequest(msg.id, msg);
           }
           if (msg.code === "UNAUTHORIZED") {
-            refreshToken().then((ok) => {
-              if (ok) scheduleReconnect();
-            });
+            ws.close();
+            refreshToken().finally(scheduleReconnect);
           }
           break;
         default:
@@ -237,6 +254,7 @@ export function useWebSocket() {
     };
 
     ws.onclose = (e) => {
+      clearTimeout(connectTimeout);
       console.log("[ws] closed, code:", e.code, "reason:", e.reason);
       if (getWs() !== ws) return;
       setWs(null);
@@ -256,8 +274,8 @@ export function useWebSocket() {
           if (ok) {
             backoffRef.current = 1000;
             scheduleReconnect();
-          } else {
-            useAuthStore.getState().logout();
+          } else if (useAuthStore.getState().isAuthenticated) {
+            scheduleReconnect();
           }
         });
         return;
@@ -282,8 +300,8 @@ export function useWebSocket() {
               if (ok) {
                 backoffRef.current = 1000;
                 scheduleReconnect();
-              } else {
-                useAuthStore.getState().logout();
+              } else if (useAuthStore.getState().isAuthenticated) {
+                scheduleReconnect();
               }
             });
           });
@@ -315,6 +333,8 @@ export function useWebSocket() {
 
   useEffect(() => {
     mountedRef.current = true;
+    void useTerminalSettings.getState().hydrate();
+    if (!isAuthenticated) terminalCache.clear();
     if (isAuthenticated) {
       doConnect();
     }
@@ -324,7 +344,16 @@ export function useWebSocket() {
       appStateRef.current = state;
 
       if (state === "active" && isAuthenticatedRef.current) {
-        const ws = getWs();
+        let ws = getWs();
+        if (backgroundedAtRef.current !== null && Date.now() - backgroundedAtRef.current > 30_000 && ws) {
+          // Native sockets can still report OPEN after the OS suspends their connection.
+          setWs(null);
+          setWsSend(null);
+          setConnected(false);
+          ws.close();
+          ws = null;
+        }
+        backgroundedAtRef.current = null;
         if (!ws || ws.readyState !== WebSocket.OPEN) {
           backoffRef.current = 1000;
           connectRef.current();
@@ -334,6 +363,7 @@ export function useWebSocket() {
           replayActivePtySubscriptions("resume");
         }
       } else if (wasActive) {
+        backgroundedAtRef.current = Date.now();
         releaseActivePtySubscriptions();
       }
     });
@@ -344,6 +374,7 @@ export function useWebSocket() {
     const processInterval = setInterval(() => {
       const send = getWsSend();
       if (send) {
+        send({ type: "get_settings", id: nextId() });
         if (!useJobsStore.getState().loaded) {
           send({ type: "list_jobs", id: nextId() });
         }

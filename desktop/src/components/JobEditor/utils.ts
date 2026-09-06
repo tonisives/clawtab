@@ -62,7 +62,7 @@ export function decodeProviderModel(value: string): { provider: ProcessProvider;
   return { provider, model };
 }
 
-/** Build the list of model options for a dropdown, merging current and user-enabled models.
+/** Build the list of model options for a dropdown, respecting the enabled model selection.
  * Providers without any known model get a bare fallback entry (no specific model). */
 export function buildModelOptions(
   availableProviders: ProcessProvider[],
@@ -72,10 +72,12 @@ export function buildModelOptions(
   for (const provider of availableProviders) {
     const enabled = (enabledModels[provider] ?? []).filter((modelId) => !isSyntheticAgentModel(modelId));
     const current = CURRENT_AGENT_MODEL_OPTIONS.filter((option) => option.provider === provider);
-    const modelIds = Array.from(new Set([
-      ...current.map((option) => option.modelId).filter((model): model is string => !!model),
-      ...enabled,
-    ]));
+    // An explicit empty selection must stay empty. Only unconfigured providers use defaults.
+    let selected = enabledModels[provider] === undefined
+      ? current.flatMap((option) => option.modelId ? [option.modelId] : [])
+      : enabled;
+    let modelIds = Array.from(new Set(selected));
+    if (modelIds.length === 0 && enabledModels[provider] !== undefined && provider !== "shell") continue;
     if (modelIds.length === 0) {
       const bare = BARE_PROVIDER_OPTIONS.find((b) => b.provider === provider);
       options.push(bare ?? { provider, modelId: null, label: labelForProvider(provider) });
@@ -86,7 +88,13 @@ export function buildModelOptions(
       options.push({ provider, modelId, label: known?.label ?? labelForProviderModel(provider, modelId) });
     }
   }
-  return options;
+  // Catalog ordering applies across providers, so Astra leads the top-level picker.
+  return options.sort((left, right) => {
+    let leftRank = CURRENT_AGENT_MODEL_OPTIONS.findIndex((option) => option.provider === left.provider && option.modelId === left.modelId);
+    let rightRank = CURRENT_AGENT_MODEL_OPTIONS.findIndex((option) => option.provider === right.provider && option.modelId === right.modelId);
+    if (leftRank >= 0 || rightRank >= 0) return (leftRank < 0 ? Infinity : leftRank) - (rightRank < 0 ? Infinity : rightRank);
+    return (right.modelId ?? "").localeCompare(left.modelId ?? "", undefined, { numeric: true });
+  });
 }
 
 function parseSingleCronToWeekly(cron: string): { days: string[]; time: string } | null {

@@ -50,6 +50,7 @@ export function isSyntheticAgentModel(modelId: string | null | undefined): boole
  * Detected and user-added models are merged into this catalog by each client.
  */
 export const CURRENT_AGENT_MODEL_OPTIONS: AgentModelOption[] = [
+  { provider: "codex", modelId: "gpt-6-astra", label: "GPT-6-Astra" },
   { provider: "codex", modelId: "gpt-5.6-sol", label: "GPT-5.6-Sol" },
   { provider: "codex", modelId: "gpt-5.6-terra", label: "GPT-5.6-Terra" },
   { provider: "codex", modelId: "gpt-5.6-luna", label: "GPT-5.6-Luna" },

@@ -1,3 +1,4 @@
+import { terminalCache } from "../lib/terminalCache";
 import { useEffect, useRef, useCallback, useState } from "react";
 import { getWsSend, nextId } from "../lib/wsRuntime";
 import { clearRequest, registerRequest } from "../lib/useRequestMap";
@@ -175,6 +176,7 @@ function isTerminalReset(data: string) {
 
 /** Called from useWebSocket when a pty_output message arrives */
 export function dispatchPtyOutput(paneId: string, data: string) {
+  terminalCache.append(paneId, data);
   const subscription = ptySubscriptions.get(paneId);
   if (subscription) {
     clearSubscribeWait(subscription);
@@ -191,6 +193,7 @@ export function dispatchPtyOutput(paneId: string, data: string) {
 
 /** Called from useWebSocket when a pty_exit message arrives */
 export function dispatchPtyExit(paneId: string) {
+  terminalCache.delete(paneId);
   const listeners = ptyExitListeners.get(paneId);
   if (listeners) {
     for (const fn of listeners) fn();
@@ -243,6 +246,9 @@ export function usePty(
 
     gotDataRef.current = false;
     pendingOutputRef.current = [];
+    setHasOutput(false);
+    if (termRef.current) termRef.current.clear();
+    else pendingOutputRef.current.push(TERMINAL_RESET_B64);
     setError(undefined);
     let stateListener: ((state: PtyConnectionState, error?: string) => void) | undefined;
 
@@ -264,6 +270,8 @@ export function usePty(
         pendingOutputRef.current.push(data);
       }
     };
+
+    for (let data of terminalCache.get(paneId)) onOutput(data);
 
     const onExit = () => {
       // Could notify parent component

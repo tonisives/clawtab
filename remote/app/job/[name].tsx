@@ -1,7 +1,9 @@
+import { useAgentActions } from "../../src/hooks/useAgentActions";
+import { encodeTerminalInput } from "@clawtab/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, View, Text, StyleSheet, Platform, Keyboard, TouchableOpacity, TextInput } from "react-native";
 import { useLocalSearchParams, Stack } from "expo-router";
-import * as Clipboard from "expo-clipboard";
+import { TerminalPasteButton } from "../../src/components/TerminalPasteButton";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useJob, useJobStatus, useJobsStore } from "../../src/store/jobs";
@@ -34,22 +36,6 @@ const KEYBOARD_TOOLBAR_HEIGHT = 48;
 const TERMINAL_BG = "#1c1c1e";
 const AGENT_PROVIDERS: ProcessProvider[] = ["claude", "codex", "opencode", "antigravity"];
 
-function encodeTerminalInput(text: string): string {
-  if (typeof btoa === "function") return btoa(text);
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-  let output = "";
-  for (let i = 0; i < text.length; i += 3) {
-    const a = text.charCodeAt(i) & 0xff;
-    const b = i + 1 < text.length ? text.charCodeAt(i + 1) & 0xff : 0;
-    const c = i + 2 < text.length ? text.charCodeAt(i + 2) & 0xff : 0;
-    const triplet = (a << 16) | (b << 8) | c;
-    output += chars[(triplet >> 18) & 63];
-    output += chars[(triplet >> 12) & 63];
-    output += i + 1 < text.length ? chars[(triplet >> 6) & 63] : "=";
-    output += i + 2 < text.length ? chars[triplet & 63] : "=";
-  }
-  return output;
-}
 
 const wsTransport = createWsTransport();
 
@@ -105,6 +91,9 @@ export default function JobDetailScreen() {
   const realStatus = useJobStatus(name);
   const status = isDemo ? (DEMO_STATUSES[slug] ?? realStatus) : realStatus;
   const statusPaneId = status?.state === "running" ? (status as any).pane_id ?? "" : "";
+  let [showPaneOverview, setShowPaneOverview] = useState(false);
+  let agentActionControls = useAgentActions(statusPaneId, showPaneOverview);
+  let activeProcess = useJobsStore((state) => state.detectedProcesses.find((process) => process.pane_id === statusPaneId));
   const { logs } = useLogs(slug);
   const runs = useRunsStore((s) => s.runs[slug]) ?? null;
   const goBack = useDetailBack("/(tabs)");
@@ -247,10 +236,7 @@ export default function JobDetailScreen() {
     }
   }, []);
 
-  const pasteTerminalText = useCallback(async () => {
-    const text = await Clipboard.getStringAsync();
-    sendTerminalText(text);
-  }, [sendTerminalText]);
+
 
   const dismissTerminalKeyboard = useCallback(() => {
     termRef.current?.blur();
@@ -373,6 +359,10 @@ export default function JobDetailScreen() {
           onToggleAutoYes={isDemo || !autoYesPaneId ? undefined : handleToggleAutoYes}
           renderTerminal={isRunningWithPty ? renderTerminal : undefined}
           hideMessageInput={isRunningWithPty}
+          paneOverview={statusPaneId ? { paneId: statusPaneId, cwd: activeProcess?.cwd ?? job.work_dir, startedAt: activeProcess?.session_started_at, firstQuery: activeProcess?.first_query, lastQuery: activeProcess?.last_query } : undefined}
+          paneOverviewActions={agentActionControls}
+          paneOverviewVisible={showPaneOverview}
+          onPaneOverviewVisibleChange={setShowPaneOverview}
           defaultOutputCollapsed
           defaultRunsCollapsed
           defaultAgentProvider={(defaultAgentProvider ?? undefined) as import("@clawtab/shared").ProcessProvider | undefined}
@@ -392,7 +382,7 @@ export default function JobDetailScreen() {
           onArrowLeft={() => sendTerminalText("\x1b[D")}
           onArrowRight={() => sendTerminalText("\x1b[C")}
           onCtrlC={() => sendTerminalText("\x03")}
-          onPaste={pasteTerminalText}
+          onPaste={sendTerminalText}
           menuOpen={terminalMenuOpen}
           onMenuOpenChange={handleTerminalMenuOpenChange}
         />
@@ -430,14 +420,11 @@ function TerminalKeyboardToolbar({
   onArrowLeft: () => void;
   onArrowRight: () => void;
   onCtrlC: () => void;
-  onPaste: () => Promise<void> | void;
+  onPaste: (text: string) => void;
   menuOpen: boolean;
   onMenuOpenChange: (open: boolean) => void;
 }) {
-  const handlePastePress = useCallback(async () => {
-    await onPaste();
-    onMenuOpenChange(false);
-  }, [onPaste, onMenuOpenChange]);
+  let handlePasteDone = useCallback(() => onMenuOpenChange(false), [onMenuOpenChange]);
 
   return (
     <View style={[styles.keyboardToolbar, { bottom }]}>
@@ -470,9 +457,7 @@ function TerminalKeyboardToolbar({
         </TouchableOpacity>
         {menuOpen ? (
           <View style={styles.keyboardPastePopover}>
-            <TouchableOpacity style={styles.keyboardPasteItem} onPress={handlePastePress} activeOpacity={0.7}>
-              <Text style={styles.keyboardPasteTitle}>Paste</Text>
-            </TouchableOpacity>
+            <TerminalPasteButton onPaste={onPaste} onDone={handlePasteDone} />
           </View>
         ) : null}
       </View>

@@ -1,3 +1,4 @@
+import { useRepositoryPanel } from "./RepositoryPanel";
 import type { ReactNode } from "react";
 import { useCallback, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -93,6 +94,7 @@ export function TmuxPaneDetail({
   const onStoppedRef = useRef(onStopped);
   onStoppedRef.current = onStopped;
 
+  let openRepository = useRepositoryPanel();
   const paneId = target.kind === "process" ? target.process.pane_id : target.shell.pane_id;
   const cwd = target.kind === "process" ? target.process.cwd : target.shell.cwd;
   const tmuxSession = target.kind === "process" ? target.process.tmux_session : target.shell.tmux_session;
@@ -230,7 +232,7 @@ export function TmuxPaneDetail({
       onSearchSkills={process?.can_send_skills ? onSearchSkills : undefined}
       dragHandleProps={dragHandleProps}
       headerActionsBeforeClose={headerActionsBeforeClose}
-      extraMenuItems={debugMenuItems}
+      extraMenuItems={openRepository ? [{ label: "Repository: diff and worktrees", onPress: () => openRepository(cwd) }, ...debugMenuItems] : debugMenuItems}
     />
   );
 }
