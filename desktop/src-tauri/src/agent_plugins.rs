@@ -1705,7 +1705,7 @@ async fn wait_for_codex_vim_insert(
         if cancel.is_cancelled() {
             return Err("Plugin cancelled".into());
         }
-        if !codex_vim_normal_mode(&capture_plain(pane_id)?) {
+        if codex_vim_insert_mode(&capture_plain(pane_id)?) {
             return Ok(());
         }
         if started.elapsed() >= CODEX_INPUT_READY_TIMEOUT {
@@ -2117,10 +2117,14 @@ async fn clear_stashed_draft(host: &HostRun, cancel: &CancellationToken) -> Resu
     if codex_vim_normal_mode(&screen) {
         crate::tmux::send_key_to_pane(&host.pane_id, "d")?;
         crate::tmux::send_key_to_pane(&host.pane_id, "d")?;
+    } else if codex_vim_insert_mode(&screen) {
+        crate::tmux::send_key_to_pane(&host.pane_id, "Escape")?;
+        wait_for_codex_vim_normal(&host.pane_id, cancel).await?;
+        crate::tmux::send_key_to_pane(&host.pane_id, "d")?;
+        crate::tmux::send_key_to_pane(&host.pane_id, "d")?;
     } else {
-        // Backspace is safe in the working-state follow-up composer. Escape
-        // would interrupt the active turn, and Ctrl-U is not consistently
-        // handled by Codex's multiline editor.
+        // Codex's non-Vim multiline editor does not consistently handle
+        // Ctrl-U, so clear it with one atomic tmux key batch.
         crate::tmux::send_key_to_pane_repeated(&host.pane_id, "BSpace", draft.chars().count())?;
     }
     wait_for_codex_draft(&host.pane_id, "", cancel, "clear its draft").await?;
@@ -2156,12 +2160,18 @@ async fn wait_for_codex_draft(
     operation: &str,
 ) -> Result<(), String> {
     let started = Instant::now();
+    let mut observed = false;
     loop {
         if cancel.is_cancelled() {
             return Err("Plugin cancelled".into());
         }
         if codex_screen_state(pane_id)?.draft.as_deref() == Some(expected) {
-            return Ok(());
+            if observed {
+                return Ok(());
+            }
+            observed = true;
+        } else {
+            observed = false;
         }
         if started.elapsed() >= CODEX_INPUT_READY_TIMEOUT {
             return Err(format!("Codex did not {operation}"));
@@ -2238,6 +2248,29 @@ fn codex_screen_state(pane_id: &str) -> Result<CodexScreenState, String> {
 
 fn codex_vim_normal_mode(screen: &str) -> bool {
     screen.lines().any(|line| line.contains("Vim: Normal"))
+}
+
+fn codex_vim_insert_mode(screen: &str) -> bool {
+    screen.lines().any(|line| line.contains("Vim: Insert"))
+}
+
+async fn wait_for_codex_vim_normal(
+    pane_id: &str,
+    cancel: &CancellationToken,
+) -> Result<(), String> {
+    let started = Instant::now();
+    loop {
+        if cancel.is_cancelled() {
+            return Err("Plugin cancelled".into());
+        }
+        if codex_vim_normal_mode(&capture_plain(pane_id)?) {
+            return Ok(());
+        }
+        if started.elapsed() >= CODEX_INPUT_READY_TIMEOUT {
+            return Err("Codex did not enter normal mode".into());
+        }
+        tokio::time::sleep(CODEX_MENU_POLL_INTERVAL).await;
+    }
 }
 
 fn capture_plain(pane_id: &str) -> Result<String, String> {
