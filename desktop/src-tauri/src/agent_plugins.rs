@@ -24,6 +24,7 @@ const MAX_TIMEOUT_SECONDS: u64 = 60 * 60;
 const MAX_CAPTURE_BYTES: usize = 64 * 1024;
 const MAX_RESULT_BYTES: usize = 64 * 1024;
 const MODEL_VERIFY_TIMEOUT: Duration = Duration::from_secs(12);
+const CODEX_INPUT_READY_TIMEOUT: Duration = Duration::from_secs(1);
 const CODEX_MENU_READY_TIMEOUT: Duration = Duration::from_secs(2);
 const CODEX_MENU_POLL_INTERVAL: Duration = Duration::from_millis(20);
 const MODEL_VERIFY_POLL_INTERVAL: Duration = Duration::from_millis(40);
@@ -1627,9 +1628,64 @@ fn agent_state(host: &HostRun) -> Result<PluginAgentState, String> {
 fn submit_text(pane_id: &str, provider: ProcessProvider, text: &str) -> Result<(), String> {
     if provider == ProcessProvider::Codex && codex_vim_normal_mode(&capture_plain(pane_id)?) {
         crate::tmux::send_key_to_pane(pane_id, "i")?;
+        std::thread::sleep(Duration::from_millis(100));
     }
     crate::tmux::send_literal_to_pane(pane_id, text)?;
+    std::thread::sleep(Duration::from_millis(100));
     crate::tmux::send_key_to_pane(pane_id, "Enter")
+}
+
+async fn submit_codex_command(
+    pane_id: &str,
+    text: &str,
+    cancel: &CancellationToken,
+) -> Result<(), String> {
+    let screen = capture_plain(pane_id)?;
+    if codex_vim_normal_mode(&screen) {
+        crate::tmux::send_key_to_pane(pane_id, "i")?;
+        wait_for_codex_vim_insert(pane_id, cancel).await?;
+    }
+    crate::tmux::send_literal_to_pane(pane_id, text)?;
+
+    let started = Instant::now();
+    loop {
+        if cancel.is_cancelled() {
+            return Err("Plugin cancelled".into());
+        }
+        let state = codex_screen_state(pane_id)?;
+        match state.draft.as_deref() {
+            Some(draft) if draft == text => {
+                return crate::tmux::send_key_to_pane(pane_id, "Enter");
+            }
+            Some(draft) if !draft.is_empty() => {
+                return Err("Codex composer changed while entering the model command".into());
+            }
+            _ => {}
+        }
+        if started.elapsed() >= CODEX_INPUT_READY_TIMEOUT {
+            return Err("Codex did not accept the model command".into());
+        }
+        tokio::time::sleep(CODEX_MENU_POLL_INTERVAL).await;
+    }
+}
+
+async fn wait_for_codex_vim_insert(
+    pane_id: &str,
+    cancel: &CancellationToken,
+) -> Result<(), String> {
+    let started = Instant::now();
+    loop {
+        if cancel.is_cancelled() {
+            return Err("Plugin cancelled".into());
+        }
+        if !codex_vim_normal_mode(&capture_plain(pane_id)?) {
+            return Ok(());
+        }
+        if started.elapsed() >= CODEX_INPUT_READY_TIMEOUT {
+            return Err("Codex did not enter insert mode".into());
+        }
+        tokio::time::sleep(CODEX_MENU_POLL_INTERVAL).await;
+    }
 }
 
 async fn wait_for_state(
@@ -1674,10 +1730,10 @@ async fn select_model(
     if state.draft.as_deref().is_none_or(|draft| !draft.is_empty()) {
         return Err("Codex must have an empty composer before changing model".into());
     }
-    submit_text(&host.pane_id, host.provider, "/model")?;
+    submit_codex_command(&host.pane_id, "/model", cancel).await?;
     choose_codex_option(&host.pane_id, model, cancel).await?;
     if let Some(effort) = effort {
-        if wait_for_codex_reasoning_menu(host, model, cancel).await? {
+        if wait_for_codex_reasoning_menu(host, model, effort, cancel).await? {
             choose_codex_option(&host.pane_id, effort_label(effort), cancel).await?;
             if effort == "max" {
                 confirm_max_effort_if_requested(&host.pane_id, cancel).await?;
@@ -1690,6 +1746,7 @@ async fn select_model(
 async fn wait_for_codex_reasoning_menu(
     host: &HostRun,
     model: &str,
+    effort: &str,
     cancel: &CancellationToken,
 ) -> Result<bool, String> {
     let started = Instant::now();
@@ -1698,11 +1755,17 @@ async fn wait_for_codex_reasoning_menu(
             return Err("Plugin cancelled".into());
         }
         let screen = capture_plain(&host.pane_id)?;
-        if screen.contains("Select Reasoning Level") {
+        if codex_active_reasoning_menu(&screen) {
             return Ok(true);
         }
-        if live_model_selection(&screen)
-            .is_some_and(|selection| selection.model.eq_ignore_ascii_case(model))
+        if !codex_active_model_dialog(&screen)
+            && live_model_selection(&screen).is_some_and(|selection| {
+                selection.model.eq_ignore_ascii_case(model)
+                    && selection
+                        .effort
+                        .as_deref()
+                        .is_some_and(|actual| actual.eq_ignore_ascii_case(effort))
+            })
         {
             return Ok(false);
         }
@@ -1753,6 +1816,13 @@ async fn choose_codex_option(
             return Err("Plugin cancelled".into());
         }
         let screen = capture_plain(pane_id)?;
+        if !codex_menu_ready(&screen) {
+            if started.elapsed() >= CODEX_MENU_READY_TIMEOUT {
+                return Err("Codex option picker did not appear".into());
+            }
+            tokio::time::sleep(CODEX_MENU_POLL_INTERVAL).await;
+            continue;
+        }
         if screen
             .lines()
             .any(|line| selected_option_matches(line, &target_lower))
@@ -1764,13 +1834,7 @@ async fn choose_codex_option(
             crate::tmux::send_key_to_pane(pane_id, &shortcut)?;
             return Ok(());
         }
-        if codex_menu_ready(&screen) {
-            break;
-        }
-        if started.elapsed() >= CODEX_MENU_READY_TIMEOUT {
-            return Err("Codex option picker did not appear".into());
-        }
-        tokio::time::sleep(CODEX_MENU_POLL_INTERVAL).await;
+        break;
     }
 
     // Very small panes can hide the requested option. Retain directional
@@ -1781,6 +1845,9 @@ async fn choose_codex_option(
             return Err("Plugin cancelled".into());
         }
         let screen = capture_plain(pane_id)?;
+        if !codex_menu_ready(&screen) {
+            return Err("Codex option picker closed before the requested option was found".into());
+        }
         if screen
             .lines()
             .any(|line| selected_option_matches(line, &target_lower))
@@ -1795,13 +1862,11 @@ async fn choose_codex_option(
 }
 
 fn codex_menu_ready(screen: &str) -> bool {
-    screen
-        .to_ascii_lowercase()
-        .contains("press enter to confirm or esc to go back")
+    codex_active_model_dialog(screen)
 }
 
 fn codex_option_shortcut(screen: &str, target: &str) -> Option<String> {
-    screen.lines().find_map(|line| {
+    screen.lines().rev().find_map(|line| {
         let trimmed = line.trim_start();
         let option = ["›", ">"]
             .into_iter()
@@ -1813,6 +1878,62 @@ fn codex_option_shortcut(screen: &str, target: &str) -> Option<String> {
             return None;
         }
         option_text_matches(label.trim_start(), target).then(|| ordinal.to_string())
+    })
+}
+
+fn codex_active_reasoning_menu(screen: &str) -> bool {
+    codex_dialog_after_composer(screen, |line| {
+        line.to_ascii_lowercase().contains("select reasoning level")
+    })
+}
+
+fn codex_active_model_dialog(screen: &str) -> bool {
+    codex_dialog_after_composer(screen, |line| {
+        let lower = line.to_ascii_lowercase();
+        lower.contains("select model and effort")
+            || lower.contains("select reasoning level")
+            || lower.contains("advanced reasoning")
+            || lower.contains("consumes usage limits faster")
+            || lower.contains("press enter to confirm or esc to go back")
+    })
+}
+
+fn codex_dialog_after_composer(screen: &str, is_dialog_marker: impl Fn(&str) -> bool) -> bool {
+    let mut latest_composer = None;
+    let mut latest_dialog = None;
+    for (index, line) in screen.lines().enumerate() {
+        if codex_composer_line(line) {
+            latest_composer = Some(index);
+        }
+        if is_dialog_marker(line) {
+            latest_dialog = Some(index);
+        }
+    }
+    latest_dialog.is_some_and(|dialog| latest_composer.is_none_or(|composer| dialog > composer))
+}
+
+fn codex_composer_line(line: &str) -> bool {
+    let Some(value) = line.trim_start().strip_prefix('›') else {
+        return false;
+    };
+    let value = value.trim_start();
+    let menu_ordinal = value.split_once('.').is_some_and(|(ordinal, _)| {
+        !ordinal.is_empty() && ordinal.chars().all(|character| character.is_ascii_digit())
+    });
+    !menu_ordinal
+}
+
+fn codex_composer_draft(screen: &str) -> Option<String> {
+    screen.lines().rev().find_map(|line| {
+        if !codex_composer_line(line) {
+            return None;
+        }
+        let value = line.trim_start().strip_prefix('›')?.trim().to_string();
+        Some(if value == "Ask Codex to do anything" {
+            String::new()
+        } else {
+            value
+        })
     })
 }
 
@@ -1988,10 +2109,47 @@ fn restore_stashed_draft(host: &HostRun) -> Result<(), String> {
 async fn recover_host_state(host: &HostRun) -> Result<(), String> {
     validate_bound_pane(host)?;
     let cancel = CancellationToken::new();
+    prepare_codex_model_recovery(host, &cancel).await?;
     if host.model_changed {
         restore_baseline(host, &cancel).await?;
     }
     restore_stashed_draft(host)
+}
+
+async fn prepare_codex_model_recovery(
+    host: &HostRun,
+    cancel: &CancellationToken,
+) -> Result<(), String> {
+    if host.provider != ProcessProvider::Codex {
+        return Ok(());
+    }
+    let started = Instant::now();
+    loop {
+        if cancel.is_cancelled() {
+            return Err("Plugin cancelled".into());
+        }
+        let screen = capture_plain(&host.pane_id)?;
+        if codex_active_model_dialog(&screen) {
+            crate::tmux::send_key_to_pane(&host.pane_id, "Escape")?;
+        } else {
+            match codex_composer_draft(&screen).as_deref() {
+                Some("/model") => {
+                    for _ in 0.."/model".chars().count() {
+                        crate::tmux::send_key_to_pane(&host.pane_id, "BSpace")?;
+                    }
+                }
+                Some(draft) if draft.is_empty() => return Ok(()),
+                Some(_) => {
+                    return Err("Codex composer changed while recovering the model switch".into());
+                }
+                None => {}
+            }
+        }
+        if started.elapsed() >= CODEX_INPUT_READY_TIMEOUT {
+            return Err("Codex did not return to an empty composer during recovery".into());
+        }
+        tokio::time::sleep(CODEX_MENU_POLL_INTERVAL).await;
+    }
 }
 
 struct CodexScreenState {
@@ -2002,24 +2160,9 @@ struct CodexScreenState {
 
 fn codex_screen_state(pane_id: &str) -> Result<CodexScreenState, String> {
     let screen = capture_plain(pane_id)?;
-    let in_dialog = screen.contains("Select model")
-        || screen.contains("Select Reasoning Level")
-        || screen
-            .to_ascii_lowercase()
-            .contains("press enter to confirm");
+    let in_dialog = codex_active_model_dialog(&screen);
     let busy = screen.to_ascii_lowercase().contains("esc to interrupt");
-    let draft = screen.lines().rev().find_map(|line| {
-        line.trim_start()
-            .strip_prefix('›')
-            .map(|value| value.trim().to_string())
-    });
-    let draft = draft.map(|value| {
-        if value == "Ask Codex to do anything" {
-            String::new()
-        } else {
-            value
-        }
-    });
+    let draft = codex_composer_draft(&screen);
     Ok(CodexScreenState {
         idle: draft.is_some() && !in_dialog && !busy,
         busy,
@@ -2061,9 +2204,10 @@ mod tests {
     use clawtab_protocol::AgentSessionData;
 
     use super::{
-        baseline_from_session, codex_option_shortcut, live_model_selection, load_plugin,
-        redact_internal_values, selected_option_matches, strip_ansi, valid_plugin_id,
-        valid_version_pattern, version_matches, BaselineState, LiveModelSelection,
+        baseline_from_session, codex_active_model_dialog, codex_composer_draft,
+        codex_option_shortcut, live_model_selection, load_plugin, redact_internal_values,
+        selected_option_matches, strip_ansi, valid_plugin_id, valid_version_pattern,
+        version_matches, BaselineState, LiveModelSelection,
     };
 
     #[test]
@@ -2177,6 +2321,23 @@ actions:
         let menu = "  1. gpt-5.6-lunatic\n  10. gpt-5.6-luna";
 
         assert_eq!(codex_option_shortcut(menu, "gpt-5.6-luna"), None);
+    }
+
+    #[test]
+    fn codex_dialog_detection_ignores_picker_text_above_current_composer() {
+        let stale_menu = "  Select Model and Effort\n  Press enter to confirm or esc to go back\n\n› Ask Codex to do anything";
+        let active_menu = "› Ask Codex to do anything\n\n  Select Reasoning Level for gpt-5.6-luna\n  Press enter to confirm or esc to go back";
+
+        assert!(!codex_active_model_dialog(stale_menu));
+        assert!(codex_active_model_dialog(active_menu));
+    }
+
+    #[test]
+    fn codex_composer_draft_ignores_selected_menu_options() {
+        let screen =
+            "› Ask Codex to do anything\n\n  Select Model and Effort\n› 2. gpt-5.6-sol (current)";
+
+        assert_eq!(codex_composer_draft(screen).as_deref(), Some(""));
     }
 
     #[test]
