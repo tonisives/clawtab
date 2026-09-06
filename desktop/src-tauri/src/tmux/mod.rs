@@ -644,6 +644,29 @@ pub fn send_key_to_pane(pane_id: &str, key: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Send the same tmux key repeatedly in one invocation.
+pub fn send_key_to_pane_repeated(
+    pane_id: &str,
+    key: &str,
+    repeat_count: usize,
+) -> Result<(), String> {
+    if repeat_count == 0 {
+        return Ok(());
+    }
+    let repeat_count = repeat_count.to_string();
+    let output = run(
+        &["send-keys", "-N", &repeat_count, "-t", pane_id, key],
+        "tmux::send_key_to_pane_repeated",
+    )
+    .map_err(|e| format!("Failed to send repeated key to pane: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("tmux error: {}", stderr.trim()));
+    }
+    Ok(())
+}
+
 pub fn pane_pid(pane_id: &str) -> Result<String, String> {
     let output = run(
         &["display-message", "-p", "-t", pane_id, "#{pane_pid}"],

@@ -492,10 +492,11 @@ impl AgentPluginRuntime {
         };
         let cancel = CancellationToken::new();
         let result = async {
-            host.stashed_draft = stash_draft(&host)?;
+            host.stashed_draft = draft_to_stash(&host)?;
+            clear_stashed_draft(&host, &cancel).await?;
             host.model_changed = true;
             select_model(&host, &model, Some(&effort), &cancel).await?;
-            restore_stashed_draft(&host)?;
+            restore_stashed_draft(&host, &cancel).await?;
             host.stashed_draft = None;
             host.model_changed = false;
             Ok(())
@@ -640,17 +641,20 @@ impl AgentPluginRuntime {
             PluginHostRequest::ComposerStash => {
                 require_capability(&stored.host, "composer.draft")?;
                 validate_bound_pane(&stored.host)?;
-                let draft = stash_draft(&stored.host)?;
+                let draft = draft_to_stash(&stored.host)?;
                 let had_draft = draft.is_some();
                 if let Some(run) = self.runs.lock().get_mut(&run_id) {
-                    run.host.stashed_draft = draft;
+                    run.host.stashed_draft.clone_from(&draft);
                 }
+                let mut host_with_draft = stored.host;
+                host_with_draft.stashed_draft = draft;
+                clear_stashed_draft(&host_with_draft, &stored.cancel).await?;
                 Ok(PluginHostResponse::Composer { had_draft })
             }
             PluginHostRequest::ComposerRestore => {
                 require_capability(&stored.host, "composer.draft")?;
                 validate_bound_pane(&stored.host)?;
-                restore_stashed_draft(&stored.host)?;
+                restore_stashed_draft(&stored.host, &stored.cancel).await?;
                 if let Some(run) = self.runs.lock().get_mut(&run_id) {
                     run.host.stashed_draft = None;
                 }
@@ -2064,29 +2068,43 @@ async fn restore_baseline(host: &HostRun, cancel: &CancellationToken) -> Result<
     select_model(host, model, host.baseline.effort.as_deref(), cancel).await
 }
 
-fn stash_draft(host: &HostRun) -> Result<Option<String>, String> {
+fn draft_to_stash(host: &HostRun) -> Result<Option<String>, String> {
     if host.provider != ProcessProvider::Codex {
         return Ok(None);
     }
-    let state = codex_screen_state(&host.pane_id)?;
-    if !state.idle {
-        return Err("Codex must be idle before stashing its draft".into());
+    let screen = capture_plain(&host.pane_id)?;
+    if codex_active_model_dialog(&screen) {
+        return Err("Codex already has a model dialog open".into());
     }
-    let draft = state.draft.filter(|draft| !draft.is_empty());
-    if draft.is_some() {
-        let screen = capture_plain(&host.pane_id)?;
-        if codex_vim_normal_mode(&screen) {
-            crate::tmux::send_key_to_pane(&host.pane_id, "d")?;
-            crate::tmux::send_key_to_pane(&host.pane_id, "d")?;
-        } else {
-            crate::tmux::send_key_to_pane(&host.pane_id, "C-u")?;
-        }
-        std::thread::sleep(Duration::from_millis(100));
+    let draft = codex_composer_draft(&screen)
+        .ok_or_else(|| "Codex composer is not available".to_string())?
+        .trim_end()
+        .to_string();
+    if draft.is_empty() {
+        return Ok(None);
     }
-    Ok(draft)
+    Ok(Some(draft))
 }
 
-fn restore_stashed_draft(host: &HostRun) -> Result<(), String> {
+async fn clear_stashed_draft(host: &HostRun, cancel: &CancellationToken) -> Result<(), String> {
+    let Some(draft) = host.stashed_draft.as_deref() else {
+        return Ok(());
+    };
+    let screen = capture_plain(&host.pane_id)?;
+    if codex_vim_normal_mode(&screen) {
+        crate::tmux::send_key_to_pane(&host.pane_id, "d")?;
+        crate::tmux::send_key_to_pane(&host.pane_id, "d")?;
+    } else {
+        // Backspace is safe in the working-state follow-up composer. Escape
+        // would interrupt the active turn, and Ctrl-U is not consistently
+        // handled by Codex's multiline editor.
+        crate::tmux::send_key_to_pane_repeated(&host.pane_id, "BSpace", draft.chars().count())?;
+    }
+    wait_for_codex_draft(&host.pane_id, "", cancel, "clear its draft").await?;
+    Ok(())
+}
+
+async fn restore_stashed_draft(host: &HostRun, cancel: &CancellationToken) -> Result<(), String> {
     let Some(draft) = host.stashed_draft.as_deref() else {
         return Ok(());
     };
@@ -2098,12 +2116,35 @@ fn restore_stashed_draft(host: &HostRun) -> Result<(), String> {
     let was_vim_normal = codex_vim_normal_mode(&screen);
     if was_vim_normal {
         crate::tmux::send_key_to_pane(&host.pane_id, "i")?;
+        wait_for_codex_vim_insert(&host.pane_id, cancel).await?;
     }
     crate::tmux::send_literal_to_pane(&host.pane_id, draft)?;
-    if was_vim_normal {
+    wait_for_codex_draft(&host.pane_id, draft, cancel, "restore its draft").await?;
+    if was_vim_normal && !state.busy {
         crate::tmux::send_key_to_pane(&host.pane_id, "Escape")?;
     }
     Ok(())
+}
+
+async fn wait_for_codex_draft(
+    pane_id: &str,
+    expected: &str,
+    cancel: &CancellationToken,
+    operation: &str,
+) -> Result<(), String> {
+    let started = Instant::now();
+    loop {
+        if cancel.is_cancelled() {
+            return Err("Plugin cancelled".into());
+        }
+        if codex_screen_state(pane_id)?.draft.as_deref() == Some(expected) {
+            return Ok(());
+        }
+        if started.elapsed() >= CODEX_INPUT_READY_TIMEOUT {
+            return Err(format!("Codex did not {operation}"));
+        }
+        tokio::time::sleep(CODEX_MENU_POLL_INTERVAL).await;
+    }
 }
 
 async fn recover_host_state(host: &HostRun) -> Result<(), String> {
@@ -2113,7 +2154,7 @@ async fn recover_host_state(host: &HostRun) -> Result<(), String> {
     if host.model_changed {
         restore_baseline(host, &cancel).await?;
     }
-    restore_stashed_draft(host)
+    restore_stashed_draft(host, &cancel).await
 }
 
 async fn prepare_codex_model_recovery(
@@ -2134,9 +2175,11 @@ async fn prepare_codex_model_recovery(
         } else {
             match codex_composer_draft(&screen).as_deref() {
                 Some("/model") => {
-                    for _ in 0.."/model".chars().count() {
-                        crate::tmux::send_key_to_pane(&host.pane_id, "BSpace")?;
-                    }
+                    crate::tmux::send_key_to_pane_repeated(
+                        &host.pane_id,
+                        "BSpace",
+                        "/model".chars().count(),
+                    )?;
                 }
                 Some(draft) if draft.is_empty() => return Ok(()),
                 Some(_) => {
