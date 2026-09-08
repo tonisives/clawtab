@@ -12,11 +12,13 @@ import {
 } from "./client"
 
 type Props = {
+  presentation?: "compact" | "panel"
   api?: (method: string, path: string, body?: MachineMessage) => Promise<MachineMessage>
   approvePairing: (code: string) => Promise<unknown>
   localRequest?: (request: MachineMessage) => Promise<MachineMessage>
 }
-export let MachinesPanel = ({ approvePairing, localRequest, api }: Props) => {
+export let MachinesPanel = ({ approvePairing, localRequest, api, presentation = "compact" }: Props) => {
+  let styles = presentation === "panel" ? desktopStyles : compactStyles
   let state = useMachines()
   let [tab, setTab] = useState("agents")
   let [expanded, setExpanded] = useState(false)
@@ -278,11 +280,11 @@ export let MachinesPanel = ({ approvePairing, localRequest, api }: Props) => {
   return (
     <View style={styles.panel}>
       <View style={styles.row}>
-        <Pressable accessibilityRole="button" onPress={toggle} style={styles.button}>
+        {presentation === "compact" && <Pressable accessibilityRole="button" onPress={toggle} style={styles.button}>
           <Text style={styles.text}>
             Machines · {state.machines.filter((m) => m.online).length} online
           </Text>
-        </Pressable>
+        </Pressable>}
         <Pressable accessibilityRole="button" onPress={clearFilter} style={styles.button}>
           <Text style={styles.text}>All machines</Text>
         </Pressable>
@@ -302,8 +304,8 @@ export let MachinesPanel = ({ approvePairing, localRequest, api }: Props) => {
         ))}
       </View>
       {(error || state.error) && <Text style={styles.error}>{error ?? state.error}</Text>}
-      {expanded && (
-        <ScrollView style={styles.body}>
+      {(expanded || presentation === "panel") && (
+        <ScrollView style={presentation === "panel" ? styles.panelBody : styles.body}>
           <View style={styles.row}>
             {[
               "agents",
@@ -318,11 +320,12 @@ export let MachinesPanel = ({ approvePairing, localRequest, api }: Props) => {
                 accessibilityRole="button"
                 key={value}
                 onPress={openTab(value)}
-                style={styles.button}
+                accessibilityState={{ selected: tab === value }}
+                style={[styles.button, tab === value && styles.activeButton]}
               >
                 <Text style={styles.text}>
                   {value === "pair" ? "Add machine" : value[0].toUpperCase() + value.slice(1)}
-                  {tab === value ? " · selected" : ""}
+                  {presentation === "compact" && tab === value ? " · selected" : ""}
                 </Text>
               </Pressable>
             ))}
@@ -748,28 +751,33 @@ export let MachinesPanel = ({ approvePairing, localRequest, api }: Props) => {
     </View>
   )
 }
-let styles = StyleSheet.create({
-  panel: { backgroundColor: "#202226", padding: 8, gap: 8 },
+let createStyles = (desktop: boolean) => StyleSheet.create({
+  panel: { backgroundColor: desktop ? "transparent" : "#202226", padding: 8, gap: 8 },
+  panelBody: { paddingRight: 8 },
   body: { maxHeight: 440, paddingRight: 8 },
   row: { flexDirection: "row", flexWrap: "wrap", gap: 6, paddingVertical: 4 },
-  title: { color: "#fff", fontWeight: "600", marginTop: 18, marginBottom: 8 },
-  text: { color: "#e5e7eb", fontSize: 13 },
-  error: { color: "#ffabab", padding: 8 },
-  code: { fontFamily: "monospace", color: "#d1d5db", fontSize: 12, padding: 8 },
+  title: { color: desktop ? "var(--text-primary)" : "#fff", fontWeight: "600", marginTop: 18, marginBottom: 8 },
+  text: { color: desktop ? "var(--text-primary)" : "#e5e7eb", fontSize: 13 },
+  error: { color: desktop ? "var(--error-color, #c53030)" : "#ffabab", padding: 8 },
+  code: { fontFamily: "monospace", color: desktop ? "var(--text-secondary)" : "#d1d5db", fontSize: 12, padding: 8 },
   button: {
-    backgroundColor: "#353942",
+    backgroundColor: desktop ? "var(--bg-tertiary)" : "#353942",
     padding: 9,
     borderRadius: 6,
     alignSelf: "flex-start",
     marginVertical: 3,
   },
+  activeButton: { backgroundColor: desktop ? "var(--accent-hover)" : "#4b5262" },
   input: {
-    borderColor: "#50545d",
+    borderColor: desktop ? "var(--border-color)" : "#50545d",
     borderWidth: 1,
     borderRadius: 6,
     padding: 10,
-    color: "#fff",
+    color: desktop ? "var(--text-primary)" : "#fff",
     minWidth: 180,
     marginVertical: 5,
   },
 })
+
+let compactStyles = createStyles(false)
+let desktopStyles = createStyles(true)

@@ -3,12 +3,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { onOpenUrl, getCurrent } from "@tauri-apps/plugin-deep-link";
+import { DesktopMachinesPanel } from "./DesktopMachinesPanel";
 import { JobsTab } from "./JobsTab";
 import { MindMapPanel } from "./MindMap";
-import { SecretsPanel } from "./SecretsPanel";
 import { GeneralSettings, readStoredSettingsSubTab } from "./GeneralSettings";
-import { SkillsPanel } from "./SkillsPanel";
-import { UsagePanel } from "./UsagePanel";
 import type { SettingsSubTab } from "./GeneralSettings";
 import { SetupWizard } from "./SetupWizard";
 import type { AppSettings } from "../types";
@@ -16,8 +14,8 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { GearIcon } from "./icons";
 import clawIcon from "../assets/icon.png";
 
-type TabId = "jobs" | "mindmap" | "secrets" | "skills" | "usage" | "settings";
-const tabIds: TabId[] = ["jobs", "mindmap", "secrets", "skills", "usage", "settings"];
+type TabId = "jobs" | "mindmap" | "machines" | "settings";
+const tabIds: TabId[] = ["jobs", "mindmap", "machines", "settings"];
 const SETTINGS_ACTIVE_TAB_KEY = "desktop_settings_active_tab";
 const PANEL_SCROLL_PREFIX = "desktop_settings_panel_scroll";
 
@@ -35,6 +33,7 @@ function readStoredTab(): TabId {
   if (typeof localStorage === "undefined") return "jobs";
   try {
     const value = localStorage.getItem(SETTINGS_ACTIVE_TAB_KEY);
+    if (["secrets", "skills", "usage"].includes(value ?? "")) return "settings";
     return tabIds.includes(value as TabId) ? (value as TabId) : "jobs";
   } catch {
     return "jobs";
@@ -68,26 +67,10 @@ const tabIcons: Record<TabId, React.ReactNode> = {
       <line x1="12" y1="12" x2="19" y2="18" />
     </svg>
   ),
-  // lock.shield (SF: lock.shield)
-  secrets: (
-    <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 2L3 7v5c0 5.25 3.75 10.15 9 11.25C17.25 22.15 21 17.25 21 12V7L12 2z" />
-      <path d="M12 11a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z" />
-      <path d="M12 11v3" />
-    </svg>
-  ),
-  // book (SF: book)
-  skills: (
-    <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-      <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
-    </svg>
-  ),
-  // gauge (SF: gauge)
-  usage: (
-    <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-      <path d="M4 14a8 8 0 1 1 16 0" />
-      <path d="M12 14l4-4" />
-      <path d="M7 19h10" />
+  machines: (
+    <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="18" height="13" rx="2" />
+      <path d="M8 21h8M12 16v5" />
     </svg>
   ),
   // gearshape (SF: gearshape)
@@ -289,24 +272,12 @@ export function SettingsApp() {
 
   const tabs: { id: TabId; label: string }[] = [
     { id: "mindmap", label: "Mind Map" },
-    { id: "secrets", label: "Secrets" },
-    { id: "skills", label: "Skills" },
-    { id: "usage", label: "Usage" },
+    { id: "machines", label: "Machines" },
     { id: "settings", label: "Settings" },
   ];
 
   const navBar = (notificationsButton: React.ReactNode) => (
     <div className="nav-bar" data-tauri-drag-region>
-      <button
-        className="add-job-btn"
-        onClick={() => {
-          setActiveTab("jobs");
-          setCreateJobKey((k) => k + 1);
-        }}
-        title="Add job"
-      >
-        <span style={{ position: 'relative', top: -1, fontSize: 14 }}>+</span>
-      </button>
       {tabs.map((tab) => (
         <button
           key={tab.id}
@@ -326,6 +297,7 @@ export function SettingsApp() {
           }
         >
           <span className="tab-icon">{tabIcons[tab.id]}</span>
+          <span className="nav-label">{tab.label}</span>
           {tab.id === "settings" && (relayAlert || daemonAlert) && <span className="tab-alert-dot" />}
         </button>
       ))}
@@ -335,7 +307,8 @@ export function SettingsApp() {
         onClick={() => openUrl("https://clawtab.cc")}
         title="Open ClawTab website"
       >
-        <img src={clawIcon} alt="ClawTab" width={18} height={18} style={{ borderRadius: 3 }} />
+        <img src={clawIcon} alt="" width={18} height={18} className="nav-claw-icon" />
+        <span className="nav-label">ClawTab</span>
       </button>
     </div>
   );
@@ -393,11 +366,10 @@ export function SettingsApp() {
   const rightPanelOverlay = (
     <>
       {renderPanel("mindmap", "Mind Map", <MindMapPanel onRequestJobsTab={() => setActiveTab("jobs")} />, { fullBleed: true })}
-      {renderPanel("secrets", "Secrets", <SecretsPanel />)}
-      {renderPanel("skills", "Skills", <SkillsPanel />)}
-      {renderPanel("usage", "Usage", <UsagePanel />)}
+      {renderPanel("machines", "Machines", <DesktopMachinesPanel />)}
       {renderPanel("settings", "Settings",
         <GeneralSettings
+          onAddJob={() => { setActiveTab("jobs"); setCreateJobKey((k) => k + 1); }}
           activeSubTab={settingsSubTab}
           onSubTabChange={setSettingsSubTab}
           externalAccessToken={authCallbackToken}

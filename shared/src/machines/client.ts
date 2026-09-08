@@ -346,7 +346,10 @@ export let connectMachines = (getUrl: () => Promise<string>) => {
       ws.onerror = () => ws.close()
     } catch (error) {
       update({ connected: false, error: error instanceof Error ? error.message : "Cannot connect" })
-      if (!stopped) reconnect = setTimeout(connect, backoff)
+      if (!stopped) {
+        reconnect = setTimeout(connect, backoff)
+        backoff = Math.min(backoff * 2, 30_000)
+      }
     }
   }
   void connect()

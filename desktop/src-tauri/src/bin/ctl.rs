@@ -20,7 +20,7 @@ fn print_usage() {
     eprintln!();
     eprintln!("Usage: cwtctl <command> [args]");
     eprintln!();
-    eprintln!("  setup [--relay URL] [--name NAME] [--linger] [--replace]  Pair and install the Linux host");
+    eprintln!("  setup [--relay URL] [--name NAME] [--linger | --no-service] [--replace]  Pair and install the Linux host");
     eprintln!("Commands (require daemon):");
     eprintln!("  jobs              Manage configured jobs");
     eprintln!(

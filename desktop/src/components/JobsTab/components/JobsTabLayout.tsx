@@ -75,15 +75,21 @@ export function JobsTabLayout({
       <div style={{ display: isMainVisible ? undefined : "none", height: "100%" }}>
         {!isWide ? (
           mobileShowsDetail ? (
-            <div style={{ height: "100%", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+            <div className="jobs-narrow-layout">
               {navBar}
-              {detailPane}
+              <div className="jobs-narrow-body">
+                {detailPane}
+                {rightPanelOverlay}
+              </div>
               {dialogs}
             </div>
           ) : (
-            <div style={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            <div className="jobs-narrow-layout">
               {navBar}
-              {jobListView}
+              <div className="jobs-narrow-body">
+                {jobListView}
+                {rightPanelOverlay}
+              </div>
               {dialogs}
             </div>
           )

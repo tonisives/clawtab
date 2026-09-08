@@ -8,14 +8,18 @@ import { TelegramPanel } from "./TelegramPanel"
 import { RelayPanel } from "./RelayPanel"
 import { ShortcutsPanel } from "./ShortcutsPanel"
 import { ModelsPanel } from "./ModelsPanel"
+import { SecretsPanel } from "./SecretsPanel"
+import { SkillsPanel } from "./SkillsPanel"
+import { UsagePanel } from "./UsagePanel"
 import { DaemonPanel } from "./DaemonPanel"
 
-export type SettingsSubTab = "general" | "remote" | "telegram" | "shortcuts" | "models" | "daemon"
-const settingsSubTabIds: SettingsSubTab[] = ["general", "remote", "telegram", "shortcuts", "models", "daemon"]
+export type SettingsSubTab = "general" | "remote" | "telegram" | "shortcuts" | "models" | "daemon" | "secrets" | "skills" | "usage"
+const settingsSubTabIds: SettingsSubTab[] = ["general", "remote", "telegram", "shortcuts", "models", "daemon", "secrets", "skills", "usage"]
 const SETTINGS_SUBTAB_KEY = "desktop_settings_subtab"
 const SETTINGS_SUBTAB_SCROLL_PREFIX = "desktop_settings_subtab_scroll"
 
-interface Props {
+type Props = {
+  onAddJob: () => void
   activeSubTab: SettingsSubTab
   onSubTabChange: (tab: SettingsSubTab) => void
   externalAccessToken: string | null
@@ -31,6 +35,9 @@ const subTabs: { id: SettingsSubTab; label: string }[] = [
   { id: "shortcuts", label: "Shortcuts" },
   { id: "models", label: "Models" },
   { id: "daemon", label: "Daemon" },
+  { id: "secrets", label: "Secrets" },
+  { id: "skills", label: "Skills" },
+  { id: "usage", label: "Usage" },
 ]
 
 type AgentIntegrationStatus = {
@@ -53,6 +60,8 @@ const integrationLabel = (provider: ProcessProvider): string => {
 export function readStoredSettingsSubTab(): SettingsSubTab {
   if (typeof localStorage === "undefined") return "general"
   try {
+    let previousTab = localStorage.getItem("desktop_settings_active_tab")
+    if (["secrets", "skills", "usage"].includes(previousTab ?? "")) return previousTab as SettingsSubTab
     const value = localStorage.getItem(SETTINGS_SUBTAB_KEY)
     return settingsSubTabIds.includes(value as SettingsSubTab) ? (value as SettingsSubTab) : "general"
   } catch {
@@ -61,6 +70,7 @@ export function readStoredSettingsSubTab(): SettingsSubTab {
 }
 
 export function GeneralSettings({
+  onAddJob,
   activeSubTab,
   onSubTabChange,
   externalAccessToken,
@@ -126,7 +136,7 @@ export function GeneralSettings({
         ))}
       </div>
       <div ref={contentRef} className="settings-subtab-content" onScroll={handleContentScroll}>
-        {activeSubTab === "general" && <GeneralSettingsContent />}
+        {activeSubTab === "general" && <GeneralSettingsContent onAddJob={onAddJob} />}
         {activeSubTab === "remote" && (
           <RelayPanel
             externalAccessToken={externalAccessToken}
@@ -138,12 +148,15 @@ export function GeneralSettings({
         {activeSubTab === "shortcuts" && <ShortcutsPanel />}
         {activeSubTab === "models" && <ModelsPanel />}
         {activeSubTab === "daemon" && <DaemonPanel />}
+        {activeSubTab === "secrets" && <SecretsPanel />}
+        {activeSubTab === "skills" && <SkillsPanel />}
+        {activeSubTab === "usage" && <UsagePanel />}
       </div>
     </div>
   )
 }
 
-function GeneralSettingsContent() {
+let GeneralSettingsContent = ({ onAddJob }: { onAddJob: () => void }) => {
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [showToolsModal, setShowToolsModal] = useState(false)
   const toolsOverlayRef = useRef<HTMLDivElement>(null)
@@ -248,6 +261,10 @@ function GeneralSettingsContent() {
   return (
     <div className="settings-section">
       <h2>General Settings</h2>
+      <div className="field-group">
+        <span className="field-group-title">Jobs</span>
+        <button className="btn" onClick={onAddJob}>Add job</button>
+      </div>
 
       <div className="field-group">
         <span className="field-group-title">Appearance</span>

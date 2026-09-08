@@ -12,9 +12,10 @@ type Tab = "panes" | "history";
 export type PaletteViewId =
   | "jobs"
   | "mindmap"
-  | "secrets"
-  | "skills"
-  | "usage"
+  | "machines"
+  | "settings:secrets"
+  | "settings:skills"
+  | "settings:usage"
   | "settings"
   | "settings:general"
   | "settings:remote"
@@ -25,10 +26,11 @@ export type PaletteViewId =
 
 const VIEW_ENTRIES: { id: PaletteViewId; label: string; group: string }[] = [
   { id: "jobs", label: "Jobs", group: "View" },
+  { id: "machines", label: "Machines", group: "View" },
   { id: "mindmap", label: "Mind Map", group: "View" },
-  { id: "secrets", label: "Secrets", group: "View" },
-  { id: "skills", label: "Skills", group: "View" },
-  { id: "usage", label: "Usage", group: "View" },
+  { id: "settings:secrets", label: "Settings - Secrets", group: "Settings" },
+  { id: "settings:skills", label: "Settings - Skills", group: "Settings" },
+  { id: "settings:usage", label: "Settings - Usage", group: "Settings" },
   { id: "settings", label: "Settings", group: "View" },
   { id: "settings:general", label: "Settings - General", group: "Settings" },
   { id: "settings:remote", label: "Settings - Remote", group: "Settings" },

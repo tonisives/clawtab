@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const ts = require('../desktop/node_modules/typescript');
-let load = () => {
+let load = (timers = {}) => {
   let sockets = [];
   class Socket {
     static OPEN = 1;
@@ -17,7 +17,7 @@ let load = () => {
   }
   let exports = {};
   let source = ts.transpileModule(fs.readFileSync(require.resolve('../shared/src/machines/client.ts'), 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
-  vm.runInNewContext(source, { exports, require: () => ({ useSyncExternalStore: () => {} }), WebSocket: Socket, setTimeout, clearTimeout, setInterval, clearInterval, queueMicrotask, Error });
+  vm.runInNewContext(source, { exports, require: () => ({ useSyncExternalStore: () => {} }), WebSocket: Socket, setTimeout, clearTimeout, setInterval, clearInterval, queueMicrotask, Error, ...timers });
   return { client: exports, sockets };
 };
 let a = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa', b = 'bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb';
@@ -64,4 +64,25 @@ test('a host reconnect between roster polls refreshes machine snapshots', async 
   ws.receive(roster('first')); ws.sent.length = 0;
   ws.receive(roster('second'));
   assert.ok(ws.sent.some((message) => message.message?.type === 'detect_processes'));
+});
+
+test('failed credentials back off instead of repeatedly refreshing an expired login', async (t) => {
+  let queued = [];
+  let { client, sockets } = load({
+    setTimeout: (callback, delay) => { queued.push({ callback, delay }); return queued.length; },
+    clearTimeout: () => {},
+    setInterval: () => 1,
+    clearInterval: () => {},
+  });
+  let stop = client.connectMachines(async () => { throw new Error('Sign in again'); });
+  t.after(stop);
+  let delays = [];
+  for (let attempt = 0; attempt < 7; attempt++) {
+    await new Promise(setImmediate);
+    let timer = queued.shift();
+    delays.push(timer.delay);
+    if (attempt < 6) await timer.callback();
+  }
+  assert.deepEqual(delays, [1000, 2000, 4000, 8000, 16000, 30000, 30000]);
+  assert.equal(sockets.length, 0);
 });

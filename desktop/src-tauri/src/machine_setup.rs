@@ -3,6 +3,9 @@ use serde_json::{json, Value};
 use std::time::Duration;
 
 pub async fn setup(args: &[String]) -> Result<(), String> {
+    if args.iter().any(|a| a == "--no-service") && args.iter().any(|a| a == "--linger") {
+        return Err("--no-service cannot be combined with --linger".into());
+    }
     let flag = |key: &str| args.windows(2).find(|w| w[0] == key).map(|w| w[1].clone());
     let server = flag("--relay")
         .unwrap_or_else(|| "https://relay.clawtab.cc".into())
@@ -99,6 +102,14 @@ fn save_pairing(
     println!("Machine paired. Provider credentials stay on this machine.");
     #[cfg(target_os = "linux")]
     {
+        if _args.iter().any(|arg| arg == "--no-service") {
+            let ready = crate::config::config_dir()
+                .ok_or("home directory unavailable")?
+                .join("machine-paired");
+            std::fs::write(ready, id).map_err(|e| format!("could not mark pairing ready: {e}"))?;
+            println!("Service installation skipped. Start clawtab-daemon with your container supervisor.");
+            return Ok(());
+        }
         if _args.iter().any(|arg| arg == "--linger") {
             let status = std::process::Command::new("loginctl")
                 .arg("enable-linger")

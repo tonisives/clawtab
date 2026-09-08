@@ -1,5 +1,5 @@
-import { MachinesPanel, subscribeMachines, machineState } from "@clawtab/shared";
-import { useDesktopMachines, approveDesktopMachine, localHostRequest, desktopMachineApi } from "../../machines/connection";
+import { subscribeMachines, machineState } from "@clawtab/shared";
+import { useDesktopMachines } from "../../machines/connection";
 import { RepositoryProvider } from "../RepositoryPanel";
 import { useEffect, useCallback, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { RemoteJob } from "@clawtab/shared";
@@ -502,7 +502,6 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
 
   return (
     <RepositoryProvider onOpenShell={openWorktreeShell}>
-    <MachinesPanel approvePairing={approveDesktopMachine} localRequest={localHostRequest} api={desktopMachineApi} />
     <JobsTabLayout
       detailPane={detailPane}
       dialogs={dialogs}

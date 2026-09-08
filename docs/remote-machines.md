@@ -29,6 +29,16 @@ Updates replace binaries atomically. Restart the daemon when ready to load an up
 
 Linux credentials are stored under `~/.config/clawtab/credentials`, with directory mode 0700 and file mode 0600. Local sockets live under `$XDG_RUNTIME_DIR/clawtab`, or a private per-user temporary directory when no runtime directory is available. IPC checks the connecting user's UID. macOS continues using Keychain and its existing daemon service.
 
+## Containers and Kubernetes
+
+Build `etc/Dockerfile.machine` from the public repository root. The image includes one foreground daemon, tmux, Git, Git LFS, Python, and Node.js. Mount a persistent home directory at `/home/clawtab` owned by UID/GID 1000 and run one replica. Install and authenticate provider CLIs on that persistent home directory.
+
+The entrypoint waits for the completion marker written after setup saves the machine credential and settings. In the waiting container, run `cwtctl setup --name k3s-agent --no-service`, then approve the code from **Machines → Add machine**. This saves the pairing without installing systemd; Kubernetes supervises the daemon. `--no-service` and `--linger` are mutually exclusive.
+
+Persisting the home directory preserves repositories and credentials across container replacement. It does not preserve running tmux processes or agents. Schedule image updates after finishing active work. No inbound application port, service-account token, relay sidecar, or host mount is required.
+
+On desktop, the labeled **Machines** navigation button opens a dedicated panel. Secrets, Skills, and Usage are under **Settings**. Machine management no longer occupies a strip above the main job list.
+
 ## Work across machines
 
 The jobs and agents list combines accessible machines. Machine badges distinguish otherwise identical names, paths, and tmux pane numbers. Use the machine buttons to filter the list. The **Machine** selection in the expanded panel chooses the launch and management target; no remote host is selected automatically.
