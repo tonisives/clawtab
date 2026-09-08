@@ -15,24 +15,7 @@ pub async fn execute(request: HostRequest) -> Result<Value, String> {
                 _ => Err("unexpected daemon response".into()),
             }
         }
-        HostRequest::Info => {
-            let settings = crate::config::settings::AppSettings::load();
-            let tools = [
-                "tmux", "git", "claude", "codex", "opencode", "agy", "python3",
-            ]
-            .into_iter()
-            .map(|name| {
-                let available = std::process::Command::new("which")
-                    .arg(name)
-                    .output()
-                    .is_ok_and(|o| o.status.success());
-                (name, available)
-            })
-            .collect::<std::collections::HashMap<_, _>>();
-            Ok(
-                json!({"platform":std::env::consts::OS,"architecture":std::env::consts::ARCH,"version":env!("CARGO_PKG_VERSION"),"capabilities":["machine_v2","host_management","transfer_v1"],"home":dirs::home_dir(),"tools":tools,"models":settings.enabled_models,"machine_id":settings.relay.as_ref().map(|r|&r.device_id)}),
-            )
-        }
+        HostRequest::Info => Ok(info()),
         HostRequest::Repository { path } => {
             serde_json::to_value(git::get_git_repository(path).await?).map_err(|e| e.to_string())
         }
@@ -59,17 +42,7 @@ pub async fn execute(request: HostRequest) -> Result<Value, String> {
         } => operations::start(
             operation_id,
             json!({"action":"clone","url":url,"path":path}),
-            move || {
-                if url.starts_with('-') || url.contains(['\n', '\r']) || url.contains("::") {
-                    return Err("invalid repository URL".into());
-                }
-                let destination = resolve_path(&path)?;
-                if destination.exists() {
-                    return Err("destination already exists".into());
-                }
-                operations::git(None, &["clone", "--", &url, &destination.to_string_lossy()])?;
-                Ok(json!({"path":destination}))
-            },
+            move || clone_repository(url, path),
         ),
         HostRequest::CreateWorktree {
             operation_id,
@@ -79,51 +52,12 @@ pub async fn execute(request: HostRequest) -> Result<Value, String> {
         } => operations::start(
             operation_id,
             json!({"action":"worktree","path":path,"branch":branch,"base":base}),
-            move || {
-                let root = resolve_path(&path)?;
-                operations::git(Some(&root), &["check-ref-format", "--branch", &branch])?;
-                if base.starts_with('-') {
-                    return Err("invalid base revision".into());
-                }
-                let destination = root
-                    .join(".worktrees")
-                    .join(uuid::Uuid::new_v4().to_string());
-                operations::git(
-                    Some(&root),
-                    &[
-                        "worktree",
-                        "add",
-                        "-b",
-                        &branch,
-                        &destination.to_string_lossy(),
-                        &base,
-                    ],
-                )?;
-                Ok(json!({"path":destination,"branch":branch}))
-            },
+            move || create_worktree(path, branch, base),
         ),
         HostRequest::RemoveWorktree { operation_id, path } => operations::start(
             operation_id,
             json!({"action":"remove_worktree","path":path}),
-            move || {
-                let path = resolve_path(&path)?;
-                let common = operations::git(
-                    Some(&path),
-                    &["rev-parse", "--path-format=absolute", "--git-common-dir"],
-                )?;
-                let common = Path::new(common.trim())
-                    .parent()
-                    .ok_or("cannot find repository")?
-                    .to_owned();
-                if !path.starts_with(common.join(".worktrees")) {
-                    return Err("only ClawTab worktrees can be removed".into());
-                }
-                operations::git(
-                    Some(&common),
-                    &["worktree", "remove", &path.to_string_lossy()],
-                )?;
-                Ok(json!({"removed":true}))
-            },
+            move || remove_worktree(path),
         ),
         HostRequest::SetModels { models } => {
             let mut settings = crate::config::settings::AppSettings::load();
@@ -136,6 +70,23 @@ pub async fn execute(request: HostRequest) -> Result<Value, String> {
             .map_err(|e| e.to_string())?,
     }
 }
+fn info() -> Value {
+    let settings = crate::config::settings::AppSettings::load();
+    let tools = [
+        "tmux", "git", "claude", "codex", "opencode", "agy", "python3",
+    ]
+    .into_iter()
+    .map(|name| {
+        let available = std::process::Command::new("which")
+            .arg(name)
+            .output()
+            .is_ok_and(|o| o.status.success());
+        (name, available)
+    })
+    .collect::<std::collections::HashMap<_, _>>();
+    json!({"platform":std::env::consts::OS,"architecture":std::env::consts::ARCH,"version":env!("CARGO_PKG_VERSION"),"capabilities":["machine_v2","host_management","transfer_v1"],"home":dirs::home_dir(),"tools":tools,"models":settings.enabled_models,"machine_id":settings.relay.as_ref().map(|r|&r.device_id)})
+}
+
 pub fn resolve_path(value: &str) -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or("home directory unavailable")?;
     let path = if value == "~" {
@@ -203,4 +154,59 @@ pub fn validate_execution(pane: &str, expected: &str) -> bool {
                 .split_once(':')
                 .is_some_and(|(saved_pid, _)| saved_pid == pid)
     })
+}
+
+fn clone_repository(url: String, path: String) -> Result<Value, String> {
+    if url.starts_with('-') || url.contains(['\n', '\r']) || url.contains("::") {
+        return Err("invalid repository URL".into());
+    }
+    let destination = resolve_path(&path)?;
+    if destination.exists() {
+        return Err("destination already exists".into());
+    }
+    operations::git(None, &["clone", "--", &url, &destination.to_string_lossy()])?;
+    Ok(json!({"path":destination}))
+}
+
+fn create_worktree(path: String, branch: String, base: String) -> Result<Value, String> {
+    let root = resolve_path(&path)?;
+    operations::git(Some(&root), &["check-ref-format", "--branch", &branch])?;
+    if base.starts_with('-') {
+        return Err("invalid base revision".into());
+    }
+    let destination = root
+        .join(".worktrees")
+        .join(uuid::Uuid::new_v4().to_string());
+    operations::git(
+        Some(&root),
+        &[
+            "worktree",
+            "add",
+            "-b",
+            &branch,
+            &destination.to_string_lossy(),
+            &base,
+        ],
+    )?;
+    Ok(json!({"path":destination,"branch":branch}))
+}
+
+fn remove_worktree(path: String) -> Result<Value, String> {
+    let path = resolve_path(&path)?;
+    let common = operations::git(
+        Some(&path),
+        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+    )?;
+    let common = Path::new(common.trim())
+        .parent()
+        .ok_or("cannot find repository")?
+        .to_owned();
+    if !path.starts_with(common.join(".worktrees")) {
+        return Err("only ClawTab worktrees can be removed".into());
+    }
+    operations::git(
+        Some(&common),
+        &["worktree", "remove", &path.to_string_lossy()],
+    )?;
+    Ok(json!({"removed":true}))
 }

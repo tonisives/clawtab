@@ -65,6 +65,10 @@ Launches and repository mutations record operation IDs on the host. Repeating an
 
 Connections use TLS with the existing relay trust model. The relay can read terminal content and transfer payloads; this release does not add end-to-end encryption. Repository and provider credentials stay on the host unless the user explicitly includes credential files in a transfer.
 
+## Rollout
+
+Deploy the relay and its database migration before shipping the updated desktop/mobile clients or pairing Linux hosts. New clients require the machine API and `/v2/ws`; the installed shared relay is the only relay used in normal operation. Local integration relays are disposable test processes and are not installed as services. Publish Linux assets through the release workflow, then install and pair each host.
+
 ## Validation
 
 Tests cover machine routing with identical pane IDs, private new hosts, requester-only replies, guest access revocation, terminal control, stale execution IDs, duplicate question answers, durable launch claims, and Git-transfer integrity and traversal rejection. Linux headless tests and a daemon startup smoke check run in an isolated Debian arm64 container. CI builds both Linux architectures. Native device notifications and boot/logout behavior require checks on actual hosts/devices; the container does not run a systemd user manager.

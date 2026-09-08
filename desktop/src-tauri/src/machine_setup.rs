@@ -71,36 +71,45 @@ pub async fn setup(args: &[String]) -> Result<(), String> {
         if value["status"] != "paired" {
             continue;
         }
-        let token = value["device_token"]
-            .as_str()
-            .ok_or("missing device credential")?;
-        let id = value["device_id"].as_str().ok_or("missing machine ID")?;
-        crate::secrets::SecretsManager::new().set("relay_device_token", token)?;
-        let mut settings = AppSettings::load();
-        settings.relay = Some(RelaySettings {
-            enabled: true,
-            server_url: server,
-            device_token: String::new(),
-            device_id: id.into(),
-            device_name: name,
-        });
-        settings.save()?;
-        println!("Machine paired. Provider credentials stay on this machine.");
-        #[cfg(target_os = "linux")]
-        {
-            if args.iter().any(|arg| arg == "--linger") {
-                let status = std::process::Command::new("loginctl")
-                    .arg("enable-linger")
-                    .status()
-                    .map_err(|e| e.to_string())?;
-                if !status.success() {
-                    return Err("paired, but enabling lingering failed; run cwtctl daemon install after configuring the user systemd manager".into());
-                }
-            }
-            println!("{}", crate::daemon::install()?);
-            println!("To keep the user service running after logout and start it at boot, enable lingering: loginctl enable-linger <your-user>. Your host may require administrator approval.");
-        }
-        return Ok(());
+        return save_pairing(value, server, name, args);
     }
     Err("pairing timed out; run setup again".into())
+}
+
+fn save_pairing(
+    value: Value,
+    server: String,
+    name: String,
+    _args: &[String],
+) -> Result<(), String> {
+    let token = value["device_token"]
+        .as_str()
+        .ok_or("missing device credential")?;
+    let id = value["device_id"].as_str().ok_or("missing machine ID")?;
+    crate::secrets::SecretsManager::new().set("relay_device_token", token)?;
+    let mut settings = AppSettings::load();
+    settings.relay = Some(RelaySettings {
+        enabled: true,
+        server_url: server,
+        device_token: String::new(),
+        device_id: id.into(),
+        device_name: name,
+    });
+    settings.save()?;
+    println!("Machine paired. Provider credentials stay on this machine.");
+    #[cfg(target_os = "linux")]
+    {
+        if _args.iter().any(|arg| arg == "--linger") {
+            let status = std::process::Command::new("loginctl")
+                .arg("enable-linger")
+                .status()
+                .map_err(|e| e.to_string())?;
+            if !status.success() {
+                return Err("paired, but enabling lingering failed; run cwtctl daemon install after configuring the user systemd manager".into());
+            }
+        }
+        println!("{}", crate::daemon::install()?);
+        println!("To keep the user service running after logout and start it at boot, enable lingering: loginctl enable-linger <your-user>. Your host may require administrator approval.");
+    }
+    Ok(())
 }

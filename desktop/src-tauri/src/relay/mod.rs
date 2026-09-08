@@ -494,10 +494,7 @@ async fn run_session<S, R>(
                 match msg {
                     Ok(Message::Text(text)) => {
                         if requests.len() >= 64 {
-                            if let Ok(value)=serde_json::from_str::<serde_json::Value>(&text){
-                                let response=serde_json::json!({"type":"error","id":value["id"],"message":"Host is busy; retry with the same operation ID"}).to_string();
-                                if tx.try_send(response).is_err(){cancel.cancel();}
-                            }
+                            reject_busy_request(&text, &tx, &cancel);
                             continue;
                         }
                         requests.push(async move {
@@ -616,5 +613,18 @@ fn status_to_remote(status: &JobStatus) -> RemoteJobStatus {
             exit_code: *exit_code,
         },
         JobStatus::Paused => RemoteJobStatus::Paused,
+    }
+}
+
+fn reject_busy_request(
+    text: &str,
+    tx: &mpsc::Sender<String>,
+    cancel: &tokio_util::sync::CancellationToken,
+) {
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(text) {
+        let response=serde_json::json!({"type":"error","id":value["id"],"message":"Host is busy; retry with the same operation ID"}).to_string();
+        if tx.try_send(response).is_err() {
+            cancel.cancel();
+        }
     }
 }
