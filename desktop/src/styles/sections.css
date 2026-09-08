@@ -414,3 +414,8 @@
     grid-template-columns: 1fr;
   }
 }
+
+.relay-remove-error {
+  color: var(--danger-color);
+  font-size: 13px;
+}

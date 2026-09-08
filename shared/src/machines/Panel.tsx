@@ -291,16 +291,23 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
         <Pressable
           accessibilityRole="button"
           accessibilityState={{ selected: m.id === state.selected }}
+          aria-pressed={m.id === state.selected}
           key={m.id}
           onPress={pickMachine(m.id)}
           style={[styles.button, styles.machineButton, m.id === state.selected && styles.selectedMachine]}
         >
-          <Text style={styles.text}>{m.name}{m.id === localMachineId ? " · This Mac" : ""}</Text>
-          <Text style={styles.detail}>
-            {m.online ? "Online" : "Offline"} · {m.platform === "macos" ? "macOS" : m.platform}
-            {m.id !== localMachineId && machines.filter((other) => other.name === m.name).length > 1
-              ? " · " + m.id.slice(0, 8) : ""}
-          </Text>
+          <View style={styles.labelRow}>
+            <Text style={[styles.text, styles.machineName]}>{m.name}{m.id === localMachineId ? " · This Mac" : ""}</Text>
+            {m.id === state.selected && <View style={styles.selectionDot} />}
+          </View>
+          <View style={styles.statusRow}>
+            <View style={[styles.statusDot, m.online ? styles.onlineDot : styles.offlineDot]} />
+            <Text style={styles.detail}>
+              {m.online ? "Online" : "Offline"} · {m.platform === "macos" ? "macOS" : m.platform}
+              {m.id !== localMachineId && machines.filter((other) => other.name === m.name).length > 1
+                ? " · " + m.id.slice(0, 8) : ""}
+            </Text>
+          </View>
         </Pressable>
       ))}
     </View>
@@ -331,9 +338,14 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
           </Pressable>
         ))}
       </View>}
+      {presentation === "panel" && state.connected && <View style={styles.statusRow}>
+        <View style={[styles.statusDot, styles.onlineDot]} />
+        <Text style={styles.detail}>Machine list connected · {machines.filter((m) => m.online).length} of {machines.length} online</Text>
+      </View>}
       {(error || state.error) && <Text style={styles.error}>{error ?? state.error}</Text>}
       {!state.connected && (
         <View style={styles.row}>
+          <View style={[styles.statusDot, state.error ? styles.errorDot : styles.connectingDot]} />
           <Text style={styles.text}>{state.error ? "Machine list unavailable" : "Connecting to your account’s machines…"}</Text>
           {state.error && <Pressable accessibilityRole="button" onPress={retryMachines} style={styles.button}>
             <Text style={styles.text}>Retry connection</Text>
@@ -361,12 +373,16 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
                 key={value}
                 onPress={openTab(value)}
                 accessibilityState={{ selected: tab === value }}
+                aria-pressed={tab === value}
                 style={[styles.button, tab === value && styles.activeButton]}
               >
-                <Text style={styles.text}>
-                  {value === "pair" ? "Add machine" : value[0].toUpperCase() + value.slice(1)}
-                  {presentation === "compact" && tab === value ? " · selected" : ""}
-                </Text>
+                <View style={styles.labelRow}>
+                  {presentation === "panel" && tab === value && <View style={styles.selectionDot} />}
+                  <Text style={[styles.text, tab === value && styles.activeText]}>
+                    {value === "pair" ? "Add machine" : value[0].toUpperCase() + value.slice(1)}
+                    {presentation === "compact" && tab === value ? " · selected" : ""}
+                  </Text>
+                </View>
               </Pressable>
             ))}
           </View>
@@ -798,23 +814,36 @@ let createStyles = (desktop: boolean) => StyleSheet.create({
   row: { flexDirection: "row", flexWrap: "wrap", gap: 6, paddingVertical: 4 },
   title: { color: desktop ? "var(--text-primary)" : "#fff", fontWeight: "600", marginTop: 18, marginBottom: 8 },
   text: { color: desktop ? "var(--text-primary)" : "#e5e7eb", fontSize: 13 },
-  detail: { color: desktop ? "var(--text-secondary)" : "#b6bbc5", fontSize: 12, marginTop: 4 },
+  detail: { color: desktop ? "var(--text-secondary)" : "#b6bbc5", fontSize: 12 },
+  labelRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  statusRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 5 },
+  statusDot: { width: 7, height: 7, borderRadius: 4, flexShrink: 0, alignSelf: "center" },
+  onlineDot: { backgroundColor: desktop ? "var(--success-color, #30d158)" : "#4ade80" },
+  offlineDot: { backgroundColor: desktop ? "var(--text-muted, #a1a1a6)" : "#989ca6" },
+  errorDot: { backgroundColor: desktop ? "var(--danger-color, #ff3b30)" : "#ffabab" },
+  connectingDot: { backgroundColor: desktop ? "var(--warning-color, #ff9f0a)" : "#fbbf24" },
+  selectionDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: desktop ? "var(--accent-color, #5c6bc0)" : "#9fa8da" },
+  machineName: { fontWeight: "600" },
+  activeText: { color: desktop ? "var(--accent-color, #5c6bc0)" : "#fff", fontWeight: "600" },
   error: { color: desktop ? "var(--error-color, #c53030)" : "#ffabab", padding: 8 },
   code: { fontFamily: "monospace", color: desktop ? "var(--text-secondary)" : "#d1d5db", fontSize: 12, padding: 8 },
   button: {
     backgroundColor: desktop ? "var(--bg-tertiary)" : "#353942",
-    padding: 9,
-    borderRadius: 6,
+    paddingVertical: 9,
+    paddingHorizontal: desktop ? 15 : 9,
+    borderRadius: desktop ? 999 : 6,
+    borderWidth: desktop ? 1 : 0,
+    borderColor: "transparent",
     alignSelf: "flex-start",
     marginVertical: 3,
   },
-  machineButton: { borderWidth: 1, borderColor: "transparent" },
-  selectedMachine: { borderColor: desktop ? "var(--accent-color, #5c6bc0)" : "#9fa8da" },
-  activeButton: { backgroundColor: desktop ? "var(--accent-hover)" : "#4b5262" },
+  machineButton: { borderWidth: 1, borderColor: desktop ? "var(--border-light)" : "transparent", borderRadius: desktop ? 16 : 6, paddingVertical: 12, minWidth: desktop ? 160 : undefined },
+  selectedMachine: { borderColor: desktop ? "var(--accent-color, #5c6bc0)" : "#9fa8da", backgroundColor: desktop ? "var(--accent-bg)" : "#353942" },
+  activeButton: { backgroundColor: desktop ? "var(--accent-hover)" : "#4b5262", borderColor: desktop ? "var(--accent-color, #5c6bc0)" : "transparent" },
   input: {
     borderColor: desktop ? "var(--border-color)" : "#50545d",
     borderWidth: 1,
-    borderRadius: 6,
+    borderRadius: desktop ? 12 : 6,
     padding: 10,
     color: desktop ? "var(--text-primary)" : "#fff",
     minWidth: 180,

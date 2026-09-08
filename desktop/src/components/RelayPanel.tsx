@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { desktopMachineApi } from "../machines/connection";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ShareSection, retryMachines } from "@clawtab/shared";
 import type { ShareInfo, SharedWithMeInfo } from "@clawtab/shared";
@@ -51,6 +52,8 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
   const [status, setStatus] = useState<RelayStatus | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [showConfirmRemove, setShowConfirmRemove] = useState(false);
+  let [removingRelay, setRemovingRelay] = useState(false);
+  let [removeError, setRemoveError] = useState<string | null>(null);
 
   // Setup form state
   const [serverUrl, setServerUrl] = useState("https://relay.clawtab.cc");
@@ -262,7 +265,16 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
   };
 
   const handleDisconnect = async () => {
+    setRemovingRelay(true);
+    setRemoveError(null);
     try {
+      if (settings?.device_id) {
+        try {
+          await desktopMachineApi("DELETE", `/devices/${settings.device_id}`);
+        } catch (error) {
+          if (!(error instanceof Error && error.message === "device not found")) throw error;
+        }
+      }
       await invoke("relay_disconnect");
       await invoke("set_relay_settings", {
         settings: { enabled: false, server_url: "", device_token: "", device_id: "", device_name: "" },
@@ -272,7 +284,9 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
       const st = await invoke<RelayStatus>("get_relay_status");
       setStatus(st);
     } catch (e) {
-      console.error("Failed to disconnect relay:", e);
+      setRemoveError(e instanceof Error ? e.message : "Could not remove this machine. Please retry.");
+    } finally {
+      setRemovingRelay(false);
     }
   };
 
@@ -680,15 +694,17 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
           <div className="field-group" style={{ borderColor: "var(--danger-color)" }}>
             <span className="field-group-title" style={{ color: "var(--danger-color)" }}>Danger Zone</span>
             <p className="section-description" style={{ marginTop: 0 }}>
-              This removes the relay configuration and disconnects this device. You will need to pair again.
+              This removes this Mac from your account and disconnects it. You will need to pair again.
             </p>
-            <button className="btn btn-danger" onClick={() => setShowConfirmRemove(true)}>
+            {removeError && <p role="alert" className="relay-remove-error">{removeError}</p>}
+            <button className="btn btn-danger" disabled={removingRelay} onClick={() => setShowConfirmRemove(true)}>
               Remove Relay Configuration
             </button>
 
             {showConfirmRemove && (
               <ConfirmDialog
-                message="Remove relay configuration? This disconnects and un-pairs this device. You will need to log in and pair again."
+                message="Remove this Mac from your account and disconnect it? You will need to pair again."
+                confirmLabel="Remove Mac"
                 onConfirm={() => { handleDisconnect(); setShowConfirmRemove(false); }}
                 onCancel={() => setShowConfirmRemove(false)}
               />
