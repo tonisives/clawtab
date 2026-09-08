@@ -13,19 +13,19 @@ const IPC_ACCEPT_ERROR_BACKOFF: std::time::Duration = std::time::Duration::from_
 use tokio::sync::Mutex as AsyncMutex;
 
 pub fn daemon_socket_path() -> PathBuf {
-    PathBuf::from("/tmp/clawtab.sock")
+    crate::runtime_paths::socket("daemon.sock", "/tmp/clawtab.sock")
 }
 
 pub fn daemon_event_socket_path() -> PathBuf {
-    PathBuf::from("/tmp/clawtab-events.sock")
+    crate::runtime_paths::socket("events.sock", "/tmp/clawtab-events.sock")
 }
 
 pub fn plugin_host_socket_path() -> PathBuf {
-    PathBuf::from("/tmp/clawtab/plugin-host.sock")
+    crate::runtime_paths::socket("plugin-host.sock", "/tmp/clawtab/plugin-host.sock")
 }
 
 pub fn desktop_socket_path() -> PathBuf {
-    PathBuf::from("/tmp/clawtab-desktop.sock")
+    crate::runtime_paths::socket("desktop.sock", "/tmp/clawtab-desktop.sock")
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -392,6 +392,7 @@ where
     F: Fn(C) -> Fut + Send + Sync + 'static,
     Fut: std::future::Future<Output = R> + Send + 'static,
 {
+    crate::runtime_paths::ensure()?;
     let _ = std::fs::remove_file(&path);
 
     let listener =
@@ -413,6 +414,12 @@ where
             .map_err(|_| "IPC connection limiter closed".to_string())?;
         match listener.accept().await {
             Ok((stream, _)) => {
+                if !stream
+                    .peer_cred()
+                    .is_ok_and(|peer| peer.uid() == unsafe { libc::geteuid() })
+                {
+                    continue;
+                }
                 let handler = handler.clone();
                 tokio::spawn(async move {
                     let result = tokio::time::timeout(
@@ -490,6 +497,7 @@ where
 /// delimited JSON `IpcEvent` values. No request/response; the client just reads.
 pub async fn start_event_server(subs: EventSubscribers) -> Result<(), String> {
     let path = daemon_event_socket_path();
+    crate::runtime_paths::ensure()?;
     let _ = std::fs::remove_file(&path);
 
     let listener =
@@ -500,6 +508,12 @@ pub async fn start_event_server(subs: EventSubscribers) -> Result<(), String> {
     loop {
         match listener.accept().await {
             Ok((stream, _)) => {
+                if !stream
+                    .peer_cred()
+                    .is_ok_and(|peer| peer.uid() == unsafe { libc::geteuid() })
+                {
+                    continue;
+                }
                 let (_read, write) = stream.into_split();
                 let mut guard = subs.lock().await;
                 guard.push(write);

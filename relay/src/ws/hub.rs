@@ -12,12 +12,12 @@ pub struct DesktopConnection {
     pub connection_id: Uuid,
     pub device_id: Uuid,
     pub device_name: String,
-    pub tx: mpsc::UnboundedSender<String>,
+    pub tx: mpsc::Sender<String>,
 }
 
 pub struct MobileConnection {
     pub connection_id: Uuid,
-    pub tx: mpsc::UnboundedSender<String>,
+    pub tx: mpsc::Sender<String>,
 }
 
 /// Central in-memory router for all live WebSocket connections.
@@ -77,7 +77,7 @@ impl Hub {
                 };
                 let delivered = serde_json::to_string(&msg)
                     .ok()
-                    .is_some_and(|json| conn.tx.send(json).is_ok());
+                    .is_some_and(|json| conn.tx.try_send(json).is_ok());
                 if !delivered {
                     undelivered.insert(pane_id);
                 }
@@ -172,7 +172,7 @@ impl Hub {
         }
 
         if let Some(json) = self.last_auto_yes_panes.get(&user_id) {
-            let _ = conn.tx.send(json.clone());
+            let _ = conn.tx.try_send(json.clone());
         }
 
         if let Some(processes) = self.last_detected_processes.get(&user_id) {
@@ -288,13 +288,38 @@ impl Hub {
             return false;
         };
 
-        let mut sent = false;
-        for conn in conns {
-            sent |= conn.tx.send(json.clone()).is_ok();
+        if conns.len() != 1 {
+            return false;
         }
-        sent
+        conns[0].tx.try_send(json).is_ok()
     }
 
+    pub fn forward_to_device(&self, user: Uuid, device: Uuid, msg: &ClientMessage) -> bool {
+        let Some(conn) = self
+            .desktops
+            .get(&user)
+            .and_then(|cs| cs.iter().find(|c| c.device_id == device))
+        else {
+            return false;
+        };
+        serde_json::to_string(msg)
+            .ok()
+            .is_some_and(|json| conn.tx.try_send(json).is_ok())
+    }
+    pub fn disconnect_mobiles(&mut self, user: Uuid) {
+        if let Some(clients) = self.mobiles.remove(&user) {
+            for client in clients {
+                let _ = client.tx.try_send(crate::machines::CLOSE.into());
+            }
+        }
+    }
+    pub fn disconnect_device(&mut self, user: Uuid, device: Uuid) {
+        if let Some(conns) = self.desktops.get(&user) {
+            for conn in conns.iter().filter(|c| c.device_id == device) {
+                let _ = conn.tx.try_send(crate::machines::CLOSE.into());
+            }
+        }
+    }
     /// Send any serializable message to all mobile clients for a user.
     pub fn broadcast_to_mobiles<T: Serialize>(&self, user_id: Uuid, msg: &T) {
         let Ok(json) = serde_json::to_string(msg) else {
@@ -309,7 +334,7 @@ impl Hub {
             return;
         };
         for conn in conns {
-            let _ = conn.tx.send(json.to_string());
+            let _ = conn.tx.try_send(json.to_string());
         }
     }
 
@@ -424,7 +449,7 @@ impl Hub {
     pub fn replay_desktop_state_to(
         &self,
         owner_id: Uuid,
-        tx: &mpsc::UnboundedSender<String>,
+        tx: &mpsc::Sender<String>,
         allowed_groups: Option<&[String]>,
     ) {
         if let Some(desktops) = self.desktops.get(&owner_id) {
@@ -461,7 +486,7 @@ impl Hub {
             );
         }
         if let Some(json) = self.last_auto_yes_panes.get(&owner_id) {
-            let _ = tx.send(json.clone());
+            let _ = tx.try_send(json.clone());
         }
         let activity = self.cached_agent_activity(owner_id, allowed_groups);
         if !activity.is_empty() {
@@ -470,9 +495,9 @@ impl Hub {
     }
 }
 
-fn send_serialized<T: Serialize>(tx: &mpsc::UnboundedSender<String>, msg: &T) {
+fn send_serialized<T: Serialize>(tx: &mpsc::Sender<String>, msg: &T) {
     if let Ok(json) = serde_json::to_string(msg) {
-        let _ = tx.send(json);
+        let _ = tx.try_send(json);
     }
 }
 
@@ -481,11 +506,8 @@ mod tests {
     use super::*;
     use clawtab_protocol::QuestionOption;
 
-    fn mk_channel() -> (
-        mpsc::UnboundedSender<String>,
-        mpsc::UnboundedReceiver<String>,
-    ) {
-        mpsc::unbounded_channel()
+    fn mk_channel() -> (mpsc::Sender<String>, mpsc::Receiver<String>) {
+        mpsc::channel(512)
     }
 
     fn mk_question(pane: &str) -> ClaudeQuestion {
@@ -511,6 +533,7 @@ mod tests {
 
     fn mk_process(pane: &str, group: &str) -> DetectedProcess {
         DetectedProcess {
+            execution_id: None,
             pane_id: pane.to_string(),
             cwd: "/tmp".to_string(),
             version: String::new(),
@@ -755,7 +778,7 @@ mod tests {
     }
 
     #[test]
-    fn forward_to_desktop_sends_to_all_connections() {
+    fn legacy_dispatch_rejects_multiple_machines() {
         let mut hub = Hub::new();
         let user = Uuid::new_v4();
         let (tx1, mut rx1) = mk_channel();
@@ -781,9 +804,9 @@ mod tests {
         );
 
         let msg = ClientMessage::ListJobs { id: "x".into() };
-        assert!(hub.forward_to_desktop(user, &msg));
-        assert!(rx1.try_recv().unwrap_or_default().contains("list_jobs"));
-        assert!(rx2.try_recv().unwrap_or_default().contains("list_jobs"));
+        assert!(!hub.forward_to_desktop(user, &msg));
+        assert!(rx1.try_recv().is_err());
+        assert!(rx2.try_recv().is_err());
     }
 
     #[test]

@@ -105,8 +105,8 @@ async fn persist_questions(state: &AppState, user_id: Uuid, questions: &[&Claude
     for q in questions {
         let options_json = serde_json::to_value(&q.options).unwrap_or_default();
         let res = sqlx::query(
-            "INSERT INTO notification_history (user_id, question_id, pane_id, cwd, context_lines, options)
-             VALUES ($1, $2, $3, $4, $5, $6)
+            "INSERT INTO notification_history (user_id, question_id, pane_id, cwd, context_lines, options, device_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
              ON CONFLICT (question_id) DO NOTHING",
         )
         .bind(user_id)
@@ -115,6 +115,7 @@ async fn persist_questions(state: &AppState, user_id: Uuid, questions: &[&Claude
         .bind(&q.cwd)
         .bind(&q.context_lines)
         .bind(&options_json)
+        .bind(q.pane_id.split_once("::").and_then(|(id,_)|Uuid::parse_str(id).ok()))
         .execute(&state.pool)
         .await;
         if let Err(e) = res {
@@ -144,7 +145,14 @@ async fn pick_unpushed<'a>(
         if crate::push_limiter::is_content_pushed(
             &mut conn,
             user_id,
-            &q.cwd,
+            &format!(
+                "{}:{}",
+                q.pane_id
+                    .split_once("::")
+                    .map(|(id, _)| id)
+                    .unwrap_or_default(),
+                q.cwd
+            ),
             &q.options,
             CONTENT_DEDUP_TTL_SECONDS,
         )
@@ -159,13 +167,11 @@ async fn pick_unpushed<'a>(
 }
 
 async fn fetch_ios_push_tokens(state: &AppState, user_id: Uuid) -> Vec<(Uuid, String)> {
-    sqlx::query_as(
-        "SELECT id, push_token FROM push_tokens WHERE user_id = $1 AND platform = 'ios'",
-    )
-    .bind(user_id)
-    .fetch_all(&state.pool)
-    .await
-    .unwrap_or_default()
+    sqlx::query_as("SELECT id, push_token FROM push_tokens WHERE user_id = $1 AND platform = 'ios'")
+        .bind(user_id)
+        .fetch_all(&state.pool)
+        .await
+        .unwrap_or_default()
 }
 
 async fn delete_invalid_tokens(state: &AppState, token_ids: &[Uuid]) {
@@ -232,6 +238,7 @@ async fn claim_job_push_slot(state: &AppState, user_id: Uuid, job_id: &str, even
 pub(super) async fn handle_trigger_result(
     state: &AppState,
     user_id: Uuid,
+    device_id: Uuid,
     message: &DesktopMessage,
 ) {
     let DesktopMessage::TriggerResult {
@@ -264,6 +271,7 @@ pub(super) async fn handle_trigger_result(
         state,
         id,
         user_id,
+        device_id,
         TriggerResultUpdate {
             status: final_status,
             exit_code: *exit_code,
@@ -300,13 +308,14 @@ async fn update_trigger_run(
     state: &AppState,
     id: Uuid,
     user_id: Uuid,
+    device_id: Uuid,
     update: TriggerResultUpdate<'_>,
 ) -> Result<sqlx::postgres::PgQueryResult, sqlx::Error> {
     sqlx::query(
         "UPDATE trigger_runs
          SET status = $1, exit_code = $2, result = $3, error = $4,
              result_status = $5, retry_at = $6, finished_at = now()
-         WHERE id = $7 AND user_id = $8
+         WHERE id = $7 AND user_id = $8 AND device_id = $9
            AND status NOT IN ('succeeded', 'failed', 'no_device', 'deferred', 'rejected')",
     )
     .bind(update.status)
@@ -317,6 +326,7 @@ async fn update_trigger_run(
     .bind(update.retry_at)
     .bind(id)
     .bind(user_id)
+    .bind(device_id)
     .execute(&state.pool)
     .await
 }

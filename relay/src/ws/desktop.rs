@@ -22,9 +22,9 @@ pub(super) async fn run(
     device_name: String,
 ) {
     let connection_id = Uuid::new_v4();
-    let (tx, rx) = mpsc::unbounded_channel::<String>();
+    let (tx, rx) = mpsc::channel::<String>(512);
 
-    let guests = get_shared_guests(&state.pool, user_id).await;
+    let guests = get_shared_guests(&state.pool, user_id, device_id).await;
     let guest_ids: Vec<Uuid> = guests.iter().map(|g| g.guest_id).collect();
 
     register(
@@ -40,7 +40,24 @@ pub(super) async fn run(
     send_welcome(&tx, device_id);
     tracing::info!(%user_id, %device_id, %connection_id, %device_name, "desktop connected");
 
-    let exit = drive_session(state.clone(), socket, rx, user_id).await;
+    state.machines.write().await.register(
+        device_id,
+        crate::machines::Host {
+            connection: connection_id,
+            owner: user_id,
+            tx: tx.clone(),
+        },
+    );
+    let _ = tx.try_send(
+        serde_json::json!({"type":"host_request","id":"machine_info","request":{"action":"info"}})
+            .to_string(),
+    );
+    let exit = drive_session(state.clone(), socket, rx, user_id, device_id, connection_id).await;
+    state
+        .machines
+        .write()
+        .await
+        .unregister(device_id, connection_id);
 
     unregister(
         &state,
@@ -58,13 +75,26 @@ pub(super) async fn run(
 async fn drive_session(
     state: AppState,
     socket: WebSocket,
-    rx: mpsc::UnboundedReceiver<String>,
+    rx: mpsc::Receiver<String>,
     user_id: Uuid,
+    device_id: Uuid,
+    connection_id: Uuid,
 ) -> LoopExit {
     run_session_loop(socket, rx, move |text| {
         let state = state.clone();
         async move {
-            handle_message(&state, user_id, &text).await;
+            if !state
+                .machines
+                .read()
+                .await
+                .hosts
+                .get(&device_id)
+                .is_some_and(|h| h.connection == connection_id)
+            {
+                return;
+            }
+            crate::machines::host_event(&state, device_id, connection_id, &text).await;
+            handle_message(&state, user_id, device_id, &text).await;
         }
     })
     .await
@@ -92,7 +122,7 @@ async fn register(
     connection_id: Uuid,
     device_id: Uuid,
     device_name: &str,
-    tx: mpsc::UnboundedSender<String>,
+    tx: mpsc::Sender<String>,
     guest_ids: &[Uuid],
 ) {
     let mut hub = state.hub.write().await;
@@ -140,22 +170,22 @@ async fn unregister(
     }
 }
 
-fn send_welcome(tx: &mpsc::UnboundedSender<String>, device_id: Uuid) {
+fn send_welcome(tx: &mpsc::Sender<String>, device_id: Uuid) {
     if let Ok(json) = serde_json::to_string(&ServerMessage::Welcome {
         connection_id: device_id.to_string(),
         server_version: env!("CARGO_PKG_VERSION").to_string(),
     }) {
-        let _ = tx.send(json);
+        let _ = tx.try_send(json);
     }
 }
 
-async fn handle_message(state: &AppState, user_id: Uuid, text: &str) {
+async fn handle_message(state: &AppState, user_id: Uuid, device_id: Uuid, text: &str) {
     let Ok(msg) = serde_json::from_str::<DesktopMessage>(text) else {
-        tracing::warn!(%user_id, "invalid message from desktop: {text}");
+        tracing::debug!(%user_id, "ignoring non-legacy desktop message");
         return;
     };
 
-    let guests = get_shared_guests(&state.pool, user_id).await;
+    let guests = get_shared_guests(&state.pool, user_id, device_id).await;
 
     match &msg {
         DesktopMessage::ClaudeQuestions {
@@ -171,7 +201,7 @@ async fn handle_message(state: &AppState, user_id: Uuid, text: &str) {
             fanout_claude_questions(state, user_id, questions, text, &guests).await;
             let push_questions = apns_questions.as_ref().unwrap_or(questions);
             if !push_questions.is_empty() {
-                spawn_push(state.clone(), user_id, push_questions.clone());
+                spawn_push(state.clone(), user_id, device_id, push_questions.clone());
             }
         }
         DesktopMessage::AutoYesPanes { pane_ids } => {
@@ -277,7 +307,7 @@ async fn handle_message(state: &AppState, user_id: Uuid, text: &str) {
         }
         DesktopMessage::TriggerResult { .. } => {
             // Internal-only channel for the triggers service. Do NOT fan out to mobiles.
-            handle_trigger_result(state, user_id, &msg).await;
+            handle_trigger_result(state, user_id, device_id, &msg).await;
         }
         _ => {
             let hub = state.hub.read().await;
@@ -297,6 +327,7 @@ async fn handle_message(state: &AppState, user_id: Uuid, text: &str) {
         spawn_job_notification(
             state.clone(),
             user_id,
+            device_id,
             name.clone(),
             event.clone(),
             run_id.clone(),
@@ -416,8 +447,32 @@ fn forward_detected_processes(
     );
 }
 
-fn spawn_push(state: AppState, user_id: Uuid, questions: Vec<clawtab_protocol::ClaudeQuestion>) {
+fn spawn_push(
+    state: AppState,
+    user_id: Uuid,
+    device_id: Uuid,
+    questions: Vec<clawtab_protocol::ClaudeQuestion>,
+) {
     tokio::spawn(async move {
+        let auto_yes = state
+            .machines
+            .read()
+            .await
+            .snapshots
+            .get(&(device_id, "auto_yes_panes".into()))
+            .and_then(|v| v["pane_ids"].as_array())
+            .cloned()
+            .unwrap_or_default();
+        let questions = questions
+            .into_iter()
+            .filter(|q| !auto_yes.iter().any(|p| p.as_str() == Some(&q.pane_id)))
+            .map(|mut q| {
+                q.pane_id = format!("{device_id}::{}", q.pane_id);
+                q.question_id = format!("{device_id}::{}", q.question_id);
+                q.matched_job = q.matched_job.map(|name| format!("{device_id}::{name}"));
+                q
+            })
+            .collect::<Vec<_>>();
         handle_claude_questions_push(&state, user_id, &questions).await;
     });
 }
@@ -425,11 +480,19 @@ fn spawn_push(state: AppState, user_id: Uuid, questions: Vec<clawtab_protocol::C
 fn spawn_job_notification(
     state: AppState,
     user_id: Uuid,
+    device_id: Uuid,
     name: String,
     event: String,
     run_id: String,
 ) {
     tokio::spawn(async move {
-        handle_job_notification_push(&state, user_id, &name, &event, &run_id).await;
+        handle_job_notification_push(
+            &state,
+            user_id,
+            &format!("{device_id}::{name}"),
+            &event,
+            &format!("{device_id}::{run_id}"),
+        )
+        .await;
     });
 }

@@ -17,6 +17,8 @@ export interface JobParam {
 }
 
 export interface Job {
+  machine_id?: string;
+  display_name?: string;
   name: string;
   job_type: JobType;
   enabled: boolean;

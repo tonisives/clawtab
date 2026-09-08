@@ -26,26 +26,77 @@ pub async fn handle_incoming(
     pty_manager: &SharedPtyManager,
     event_sink: &dyn EventSink,
 ) -> Option<String> {
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(text) {
+        if let (Some(pane), Some(execution)) =
+            (value["pane_id"].as_str(), value["execution_id"].as_str())
+        {
+            if !crate::host::validate_execution(pane, execution) {
+                return Some(serde_json::json!({"type":"error","id":value["id"],"code":"STALE_EXECUTION","message":"execution no longer exists"}).to_string());
+            }
+        }
+    }
+    if let Ok(command) = serde_json::from_str::<clawtab_protocol::HostCommand>(text) {
+        if command.r#type == "host_request" {
+            let models = match &command.request {
+                clawtab_protocol::HostRequest::SetModels { models } => Some(models.clone()),
+                _ => None,
+            };
+            let result = crate::host::execute(command.request).await;
+            if result.is_ok() {
+                if let Some(models) = models {
+                    ctx.settings.lock().enabled_models = models;
+                }
+            }
+            return Some(
+                match result {
+                    Ok(value) => {
+                        serde_json::json!({"type":"host_response","id":command.id,"result":value})
+                    }
+                    Err(error) => {
+                        serde_json::json!({"type":"host_response","id":command.id,"error":error})
+                    }
+                }
+                .to_string(),
+            );
+        }
+    }
+    let raw: serde_json::Value = serde_json::from_str(text).ok()?;
+    let mut operation_result = None;
+    if matches!(
+        raw["type"].as_str(),
+        Some("run_agent" | "run_job" | "create_job")
+    ) {
+        if let Some(operation_id) = raw["operation_id"].as_str() {
+            match crate::host::journal::claim(operation_id, &raw) {
+                Ok(crate::host::journal::Claim::New(path)) => operation_result = Some(path),
+                Ok(crate::host::journal::Claim::Existing(mut response)) => { response["id"] = raw["id"].clone(); return Some(response.to_string()); },
+                Err(error) => return Some(serde_json::json!({"type":"error","id":raw["id"],"code":"OPERATION_CONFLICT","message":error}).to_string()),
+            }
+        }
+    }
     let msg: ClientMessage = match serde_json::from_str(text) {
         Ok(m) => m,
         Err(_) => {
-            log::debug!(
-                "Relay: ignoring non-client message: {}",
-                &text[..text.len().min(100)]
-            );
+            log::debug!("Relay: ignoring non-client message");
             return None;
         }
     };
 
     let response = dispatch_message(msg, jobs_config, ctx, pty_manager, event_sink).await;
-    serialize_response(response)
+    let serialized = serialize_response(response);
+    if let (Some(path), Some(response)) = (operation_result, &serialized) {
+        if let Err(error) = crate::host::journal::complete(&path, response) {
+            log::error!("Could not persist launch acknowledgement: {error}");
+        }
+    }
+    serialized
 }
 
 fn serialize_response(response: Option<DesktopMessage>) -> Option<String> {
     let resp = response?;
     match serde_json::to_string(&resp) {
         Ok(json) => {
-            log::debug!("Relay response: {}", &json[..json.len().min(200)]);
+            log::trace!("Relay response serialized");
             Some(json)
         }
         Err(e) => {
@@ -335,8 +386,16 @@ async fn dispatch_job_msg(
                 error,
             })
         }
-        ClientMessage::CreateJob { id, .. } => {
-            let result = create_job();
+        ClientMessage::CreateJob {
+            id,
+            name,
+            job_type,
+            path,
+            prompt,
+            cron,
+            group,
+        } => {
+            let result = create_job(name, job_type, path, prompt, cron, group, jobs_config);
             if result.is_ok() {
                 event_sink.emit_jobs_changed();
             }
@@ -1180,9 +1239,55 @@ mod tests {
     }
 }
 
-fn create_job() -> Result<(), String> {
-    // TODO: implement remote job creation
-    Err("remote job creation not yet implemented".to_string())
+fn create_job(
+    name: &str,
+    job_type: &str,
+    path: &str,
+    prompt: &str,
+    cron: &str,
+    group: &str,
+    jobs_config: &Arc<Mutex<JobsConfig>>,
+) -> Result<(), String> {
+    if name.trim().is_empty() || name.len() > 100 {
+        return Err("job name required (maximum 100 characters)".into());
+    }
+    if !matches!(job_type, "job" | "claude" | "binary") {
+        return Err("unsupported job type".into());
+    }
+    if !cron.trim().is_empty() && crate::scheduler::parse_cron(cron).is_none() {
+        return Err("invalid cron schedule".into());
+    }
+    let input = crate::host::resolve_path(path)?;
+    let folder = if job_type == "binary" {
+        if !input.is_file() {
+            return Err("script file does not exist".into());
+        }
+        input
+            .parent()
+            .ok_or("script folder unavailable")?
+            .to_owned()
+    } else {
+        input.clone()
+    };
+    if !folder.is_dir() {
+        return Err("job working directory does not exist".into());
+    }
+    let mut config = jobs_config.lock();
+    let slug = crate::config::jobs::derive_slug(path, Some(name), &config.jobs);
+    if config.jobs.iter().any(|j| j.slug == slug || j.name == name) {
+        return Err("job already exists".into());
+    }
+    let job:crate::config::jobs::Job=serde_json::from_value(serde_json::json!({
+        "name":name,"job_type":job_type,"enabled":true,"path":if job_type=="binary"{input.to_string_lossy().into_owned()}else{String::new()},"cron":cron,"work_dir":folder,
+        "folder_path":folder,"job_id":name,"group":if group.trim().is_empty(){"default"}else{group},"slug":slug,
+        "added_at":chrono::Utc::now().to_rfc3339(),"notify_target":"app"
+    })).map_err(|e|e.to_string())?;
+    config.save_job(&job)?;
+    let prompt_path =
+        crate::config::jobs::central_job_md_path(&slug).ok_or("job directory unavailable")?;
+    std::fs::write(prompt_path, prompt).map_err(|e| e.to_string())?;
+    config.jobs.push(job);
+    Ok(())
 }
 
 fn update_job(
@@ -1202,6 +1307,9 @@ fn update_job(
         job.enabled = enabled;
     }
     if let Some(cron) = &update.cron {
+        if !cron.trim().is_empty() && crate::scheduler::parse_cron(cron).is_none() {
+            return Err("invalid cron schedule".into());
+        }
         job.cron = cron.clone();
     }
     if let Some(group) = &update.group {

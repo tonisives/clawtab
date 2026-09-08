@@ -26,6 +26,9 @@ export interface JobParam {
 }
 
 export interface RemoteJob {
+  machine_id?: string;
+  execution_id?: string;
+  display_name?: string;
   name: string;
   job_type: string;
   enabled: boolean;

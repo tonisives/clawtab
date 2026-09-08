@@ -46,7 +46,7 @@ pub async fn pair(
     let device_token = URL_SAFE_NO_PAD.encode(bytes);
 
     let device_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO devices (user_id, name, device_token) VALUES ($1, $2, $3) RETURNING id"
+        "INSERT INTO devices (user_id, name, device_token) VALUES ($1, $2, $3) RETURNING id",
     )
     .bind(claims.sub)
     .bind(req.device_name.trim())
@@ -54,6 +54,7 @@ pub async fn pair(
     .fetch_one(&state.pool)
     .await?;
 
+    crate::machines::disconnect_legacy_owner(&state, claims.sub).await;
     Ok(Json(PairResponse {
         device_id,
         device_token,
@@ -76,7 +77,13 @@ pub async fn list(
         .into_iter()
         .map(|(id, name, last_seen, created_at)| {
             let is_online = hub.is_desktop_online(claims.sub, id);
-            DeviceInfo { id, name, last_seen, created_at, is_online }
+            DeviceInfo {
+                id,
+                name,
+                last_seen,
+                created_at,
+                is_online,
+            }
         })
         .collect();
 
@@ -98,5 +105,11 @@ pub async fn remove(
         return Err(AppError::NotFound("device not found".into()));
     }
 
+    state
+        .hub
+        .write()
+        .await
+        .disconnect_device(claims.sub, device_id);
+    state.machines.write().await.remove_machine(device_id);
     Ok(Json(serde_json::json!({ "ok": true })))
 }

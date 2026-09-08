@@ -1,3 +1,4 @@
+import { MachineTerminalControls } from "@clawtab/shared";
 import { useAgentActions } from "../../src/hooks/useAgentActions";
 import { encodeTerminalInput } from "@clawtab/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -262,6 +263,7 @@ export default function JobDetailScreen() {
         </View>
         <View style={[styles.terminalFrame, { paddingBottom: Math.max(12, insets.bottom + 8) }]}>
           <View ref={terminalSurfaceRef} style={styles.terminalSurface} onLayout={handleTerminalLayout}>
+            <MachineTerminalControls paneId={statusPaneId ?? ""} />
             <XtermLog
               ref={termRef}
               onData={sendInput}

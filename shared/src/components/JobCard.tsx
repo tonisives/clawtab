@@ -1,3 +1,4 @@
+import { MachineBadge } from "../machines/Badge";
 import { memo, useCallback, useRef, useState } from "react";
 import { TouchableOpacity, View, Text, StyleSheet, Platform } from "react-native";
 import type { RemoteJob, JobStatus } from "../types/job";
@@ -105,8 +106,8 @@ export const JobCard = memo(function JobCard({
           <View style={styles.info}>
             <View style={styles.titleRow}>
               <Text style={styles.name} numberOfLines={1}>
-                {job.name}
-              </Text>
+                {job.display_name ?? job.name}
+              </Text><MachineBadge machineId={job.machine_id} />
               {onTogglePin ? (
                 <TouchableOpacity
                   ref={menuBtnRef}

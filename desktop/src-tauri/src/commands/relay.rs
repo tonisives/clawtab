@@ -573,3 +573,87 @@ pub fn relay_get_groups(state: State<AppState>) -> Vec<String> {
     groups.sort();
     groups
 }
+
+#[tauri::command]
+pub async fn machine_connection(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let (server, access, refresh) = get_relay_auth(&state)?;
+    relay_request(
+        reqwest::Method::GET,
+        &format!("{server}/machines"),
+        &access,
+        &refresh,
+        &server,
+        None,
+        &state,
+    )
+    .await?;
+    let (_, current, _) = get_relay_auth(&state)?;
+    let mut url = reqwest::Url::parse(&server).map_err(|_| "invalid relay URL")?;
+    let scheme = if url.scheme() == "https" { "wss" } else { "ws" };
+    url.set_scheme(scheme)
+        .map_err(|_| "invalid websocket URL")?;
+    url.set_path("/v2/ws");
+    url.query_pairs_mut().clear().append_pair("token", &current);
+    let machine_id = state
+        .settings
+        .lock()
+        .relay
+        .as_ref()
+        .map(|r| r.device_id.clone());
+    Ok(serde_json::json!({"url":url.as_str(),"machine_id":machine_id}))
+}
+#[tauri::command]
+pub async fn machine_pair_approve(
+    state: State<'_, AppState>,
+    code: String,
+) -> Result<serde_json::Value, String> {
+    let (server, access, refresh) = get_relay_auth(&state)?;
+    relay_request(
+        reqwest::Method::POST,
+        &format!("{server}/machines/pairing/approve"),
+        &access,
+        &refresh,
+        &server,
+        Some(serde_json::json!({"code":code})),
+        &state,
+    )
+    .await
+}
+#[tauri::command]
+pub async fn machine_local_request(
+    request: clawtab_protocol::HostRequest,
+) -> Result<serde_json::Value, String> {
+    crate::host::execute(request).await
+}
+
+#[tauri::command]
+pub async fn machine_api(
+    state: State<'_, AppState>,
+    method: String,
+    path: String,
+    body: Option<serde_json::Value>,
+) -> Result<serde_json::Value, String> {
+    if !(path.starts_with("/machines/") || path.starts_with("/devices/") || path == "/shares")
+        || path.contains(['?', '#', '\\'])
+        || path.contains("..")
+    {
+        return Err("invalid machine API path".into());
+    }
+    let method = match method.as_str() {
+        "GET" => reqwest::Method::GET,
+        "POST" => reqwest::Method::POST,
+        "DELETE" => reqwest::Method::DELETE,
+        _ => return Err("unsupported machine API method".into()),
+    };
+    let (server, access, refresh) = get_relay_auth(&state)?;
+    relay_request(
+        method,
+        &format!("{server}{path}"),
+        &access,
+        &refresh,
+        &server,
+        body,
+        &state,
+    )
+    .await
+}

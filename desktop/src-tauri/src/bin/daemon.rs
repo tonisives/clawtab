@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use clawtab_lib::config::jobs::{JobStatus, JobsConfig};
 use clawtab_lib::config::settings::AppSettings;
-use clawtab_lib::daemon::DAEMON_LOCK_PATH;
+
 use clawtab_lib::events::IpcBroadcastEventSink;
 use clawtab_lib::history::HistoryStore;
 use clawtab_lib::ipc::{self, IpcCommand, IpcRelayStatus, IpcResponse};
@@ -20,7 +20,7 @@ struct DaemonInstanceGuard {
 }
 
 fn acquire_daemon_instance_guard() -> Result<Option<DaemonInstanceGuard>, String> {
-    std::fs::create_dir_all("/tmp/clawtab")
+    clawtab_lib::runtime_paths::ensure()
         .map_err(|e| format!("failed to create daemon runtime directory: {}", e))?;
 
     let mut file = OpenOptions::new()
@@ -28,7 +28,7 @@ fn acquire_daemon_instance_guard() -> Result<Option<DaemonInstanceGuard>, String
         .truncate(false)
         .read(true)
         .write(true)
-        .open(DAEMON_LOCK_PATH)
+        .open(clawtab_lib::runtime_paths::lock())
         .map_err(|e| format!("failed to open daemon lock: {}", e))?;
 
     let lock_result = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };

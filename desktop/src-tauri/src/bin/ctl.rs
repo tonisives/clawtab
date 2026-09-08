@@ -20,6 +20,7 @@ fn print_usage() {
     eprintln!();
     eprintln!("Usage: cwtctl <command> [args]");
     eprintln!();
+    eprintln!("  setup [--relay URL] [--name NAME] [--linger] [--replace]  Pair and install the Linux host");
     eprintln!("Commands (require daemon):");
     eprintln!("  jobs              Manage configured jobs");
     eprintln!(
@@ -685,6 +686,12 @@ async fn main() {
         std::process::exit(1);
     }
 
+    if command == "setup" {
+        if let Err(error) = clawtab_lib::machine_setup::setup(&args[2..]).await {
+            exit_error(&error);
+        }
+        return;
+    }
     // Handle daemon subcommands locally (no IPC needed)
     if command == "daemon" {
         handle_daemon_command(&args);
@@ -1991,6 +1998,7 @@ fn daemon_status() {
     }
 }
 
+#[cfg(not(target_os = "linux"))]
 fn daemon_restart() {
     let uid = std::process::Command::new("id")
         .args(["-u"])
@@ -2026,6 +2034,7 @@ fn daemon_restart() {
     }
 }
 
+#[cfg(not(target_os = "linux"))]
 fn daemon_logs() {
     let stderr_log = "/tmp/clawtab/daemon.stderr.log";
     if std::path::Path::new(stderr_log).exists() {
@@ -2055,5 +2064,19 @@ mod tests {
             "local.example.set_model",
             "summarize-session"
         ));
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn daemon_restart() {
+    match daemon::restart() {
+        Ok(message) => println!("{message}"),
+        Err(error) => exit_error(&error),
+    }
+}
+#[cfg(target_os = "linux")]
+fn daemon_logs() {
+    if let Err(error) = daemon::logs() {
+        exit_error(&error);
     }
 }

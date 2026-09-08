@@ -1,5 +1,7 @@
 # Remote Access
 
+For Linux installation, machine selection, terminal control, and repository transfers, see [Linux machines](remote-machines.md). Each host uses one ClawTab daemon connected to the shared relay.
+
 ClawTab can be controlled from your phone through a relay server. The desktop app maintains a persistent WebSocket connection to the relay, and the mobile app connects to the same relay to send commands and receive live updates.
 
 ![Remote Access panel](assets/remote.png)

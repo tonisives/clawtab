@@ -1,406 +1,181 @@
-import { terminalCache } from "../lib/terminalCache";
-import { useTerminalSettings } from "../store/terminalSettings";
-import { useEffect, useRef, useCallback } from "react";
-import { AppState as RNAppState, Platform } from "react-native";
-import { getWsUrl, getSubscriptionStatus, isInvalidRefreshError } from "../api/client";
-import { useAuthStore } from "../store/auth";
-import { useJobsStore } from "../store/jobs";
-import { useNotificationStore } from "../store/notifications";
-import { useWsStore } from "../store/ws";
-import { getPushToken } from "../lib/notifications";
-import { dispatchLogChunk } from "./useLogs";
-import { dispatchPtyOutput, dispatchPtyExit, replayActivePtySubscriptions, releaseActivePtySubscriptions } from "./usePty";
-import { dispatchTransportLogChunk } from "../transport/wsTransport";
-import { resolveRequest } from "../lib/useRequestMap";
-import { saveJobsCache, saveQuestionsCache } from "../lib/jobCache";
-import { flushPendingAnswers, clearRegisteredSend } from "../lib/pendingAnswers";
-import type { ClientMessage, IncomingMessage } from "../types/messages";
-import { getWs, getWsSend, nextId, setWs, setWsSend } from "../lib/wsRuntime";
-import { usePinsStore } from "../store/pins";
-import { dispatchAgentActionProgress } from "../lib/agentActions";
+import { useEffect, useCallback } from "react"
+import { AppState, Platform } from "react-native"
+import {
+  connectMachines,
+  machineState,
+  subscribeMachines,
+  onMachineEvent,
+  scopedMessage,
+  machineJobs,
+  machineProcesses,
+  sendResource,
+  machineSend,
+  splitResource,
+  type MachineMessage,
+} from "@clawtab/shared"
+import { getWsUrl, registerMachinePushToken, isInvalidRefreshError } from "../api/client"
+import { usePinsStore } from "../store/pins"
+import { useAuthStore } from "../store/auth"
+import { useJobsStore } from "../store/jobs"
+import { useNotificationStore } from "../store/notifications"
+import { useWsStore } from "../store/ws"
+import { setWsSend } from "../lib/wsRuntime"
+import { resolveRequest } from "../lib/useRequestMap"
+import { dispatchLogChunk } from "./useLogs"
+import { dispatchTransportLogChunk } from "../transport/wsTransport"
+import {
+  dispatchPtyOutput,
+  dispatchPtyExit,
+  replayActivePtySubscriptions,
+  releaseActivePtySubscriptions,
+} from "./usePty"
+import { terminalCache } from "../lib/terminalCache"
+import { dispatchAgentActionProgress } from "../lib/agentActions"
+import { useTerminalSettings } from "../store/terminalSettings"
+import { getPushToken } from "../lib/notifications"
+import type { ClientMessage } from "../types/messages"
 
-function suppressAutoYesIndicators(paneIds: string[]) {
-  if (paneIds.length === 0) return;
-  const autoYes = new Set(paneIds);
-  const jobs = useJobsStore.getState();
-  jobs.setQuestionPanes(
-    [...jobs.questionPaneIds].filter((paneId) => !autoYes.has(paneId)),
-  );
-
-  const activity = Object.values(useJobsStore.getState().agentActivity).map((item) => ({
-    pane_id: item.pane_id,
-    working: item.working,
-    asking: autoYes.has(item.pane_id) ? false : item.asking,
-  }));
-  useJobsStore.getState().setAgentActivity(activity);
+let synchronize = () => {
+  let state = machineState()
+  let selected = state.machines.find((m) => m.id === state.selected)
+  useWsStore.setState({
+    connected: state.connected,
+    desktopOnline: state.machines.some((m) => m.online),
+    desktopDeviceId: selected?.id ?? null,
+    desktopDeviceName: selected?.name ?? null,
+  })
+  let jobs = useJobsStore.getState()
+  let snapshot = machineJobs()
+  jobs.setJobs(snapshot.jobs, snapshot.statuses)
+  jobs.setDetectedProcesses(machineProcesses())
+  let messages = Object.entries(state.snapshots).filter(
+    ([id]) => !state.filter || state.filter === id,
+  )
+  let questions = messages.flatMap(
+    ([id, snapshot]) => scopedMessage(id, snapshot.claude_questions ?? { questions: [] }).questions,
+  )
+  jobs.setQuestionPanes(questions.map((q: MachineMessage) => q.pane_id))
+  jobs.setAgentActivity(
+    messages.flatMap(
+      ([id, snapshot]) => scopedMessage(id, snapshot.agent_activity ?? { activity: [] }).activity,
+    ),
+  )
+  useNotificationStore.getState().setQuestions(questions)
+  useNotificationStore
+    .getState()
+    .setAutoYesPanes(
+      messages.flatMap(
+        ([id, snapshot]) => scopedMessage(id, snapshot.auto_yes_panes ?? { pane_ids: [] }).pane_ids,
+      ),
+    )
+  usePinsStore
+    .getState()
+    .applySharedSnapshot(
+      messages.flatMap(
+        ([id, snapshot]) =>
+          scopedMessage(id, snapshot.pinned_items ?? { type: "pinned_items", items: [] }).items,
+      ),
+    )
+  let settings = state.selected ? state.snapshots[state.selected]?.settings_response : null
+  jobs.setDesktopSettings(
+    settings?.enabled_models ?? {},
+    settings?.default_provider ?? "codex",
+    settings?.default_model,
+  )
 }
-
-export function useWebSocket() {
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  const refreshToken = useAuthStore((s) => s.refreshToken);
-  const setConnected = useWsStore((s) => s.setConnected);
-  const setDesktopStatus = useWsStore((s) => s.setDesktopStatus);
-  const resetWs = useWsStore((s) => s.reset);
-  const setJobs = useJobsStore((s) => s.setJobs);
-  const updateStatus = useJobsStore((s) => s.updateStatus);
-
-  const backoffRef = useRef(1000);
-  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const connectingRef = useRef(false);
-  const mountedRef = useRef(true);
-  const isAuthenticatedRef = useRef(isAuthenticated);
-  const appStateRef = useRef(RNAppState.currentState);
-  let backgroundedAtRef = useRef<number | null>(null);
-  isAuthenticatedRef.current = isAuthenticated;
-
-  // Use ref to break circular dependency between connect and scheduleReconnect
-  const connectRef = useRef<() => void>(() => {});
-
-  const scheduleReconnect = useCallback(() => {
-    if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
-    reconnectTimer.current = setTimeout(() => {
-      reconnectTimer.current = undefined;
-      if (mountedRef.current && isAuthenticatedRef.current) {
-        connectRef.current();
-      }
-    }, backoffRef.current);
-    backoffRef.current = Math.min(backoffRef.current * 2, 30000);
-  }, []);
-
-  const doConnect = useCallback(async () => {
-    if (connectingRef.current) return;
-    const existingWs = getWs();
-    if (existingWs && existingWs.readyState <= WebSocket.OPEN) return;
-    connectingRef.current = true;
-
-    let url: string;
-    try {
-      url = await getWsUrl();
-    } catch (e) {
-      console.log("[ws] failed to get URL:", e);
-      connectingRef.current = false;
-      if (isInvalidRefreshError(e)) {
-        await useAuthStore.getState().logout();
-        return;
-      }
-      if (mountedRef.current && isAuthenticatedRef.current) scheduleReconnect();
-      return;
-    }
-
-    if (!mountedRef.current || !isAuthenticatedRef.current) {
-      connectingRef.current = false;
-      return;
-    }
-
-    const currentWs = getWs();
-    if (currentWs && currentWs.readyState <= WebSocket.OPEN) {
-      connectingRef.current = false;
-      return;
-    }
-
-    console.log("[ws] connecting to:", url.replace(/token=.*/, "token=***"));
-    let ws: WebSocket;
-    try {
-      ws = new WebSocket(url);
-    } catch (e) {
-      connectingRef.current = false;
-      console.log("[ws] failed to create socket:", e);
-      scheduleReconnect();
-      return;
-    }
-    setWs(ws);
-    connectingRef.current = false;
-
-    let connectTimeout = setTimeout(() => {
-      if (getWs() !== ws || ws.readyState !== WebSocket.CONNECTING) return;
-      setWs(null);
-      setWsSend(null);
-      setConnected(false);
-      ws.close();
-      scheduleReconnect();
-    }, 15_000);
-
-    ws.onopen = () => {
-      clearTimeout(connectTimeout);
-      console.log("[ws] connected");
-      if (!mountedRef.current || getWs() !== ws) {
-        ws.close();
-        return;
-      }
-      setConnected(true);
-      backoffRef.current = 1000;
-
-      ws.send(JSON.stringify({ type: "list_jobs", id: nextId() }));
-      ws.send(JSON.stringify({ type: "get_settings", id: nextId() }));
-      replayActivePtySubscriptions();
-
-      // Flush any answers queued while offline
-      flushPendingAnswers((msg) => {
-        if (getWs() === ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
-      });
-
-      // Register push token
-      getPushToken().then((token) => {
-        if (token && getWs() === ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({
-            type: "register_push_token",
-            id: nextId(),
-            push_token: token,
-            platform: Platform.OS === "ios" ? "ios" : "android",
-          }));
-        }
-      });
-    };
-
-    ws.onmessage = (event) => {
-      if (!mountedRef.current || getWs() !== ws) return;
-      let msg: IncomingMessage;
-      try {
-        msg = JSON.parse(event.data);
-      } catch {
-        return;
-      }
-
-      switch (msg.type) {
-        case "welcome":
-          break;
-        case "jobs_list":
-        case "jobs_changed":
-          setJobs(msg.jobs, msg.statuses);
-          saveJobsCache(msg.jobs, msg.statuses);
-          // These messages are forwarded from desktop, so desktop is online
-          useWsStore.getState().desktopOnline || useWsStore.setState({ desktopOnline: true });
-          break;
-        case "status_update":
-          updateStatus(msg.name, msg.status);
-          { const s = useJobsStore.getState(); saveJobsCache(s.jobs, s.statuses); }
-          useWsStore.getState().desktopOnline || useWsStore.setState({ desktopOnline: true });
-          break;
-        case "log_chunk":
-          dispatchLogChunk(msg.name, msg.content);
-          dispatchTransportLogChunk(msg.name, msg.content);
-          break;
-        case "detected_processes":
-          useJobsStore.getState().setDetectedProcesses(msg.processes);
-          useWsStore.getState().desktopOnline || useWsStore.setState({ desktopOnline: true });
-          if (!useJobsStore.getState().loaded && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: "list_jobs", id: nextId() }));
-          }
-          break;
-        case "agent_activity":
-          useJobsStore.getState().setAgentActivity(msg.activity);
-          break;
-        case "agent_action_progress":
-          dispatchAgentActionProgress(msg.run);
-          break;
-        case "pinned_items":
-          usePinsStore.getState().applySharedSnapshot(msg.items);
-          break;
-        case "pane_display_name_changed":
-          useJobsStore.getState().setProcessDisplayName(msg.pane_id, msg.display_name);
-          break;
-        case "settings_response":
-          useJobsStore.getState().setDesktopSettings(msg.enabled_models, msg.default_provider, msg.default_model);
-          break;
-        case "claude_questions":
-          useJobsStore.getState().setQuestionPanes(msg.questions.map((question) => question.pane_id));
-          useNotificationStore.getState().setQuestions(msg.questions);
-          saveQuestionsCache(msg.questions);
-          break;
-        case "auto_yes_panes":
-          {
-            const paneIds = (msg as { pane_ids?: string[] }).pane_ids ?? [];
-            useNotificationStore.getState().setAutoYesPanes(paneIds);
-            saveQuestionsCache(useNotificationStore.getState().questions);
-            suppressAutoYesIndicators(paneIds);
-          }
-          break;
-        case "pty_output":
-          dispatchPtyOutput((msg as any).pane_id, (msg as any).data);
-          break;
-        case "pty_exit":
-          dispatchPtyExit((msg as any).pane_id);
-          break;
-        case "notification_history":
-          // Ignored - desktop sends authoritative claude_questions
-          break;
-        case "desktop_status":
-          if (useWsStore.getState().desktopDeviceId !== msg.device_id) terminalCache.clear();
-          setDesktopStatus(msg.device_id, msg.device_name, msg.online);
-          if (msg.online && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: "list_jobs", id: nextId() }));
-            ws.send(JSON.stringify({ type: "get_settings", id: nextId() }));
-          }
-          break;
-        case "run_history":
-          resolveRequest(msg.id, msg.runs);
-          break;
-        case "error":
-          if (msg.id) {
-            resolveRequest(msg.id, msg);
-          }
-          if (msg.code === "UNAUTHORIZED") {
-            ws.close();
-            refreshToken().finally(scheduleReconnect);
-          }
-          break;
-        default:
-          // Try resolving as a pending request (ack messages etc.)
-          if ("id" in msg && msg.id) {
-            resolveRequest(msg.id, msg);
-          }
-          break;
-      }
-    };
-
-    ws.onclose = (e) => {
-      clearTimeout(connectTimeout);
-      console.log("[ws] closed, code:", e.code, "reason:", e.reason);
-      if (getWs() !== ws) return;
-      setWs(null);
-      setWsSend(null);
-      clearRegisteredSend();
-      if (!mountedRef.current) return;
-      setConnected(false);
-
-      if (e.reason?.includes("403")) {
-        // No subscription - relay is reachable but rejecting, stop reconnecting
-        setConnected(true);
-        return;
-      }
-
-      if (e.reason?.includes("401")) {
-        refreshToken().then((ok) => {
-          if (ok) {
-            backoffRef.current = 1000;
-            scheduleReconnect();
-          } else if (useAuthStore.getState().isAuthenticated) {
-            scheduleReconnect();
-          }
-        });
-        return;
-      }
-
-      // On web, a rejected WS upgrade (403/401) shows as code 1006 with empty reason.
-      // Check subscription to distinguish 403 (no sub) from 401 (auth issue).
-      if (Platform.OS === "web" && e.code === 1006 && !e.reason) {
-        getSubscriptionStatus()
-          .then((sub) => {
-            if (!mountedRef.current || getWs()) return;
-            if (!sub.subscribed) {
-              // No subscription - relay is reachable but rejecting, stop reconnecting
-              setConnected(true);
-            } else {
-              scheduleReconnect();
-            }
-          })
-          .catch(() => {
-            if (!mountedRef.current || getWs()) return;
-            refreshToken().then((ok) => {
-              if (ok) {
-                backoffRef.current = 1000;
-                scheduleReconnect();
-              } else if (useAuthStore.getState().isAuthenticated) {
-                scheduleReconnect();
-              }
-            });
-          });
-        return;
-      }
-
-      scheduleReconnect();
-    };
-
-    ws.onerror = (e) => {
-      console.log("[ws] error:", {
-        type: (e as { type?: string }).type ?? "error",
-        readyState: ws.readyState,
-      });
-    };
-
-    setWsSend((msg: ClientMessage) => {
-      if (getWs() === ws && ws.readyState === WebSocket.OPEN) {
-        if (msg.type === "send_detected_process_input" || msg.type === "answer_question") {
-          useJobsStore.getState().markProcessActivity(msg.pane_id);
-        }
-        ws.send(JSON.stringify(msg));
-      }
-    });
-  }, [setConnected, setDesktopStatus, setJobs, updateStatus, refreshToken, scheduleReconnect]);
-
-  // Keep ref in sync
-  connectRef.current = doConnect;
-
+export let useWebSocket = () => {
+  let authenticated = useAuthStore((s) => s.isAuthenticated)
   useEffect(() => {
-    mountedRef.current = true;
-    void useTerminalSettings.getState().hydrate();
-    if (!isAuthenticated) terminalCache.clear();
-    if (isAuthenticated) {
-      doConnect();
+    if (!authenticated) {
+      terminalCache.clear()
+      setWsSend(null)
+      return
     }
-
-    const sub = RNAppState.addEventListener("change", (state) => {
-      const wasActive = appStateRef.current === "active";
-      appStateRef.current = state;
-
-      if (state === "active" && isAuthenticatedRef.current) {
-        let ws = getWs();
-        if (backgroundedAtRef.current !== null && Date.now() - backgroundedAtRef.current > 30_000 && ws) {
-          // Native sockets can still report OPEN after the OS suspends their connection.
-          setWs(null);
-          setWsSend(null);
-          setConnected(false);
-          ws.close();
-          ws = null;
-        }
-        backgroundedAtRef.current = null;
-        if (!ws || ws.readyState !== WebSocket.OPEN) {
-          backoffRef.current = 1000;
-          connectRef.current();
-        } else {
-          ws.send(JSON.stringify({ type: "list_jobs", id: nextId() }));
-          ws.send(JSON.stringify({ type: "get_settings", id: nextId() }));
-          replayActivePtySubscriptions("resume");
-        }
-      } else if (wasActive) {
-        backgroundedAtRef.current = Date.now();
-        releaseActivePtySubscriptions();
+    void useTerminalSettings.getState().hydrate()
+    setWsSend(sendResource)
+    let wasConnected = false
+    let hostConnections = new Map<string, string | undefined>()
+    let executions = new Map<string, string | undefined>()
+    let unsubscribe = subscribeMachines(() => {
+      let nextExecutions = new Map(
+        machineProcesses().map((process) => [process.pane_id, process.execution_id]),
+      )
+      for (let [pane, execution] of executions)
+        if (nextExecutions.get(pane) !== execution) terminalCache.delete(pane)
+      executions = nextExecutions
+      synchronize()
+      let connected = machineState().connected && machineState().machines.some((m) => m.online)
+      let nextHosts = new Map(
+        machineState()
+          .machines.filter((machine) => machine.online)
+          .map((machine) => [machine.id, machine.connection_id]),
+      )
+      let hostReconnected = [...nextHosts].some(
+        ([id, generation]) => !hostConnections.has(id) || hostConnections.get(id) !== generation,
+      )
+      if (connected && (!wasConnected || hostReconnected)) replayActivePtySubscriptions()
+      hostConnections = nextHosts
+      wasConnected = connected
+    })
+    let unlisten = onMachineEvent((machine, raw) => {
+      let message = scopedMessage(machine, raw)
+      if (raw.id) resolveRequest(raw.id, message.type === "run_history" ? message.runs : message)
+      switch (message.type) {
+        case "pty_output":
+          dispatchPtyOutput(message.pane_id, message.data)
+          break
+        case "pty_exit":
+          dispatchPtyExit(message.pane_id)
+          break
+        case "log_chunk":
+          dispatchLogChunk(message.name, message.content)
+          dispatchTransportLogChunk(message.name, message.content)
+          break
+        case "status_update":
+          useJobsStore.getState().updateStatus(message.name, message.status)
+          break
+        case "agent_action_progress":
+          dispatchAgentActionProgress(message.run)
+          break
       }
-    });
-
-    // Retry jobs until the first authoritative list arrives because desktop
-    // status can be replayed before request forwarding is fully ready on
-    // reconnect. Detected processes are daemon-pushed via relay cache.
-    const processInterval = setInterval(() => {
-      const send = getWsSend();
-      if (send) {
-        send({ type: "get_settings", id: nextId() });
-        if (!useJobsStore.getState().loaded) {
-          send({ type: "list_jobs", id: nextId() });
-        }
+    })
+    let stop = connectMachines(async () => {
+      try {
+        return await getWsUrl()
+      } catch (error) {
+        if (isInvalidRefreshError(error)) await useAuthStore.getState().logout()
+        throw error
       }
-    }, 10000);
-
+    })
+    void getPushToken()
+      .then((token) =>
+        token
+          ? registerMachinePushToken(token, Platform.OS === "ios" ? "ios" : "android")
+          : undefined,
+      )
+      .catch(() => {})
+    let appState = AppState.addEventListener("change", (next) => {
+      if (next === "active") {
+        replayActivePtySubscriptions("resume")
+        return
+      }
+      releaseActivePtySubscriptions()
+      let state = machineState()
+      for (let [key, controller] of Object.entries(state.controllers)) {
+        let resource = splitResource(key)
+        if (resource && controller === state.connectionId)
+          machineSend(resource.machine, { type: "release_control", pane_id: resource.id })
+      }
+    })
     return () => {
-      mountedRef.current = false;
-      sub.remove();
-      clearInterval(processInterval);
-      if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
-      reconnectTimer.current = undefined;
-      const ws = getWs();
-      if (ws) {
-        ws.close();
-        setWs(null);
-        setWsSend(null);
-      }
-      resetWs();
-    };
-  }, [isAuthenticated, doConnect, resetWs]);
-
-  const send = useCallback((msg: ClientMessage) => {
-    const wsSend = getWsSend();
-    if (wsSend) wsSend(msg);
-  }, []);
-
-  return { send };
+      appState.remove()
+      unlisten()
+      unsubscribe()
+      stop()
+      setWsSend(null)
+      useWsStore.getState().reset()
+    }
+  }, [authenticated])
+  let send = useCallback((message: ClientMessage) => sendResource(message), [])
+  return { send }
 }

@@ -54,12 +54,11 @@ pub async fn add(
         return Err(AppError::BadRequest("email is required".into()));
     }
 
-    let guest: Option<(Uuid, String, Option<String>)> = sqlx::query_as(
-        "SELECT id, email, display_name FROM users WHERE LOWER(email) = $1",
-    )
-    .bind(&email)
-    .fetch_optional(&state.pool)
-    .await?;
+    let guest: Option<(Uuid, String, Option<String>)> =
+        sqlx::query_as("SELECT id, email, display_name FROM users WHERE LOWER(email) = $1")
+            .bind(&email)
+            .fetch_optional(&state.pool)
+            .await?;
 
     let Some((guest_id, guest_email, display_name)) = guest else {
         return Err(AppError::NotFound("no user found with that email".into()));
@@ -82,6 +81,8 @@ pub async fn add(
     .fetch_one(&state.pool)
     .await?;
 
+    state.machines.write().await.disconnect_guests();
+    state.hub.write().await.disconnect_mobiles(guest_id);
     Ok(Json(ShareInfo {
         id: row.0,
         email: guest_email,
@@ -95,7 +96,13 @@ pub async fn list(
     State(state): State<AppState>,
     claims: Claims,
 ) -> Result<Json<SharesResponse>, AppError> {
-    let shared_by_me: Vec<(Uuid, String, Option<String>, Option<Vec<String>>, DateTime<Utc>)> = sqlx::query_as(
+    let shared_by_me: Vec<(
+        Uuid,
+        String,
+        Option<String>,
+        Option<Vec<String>>,
+        DateTime<Utc>,
+    )> = sqlx::query_as(
         "SELECT ws.id, u.email, u.display_name, ws.allowed_groups, ws.created_at
          FROM workspace_shares ws
          JOIN users u ON u.id = ws.guest_id
@@ -106,7 +113,13 @@ pub async fn list(
     .fetch_all(&state.pool)
     .await?;
 
-    let shared_with_me: Vec<(Uuid, String, Option<String>, Option<Vec<String>>, DateTime<Utc>)> = sqlx::query_as(
+    let shared_with_me: Vec<(
+        Uuid,
+        String,
+        Option<String>,
+        Option<Vec<String>>,
+        DateTime<Utc>,
+    )> = sqlx::query_as(
         "SELECT ws.id, u.email, u.display_name, ws.allowed_groups, ws.created_at
          FROM workspace_shares ws
          JOIN users u ON u.id = ws.owner_id
@@ -120,23 +133,29 @@ pub async fn list(
     Ok(Json(SharesResponse {
         shared_by_me: shared_by_me
             .into_iter()
-            .map(|(id, email, display_name, allowed_groups, created_at)| ShareInfo {
-                id,
-                email,
-                display_name,
-                allowed_groups,
-                created_at,
-            })
+            .map(
+                |(id, email, display_name, allowed_groups, created_at)| ShareInfo {
+                    id,
+                    email,
+                    display_name,
+                    allowed_groups,
+                    created_at,
+                },
+            )
             .collect(),
         shared_with_me: shared_with_me
             .into_iter()
-            .map(|(id, owner_email, owner_display_name, allowed_groups, created_at)| SharedWithMeInfo {
-                id,
-                owner_email,
-                owner_display_name,
-                allowed_groups,
-                created_at,
-            })
+            .map(
+                |(id, owner_email, owner_display_name, allowed_groups, created_at)| {
+                    SharedWithMeInfo {
+                        id,
+                        owner_email,
+                        owner_display_name,
+                        allowed_groups,
+                        created_at,
+                    }
+                },
+            )
             .collect(),
     }))
 }
@@ -147,6 +166,11 @@ pub async fn remove(
     Path(share_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     // Allow either the owner or the guest to remove the share
+    let affected_guest: Option<Uuid> =
+        sqlx::query_scalar("SELECT guest_id FROM workspace_shares WHERE id=$1")
+            .bind(share_id)
+            .fetch_optional(&state.pool)
+            .await?;
     let result = sqlx::query(
         "DELETE FROM workspace_shares WHERE id = $1 AND (owner_id = $2 OR guest_id = $2)",
     )
@@ -159,6 +183,10 @@ pub async fn remove(
         return Err(AppError::NotFound("share not found".into()));
     }
 
+    state.machines.write().await.disconnect_guests();
+    if let Some(guest) = affected_guest {
+        state.hub.write().await.disconnect_mobiles(guest);
+    }
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
@@ -168,6 +196,11 @@ pub async fn update(
     Path(share_id): Path<Uuid>,
     Json(req): Json<UpdateShareRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    let affected_guest: Option<Uuid> =
+        sqlx::query_scalar("SELECT guest_id FROM workspace_shares WHERE id=$1")
+            .bind(share_id)
+            .fetch_optional(&state.pool)
+            .await?;
     let result = sqlx::query(
         "UPDATE workspace_shares SET allowed_groups = $1 WHERE id = $2 AND owner_id = $3",
     )
@@ -181,5 +214,9 @@ pub async fn update(
         return Err(AppError::NotFound("share not found".into()));
     }
 
+    state.machines.write().await.disconnect_guests();
+    if let Some(guest) = affected_guest {
+        state.hub.write().await.disconnect_mobiles(guest);
+    }
     Ok(Json(serde_json::json!({ "ok": true })))
 }

@@ -1,3 +1,4 @@
+import { MachineTerminal, splitResource } from "@clawtab/shared";
 import type { PaneContent } from "@clawtab/shared";
 import { ErrorPlaceholder } from "./ErrorPlaceholder";
 import { PendingProcessPane } from "./PendingProcessPane";
@@ -24,6 +25,9 @@ export function ProcessPane({ content, ctx }: Props) {
       : makeZoomAwareClose(split, () => viewing.setViewingProcess(null));
     return <ErrorPlaceholder message="Process not found" onClose={onClose} headerLeftInset={headerLeftInset} />;
   }
+
+  const remotePane = splitResource(content.paneId);
+  if (remotePane && proc) return <MachineTerminal machineId={remotePane.machine} paneId={remotePane.id} tmuxSession={proc.tmux_session} />;
 
   if (proc.pane_id.startsWith("_pending_")) {
     return <PendingProcessPane ctx={ctx} />;

@@ -1,4 +1,8 @@
 pub mod gopass;
+#[cfg(not(target_os = "linux"))]
+pub mod keychain;
+#[cfg(target_os = "linux")]
+#[path = "file.rs"]
 pub mod keychain;
 
 use serde::Serialize;

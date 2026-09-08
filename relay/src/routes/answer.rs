@@ -23,46 +23,89 @@ pub async fn answer(
     claims: Claims,
     Json(req): Json<AnswerRequest>,
 ) -> Result<Json<Value>, AppError> {
-    tracing::info!(
-        user_id = %claims.sub,
-        question_id = %req.question_id,
-        pane_id = %req.pane_id,
-        answer = %req.answer,
-        freetext = ?req.freetext,
-        "answer via HTTP"
-    );
-
+    let (machine, pane) = match req.pane_id.split_once("::") {
+        Some((machine, pane)) => (
+            uuid::Uuid::parse_str(machine)
+                .map_err(|_| AppError::BadRequest("invalid machine".into()))?,
+            pane.to_owned(),
+        ),
+        None => {
+            let (_, machine) = crate::machines::legacy_machine(&state, claims.sub).await?;
+            (machine, req.pane_id.clone())
+        }
+    };
+    if req
+        .question_id
+        .split_once("::")
+        .is_some_and(|(id, _)| uuid::Uuid::parse_str(id).ok() != Some(machine))
+    {
+        return Err(AppError::BadRequest(
+            "question belongs to another machine".into(),
+        ));
+    }
+    let grant = crate::machines::access(&state, claims.sub, machine).await?;
+    let question = req
+        .question_id
+        .split_once("::")
+        .map(|(_, q)| q)
+        .unwrap_or(&req.question_id)
+        .to_owned();
     let msg = ClientMessage::AnswerQuestion {
-        id: format!("http_{}", req.question_id),
-        question_id: req.question_id.clone(),
-        pane_id: req.pane_id,
+        id: format!("http_{}", uuid::Uuid::new_v4()),
+        question_id: question.clone(),
+        pane_id: pane.clone(),
         answer: req.answer.clone(),
         freetext: req.freetext.clone(),
     };
-
-    // Forward to desktop
-    let sent = {
-        let hub = state.hub.read().await;
-        hub.forward_to_desktop(claims.sub, &msg)
-    };
-
-    tracing::info!(
-        question_id = %req.question_id,
-        answer = %req.answer,
-        sent,
-        "answer via HTTP forwarded"
-    );
-
+    {
+        let mut hub = state.machines.write().await;
+        let key = (machine, pane.clone(), question.clone());
+        if hub.answered.contains(&key) {
+            return Err(AppError::Conflict("question already resolved".into()));
+        }
+        let questions = hub
+            .snapshots
+            .get(&(machine, "claude_questions".into()))
+            .and_then(|v| v["questions"].as_array())
+            .ok_or_else(|| AppError::Conflict("question is no longer active".into()))?;
+        let visible = questions.iter().any(|q| {
+            q["pane_id"] == pane
+                && q["question_id"] == question
+                && grant
+                    .as_ref()
+                    .and_then(|g| g.as_deref())
+                    .is_none_or(|groups| {
+                        q["matched_group"]
+                            .as_str()
+                            .is_some_and(|group| groups.iter().any(|g| g == group))
+                    })
+        });
+        if !visible {
+            return Err(AppError::Forbidden);
+        }
+        let host = hub
+            .hosts
+            .get(&machine)
+            .ok_or_else(|| AppError::Conflict("machine is offline".into()))?;
+        let text = serde_json::to_string(&msg)
+            .map_err(|_| AppError::BadRequest("invalid answer".into()))?;
+        host.tx
+            .try_send(text)
+            .map_err(|_| AppError::Conflict("machine is busy or disconnected".into()))?;
+        hub.answered.insert(key);
+    }
+    let sent = true;
     // Mark answered in DB (fire and forget)
     let pool = state.pool.clone();
     let qid = req.question_id;
     let ans = req.answer;
     tokio::spawn(async move {
         sqlx::query(
-            "UPDATE notification_history SET answered = true, answered_with = $1 WHERE question_id = $2",
+            "UPDATE notification_history SET answered = true, answered_with = $1 WHERE question_id = $2 AND user_id = $3",
         )
         .bind(&ans)
         .bind(&qid)
+        .bind(claims.sub)
         .execute(&pool)
         .await
         .ok();

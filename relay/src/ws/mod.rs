@@ -1,5 +1,5 @@
 mod desktop;
-mod handler;
+pub(crate) mod handler;
 mod hub;
 mod mobile;
 mod push;

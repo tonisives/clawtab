@@ -8,11 +8,16 @@ pub(super) struct SharedGuest {
     pub allowed_groups: Option<Vec<String>>,
 }
 
-pub(super) async fn get_shared_guests(pool: &sqlx::PgPool, owner_id: Uuid) -> Vec<SharedGuest> {
+pub(super) async fn get_shared_guests(
+    pool: &sqlx::PgPool,
+    owner_id: Uuid,
+    device_id: Uuid,
+) -> Vec<SharedGuest> {
     sqlx::query_as::<_, (Uuid, Option<Vec<String>>)>(
-        "SELECT guest_id, allowed_groups FROM workspace_shares WHERE owner_id = $1",
+        "SELECT s.guest_id, s.allowed_groups FROM workspace_shares s JOIN machine_grants g ON g.share_id=s.id WHERE s.owner_id=$1 AND g.device_id=$2",
     )
     .bind(owner_id)
+    .bind(device_id)
     .fetch_all(pool)
     .await
     .unwrap_or_default()
@@ -22,14 +27,6 @@ pub(super) async fn get_shared_guests(pool: &sqlx::PgPool, owner_id: Uuid) -> Ve
         allowed_groups,
     })
     .collect()
-}
-
-pub(super) async fn get_shared_owner_ids(pool: &sqlx::PgPool, guest_id: Uuid) -> Vec<Uuid> {
-    sqlx::query_scalar::<_, Uuid>("SELECT owner_id FROM workspace_shares WHERE guest_id = $1")
-        .bind(guest_id)
-        .fetch_all(pool)
-        .await
-        .unwrap_or_default()
 }
 
 /// Returns `None` if no filtering is configured (forward as-is).

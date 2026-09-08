@@ -22,7 +22,7 @@ const RELAY_HTTP_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// Relay connection state, shared via Arc<Mutex<..>> in AppState.
 pub struct RelayHandle {
-    tx: mpsc::UnboundedSender<String>,
+    tx: mpsc::Sender<String>,
     cancel: tokio_util::sync::CancellationToken,
 }
 
@@ -30,7 +30,9 @@ impl RelayHandle {
     /// Send a protocol message to the relay server.
     pub fn send_message(&self, msg: &DesktopMessage) {
         if let Ok(json) = serde_json::to_string(msg) {
-            let _ = self.tx.send(json);
+            if self.tx.try_send(json).is_err() {
+                self.cancel.cancel();
+            }
         }
     }
 
@@ -379,7 +381,7 @@ async fn attempt_session(
             *relay_sub_required.lock() = false;
 
             let (ws_sink, ws_stream) = ws_stream.split();
-            let (tx, rx) = mpsc::unbounded_channel::<String>();
+            let (tx, rx) = mpsc::channel::<String>(512);
             let cancel = tokio_util::sync::CancellationToken::new();
             let handle = RelayHandle {
                 tx: tx.clone(),
@@ -454,8 +456,8 @@ async fn attempt_session(
 struct SessionChannels<S, R> {
     ws_sink: S,
     ws_stream: R,
-    rx: mpsc::UnboundedReceiver<String>,
-    tx: mpsc::UnboundedSender<String>,
+    rx: mpsc::Receiver<String>,
+    tx: mpsc::Sender<String>,
     cancel: tokio_util::sync::CancellationToken,
 }
 
@@ -479,6 +481,7 @@ async fn run_session<S, R>(
     let mut heartbeat = tokio::time::interval(Duration::from_secs(30));
     let mut last_pong = tokio::time::Instant::now();
     let pong_timeout = Duration::from_secs(90); // 3 missed pings
+    let mut requests = futures_util::stream::FuturesUnordered::new();
 
     loop {
         tokio::select! {
@@ -490,16 +493,16 @@ async fn run_session<S, R>(
             Some(msg) = ws_stream.next() => {
                 match msg {
                     Ok(Message::Text(text)) => {
-                        let response = handler::handle_incoming(
-                            &text,
-                            jobs_config,
-                            ctx,
-                            pty_manager,
-                            event_sink,
-                        ).await;
-                        if let Some(json) = response {
-                            let _ = tx.send(json);
+                        if requests.len() >= 64 {
+                            if let Ok(value)=serde_json::from_str::<serde_json::Value>(&text){
+                                let response=serde_json::json!({"type":"error","id":value["id"],"message":"Host is busy; retry with the same operation ID"}).to_string();
+                                if tx.try_send(response).is_err(){cancel.cancel();}
+                            }
+                            continue;
                         }
+                        requests.push(async move {
+                            handler::handle_incoming(&text, jobs_config, ctx, pty_manager, event_sink).await
+                        });
                     }
                     Ok(Message::Ping(data)) => {
                         if !send_ws_message(&mut ws_sink, Message::Pong(data)).await {
@@ -512,6 +515,9 @@ async fn run_session<S, R>(
                     Ok(Message::Close(_)) | Err(_) => break,
                     _ => {}
                 }
+            }
+            Some(response) = requests.next(), if !requests.is_empty() => {
+                if let Some(json) = response { if tx.try_send(json).is_err(){cancel.cancel();} }
             }
             _ = heartbeat.tick() => {
                 if last_pong.elapsed() > pong_timeout {

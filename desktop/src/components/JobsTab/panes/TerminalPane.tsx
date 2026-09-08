@@ -1,3 +1,4 @@
+import { MachineTerminal, splitResource } from "@clawtab/shared";
 import type { ReactNode } from "react";
 import type { PaneContent } from "@clawtab/shared";
 import { shortenPath } from "@clawtab/shared";
@@ -38,6 +39,9 @@ export function TerminalPane({ content, ctx }: Props) {
       : makeZoomAwareClose(split, () => { viewing.setViewingProcess(null); viewing.setViewingShell(null); });
     return <ErrorPlaceholder message="Tmux pane not found" onClose={onClose} headerLeftInset={headerLeftInset} />;
   }
+
+  const remotePane = splitResource(content.paneId);
+  if (remotePane && (proc || shell)) return <MachineTerminal machineId={remotePane.machine} paneId={remotePane.id} tmuxSession={proc?.tmux_session ?? shell!.tmux_session} />;
 
   if (proc) {
     return <ProcessTmuxView content={content} process={proc} ctx={ctx} />;

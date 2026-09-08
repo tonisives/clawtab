@@ -15,6 +15,7 @@ mod billing;
 mod config;
 mod db;
 mod error;
+mod machines;
 mod notification_fmt;
 mod push_limiter;
 mod routes;
@@ -25,6 +26,7 @@ pub struct AppState {
     pub config: Arc<config::Config>,
     pub pool: PgPool,
     pub hub: Arc<RwLock<ws::Hub>>,
+    pub machines: Arc<RwLock<machines::MachineHub>>,
     pub apns: Option<Arc<apns::ApnsClient>>,
     pub redis: Option<redis::aio::ConnectionManager>,
     pub auth_sessions: Arc<auth_session::AuthSessionStore>,
@@ -92,6 +94,7 @@ async fn main() -> anyhow::Result<()> {
         config: Arc::new(config),
         pool,
         hub,
+        machines: Arc::new(RwLock::new(machines::MachineHub::default())),
         apns: apns_client,
         redis: redis_conn,
         auth_sessions,
@@ -104,6 +107,7 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/ws", get(ws::ws_handler))
+        .route("/v2/ws", get(machines::connect))
         .merge(routes::router(state.clone()))
         .with_state(state)
         .layer(cors)
@@ -112,9 +116,12 @@ async fn main() -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(&listen_addr).await?;
     tracing::info!("listening on {listen_addr}");
 
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await?;
 
     tracing::info!("server shut down");
     Ok(())

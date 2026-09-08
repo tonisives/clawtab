@@ -1,3 +1,4 @@
+import { MachineBadge } from "../machines/Badge";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform } from "react-native";
 import type { DetectedProcess } from "../types/process";
@@ -212,7 +213,7 @@ export function ProcessCard({
         onLongPress={openMenu}
         activeOpacity={0.7}
       >
-        <JobKindIcon kind={kind} />
+        <JobKindIcon kind={kind} /><MachineBadge machineId={process.machine_id} />
         <View style={styles.processInfo}>
           <View style={styles.titleRow}>
             {editing ? (

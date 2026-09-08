@@ -290,6 +290,11 @@ fn build_remote(
         .unwrap_or_else(|| row.window.to_string());
 
     DetectedProcess {
+        execution_id: crate::host::execution_id(
+            row.pane_id,
+            row.pane_pid,
+            session_info.session_id.as_deref(),
+        ),
         pane_id: row.pane_id.to_string(),
         cwd: row.cwd.to_string(),
         version: if is_semver(row.command) {

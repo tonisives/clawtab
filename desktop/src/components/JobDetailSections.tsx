@@ -1,3 +1,4 @@
+import { MachineTerminal, splitResource, machineSend } from "@clawtab/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
@@ -1030,20 +1031,22 @@ export function DesktopJobDetail({
 
   const renderTerminal = useCallback(
     () => paneId && tmuxSession ? (
-      <XtermPane paneId={paneId} tmuxSession={tmuxSession} group={job.group} />
+      splitResource(paneId) ? <MachineTerminal machineId={splitResource(paneId)!.machine} paneId={splitResource(paneId)!.id} tmuxSession={tmuxSession} /> : <XtermPane paneId={paneId} tmuxSession={tmuxSession} group={job.group} />
     ) : null,
     [paneId, tmuxSession, job.group],
   );
 
   const renderRunTerminal = useCallback(
     (runPaneId: string, runTmuxSession: string) => (
-      <XtermPane paneId={runPaneId} tmuxSession={runTmuxSession} group={job.group} />
+      splitResource(runPaneId) ? <MachineTerminal machineId={splitResource(runPaneId)!.machine} paneId={splitResource(runPaneId)!.id} tmuxSession={runTmuxSession} /> : <XtermPane paneId={runPaneId} tmuxSession={runTmuxSession} group={job.group} />
     ),
     [job.group],
   );
 
   const handleRelease = useCallback(async () => {
     if (!paneId) return;
+    const remote = splitResource(paneId);
+    if (remote) { machineSend(remote.machine, { type: "release_control", pane_id: remote.id }); return; }
     try {
       await invoke("pty_release", { paneId });
     } catch (err) {

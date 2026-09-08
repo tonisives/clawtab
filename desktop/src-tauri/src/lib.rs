@@ -15,14 +15,20 @@ mod claude_usage;
 mod commands;
 pub mod config;
 mod cwt;
+#[cfg(not(target_os = "linux"))]
+pub mod daemon;
+#[cfg(target_os = "linux")]
+#[path = "daemon_linux.rs"]
 pub mod daemon;
 mod debug_spawn;
 pub mod events;
 #[cfg(feature = "desktop")]
 mod focus;
 pub mod history;
+pub mod host;
 pub mod ipc;
 pub mod job_context;
+pub mod machine_setup;
 #[cfg(all(feature = "desktop", target_os = "macos"))]
 mod macos_window;
 #[cfg(target_os = "macos")]
@@ -33,6 +39,7 @@ pub mod pty;
 pub mod questions;
 pub mod relay;
 pub mod resource_policy;
+pub mod runtime_paths;
 pub mod scheduler;
 pub mod secrets;
 pub mod shared_state;
@@ -897,6 +904,10 @@ pub fn run() {
             commands::relay::relay_disconnect,
             commands::relay::relay_connect,
             commands::relay::relay_save_tokens,
+            commands::relay::machine_connection,
+            commands::relay::machine_api,
+            commands::relay::machine_pair_approve,
+            commands::relay::machine_local_request,
             commands::relay::relay_get_pending_token,
             commands::relay::relay_check_subscription,
             commands::relay::relay_get_shares,

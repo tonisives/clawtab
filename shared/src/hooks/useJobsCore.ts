@@ -28,8 +28,8 @@ function readLocalCache(): { jobs: RemoteJob[]; statuses: Record<string, JobStat
 function writeLocalCache(jobs: RemoteJob[], statuses: Record<string, JobStatus>) {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(LOCAL_CACHE_JOBS_KEY, JSON.stringify(jobs));
-    window.localStorage.setItem(LOCAL_CACHE_STATUSES_KEY, JSON.stringify(statuses));
+    window.localStorage.setItem(LOCAL_CACHE_JOBS_KEY, JSON.stringify(jobs.filter((job) => !job.machine_id)));
+    window.localStorage.setItem(LOCAL_CACHE_STATUSES_KEY, JSON.stringify(Object.fromEntries(Object.entries(statuses).filter(([key]) => !key.includes("::")))));
   } catch (e) {
     console.error("Failed to write local jobs cache:", e);
   }

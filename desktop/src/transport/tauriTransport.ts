@@ -1,10 +1,11 @@
+import { withMachines } from "../machines/transport";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { Transport } from "@clawtab/shared";
 import type { RemoteJob, JobStatus, RunRecord, RunDetail } from "@clawtab/shared";
 import type { AgentEffort, DetectedProcess, ProcessProvider, ShellPane } from "@clawtab/shared";
 
-export function createTauriTransport(): Transport {
+function createLocalTauriTransport(): Transport {
   return {
     async listJobs() {
       const jobs = await invoke<RemoteJob[]>("get_jobs");
@@ -148,3 +149,5 @@ export function createTauriTransport(): Transport {
     },
   };
 }
+
+export let createTauriTransport = () => withMachines(createLocalTauriTransport());

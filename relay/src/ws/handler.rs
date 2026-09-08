@@ -24,7 +24,9 @@ pub struct WsQuery {
 }
 
 pub(super) enum AuthResult {
-    Mobile { user_id: Uuid },
+    Mobile {
+        user_id: Uuid,
+    },
     Desktop {
         user_id: Uuid,
         device_id: Uuid,
@@ -52,16 +54,18 @@ pub async fn ws_handler(
 async fn authenticate(state: &AppState, query: &WsQuery) -> Result<AuthResult, AppError> {
     if let Some(token) = &query.token {
         let claims = crate::auth::validate_access_token(token, &state.config.jwt_secret)?;
-        return Ok(AuthResult::Mobile { user_id: claims.sub });
+        crate::machines::legacy_machine(state, claims.sub).await?;
+        return Ok(AuthResult::Mobile {
+            user_id: claims.sub,
+        });
     }
 
     if let Some(device_token) = &query.device_token {
-        let device: Option<(Uuid, Uuid, String)> = sqlx::query_as(
-            "SELECT id, user_id, name FROM devices WHERE device_token = $1",
-        )
-        .bind(device_token)
-        .fetch_optional(&state.pool)
-        .await?;
+        let device: Option<(Uuid, Uuid, String)> =
+            sqlx::query_as("SELECT id, user_id, name FROM devices WHERE device_token = $1")
+                .bind(device_token)
+                .fetch_optional(&state.pool)
+                .await?;
 
         let (device_id, user_id, device_name) = device.ok_or(AppError::Unauthorized)?;
 
@@ -94,7 +98,7 @@ async fn handle_socket(state: AppState, socket: WebSocket, auth: AuthResult) {
 
 /// Reason the per-connection loop ended. The caller decides what to log.
 #[derive(Clone, Copy)]
-pub(super) enum LoopExit {
+pub(crate) enum LoopExit {
     Closed,
     Timeout,
     SendError,
@@ -105,9 +109,9 @@ pub(super) enum LoopExit {
 ///
 /// Returns when the socket closes, errors, or times out. The caller handles
 /// hub registration before and cleanup after.
-pub(super) async fn run_session_loop<F, Fut>(
+pub(crate) async fn run_session_loop<F, Fut>(
     socket: WebSocket,
-    mut rx: mpsc::UnboundedReceiver<String>,
+    mut rx: mpsc::Receiver<String>,
     mut on_text: F,
 ) -> LoopExit
 where
@@ -121,6 +125,7 @@ where
     loop {
         tokio::select! {
             Some(msg) = rx.recv() => {
+                if msg == crate::machines::CLOSE { return LoopExit::Closed; }
                 if !matches!(
                     tokio::time::timeout(SEND_TIMEOUT, sink.send(Message::Text(msg.into()))).await,
                     Ok(Ok(()))

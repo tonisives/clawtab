@@ -1,3 +1,4 @@
+import { MachineTerminalControls } from "@clawtab/shared";
 import { useCallback, useEffect, useRef, useState, useMemo } from "react"
 import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
@@ -256,6 +257,7 @@ export function ProcessDetailPane({ paneId, onClose, demoProcess, embedded = fal
             </Text>
           </View>
         ) : null}
+        <MachineTerminalControls paneId={paneId} />
         <XtermLog
           ref={termRef}
           onData={sendInput}

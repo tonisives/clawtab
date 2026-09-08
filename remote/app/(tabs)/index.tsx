@@ -1,3 +1,5 @@
+import { MachinesPanel } from "@clawtab/shared";
+import { approveMachinePairing, machineApi } from "../../src/api/client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   View,
@@ -761,6 +763,7 @@ export default function JobsScreen() {
 
   const jobList = (
     <View style={styles.container}>
+      {!isDemo && <MachinesPanel approvePairing={approveMachinePairing} api={machineApi} />}
       {isDemo && <DemoBanner />}
       <JobListView
         jobs={jobs}

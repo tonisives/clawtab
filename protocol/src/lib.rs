@@ -7,3 +7,6 @@ pub use messages::*;
 pub use usage::*;
 mod agent_plugin;
 pub use agent_plugin::*;
+
+mod machine;
+pub use machine::*;

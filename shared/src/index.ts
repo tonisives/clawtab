@@ -138,3 +138,6 @@ export { useSplitTree } from "./hooks/useSplitTree";
 export type { SplitDragData, UseSplitTreeOptions } from "./hooks/useSplitTree";
 
 export { encodeTerminalInput } from "./util/terminalInput";
+export * from "./machines/client";
+export * from "./machines/Terminal";
+export * from "./machines/Panel";

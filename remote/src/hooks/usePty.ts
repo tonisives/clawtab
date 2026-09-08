@@ -1,3 +1,4 @@
+import { machineState, splitResource } from "@clawtab/shared";
 import { terminalCache } from "../lib/terminalCache";
 import { useEffect, useRef, useCallback, useState } from "react";
 import { getWsSend, nextId } from "../lib/wsRuntime";
@@ -368,6 +369,9 @@ export function usePty(
   const sendInput = useCallback(
     (b64: string) => {
       const send = getWsSend();
+      let resource = splitResource(paneId);
+      let state = machineState();
+      if (resource && state.controllers[paneId] !== state.connectionId) { setError("Take control before typing"); return; }
       if (send) send({ type: "pty_input", pane_id: paneId, data: b64 });
     },
     [paneId],
@@ -375,6 +379,9 @@ export function usePty(
 
   const sendResize = useCallback(
     (cols: number, rows: number) => {
+      let resource = splitResource(paneId);
+      let state = machineState();
+      if (resource && state.controllers[paneId] !== state.connectionId) return;
       if (cols <= 0 || rows <= 0) return;
       const last = lastResizeRef.current;
       if (last?.cols === cols && last?.rows === rows) return;

@@ -1,3 +1,4 @@
+import { MachineBadge } from "../machines/Badge";
 import { memo, useCallback, useRef, useState } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from "react-native";
 import type { JobStatus, RemoteJob } from "../types/job";
@@ -91,7 +92,7 @@ export const RunningJobCard = memo(function RunningJobCard({
         </View>
         <View style={styles.info}>
           <View style={styles.titleRow}>
-            <Text style={[styles.name, stopping && { opacity: 0.5 }]} numberOfLines={1}>{job.name}</Text>
+            <Text style={[styles.name, stopping && { opacity: 0.5 }]} numberOfLines={1}>{job.display_name ?? job.name}</Text><MachineBadge machineId={job.machine_id} />
             <View style={styles.titleControls}>
               {showMenu ? (
                 <TouchableOpacity

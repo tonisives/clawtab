@@ -469,7 +469,7 @@ export function JobDetailView({
                 <Text style={styles.backArrow}>{"\u2190"}</Text>
               </TouchableOpacity>
             ) : null}
-            <Text style={styles.jobName}>{job.name}</Text>
+            <Text style={styles.jobName}>{job.display_name ?? job.name}</Text>
             <StatusBadge status={status} colorOverride={autoYesActive ? colors.warning : undefined} />
           </View>
           {onEditTitle ? (
@@ -630,7 +630,7 @@ export function JobDetailView({
             <ActionButton label="Run" color={colors.accent} filled onPress={() => handleAction("run")} compact icon="run" />
           )}
           <Text style={styles.headerTitleText} numberOfLines={1}>
-            {job.name}
+            {job.display_name ?? job.name}
           </Text>
           {isRunning && scheduled ? (
             <View
@@ -984,7 +984,7 @@ export function JobDetailView({
       {/* Params modal */}
       {job.params && job.params.length > 0 && (
         <ParamsDialog
-          jobName={job.name}
+          jobName={job.display_name ?? job.name}
           params={job.params}
           visible={showParamsModal}
           onRun={handleRunWithParams}

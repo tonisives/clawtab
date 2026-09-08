@@ -2571,11 +2571,12 @@ actions:
 
     #[test]
     fn internal_plugin_credentials_are_redacted_from_failures() {
+        let socket = crate::ipc::plugin_host_socket_path();
         let output = redact_internal_values(
-            "token=secret-token socket=/tmp/clawtab/plugin-host.sock",
+            &format!("token=secret-token socket={}", socket.display()),
             "secret-token",
         );
         assert!(!output.contains("secret-token"));
-        assert!(!output.contains("/tmp/clawtab/plugin-host.sock"));
+        assert!(!output.contains(&socket.to_string_lossy().into_owned()));
     }
 }

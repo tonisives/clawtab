@@ -74,6 +74,8 @@ export type AgentActivity = {
 export type ProcessAgentState = "working" | "asking" | "finished";
 
 export interface DetectedProcess {
+  machine_id?: string;
+  execution_id?: string;
   pane_id: string;
   cwd: string;
   version: string;

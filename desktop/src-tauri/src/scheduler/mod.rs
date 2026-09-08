@@ -364,7 +364,7 @@ fn translate_dow(dow: &str) -> String {
         .join(",")
 }
 
-fn parse_cron(cron: &str) -> Option<Vec<Schedule>> {
+pub(crate) fn parse_cron(cron: &str) -> Option<Vec<Schedule>> {
     let parts: Vec<&str> = cron
         .split('|')
         .map(|s| s.trim())

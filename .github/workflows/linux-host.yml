@@ -1,0 +1,54 @@
+name: Linux agent host
+on:
+  pull_request:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+jobs:
+  host:
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+    runs-on: ${{ matrix.runner }}
+    container: ubuntu:22.04
+    defaults:
+      run:
+        shell: bash
+    permissions:
+      contents: write
+    steps:
+      - run: apt-get update && apt-get install -y ca-certificates curl git build-essential pkg-config libssl-dev tmux python3
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+      - name: Build and test headless runtime
+        working-directory: desktop/src-tauri
+        run: |
+          cargo test -j4 --no-default-features --lib --bins
+          cargo build -j4 --release --no-default-features --bin clawtab-daemon --bin cwtctl --bin clawtab-hook
+      - name: Package
+        run: |
+          mkdir -p package/bin package/plugins
+          cp desktop/src-tauri/target/release/{clawtab-daemon,cwtctl,clawtab-hook} package/bin/
+          cp -R etc/agent-plugins/local.session-shortcuts package/plugins/
+          cp etc/install-linux.sh package/install.sh
+          cp etc/download-linux.sh package/download-linux.sh
+          tar -czf clawtab-linux-${{ matrix.arch }}.tar.gz -C package .
+          sha256sum clawtab-linux-${{ matrix.arch }}.tar.gz > clawtab-linux-${{ matrix.arch }}.tar.gz.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: clawtab-linux-${{ matrix.arch }}
+          path: clawtab-linux-*.tar.gz*
+      - name: Attach release assets
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        uses: softprops/action-gh-release@v2
+        with:
+          files: clawtab-linux-*.tar.gz*

@@ -1,19 +1,19 @@
 mod account;
 mod answer;
-mod auth_session;
-mod health;
-mod register;
-mod login;
-mod refresh;
-mod device;
-mod debug;
-mod google_auth;
-mod google_callback;
 mod apple_auth;
 mod apple_callback;
+mod auth_session;
+mod debug;
+mod device;
+mod google_auth;
+mod google_callback;
+mod health;
 mod iap;
 mod internal;
+mod login;
 mod notifications;
+mod refresh;
+mod register;
 mod share;
 mod subscription;
 
@@ -40,7 +40,11 @@ async fn log_errors(req: Request, next: Next) -> Response {
 
     if status.is_client_error() || status.is_server_error() {
         let (parts, body) = response.into_parts();
-        let bytes = body.collect().await.map(http_body_util::Collected::to_bytes).unwrap_or_default();
+        let bytes = body
+            .collect()
+            .await
+            .map(http_body_util::Collected::to_bytes)
+            .unwrap_or_default();
         let body_str = String::from_utf8_lossy(&bytes);
         tracing::error!("{} {} -> {} {}", method, uri, status, body_str);
         Response::from_parts(parts, axum::body::Body::from(bytes))
@@ -61,25 +65,55 @@ pub fn router(state: AppState) -> Router<AppState> {
             .expect("invalid rate limit config"),
     );
 
-    let public = Router::new()
-        .route("/health", get(health::health));
+    let public = Router::new().route("/health", get(health::health));
 
     let rate_limited_auth = Router::new()
+        .route(
+            "/machines/pairing",
+            post(crate::machines::api::begin_pairing),
+        )
+        .route(
+            "/machines/pairing/poll",
+            post(crate::machines::api::poll_pairing),
+        )
         .route("/auth/register", post(register::register))
         .route("/auth/login", post(login::login))
         .route("/auth/refresh", post(refresh::refresh))
         .route("/auth/google", post(google_auth::google_auth))
-        .route("/auth/google/callback", get(google_callback::google_callback))
+        .route(
+            "/auth/google/callback",
+            get(google_callback::google_callback),
+        )
         .route("/auth/apple", post(apple_auth::apple_auth))
         .route("/auth/apple/callback", post(apple_callback::apple_callback))
-        .route("/iap/app-store-notification", post(iap::app_store_notification))
-        .layer(GovernorLayer { config: rate_limit_config });
+        .route(
+            "/iap/app-store-notification",
+            post(iap::app_store_notification),
+        )
+        .layer(GovernorLayer {
+            config: rate_limit_config,
+        });
 
     let auth_session_routes = Router::new()
         .route("/auth/session", post(auth_session::create_session))
         .route("/auth/session/{id}", get(auth_session::poll_session));
 
     let authenticated = Router::new()
+        .route(
+            "/machines/push-token",
+            post(crate::machines::api::push_token),
+        )
+        .route("/machines", get(crate::machines::api::list))
+        .route(
+            "/machines/pairing/approve",
+            post(crate::machines::api::approve_pairing),
+        )
+        .route(
+            "/machines/{id}/grants",
+            get(crate::machines::api::grants)
+                .post(crate::machines::api::grant)
+                .delete(crate::machines::api::revoke_grant),
+        )
         .route("/devices/pair", post(device::pair))
         .route("/devices", get(device::list))
         .route("/devices/{id}", delete(device::remove))
@@ -93,11 +127,17 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/shares/{id}", delete(share::remove))
         .route("/shares/{id}", patch(share::update))
         .route("/account", delete(account::delete_account))
-        .layer(middleware::from_fn_with_state(state.clone(), auth_middleware));
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            auth_middleware,
+        ));
 
     let internal = Router::new()
         .route("/_internal/dispatch", post(internal::dispatch))
-        .layer(middleware::from_fn_with_state(state, internal::internal_secret_middleware));
+        .layer(middleware::from_fn_with_state(
+            state,
+            internal::internal_secret_middleware,
+        ));
 
     public
         .merge(rate_limited_auth)

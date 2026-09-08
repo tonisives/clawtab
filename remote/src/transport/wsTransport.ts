@@ -1,5 +1,6 @@
+import { machineHostRequest, machineRequest, machineJobs, splitResource } from "@clawtab/shared";
 import type { Transport } from "@clawtab/shared";
-import type { JobUpdate, RemoteJob, JobStatus, RunRecord, RunDetail } from "@clawtab/shared";
+import type { JobUpdate, RunRecord, RunDetail } from "@clawtab/shared";
 import type { AgentEffort, DetectedProcess, ProcessProvider } from "@clawtab/shared";
 import { getWsSend, nextId } from "../lib/wsRuntime";
 import { registerRequest } from "../lib/useRequestMap";
@@ -13,15 +14,7 @@ function send(msg: Record<string, unknown>): void {
 
 export function createWsTransport(): Transport {
   return {
-    async listJobs() {
-      const id = nextId();
-      send({ type: "list_jobs", id });
-      const result = await registerRequest<{
-        jobs: RemoteJob[];
-        statuses: Record<string, JobStatus>;
-      }>(id);
-      return result;
-    },
+    async listJobs() { return machineJobs(); },
 
     async getStatuses() {
       // Remote gets statuses reactively via WS; return current store state
@@ -49,12 +42,15 @@ export function createWsTransport(): Transport {
       send({ type: "resume_job", id, name });
     },
 
-    async toggleJob(_name: string) {
-      // Remote doesn't support toggle yet - no-op
+    async toggleJob(name: string) {
+      let resource=splitResource(name); if(!resource)throw new Error("Machine identity missing");
+      let job=machineJobs().jobs.find((j)=>j.name===name || j.slug===name);
+      await machineRequest(resource.machine,{type:"update_job",name:resource.id,update:{enabled:!job?.enabled}});
     },
 
-    async deleteJob(_name: string) {
-      // Remote doesn't support delete yet - no-op
+    async deleteJob(name: string) {
+      let resource=splitResource(name); if(!resource)throw new Error("Machine identity missing");
+      await machineHostRequest(resource.machine,{action:"delete_job",name:resource.id});
     },
 
     async updateJob(name: string, patch: JobUpdate) {

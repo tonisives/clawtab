@@ -252,6 +252,8 @@ pub enum JobStatus {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DetectedProcess {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_id: Option<String>,
     pub pane_id: String,
     pub cwd: String,
     pub version: String,

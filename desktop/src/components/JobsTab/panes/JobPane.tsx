@@ -53,7 +53,8 @@ export function JobPane({ content, ctx }: Props) {
   );
 
   const onUpdateJob = async (patch: import("@clawtab/shared").JobUpdate) => {
-    await invoke("save_job", { job: { ...job, ...patch } });
+    if (job.machine_id) await transport.updateJob?.(job.slug, patch);
+    else await invoke("save_job", { job: { ...job, ...patch } });
     await core.reload();
   };
 

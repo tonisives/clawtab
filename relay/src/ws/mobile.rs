@@ -10,12 +10,11 @@ use clawtab_protocol::{
 
 use crate::ws::handler::{run_session_loop, LoopExit};
 use crate::ws::hub::MobileConnection;
-use crate::ws::shared::get_shared_owner_ids;
 use crate::AppState;
 
 pub(super) async fn run(state: AppState, socket: WebSocket, user_id: Uuid) {
     let connection_id = Uuid::new_v4();
-    let (tx, rx) = mpsc::unbounded_channel::<String>();
+    let (tx, rx) = mpsc::channel::<String>(512);
     let pty_subscriptions = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
 
     register(&state, user_id, connection_id, tx.clone()).await;
@@ -45,7 +44,7 @@ pub(super) async fn run(state: AppState, socket: WebSocket, user_id: Uuid) {
 async fn drive_session(
     state: AppState,
     socket: WebSocket,
-    rx: mpsc::UnboundedReceiver<String>,
+    rx: mpsc::Receiver<String>,
     user_id: Uuid,
     connection_id: Uuid,
     pty_subscriptions: Arc<tokio::sync::Mutex<HashMap<String, Uuid>>>,
@@ -86,12 +85,7 @@ fn log_exit(exit: LoopExit, connection_id: Uuid) {
     }
 }
 
-async fn register(
-    state: &AppState,
-    user_id: Uuid,
-    connection_id: Uuid,
-    tx: mpsc::UnboundedSender<String>,
-) {
+async fn register(state: &AppState, user_id: Uuid, connection_id: Uuid, tx: mpsc::Sender<String>) {
     let shared_owners = sqlx::query_as::<_, (Uuid, Option<Vec<String>>)>(
         "SELECT owner_id, allowed_groups FROM workspace_shares WHERE guest_id = $1",
     )
@@ -123,18 +117,18 @@ async fn register(
     }
 }
 
-fn send_desktop_message(tx: &mpsc::UnboundedSender<String>, msg: &DesktopMessage) {
+fn send_desktop_message(tx: &mpsc::Sender<String>, msg: &DesktopMessage) {
     if let Ok(json) = serde_json::to_string(msg) {
-        let _ = tx.send(json);
+        let _ = tx.try_send(json);
     }
 }
 
-fn send_welcome(tx: &mpsc::UnboundedSender<String>, connection_id: Uuid) {
+fn send_welcome(tx: &mpsc::Sender<String>, connection_id: Uuid) {
     if let Ok(json) = serde_json::to_string(&ServerMessage::Welcome {
         connection_id: connection_id.to_string(),
         server_version: env!("CARGO_PKG_VERSION").to_string(),
     }) {
-        let _ = tx.send(json);
+        let _ = tx.try_send(json);
     }
 }
 
@@ -145,8 +139,15 @@ async fn handle_message(
     text: &str,
     pty_subscriptions: Arc<tokio::sync::Mutex<HashMap<String, Uuid>>>,
 ) {
+    if crate::machines::legacy_machine(state, user_id)
+        .await
+        .is_err()
+    {
+        state.hub.write().await.disconnect_mobiles(user_id);
+        return;
+    }
     let Ok(msg) = serde_json::from_str::<ClientMessage>(text) else {
-        tracing::warn!(%user_id, "invalid message from mobile: {text}");
+        tracing::warn!(%user_id, "invalid message from mobile");
         return;
     };
 
@@ -389,15 +390,10 @@ fn forward_answer(
 }
 
 async fn resolve_target_user(state: &AppState, user_id: Uuid) -> Option<Uuid> {
-    {
-        let hub = state.hub.read().await;
-        if hub.has_desktop(user_id) {
-            return Some(user_id);
-        }
-    }
-    let owners = get_shared_owner_ids(&state.pool, user_id).await;
-    let hub = state.hub.read().await;
-    owners.into_iter().find(|&oid| hub.has_desktop(oid))
+    crate::machines::legacy_machine(state, user_id)
+        .await
+        .ok()
+        .map(|(owner, _)| owner)
 }
 
 fn spawn_mark_answered(pool: sqlx::PgPool, question_id: String, answer: String) {

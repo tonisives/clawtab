@@ -1,3 +1,4 @@
+import { MachineTerminalControls } from "@clawtab/shared";
 import { useAgentActions } from "../../src/hooks/useAgentActions";
 import { encodeTerminalInput } from "@clawtab/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -352,6 +353,7 @@ export default function ProcessDetailScreen() {
   return (
     <View style={styles.container}>
       <Stack.Screen options={terminalHeaderOptions} />
+      <MachineTerminalControls paneId={pane_id} />
       <View style={[styles.terminalContainer, { paddingBottom: Math.max(12, insets.bottom + 8) }]}>
         <View
           ref={terminalSurfaceRef}

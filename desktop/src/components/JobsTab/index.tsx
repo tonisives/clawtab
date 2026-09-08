@@ -1,5 +1,7 @@
+import { MachinesPanel, subscribeMachines, machineState } from "@clawtab/shared";
+import { useDesktopMachines, approveDesktopMachine, localHostRequest, desktopMachineApi } from "../../machines/connection";
 import { RepositoryProvider } from "../RepositoryPanel";
-import { useCallback, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useCallback, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { RemoteJob } from "@clawtab/shared";
 import type { ShellPane } from "@clawtab/shared";
 import {
@@ -56,7 +58,17 @@ function findTopLeftLeafId(tree: SplitNode | null): string | null {
 }
 
 export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, importCwtKey, pendingPaneId, onPaneHandled, navBar, rightPanelOverlay, onJobSelected, onOpenSettings, onSelectView }: JobsTabProps) {
+  useDesktopMachines();
   const core = useJobsCore(transport, 10000);
+  useEffect(() => {
+    let previous = machineState();
+    return subscribeMachines(() => {
+      let next = machineState();
+      let jobsChanged = next.machines.length !== previous.machines.length || next.filter !== previous.filter || next.machines.some((machine) => next.snapshots[machine.id]?.jobs_changed !== previous.snapshots[machine.id]?.jobs_changed);
+      previous = next;
+      if (jobsChanged) void core.reload();
+    });
+  }, [core.reload]);
   const actions = useJobActions(transport, core.reloadStatuses);
   const settings = useJobsTabSettings();
   const wsMgr = useWorkspaceManager();
@@ -490,6 +502,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
 
   return (
     <RepositoryProvider onOpenShell={openWorktreeShell}>
+    <MachinesPanel approvePairing={approveDesktopMachine} localRequest={localHostRequest} api={desktopMachineApi} />
     <JobsTabLayout
       detailPane={detailPane}
       dialogs={dialogs}
