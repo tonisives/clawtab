@@ -23,7 +23,8 @@ ClawTab is a macOS desktop app for scheduling and managing automated jobs -- she
 10. [Workspace Sharing](./sharing.md) -- Share your workspace with colleagues
 11. [Self-Hosted Deployment](./deploy.md) -- Run your own relay, PostgreSQL, and frontend
 
-- [Linux Machines](./remote-machines.md) -- Pair Linux hosts and work across machines
+- [Remote Machines](./remote-machines.md) -- Install Linux hosts, resolve account connection errors, and work across machines
+- [Rented Boxes (Preview)](./rented-boxes.md) -- Planned Hetzner setup, provider authorization, billing, and deletion
 
 ### Reference
 12. [Architecture](./architecture.md) -- System design, execution flow, IPC
