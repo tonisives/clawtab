@@ -16,11 +16,12 @@ import {
 type Props = {
   presentation?: "compact" | "panel"
   onOpenAccount?: () => void
+  localMachineId?: string
   api?: (method: string, path: string, body?: MachineMessage) => Promise<MachineMessage>
   approvePairing: (code: string) => Promise<unknown>
   localRequest?: (request: MachineMessage) => Promise<MachineMessage>
 }
-export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, presentation = "compact" }: Props) => {
+export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, localMachineId, presentation = "compact" }: Props) => {
   let styles = presentation === "panel" ? desktopStyles : compactStyles
   let state = useMachines()
   let [tab, setTab] = useState("agents")
@@ -280,9 +281,33 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
   let toggleRemove = () => setRemoveConfirm(!removeConfirm)
   let toggle = () => setExpanded(!expanded)
   let clearFilter = () => filterMachine(null)
+  let machines = [...state.machines].sort((a, b) =>
+    Number(b.id === localMachineId) - Number(a.id === localMachineId) ||
+    Number(b.online) - Number(a.online) || a.name.localeCompare(b.name),
+  )
+  let machineChoices = (
+    <View style={styles.row}>
+      {machines.map((m) => (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ selected: m.id === state.selected }}
+          key={m.id}
+          onPress={pickMachine(m.id)}
+          style={[styles.button, styles.machineButton, m.id === state.selected && styles.selectedMachine]}
+        >
+          <Text style={styles.text}>{m.name}{m.id === localMachineId ? " · This Mac" : ""}</Text>
+          <Text style={styles.detail}>
+            {m.online ? "Online" : "Offline"} · {m.platform === "macos" ? "macOS" : m.platform}
+            {m.id !== localMachineId && machines.filter((other) => other.name === m.name).length > 1
+              ? " · " + m.id.slice(0, 8) : ""}
+          </Text>
+        </Pressable>
+      ))}
+    </View>
+  )
   return (
     <View style={styles.panel}>
-      <View style={styles.row}>
+      {presentation === "compact" && <View style={styles.row}>
         {presentation === "compact" && <Pressable accessibilityRole="button" onPress={toggle} style={styles.button}>
           <Text style={styles.text}>
             Machines · {state.machines.filter((m) => m.online).length} online
@@ -305,7 +330,7 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
             </Text>
           </Pressable>
         ))}
-      </View>
+      </View>}
       {(error || state.error) && <Text style={styles.error}>{error ?? state.error}</Text>}
       {!state.connected && (
         <View style={styles.row}>
@@ -320,6 +345,7 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
       )}
       {(expanded || presentation === "panel") && (
         <ScrollView style={presentation === "panel" ? styles.panelBody : styles.body}>
+          {presentation === "panel" && tab !== "pair" && machineChoices}
           <View style={styles.row}>
             {[
               "agents",
@@ -378,7 +404,7 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
                 {!state.connected
                   ? "Connect your ClawTab account to load machines and use these controls."
                   : state.machines.length
-                    ? "Select a machine below to manage its " + tab + "."
+                    ? (presentation === "panel" ? "Select a machine above" : "Select a machine below") + " to manage its " + tab + "."
                     : "No machines are paired with this account yet. Add a machine to manage its " + tab + "."}
               </Text>
               {state.connected && !state.machines.length && <Pressable accessibilityRole="button" onPress={openTab("pair")} style={styles.button}>
@@ -386,26 +412,12 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
               </Pressable>}
             </>
           )}
-          <View style={styles.row}>
-            {state.machines.map((m) => (
-              <Pressable
-                accessibilityRole="button"
-                key={m.id}
-                onPress={pickMachine(m.id)}
-                style={styles.button}
-              >
-                <Text style={styles.text}>
-                  {m.name}
-                  {m.id === state.selected ? " · selected" : ""} · {m.platform}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
+          {presentation === "compact" && tab !== "pair" && machineChoices}
           {machine && tab !== "pair" && (
             <>
               <Text style={styles.text}>
-                {machine.name} · {machine.online ? "Online" : "Unreachable"} ·{" "}
-                {machine.version || "Update host for full management"}
+                {!machine.online ? "This machine is offline. Start ClawTab on that host to use its controls." : ""}
+                {machine.online && (machine.version ? "ClawTab " + machine.version : "Update host for full management")}
               </Text>
               {["agents", "jobs", "repositories", "transfers"].includes(tab) && (
                 <>
@@ -786,6 +798,7 @@ let createStyles = (desktop: boolean) => StyleSheet.create({
   row: { flexDirection: "row", flexWrap: "wrap", gap: 6, paddingVertical: 4 },
   title: { color: desktop ? "var(--text-primary)" : "#fff", fontWeight: "600", marginTop: 18, marginBottom: 8 },
   text: { color: desktop ? "var(--text-primary)" : "#e5e7eb", fontSize: 13 },
+  detail: { color: desktop ? "var(--text-secondary)" : "#b6bbc5", fontSize: 12, marginTop: 4 },
   error: { color: desktop ? "var(--error-color, #c53030)" : "#ffabab", padding: 8 },
   code: { fontFamily: "monospace", color: desktop ? "var(--text-secondary)" : "#d1d5db", fontSize: 12, padding: 8 },
   button: {
@@ -795,6 +808,8 @@ let createStyles = (desktop: boolean) => StyleSheet.create({
     alignSelf: "flex-start",
     marginVertical: 3,
   },
+  machineButton: { borderWidth: 1, borderColor: "transparent" },
+  selectedMachine: { borderColor: desktop ? "var(--accent-color, #5c6bc0)" : "#9fa8da" },
   activeButton: { backgroundColor: desktop ? "var(--accent-hover)" : "#4b5262" },
   input: {
     borderColor: desktop ? "var(--border-color)" : "#50545d",
