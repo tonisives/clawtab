@@ -261,6 +261,41 @@ impl HookRuntime {
         for event in changed {
             persist_session_event(&event);
         }
+        if provider == ProcessProvider::Codex {
+            self.reconcile_completed_codex_turns(pane_id);
+        }
+    }
+
+    fn reconcile_completed_codex_turns(&self, pane_id: &str) {
+        let candidates: Vec<HookEventV1> = self
+            .sessions
+            .lock()
+            .values()
+            .filter(|event| {
+                event.provider == ProcessProvider::Codex
+                    && event.pane_id.as_deref() == Some(pane_id)
+                    && !event.ended
+                    && event.state != HookAgentState::Idle
+            })
+            .cloned()
+            .collect();
+        for candidate in candidates {
+            let Some(completed_at) = crate::agent_session::codex_completed_turn_after(
+                &candidate.session_id,
+                candidate.occurred_at_ms,
+            ) else {
+                continue;
+            };
+            let mut sessions = self.sessions.lock();
+            let key = session_key(candidate.provider, &candidate.session_id);
+            let Some(current) = sessions.get_mut(&key) else {
+                continue;
+            };
+            // Transcript reads run outside the lock. A newer hook must win.
+            if reconcile_completed_turn(current, &candidate, completed_at) {
+                persist_session_event(current);
+            }
+        }
     }
 
     pub async fn notified(&self) {
@@ -278,6 +313,27 @@ impl HookRuntime {
         drop(sessions);
         self.notify.notify_waiters();
     }
+}
+
+fn reconcile_completed_turn(
+    current: &mut HookEventV1,
+    observed: &HookEventV1,
+    completed_at: u64,
+) -> bool {
+    if current.occurred_at_ms != observed.occurred_at_ms
+        || current.state != observed.state
+        || current.pane_id != observed.pane_id
+        || current.ended
+        || completed_at <= current.occurred_at_ms
+    {
+        return false;
+    }
+    current.event = "stop".to_string();
+    current.state = HookAgentState::Idle;
+    current.attention = None;
+    current.pending_tool = None;
+    current.occurred_at_ms = completed_at;
+    true
 }
 
 fn stale_process_session_keys(
@@ -1167,13 +1223,43 @@ export const ClawTab = async () => ({{
 #[cfg(test)]
 mod tests {
     use super::{
-        activity_from_hook_state, install_json_hooks, remove_json_hooks,
+        activity_from_hook_state, install_json_hooks, reconcile_completed_turn, remove_json_hooks,
         stale_process_session_keys, HookAgentState, HookAttention, HookEventV1, HookRuntime,
     };
     use crate::agent_session::ProcessProvider;
     use serde_json::json;
     use std::collections::HashSet;
     use std::fs;
+
+    #[test]
+    fn completed_codex_turn_clears_stale_permission_and_preserves_newer_hooks() {
+        let mut waiting = HookEventV1::from_provider_payload(
+            ProcessProvider::Codex,
+            "permission_request",
+            &json!({"session_id": "interrupted", "tool_name": "exec_command"}),
+            Some("%119".to_string()),
+            Some(42),
+        )
+        .expect("permission event");
+        waiting.occurred_at_ms = 1_000;
+        let mut current = waiting.clone();
+        assert!(reconcile_completed_turn(&mut current, &waiting, 2_000));
+        assert_eq!(current.state, HookAgentState::Idle);
+        assert_eq!(current.attention, None);
+        assert_eq!(current.pending_tool, None);
+        assert_eq!(current.occurred_at_ms, 2_000);
+
+        let mut newer = waiting.clone();
+        newer.occurred_at_ms = 3_000;
+        newer.state = HookAgentState::Working;
+        assert!(!reconcile_completed_turn(&mut newer, &waiting, 2_000));
+        assert_eq!(newer.state, HookAgentState::Working);
+        assert!(!reconcile_completed_turn(
+            &mut waiting.clone(),
+            &waiting,
+            1_000
+        ));
+    }
 
     #[test]
     fn normalizes_permission_without_persisting_tool_input() {
