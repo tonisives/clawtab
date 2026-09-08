@@ -1,6 +1,6 @@
 import { MachineTerminalControls } from "@clawtab/shared";
 import { useCallback, useEffect, useRef, useState, useMemo } from "react"
-import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from "react-native"
+import { Platform, View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { useJobsStore } from "../store/jobs"
 import { useNotificationStore } from "../store/notifications"
@@ -257,7 +257,7 @@ export function ProcessDetailPane({ paneId, onClose, demoProcess, embedded = fal
             </Text>
           </View>
         ) : null}
-        <MachineTerminalControls paneId={paneId} />
+        {Platform.OS !== "ios" && <MachineTerminalControls paneId={paneId} />}
         <XtermLog
           ref={termRef}
           onData={sendInput}

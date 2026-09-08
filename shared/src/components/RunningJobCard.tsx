@@ -92,7 +92,7 @@ export const RunningJobCard = memo(function RunningJobCard({
         </View>
         <View style={styles.info}>
           <View style={styles.titleRow}>
-            <Text style={[styles.name, stopping && { opacity: 0.5 }]} numberOfLines={1}>{job.display_name ?? job.name}</Text><MachineBadge machineId={job.machine_id} />
+            <Text style={[styles.name, stopping && { opacity: 0.5 }]} numberOfLines={1}>{job.display_name ?? job.name}</Text>{Platform.OS !== "ios" && <MachineBadge machineId={job.machine_id} />}
             <View style={styles.titleControls}>
               {showMenu ? (
                 <TouchableOpacity

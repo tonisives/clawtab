@@ -13,12 +13,13 @@ import {
   type MachineMessage,
 } from "./client"
 
-export let MachineTerminalControls = ({ paneId }: { paneId: string }) => {
+export let MachineTerminalControls = ({ paneId, connectedOnly = false }: { paneId: string; connectedOnly?: boolean }) => {
   let state = useMachines()
   let resource = splitResource(paneId)
   if (!resource) return null
   let machine = state.machines.find((m) => m.id === resource.machine)
-  let controlled = state.controllers[paneId] === state.connectionId
+  if (connectedOnly && (!state.connected || !machine?.online)) return null
+  let controlled = !!state.connectionId && state.controllers[paneId] === state.connectionId
   let take = () => machineSend(resource.machine, { type: "take_control", pane_id: resource.id })
   let release = () =>
     machineSend(resource.machine, { type: "release_control", pane_id: resource.id })

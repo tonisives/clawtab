@@ -1,6 +1,6 @@
 import { MachineTerminalControls } from "@clawtab/shared";
 import { useCallback, useEffect, useRef, useState } from "react"
-import { View, Text, StyleSheet, ActivityIndicator, Alert, TouchableOpacity } from "react-native"
+import { Platform, View, Text, StyleSheet, ActivityIndicator, Alert, TouchableOpacity } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { useJobsStore, useJob, useJobStatus } from "../store/jobs"
 import { useRunsStore } from "../store/runs"
@@ -179,7 +179,7 @@ export function JobDetailPane({ jobName, isDemo: parentIsDemo, onClose, embedded
             </>
           ) : null}
         </View>
-        <MachineTerminalControls paneId={statusPaneId ?? ""} />
+        {Platform.OS !== "ios" && <MachineTerminalControls paneId={statusPaneId ?? ""} />}
         <XtermLog
           ref={termRef}
           onData={sendInput}

@@ -263,7 +263,7 @@ export default function JobDetailScreen() {
         </View>
         <View style={[styles.terminalFrame, { paddingBottom: Math.max(12, insets.bottom + 8) }]}>
           <View ref={terminalSurfaceRef} style={styles.terminalSurface} onLayout={handleTerminalLayout}>
-            <MachineTerminalControls paneId={statusPaneId ?? ""} />
+            {Platform.OS !== "ios" && <MachineTerminalControls paneId={statusPaneId ?? ""} />}
             <XtermLog
               ref={termRef}
               onData={sendInput}
