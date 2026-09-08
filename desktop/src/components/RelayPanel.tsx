@@ -520,10 +520,23 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
       ) : (
         <>
           <div className="field-group">
+            <span className="field-group-title">Account access</span>
+            <p className="section-description">
+              The connection below belongs to this desktop. Adding machines and managing
+              access also require a current account sign-in. You can sign in again here
+              while this desktop stays connected.
+            </p>
+            <div className="btn-group">
+              <button className="btn" onClick={handleAppleSignIn}>Sign in with Apple</button>
+              <button className="btn" onClick={handleGoogleSignIn}>Sign in with Google</button>
+            </div>
+            {loginError && <p role="alert">{loginError}</p>}
+          </div>
+          <div className="field-group">
             <span className="field-group-title">Connection</span>
 
             <div className="form-group">
-              <label>Status</label>
+              <label>This machine</label>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <span
                   style={{

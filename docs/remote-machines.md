@@ -33,7 +33,7 @@ Linux credentials are stored under `~/.config/clawtab/credentials`, with directo
 
 Build `etc/Dockerfile.machine` from the public repository root. The image includes one foreground daemon, tmux, Git, Git LFS, Python, and Node.js. Mount a persistent home directory at `/home/clawtab` owned by UID/GID 1000 and run one replica. Install and authenticate provider CLIs on that persistent home directory.
 
-The entrypoint waits for the completion marker written after setup saves the machine credential and settings. In the waiting container, run `cwtctl setup --name k3s-agent --no-service`, then approve the code from **Machines → Add machine**. This saves the pairing without installing systemd; Kubernetes supervises the daemon. `--no-service` and `--linger` are mutually exclusive.
+The entrypoint starts the daemon immediately, so local IPC and readiness work before pairing. In the running container, run `cwtctl setup --name k3s-agent --no-service`, then approve the code from **Machines → Add machine**. This saves the pairing without installing systemd; Kubernetes supervises the daemon. Setup reloads the running daemon and starts its relay connection after saving the pairing. Replacing an existing pairing requires a deliberate container restart to load the replacement credentials. `--no-service` and `--linger` are mutually exclusive.
 
 Persisting the home directory preserves repositories and credentials across container replacement. It does not preserve running tmux processes or agents. Schedule image updates after finishing active work. No inbound application port, service-account token, relay sidecar, or host mount is required.
 

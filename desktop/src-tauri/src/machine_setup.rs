@@ -74,12 +74,12 @@ pub async fn setup(args: &[String]) -> Result<(), String> {
         if value["status"] != "paired" {
             continue;
         }
-        return save_pairing(value, server, name, args);
+        return save_pairing(value, server, name, args).await;
     }
     Err("pairing timed out; run setup again".into())
 }
 
-fn save_pairing(
+async fn save_pairing(
     value: Value,
     server: String,
     name: String,
@@ -103,11 +103,7 @@ fn save_pairing(
     #[cfg(target_os = "linux")]
     {
         if _args.iter().any(|arg| arg == "--no-service") {
-            let ready = crate::config::config_dir()
-                .ok_or("home directory unavailable")?
-                .join("machine-paired");
-            std::fs::write(ready, id).map_err(|e| format!("could not mark pairing ready: {e}"))?;
-            println!("Service installation skipped. Start clawtab-daemon with your container supervisor.");
+            connect_running_daemon(_args).await?;
             return Ok(());
         }
         if _args.iter().any(|arg| arg == "--linger") {
@@ -122,5 +118,33 @@ fn save_pairing(
         println!("{}", crate::daemon::install()?);
         println!("To keep the user service running after logout and start it at boot, enable lingering: loginctl enable-linger <your-user>. Your host may require administrator approval.");
     }
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+async fn connect_running_daemon(args: &[String]) -> Result<(), String> {
+    use crate::ipc::{self, IpcCommand, IpcResponse};
+
+    if !ipc::daemon_socket_path().exists() {
+        println!(
+            "Service installation skipped. Start clawtab-daemon with your container supervisor."
+        );
+        return Ok(());
+    }
+    if args.iter().any(|arg| arg == "--replace") {
+        println!("Replacement pairing saved. Restart your container when ready to load the new credentials.");
+        return Ok(());
+    }
+    for command in [
+        IpcCommand::ReloadSecrets,
+        IpcCommand::ReloadSettings,
+        IpcCommand::RelayConnect,
+    ] {
+        match ipc::send_command(command).await {
+            Ok(IpcResponse::Ok) => {}
+            _ => return Err("paired, but the running daemon could not load the connection; restart it when ready".into()),
+        }
+    }
+    println!("The running daemon is connecting to the relay. No service restart is needed.");
     Ok(())
 }
