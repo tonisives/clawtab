@@ -763,7 +763,7 @@ export default function JobsScreen() {
 
   const jobList = (
     <View style={styles.container}>
-      {!isDemo && <MachinesPanel approvePairing={approveMachinePairing} api={machineApi} />}
+      {Platform.OS !== "ios" && !isDemo && <MachinesPanel approvePairing={approveMachinePairing} api={machineApi} />}
       {isDemo && <DemoBanner />}
       <JobListView
         jobs={jobs}

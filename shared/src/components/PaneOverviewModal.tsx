@@ -1,5 +1,7 @@
-import { Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
+import { Modal, SafeAreaView, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 import { useEffect, useState } from "react";
+import { MachineTerminalControls } from "../machines/Terminal";
+import { resourceLabel } from "../machines/client";
 import { AgentActionFormModal } from "./AgentActionFormModal";
 import type { AgentActionDescriptor } from "../types/agentPlugin";
 import { colors } from "../theme/colors";
@@ -7,6 +9,7 @@ import { radius, spacing } from "../theme/spacing";
 import { compactPath, formatTime, timeAgo } from "../util/format";
 
 const MAX_QUERY_CHARS = 640;
+const isIOS = Platform.OS === "ios";
 
 export type PaneOverviewData = {
   paneId: string;
@@ -114,16 +117,16 @@ export const PaneOverviewModal = ({ visible, onClose, actions, ...pane }: PaneOv
   };
 
   const content = (
-    <View style={styles.root}>
-      <Pressable style={StyleSheet.absoluteFill} onPress={handleClose} />
-      <View style={styles.card}>
+    <View style={[styles.root, isIOS && styles.fullScreenRoot]}>
+      {!isIOS && <Pressable style={StyleSheet.absoluteFill} onPress={handleClose} />}
+      <View style={[styles.card, isIOS && styles.fullScreenCard]}>
         <View style={styles.header}>
           <View style={styles.headerText}>
             <Text style={styles.title} numberOfLines={1}>{title}</Text>
             <View style={styles.headerMeta}>
               <Text style={styles.sessionTitle} numberOfLines={1}>{pane.tmuxSession || "-"}</Text>
               <Text style={styles.metaSeparator}>·</Text>
-              <Text style={styles.paneIdTitle} numberOfLines={1}>{pane.paneId}</Text>
+              <Text style={styles.paneIdTitle} numberOfLines={1}>{isIOS ? resourceLabel(pane.paneId) : pane.paneId}</Text>
             </View>
           </View>
           <Pressable
@@ -137,7 +140,8 @@ export const PaneOverviewModal = ({ visible, onClose, actions, ...pane }: PaneOv
           </Pressable>
         </View>
 
-        <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+        <ScrollView style={[styles.scroll, isIOS && styles.fullScreenScroll]} contentContainerStyle={styles.content}>
+          {isIOS && <MachineTerminalControls paneId={pane.paneId} connectedOnly />}
           {(actions?.onToggleAutoYes || actions?.onTogglePin || actions?.onStop || actions?.onStart) ? (
             <View style={styles.actions}>
               <View style={styles.toggleGroup}>
@@ -260,11 +264,14 @@ export const PaneOverviewModal = ({ visible, onClose, actions, ...pane }: PaneOv
     </View>
   );
 
-  // Native detail screens can already be presented inside a native-stack modal
-  // (for example, notification details). Avoid nesting another RN Modal there;
-  // on iOS Fabric that can repeatedly remount the modal host and hit React's
-  // maximum update-depth guard. The in-screen overlay has the same visual and
-  // interaction behavior without creating a second native presentation.
+  if (isIOS) {
+    return (
+      <Modal visible={visible} presentationStyle="fullScreen" animationType="slide" onRequestClose={handleClose}>
+        <SafeAreaView style={styles.fullScreenRoot}>{content}</SafeAreaView>
+      </Modal>
+    );
+  }
+
   if (Platform.OS !== "web") {
     if (!visible) return null;
     return <View style={styles.nativeRoot}>{content}</View>;
@@ -278,6 +285,21 @@ export const PaneOverviewModal = ({ visible, onClose, actions, ...pane }: PaneOv
 };
 
 const styles = StyleSheet.create({
+  fullScreenRoot: {
+    flex: 1,
+    padding: 0,
+    backgroundColor: colors.surface,
+  },
+  fullScreenCard: {
+    flex: 1,
+    maxWidth: "100%",
+    maxHeight: "100%",
+    borderRadius: 0,
+    borderWidth: 0,
+  },
+  fullScreenScroll: {
+    flex: 1,
+  },
   nativeRoot: {
     position: "absolute",
     top: 0,
@@ -528,7 +550,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: radius.sm,
+    borderTopRightRadius: radius.sm,
+    borderBottomRightRadius: radius.sm,
     padding: spacing.sm,
     fontSize: 12,
     lineHeight: 18,

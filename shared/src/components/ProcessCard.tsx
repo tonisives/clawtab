@@ -213,7 +213,7 @@ export function ProcessCard({
         onLongPress={openMenu}
         activeOpacity={0.7}
       >
-        <JobKindIcon kind={kind} /><MachineBadge machineId={process.machine_id} />
+        <JobKindIcon kind={kind} />{Platform.OS !== "ios" && <MachineBadge machineId={process.machine_id} />}
         <View style={styles.processInfo}>
           <View style={styles.titleRow}>
             {editing ? (

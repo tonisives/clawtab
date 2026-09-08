@@ -18,7 +18,7 @@ import { registerRequest } from "../../src/lib/useRequestMap";
 import { openUrl } from "../../src/lib/platform";
 import { colors } from "../../src/theme/colors";
 import { radius, spacing } from "../../src/theme/spacing";
-import { AgentSelector } from "@clawtab/shared";
+import { AgentSelector, useMachines, selectMachine } from "@clawtab/shared";
 import type { AgentModelOption, AgentSelection, DetectedProcess, ProcessProvider } from "@clawtab/shared";
 import { BARE_PROVIDER_OPTIONS, buildModelOptions } from "../../src/lib/agentModels";
 
@@ -56,8 +56,20 @@ function storeSelection(selection: AgentSelection) {
 
 export default function AgentScreen() {
   const router = useRouter();
+  let machines = useMachines();
+  let connectedMachines = machines.connected ? machines.machines.filter((machine) => machine.online) : [];
+  let selectedMachine = connectedMachines.find((machine) => machine.id === machines.selected);
+  let defaultMachineId = connectedMachines[0]?.id;
+  let selectLaunchMachine = (machineId: string) => () => selectMachine(machineId);
+
+  useEffect(() => {
+    if (Platform.OS === "ios" && !selectedMachine && defaultMachineId) {
+      selectMachine(defaultMachineId);
+    }
+  }, [selectedMachine, defaultMachineId]);
   const desktopOnline = useWsStore((s) => s.desktopOnline);
   const connected = useWsStore((s) => s.connected);
+  let canRunAgent = connected && desktopOnline && (Platform.OS !== "ios" || !!selectedMachine);
   const enabledModels = useJobsStore((s) => s.enabledModels);
   const [prompt, setPrompt] = useState("");
   const [sending, setSending] = useState(false);
@@ -108,7 +120,7 @@ export default function AgentScreen() {
   };
 
   const handleRun = async () => {
-    if (!prompt.trim()) return;
+    if (!prompt.trim() || !canRunAgent) return;
     const send = getWsSend();
     if (!send) {
       setError("Not connected");
@@ -214,6 +226,26 @@ export default function AgentScreen() {
               Send a prompt to run an agent on your desktop.
             </Text>
 
+            {Platform.OS === "ios" && connectedMachines.length > 0 && (
+              <View style={styles.machinePicker}>
+                <Text style={styles.machineLabel}>Machine</Text>
+                <View style={styles.machineOptions}>
+                  {connectedMachines.map((machine) => (
+                    <Pressable
+                      key={machine.id}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: machine.id === selectedMachine?.id, disabled: sending }}
+                      onPress={selectLaunchMachine(machine.id)}
+                      disabled={sending}
+                      style={[styles.machineOption, machine.id === selectedMachine?.id && styles.selectedMachine]}
+                    >
+                      <Text style={styles.machineName}>{machine.name}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+            )}
+
             <TextInput
               ref={inputRef}
               style={[styles.input, isWide && styles.inputWide, inputHeight != null && { height: inputHeight }]}
@@ -223,7 +255,7 @@ export default function AgentScreen() {
               placeholderTextColor={colors.textMuted}
               multiline
               textAlignVertical="top"
-              editable={!sending && desktopOnline}
+              editable={!sending && canRunAgent}
             />
 
             {error && <Text style={styles.error}>{error}</Text>}
@@ -236,14 +268,14 @@ export default function AgentScreen() {
                 effort={selectedSelection.effort}
                 mode="button"
                 label="Choose agent"
-                disabled={sending || !desktopOnline}
+                disabled={sending || !canRunAgent}
                 onChange={handleSelectAgent}
               />
 
               <Pressable
-                style={[styles.btn, (!prompt.trim() || sending || !desktopOnline) && styles.btnDisabled]}
+                style={[styles.btn, (!prompt.trim() || sending || !canRunAgent) && styles.btnDisabled]}
                 onPress={handleRun}
-                disabled={!prompt.trim() || sending || !desktopOnline}
+                disabled={!prompt.trim() || sending || !canRunAgent}
               >
                 <Text style={styles.btnText}>
                   {sending ? "Sending..." : "Run Agent"}
@@ -259,6 +291,33 @@ export default function AgentScreen() {
 }
 
 const styles = StyleSheet.create({
+  machinePicker: {
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  machineLabel: {
+    color: colors.textSecondary,
+    fontSize: 13,
+  },
+  machineOptions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+  },
+  machineOption: {
+    padding: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+  },
+  selectedMachine: {
+    borderColor: colors.accent,
+    backgroundColor: colors.surface,
+  },
+  machineName: {
+    color: colors.text,
+    fontSize: 13,
+  },
   container: {
     flex: 1,
     backgroundColor: colors.bg,
