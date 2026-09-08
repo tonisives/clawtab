@@ -63,6 +63,10 @@ let transferSocket: WebSocket | null = null
 let transferConnection: Promise<WebSocket> | null = null
 let connectionUrl: (() => Promise<string>) | null = null
 let stopConnection: (() => void) | null = null
+let retryConnection: (() => void) | null = null
+export let retryMachines = () => retryConnection?.()
+export let machineErrorMessage = (error: unknown, fallback = "Machine request failed") =>
+  error instanceof Error ? error.message : typeof error === "string" && error ? error : fallback
 let update = (patch: Partial<MachineState>) => {
   state = { ...state, ...patch }
   listeners.forEach((listener) => listener())
@@ -204,7 +208,10 @@ export let connectMachines = (getUrl: () => Promise<string>) => {
   let stopped = false
   let reconnect: ReturnType<typeof setTimeout> | undefined
   let backoff = 1000
+  let connecting = false
   let connect = async () => {
+    if (stopped || connecting) return
+    connecting = true
     try {
       let url = await getUrl()
       if (stopped) return
@@ -335,6 +342,7 @@ export let connectMachines = (getUrl: () => Promise<string>) => {
         pending.clear()
         update({
           connected: false,
+          error: "Connection to the machine service was lost. Retrying…",
           machines: state.machines.map((m) => ({ ...m, online: false })),
           controllers: {},
         })
@@ -345,12 +353,22 @@ export let connectMachines = (getUrl: () => Promise<string>) => {
       }
       ws.onerror = () => ws.close()
     } catch (error) {
-      update({ connected: false, error: error instanceof Error ? error.message : "Cannot connect" })
+      if (stopped) return
+      update({ connected: false, error: machineErrorMessage(error, "Cannot connect to the machine service") })
       if (!stopped) {
         reconnect = setTimeout(connect, backoff)
         backoff = Math.min(backoff * 2, 30_000)
       }
+    } finally {
+      connecting = false
     }
+  }
+  retryConnection = () => {
+    if (stopped || connecting || socket) return
+    clearTimeout(reconnect)
+    backoff = 1000
+    update({ error: null })
+    void connect()
   }
   void connect()
   let refresh = setInterval(() => {
@@ -364,6 +382,7 @@ export let connectMachines = (getUrl: () => Promise<string>) => {
   }, 10_000)
   stopConnection = () => {
     stopped = true
+    retryConnection = null
     transferSocket?.close()
     transferSocket = null
     transferConnection = null

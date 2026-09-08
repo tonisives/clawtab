@@ -8,16 +8,19 @@ import {
   machineHostRequest,
   newOperationId,
   clearMachineError,
+  machineErrorMessage,
+  retryMachines,
   type MachineMessage,
 } from "./client"
 
 type Props = {
   presentation?: "compact" | "panel"
+  onOpenAccount?: () => void
   api?: (method: string, path: string, body?: MachineMessage) => Promise<MachineMessage>
   approvePairing: (code: string) => Promise<unknown>
   localRequest?: (request: MachineMessage) => Promise<MachineMessage>
 }
-export let MachinesPanel = ({ approvePairing, localRequest, api, presentation = "compact" }: Props) => {
+export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, presentation = "compact" }: Props) => {
   let styles = presentation === "panel" ? desktopStyles : compactStyles
   let state = useMachines()
   let [tab, setTab] = useState("agents")
@@ -73,7 +76,7 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, presentation = 
     try {
       await work()
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Operation failed")
+      setError(machineErrorMessage(e, "Operation failed"))
     } finally {
       setBusy(false)
     }
@@ -304,6 +307,17 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, presentation = 
         ))}
       </View>
       {(error || state.error) && <Text style={styles.error}>{error ?? state.error}</Text>}
+      {!state.connected && (
+        <View style={styles.row}>
+          <Text style={styles.text}>{state.error ? "Machine list unavailable" : "Connecting to your account’s machines…"}</Text>
+          {state.error && <Pressable accessibilityRole="button" onPress={retryMachines} style={styles.button}>
+            <Text style={styles.text}>Retry connection</Text>
+          </Pressable>}
+          {state.error && onOpenAccount && <Pressable accessibilityRole="button" onPress={onOpenAccount} style={styles.button}>
+            <Text style={styles.text}>Open account settings</Text>
+          </Pressable>}
+        </View>
+      )}
       {(expanded || presentation === "panel") && (
         <ScrollView style={presentation === "panel" ? styles.panelBody : styles.body}>
           <View style={styles.row}>
@@ -357,7 +371,21 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, presentation = 
               </View>
             </>
           )}
-          {tab !== "pair" && <Text style={styles.title}>Machine</Text>}
+          {tab !== "pair" && <Text style={styles.title}>{tab[0].toUpperCase() + tab.slice(1)}</Text>}
+          {!machine && tab !== "pair" && (
+            <>
+              <Text style={styles.text}>
+                {!state.connected
+                  ? "Connect your ClawTab account to load machines and use these controls."
+                  : state.machines.length
+                    ? "Select a machine below to manage its " + tab + "."
+                    : "No machines are paired with this account yet. Add a machine to manage its " + tab + "."}
+              </Text>
+              {state.connected && !state.machines.length && <Pressable accessibilityRole="button" onPress={openTab("pair")} style={styles.button}>
+                <Text style={styles.text}>Pair your first machine</Text>
+              </Pressable>}
+            </>
+          )}
           <View style={styles.row}>
             {state.machines.map((m) => (
               <Pressable

@@ -86,3 +86,44 @@ test('failed credentials back off instead of repeatedly refreshing an expired lo
   assert.deepEqual(delays, [1000, 2000, 4000, 8000, 16000, 30000, 30000]);
   assert.equal(sockets.length, 0);
 });
+
+test('Tauri string errors remain visible and manual retry reconnects immediately', async (t) => {
+  let cleared = [];
+  let { client, sockets } = load({
+    setTimeout: () => 17,
+    clearTimeout: (timer) => cleared.push(timer),
+    setInterval: () => 1,
+    clearInterval: () => {},
+  });
+  let signedIn = false;
+  let stop = client.connectMachines(async () => {
+    if (!signedIn) throw 'Account session expired';
+    return 'ws://localhost/v2/ws?token=fixture';
+  });
+  t.after(stop);
+  await new Promise(setImmediate);
+  assert.equal(client.machineState().error, 'Account session expired');
+  signedIn = true;
+  client.retryMachines();
+  await new Promise(setImmediate);
+  assert.ok(cleared.includes(17));
+  assert.equal(sockets.length, 1);
+  sockets[0].onopen();
+  assert.equal(client.machineState().connected, true);
+  assert.equal(client.machineState().error, null);
+  client.retryMachines();
+  await new Promise(setImmediate);
+  assert.equal(sockets.length, 1);
+});
+
+test('a stopped account lookup cannot overwrite a newer connection error', async (t) => {
+  let { client } = load();
+  let rejectLookup;
+  client.connectMachines(() => new Promise((_, reject) => { rejectLookup = reject; }));
+  let stop = client.connectMachines(async () => { throw 'Current account error'; });
+  t.after(stop);
+  await new Promise(setImmediate);
+  rejectLookup('Stale account error');
+  await new Promise(setImmediate);
+  assert.equal(client.machineState().error, 'Current account error');
+});

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { ShareSection } from "@clawtab/shared";
+import { ShareSection, retryMachines } from "@clawtab/shared";
 import type { ShareInfo, SharedWithMeInfo } from "@clawtab/shared";
 
 const GOOGLE_CLIENT_ID =
@@ -104,7 +104,7 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
         invoke("relay_save_tokens", {
           accessToken: externalAccessToken,
           refreshToken: externalRefreshToken,
-        }).catch((e) => console.error("Failed to save tokens:", e));
+        }).then(retryMachines).catch(() => setLoginError("Could not save your account session. Please try signing in again."));
       }
       onExternalTokenConsumed?.();
     }
@@ -153,7 +153,7 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
           invoke("relay_save_tokens", {
             accessToken: data.access_token,
             refreshToken: data.refresh_token,
-          }).catch((e) => console.error("Failed to save tokens:", e));
+          }).then(retryMachines).catch(() => setLoginError("Could not save your account session. Please try signing in again."));
           return;
         }
       } catch {

@@ -124,6 +124,11 @@ export function SettingsApp() {
     };
   }, [activeTab]);
 
+  let openMachineAccount = () => {
+    setSettingsSubTab("remote");
+    setActiveTab("settings");
+  };
+
   const handlePanelScroll = (id: TabId, event: UIEvent<HTMLDivElement>) => {
     try {
       localStorage.setItem(panelScrollKey(id), String(event.currentTarget.scrollTop));
@@ -366,7 +371,7 @@ export function SettingsApp() {
   const rightPanelOverlay = (
     <>
       {renderPanel("mindmap", "Mind Map", <MindMapPanel onRequestJobsTab={() => setActiveTab("jobs")} />, { fullBleed: true })}
-      {renderPanel("machines", "Machines", <DesktopMachinesPanel />)}
+      {renderPanel("machines", "Machines", <DesktopMachinesPanel onOpenAccount={openMachineAccount} />)}
       {renderPanel("settings", "Settings",
         <GeneralSettings
           onAddJob={() => { setActiveTab("jobs"); setCreateJobKey((k) => k + 1); }}
