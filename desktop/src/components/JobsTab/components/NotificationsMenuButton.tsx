@@ -12,7 +12,7 @@ export function NotificationsMenuButton({
   hasAutoYesEntries,
 }: NotificationsMenuButtonProps) {
   const [open, setOpen] = useState(false);
-  const [popupPosition, setPopupPosition] = useState<{ top: number; left: number } | null>(null);
+  const [popupPosition, setPopupPosition] = useState<{ bottom: number; left: number } | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   const hasContent = !!children || hasAutoYesEntries || activeQuestionCount > 0;
@@ -21,10 +21,9 @@ export function NotificationsMenuButton({
     const rect = rootRef.current?.getBoundingClientRect();
     if (!rect) return;
     const popupWidth = Math.min(640, window.innerWidth - 20);
-    const popupHeight = Math.min(window.innerHeight * 0.82, 760);
     setPopupPosition({
-      top: Math.min(Math.max(10, rect.bottom + 6), window.innerHeight - popupHeight - 10),
-      left: Math.min(Math.max(10, rect.right + 6), window.innerWidth - popupWidth - 10),
+      bottom: window.innerHeight - rect.top + 6,
+      left: Math.min(Math.max(10, rect.right - popupWidth), window.innerWidth - popupWidth - 10),
     });
   };
 
@@ -77,7 +76,7 @@ export function NotificationsMenuButton({
         <div
           className="notifications-menu-popup"
           role="menu"
-          style={popupPosition ? { top: popupPosition.top, left: popupPosition.left } : undefined}
+          style={popupPosition ? { bottom: popupPosition.bottom, left: popupPosition.left } : undefined}
         >
           <div className="notifications-menu-title">Notifications</div>
           {hasContent ? (

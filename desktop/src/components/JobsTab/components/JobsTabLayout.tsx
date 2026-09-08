@@ -76,20 +76,22 @@ export function JobsTabLayout({
         {!isWide ? (
           mobileShowsDetail ? (
             <div className="jobs-narrow-layout">
-              {navBar}
+              <div className="sidebar-window-controls-space" data-tauri-drag-region aria-hidden="true" />
               <div className="jobs-narrow-body">
                 {detailPane}
                 {rightPanelOverlay}
               </div>
+              {navBar}
               {dialogs}
             </div>
           ) : (
             <div className="jobs-narrow-layout">
-              {navBar}
+              <div className="sidebar-window-controls-space" data-tauri-drag-region aria-hidden="true" />
               <div className="jobs-narrow-body">
                 {jobListView}
                 {rightPanelOverlay}
               </div>
+              {navBar}
               {dialogs}
             </div>
           )
@@ -105,8 +107,9 @@ export function JobsTabLayout({
               {!sidebarCollapsed && (
                 <>
                   <div style={{ width: listWidth, minWidth: 260, maxWidth: 600, borderRight: "1px solid var(--border-light)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-                    {navBar}
+                    <div className="sidebar-window-controls-space" data-tauri-drag-region aria-hidden="true" />
                     {jobListView}
+                    {navBar}
                   </div>
                   <div onMouseDown={onResizeHandleMouseDown} style={{ width: 9, backgroundColor: "transparent", marginLeft: -5, marginRight: -4, zIndex: 10, cursor: "col-resize", flexShrink: 0, position: "relative" }} />
                 </>

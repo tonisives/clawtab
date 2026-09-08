@@ -1,7 +1,7 @@
 .nav-bar {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: center;
   position: relative;
   gap: 4px;
   padding: 0 10px;
@@ -318,7 +318,7 @@
 }
 
 /* Keep the desktop navigation consistent as icon labels wrap at small widths. */
-.nav-bar { flex-wrap: wrap; gap: 2px; padding: 4px 8px; }
+.nav-bar { flex-wrap: wrap; gap: 2px; padding: 4px 8px; margin-top: auto; border-top: 1px solid var(--border-light); }
 .nav-bar .tab, .nav-bar .claw-icon-btn, .nav-bar .notifications-menu-btn {
   flex-direction: column;
   gap: 4px;
@@ -344,3 +344,5 @@
 .jobs-narrow-layout { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
 .jobs-narrow-body { display: flex; flex-direction: column; flex: 1; min-height: 0; position: relative; overflow: hidden; }
 .nav-bar .tab.active { color: var(--text-primary); }
+
+.sidebar-window-controls-space { height: 36px; flex-shrink: 0; -webkit-app-region: drag; }
