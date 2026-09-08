@@ -6,7 +6,11 @@ set -u
 
 pane_id="${1:-}"
 pane_width="${2:-}"
-helper="${CLAWTAB_PANE_INFO_HELPER:-$HOME/.config/tmux/clawtab-pane-info.sh}"
+helper="${CLAWTAB_PANE_INFO_HELPER:-}"
+if [ -z "$helper" ]; then
+    helper="$HOME/.config/tmux/scripts/panes/clawtab-pane-info.sh"
+    [ -x "$helper" ] || helper="$HOME/.config/tmux/clawtab-pane-info.sh"
+fi
 
 [ -x "$helper" ] || exit 0
 

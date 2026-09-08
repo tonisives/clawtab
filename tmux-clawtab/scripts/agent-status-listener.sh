@@ -287,6 +287,8 @@ snapshot_action_for_event() {
     printf '%s\n' "$1" | "$JQ_BIN" -c '
         if type == "object" and has("AgentActivityChanged") then
             {AgentActivity: .AgentActivityChanged}
+        elif type == "object" and has("PaneDisplayNameChanged") then
+            {RefreshPaneBorder: .PaneDisplayNameChanged.pane_id}
         elif . == "QuestionsChanged" then
             {FetchAgentActivity: true}
         else
@@ -338,6 +340,12 @@ while true; do
 
         action="$(snapshot_action_for_event "$event")"
         [ -n "$action" ] || continue
+
+        refresh_pane="$(printf '%s\n' "$action" | "$JQ_BIN" -r '.RefreshPaneBorder // empty')"
+        if [ -n "$refresh_pane" ]; then
+            "$PANE_BORDER_CACHE_SCRIPT" "$refresh_pane" >/dev/null 2>&1 &
+            continue
+        fi
 
         if printf '%s\n' "$action" | "$JQ_BIN" -e 'has("FetchAgentActivity")' >/dev/null 2>&1; then
             next_snapshot="$(fetch_snapshot)"
