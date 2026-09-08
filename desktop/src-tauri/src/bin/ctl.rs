@@ -869,7 +869,12 @@ async fn main() {
                 .process_overrides
                 .get(&pane_id)
                 .filter(|meta| meta.matches_identity(&pane_pid, info.session_id.as_deref()));
-            let display_name = process_override.and_then(|meta| meta.display_name.as_ref());
+            // The pane option survives agent-written terminal titles and is
+            // available even before the daemon persists the settings override.
+            let pane_display_name = resolve_tmux_pane_format(&pane_id, "#{@clawtab-display-name}");
+            let display_name = (!pane_display_name.is_empty())
+                .then_some(pane_display_name.as_str())
+                .or_else(|| process_override.and_then(|meta| meta.display_name.as_deref()));
             let first_query = process_override
                 .and_then(|meta| meta.first_query.as_ref())
                 .or(info.first_query.as_ref());
@@ -885,7 +890,7 @@ async fn main() {
             if let Some(query) = last_query {
                 println!("last_query={}", query);
             }
-            if info.session_started_at.is_none() && first_query.is_none() {
+            if info.session_started_at.is_none() && first_query.is_none() && display_name.is_none() {
                 eprintln!("No session info found");
                 std::process::exit(1);
             }

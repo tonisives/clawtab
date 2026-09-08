@@ -82,6 +82,8 @@ rewrite_pane_info_helper() {
 }
 rewrite_pane_info_helper "~/.config/tmux/clawtab-pane-info.sh"
 rewrite_pane_info_helper "$HOME/.config/tmux/clawtab-pane-info.sh"
+rewrite_pane_info_helper "~/.config/tmux/scripts/panes/clawtab-pane-info.sh"
+rewrite_pane_info_helper "$HOME/.config/tmux/scripts/panes/clawtab-pane-info.sh"
 if [[ "$current_border" == *"@clawtab-pane-path"* && "$current_border" == *"@clawtab-pane-info"* ]]; then
     border_cache_enabled=1
 fi
