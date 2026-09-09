@@ -209,6 +209,16 @@ fn try_kill_or_keep(
         return false;
     }
 
+    // ct-agent windows are created directly, not extracted by the viewer.
+    // An idle shell there is intentional and has no origin to restore.
+    if tmux_api::get_window_origin(&entry.window_id)
+        .unwrap_or_default()
+        .is_empty()
+    {
+        *kept += 1;
+        return false;
+    }
+
     match tmux_api::kill_window_by_id(&entry.window_id) {
         Ok(_) => {
             log::info!(

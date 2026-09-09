@@ -181,7 +181,6 @@ struct ProcessRow<'a> {
     session: &'a str,
     window: &'a str,
     pane_pid: &'a str,
-    pane_title: Option<String>,
     pane_slug_tag: Option<String>,
 }
 
@@ -204,7 +203,6 @@ fn parse_row(line: &str) -> Option<ProcessRow<'_>> {
         session: parts[3],
         window: parts[4],
         pane_pid: parts[5],
-        pane_title: normalize_optional_text(parts[7].to_string()),
         pane_slug_tag: parts
             .get(8)
             .and_then(|s| normalize_optional_text((*s).to_string())),
@@ -284,11 +282,6 @@ fn build_remote(
         crate::agent_session::ProcessProvider::Claude => (true, true, true),
         _ => (false, false, false),
     };
-    let display_window = row
-        .pane_title
-        .clone()
-        .unwrap_or_else(|| row.window.to_string());
-
     DetectedProcess {
         execution_id: crate::host::execution_id(
             row.pane_id,
@@ -309,7 +302,7 @@ fn build_remote(
         can_send_skills,
         can_inject_secrets,
         tmux_session: row.session.to_string(),
-        window_name: display_window,
+        window_name: row.window.to_string(),
         matched_group,
         matched_job,
         log_lines,

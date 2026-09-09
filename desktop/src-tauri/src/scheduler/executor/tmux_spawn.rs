@@ -20,7 +20,7 @@ pub(super) struct SpawnArgs<'a> {
     pub effort: Option<String>,
     pub prompt_content: String,
     pub slug: &'a str,
-    pub reuse_group_window: bool,
+    pub use_agent_window_name: bool,
     pub aerospace_workspace: Option<&'a str>,
 }
 
@@ -41,7 +41,7 @@ pub(super) async fn spawn_agent_pane(
         effort,
         prompt_content,
         slug,
-        reuse_group_window,
+        use_agent_window_name,
         aerospace_workspace,
     } = args;
 
@@ -55,28 +55,28 @@ pub(super) async fn spawn_agent_pane(
         Some(write_prompt_file(&prompt_content)?)
     };
 
-    if !reuse_group_window && !tmux::session_exists(&tmux_session) {
+    if !tmux::session_exists(&tmux_session) {
         if let Err(error) = tmux::create_session(&tmux_session) {
             remove_prompt_file(prompt_file.as_deref());
             return Err(error);
         }
     }
 
-    // Ad-hoc agents join their group's last window. The PTY viewer extracts
-    // panes from shared windows when it needs independent geometry.
-    let created = if reuse_group_window {
-        tmux::create_group_agent_pane(&tmux_session, &window_name, &work_dir, &env_vars)
+    // New agents own their window; the viewer can resize it in place.
+    let window_name = if use_agent_window_name {
+        tmux::next_ct_window_name(&tmux_session, "agent")
     } else {
-        tmux::create_window_with_cwd(&tmux_session, &window_name, Some(&work_dir), &env_vars)
-            .map(|pane_id| (tmux_session, pane_id))
+        window_name
     };
-    let (tmux_session, pane_id) = match created {
-        Ok(created) => created,
-        Err(error) => {
-            remove_prompt_file(prompt_file.as_deref());
-            return Err(error);
-        }
-    };
+    let pane_id =
+        match tmux::create_window_with_cwd(&tmux_session, &window_name, Some(&work_dir), &env_vars)
+        {
+            Ok(pane_id) => pane_id,
+            Err(error) => {
+                remove_prompt_file(prompt_file.as_deref());
+                return Err(error);
+            }
+        };
 
     let send_cmd = build_send_cmd(
         provider,

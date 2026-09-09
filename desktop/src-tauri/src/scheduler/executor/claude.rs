@@ -81,7 +81,7 @@ pub(super) async fn execute_claude_job(
         effort,
         prompt_content,
         slug: &job.slug,
-        reuse_group_window: job.group == "agent",
+        use_agent_window_name: job.group == "agent",
         aerospace_workspace: job.aerospace_workspace.as_deref(),
     })
     .await

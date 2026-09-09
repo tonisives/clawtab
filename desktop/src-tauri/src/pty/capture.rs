@@ -25,32 +25,15 @@ pub(super) fn resolve_non_view_session_for_window(window_id: &str, fallback: &st
 pub(super) fn find_captured_window(pane_id: &str) -> Option<(String, String)> {
     let info = tmux_api::display_pane_origin(pane_id).ok()?;
     if info.window_name.starts_with("ct-") {
+        // Native ct-agent windows have no origin and stay in place on release.
+        tmux_api::get_window_origin(&info.window_id)
+            .ok()
+            .filter(|origin| !origin.is_empty())?;
         let session = resolve_non_view_session_for_window(&info.window_id, &info.session);
         Some((session, info.window_id))
     } else {
         None
     }
-}
-
-/// Return the next available `ct-<base>-<N>` window name in `session`.
-/// Starts at 1 and picks the smallest unused integer suffix.
-fn next_ct_window_name(session: &str, base: &str) -> String {
-    let base = if base.is_empty() { "pane" } else { base };
-    let existing = tmux_api::list_window_names_in_session(session).unwrap_or_default();
-    let prefix = format!("ct-{}-", base);
-    let mut used = std::collections::HashSet::new();
-    for name in existing {
-        if let Some(rest) = name.strip_prefix(&prefix) {
-            if let Ok(n) = rest.parse::<u32>() {
-                used.insert(n);
-            }
-        }
-    }
-    let mut n = 1u32;
-    while used.contains(&n) {
-        n += 1;
-    }
-    format!("ct-{}-{}", base, n)
 }
 
 /// Prepare a pane for viewing. Multi-pane windows move the selected pane into
@@ -94,7 +77,7 @@ pub(super) fn capture_pane(pane_id: &str, tmux_session: &str) -> Result<CaptureR
         let origin_pane_index = origin_parts.get(2).copied().unwrap_or("0");
         let origin_window_name = origin_parts.get(3).copied().unwrap_or("pane");
 
-        let new_name = next_ct_window_name(origin_session, origin_window_name);
+        let new_name = tmux_api::next_ct_window_name(origin_session, origin_window_name);
         tmux_api::break_pane_detached(pane_id, origin_session, &new_name)?;
 
         let new_win = tmux_api::display_pane_window_id(pane_id)?;
@@ -129,7 +112,7 @@ pub(super) fn capture_pane(pane_id: &str, tmux_session: &str) -> Result<CaptureR
         });
     }
 
-    let new_name = next_ct_window_name(tmux_session, &orig_window_name);
+    let new_name = tmux_api::next_ct_window_name(tmux_session, &orig_window_name);
     tmux_api::break_pane_detached(pane_id, tmux_session, &new_name)?;
     let new_win = tmux_api::display_pane_window_id(pane_id)?;
 

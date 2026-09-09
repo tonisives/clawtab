@@ -125,7 +125,7 @@ export const PaneOverviewModal = ({ visible, onClose, actions, ...pane }: PaneOv
           <View style={styles.headerText}>
             <Text style={styles.title} numberOfLines={1}>{title}</Text>
             <View style={styles.headerMeta}>
-              <Text style={styles.sessionTitle} selectable>{pane.tmuxSession || "-"}{pane.windowName ? ` / ${pane.windowName}` : ""}</Text>
+              <Text style={styles.sessionTitle} selectable>{pane.tmuxSession || "-"} / {pane.windowName || "-"}</Text>
               <Text style={styles.metaSeparator}>·</Text>
               <Text style={styles.paneIdTitle} numberOfLines={1}>{isIOS ? resourceLabel(pane.paneId) : pane.paneId}</Text>
             </View>
@@ -200,6 +200,7 @@ export const PaneOverviewModal = ({ visible, onClose, actions, ...pane }: PaneOv
               ) : null}
             </View>
           ) : null}
+          <DetailRow label="Window" value={pane.windowName || "-"} monospace />
           <DetailRow label="Started" value={formatStartedAt(pane.startedAt)} />
           {actions?.agentActions?.length ? (
             <View style={styles.agentActions}>
