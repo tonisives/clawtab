@@ -140,7 +140,7 @@ export const PaneOverviewModal = ({ visible, onClose, actions, ...pane }: PaneOv
           </Pressable>
         </View>
 
-        <ScrollView style={[styles.scroll, isIOS && styles.fullScreenScroll]} contentContainerStyle={styles.content}>
+        <ScrollView style={isIOS ? styles.fullScreenScroll : styles.scroll} contentContainerStyle={styles.content}>
           {isIOS && <MachineTerminalControls paneId={pane.paneId} connectedOnly />}
           {(actions?.onToggleAutoYes || actions?.onTogglePin || actions?.onStop || actions?.onStart) ? (
             <View style={styles.actions}>
