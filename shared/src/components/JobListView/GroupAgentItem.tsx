@@ -1,3 +1,4 @@
+import { useMachines } from "../../machines/client";
 import { Text, View } from "react-native";
 
 import { spacing } from "../../theme/spacing";
@@ -9,14 +10,18 @@ interface JobListGroupAgentItemProps {
   hook: JobListViewHook;
   workDir: string;
   footerPath?: string;
+  machineId?: string;
   itemKey: string;
 }
 
-export function JobListGroupAgentItem({ hook, workDir, footerPath, itemKey }: JobListGroupAgentItemProps) {
+export function JobListGroupAgentItem({ hook, workDir, footerPath, machineId, itemKey }: JobListGroupAgentItemProps) {
+  let machines = useMachines();
+  let machineName = machines.machines.find((machine) => machine.id === machineId)?.name;
   return (
     <View key={itemKey} style={[styles.groupAgentFooterRow, { marginTop: spacing.sm }]}>
       <GroupAgentRow
         localMachineId={hook.localAgentMachineId}
+        targetMachineId={machineId}
         provider={hook.groupAgent.resolveGroupAgentProvider(workDir)}
         model={hook.groupAgent.resolveGroupAgentModel(workDir)}
         effort={hook.groupAgent.resolveGroupAgentEffort(workDir)}
@@ -29,7 +34,7 @@ export function JobListGroupAgentItem({ hook, workDir, footerPath, itemKey }: Jo
       />
       {footerPath ? (
         <Text style={[styles.groupFolderPath, styles.groupAgentFooterPath]} numberOfLines={1}>
-          {footerPath.replace(/^\/Users\/[^/]+/, "~")}
+          {machineName ? `${machineName} · ` : ""}{footerPath.replace(/^\/Users\/[^/]+/, "~")}
         </Text>
       ) : null}
     </View>

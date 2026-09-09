@@ -1,3 +1,4 @@
+import type { PreferencesApi, MachineMessage } from "../../machines/client";
 import type * as React from "react";
 import type { ScrollViewProps, StyleProp, ViewStyle } from "react-native";
 
@@ -60,6 +61,8 @@ export interface JobListViewProps {
   defaultAgentProvider?: ProcessProvider;
   agentModelOptions?: AgentModelOption[];
   defaultAgentModel?: string | null;
+  groupPreferencesApi?: PreferencesApi;
+  localHostRequest?: (request: MachineMessage) => Promise<MachineMessage>;
   // Desktop-only slots
   onAddJob?: (group: string, folderPath?: string) => void;
   onEditJob?: (job: RemoteJob) => void;
@@ -144,12 +147,12 @@ export interface JobListViewProps {
 }
 
 export type ListItem =
-  | { kind: "header"; group: string; displayGroup: string; folderPath?: string; hidden?: boolean; tabsToggle?: { group: string; view: "tabs" | "jobs"; hasTabs: boolean; hasJobs: boolean; tabCount: number; jobCount: number } }
+  | { kind: "header"; group: string; displayGroup: string; folderPath?: string; hidden?: boolean; agentOnly?: boolean; tabsToggle?: { group: string; view: "tabs" | "jobs"; hasTabs: boolean; hasJobs: boolean; tabCount: number; jobCount: number } }
   | { kind: "group-footer"; group: string; folderPath: string }
   | { kind: "job"; job: RemoteJob; idx: number }
   | { kind: "process"; process: DetectedProcess; inGroup?: boolean }
   | { kind: "shell"; shell: ShellPane }
-  | { kind: "group-agent"; workDir: string; footerPath?: string }
+  | { kind: "group-agent"; workDir: string; machineId?: string; footerPath?: string }
   | { kind: "hidden-section" }
   | { kind: "hidden-header"; group: string; displayGroup: string };
 

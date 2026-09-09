@@ -1,3 +1,4 @@
+import type { SavedJobGroup } from "../util/jobGroups"
 import { useSyncExternalStore } from "react"
 import type { DetectedProcess } from "../types/process"
 import type { RemoteJob, JobStatus } from "../types/job"
@@ -33,6 +34,7 @@ export type MachineState = {
   controllers: Record<string, string | null>
   error: string | null
   agentModels: AgentModelPreferences | null
+  jobGroups: Record<string, SavedJobGroup>
   machineAppearance: Record<string, MachineAppearance>
 }
 export let newOperationId = () =>
@@ -58,6 +60,7 @@ let initialState = (): MachineState => ({
   error: null,
   agentModels: null,
   machineAppearance: {},
+  jobGroups: {},
 })
 let state = initialState()
 let preferencesGeneration = 0
@@ -99,8 +102,9 @@ export let selectMachine = (selected: string | null) => update({ selected })
 export let applyAccountPreferences = (preferences: Record<string, any>) => {
   let agentModels = preferences.agent_models ?? null
   let machineAppearance = preferences.machine_appearance ?? {}
-  if (JSON.stringify([agentModels, machineAppearance]) === JSON.stringify([state.agentModels, state.machineAppearance])) return
-  update({ agentModels, machineAppearance })
+  let jobGroups = preferences.job_groups ?? {}
+  if (JSON.stringify([agentModels, machineAppearance, jobGroups]) === JSON.stringify([state.agentModels, state.machineAppearance, state.jobGroups])) return
+  update({ agentModels, machineAppearance, jobGroups })
 }
 export let saveAccountPreferences = async (api: PreferencesApi, preferences: Record<string, unknown>) => {
   let generation = preferencesGeneration

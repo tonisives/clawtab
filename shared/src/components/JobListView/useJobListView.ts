@@ -1,4 +1,5 @@
-import { useCallback, useState } from "react";
+import { useMachines } from "../../machines/client";
+import { useCallback, useMemo, useState } from "react";
 
 import type { JobListViewProps } from "./sign";
 import { useGroupAgentControls } from "./useGroupAgentControls";
@@ -9,13 +10,17 @@ import { useScrollEffects } from "./useScrollEffects";
 import { useSelectableItems } from "./useSelectableItems";
 
 export function useJobListView(props: JobListViewProps) {
+  let machines = useMachines();
+  let savedGroups = useMemo(() => Object.values(machines.jobGroups).filter((group) => !machines.filter || group.machine_id === machines.filter), [machines.jobGroups, machines.filter]);
   const [sortOpen, setSortOpen] = useState(false);
   const [collapsedJobPanes, setCollapsedJobPanes] = useState<Set<string>>(() => new Set());
   const [hiddenSectionCollapsed, setHiddenSectionCollapsed] = useState(true);
-  const [groupMenu, setGroupMenu] = useState<{ group: string; sortGroup: string; folderPath?: string; hidden?: boolean } | null>(null);
+  const [groupMenu, setGroupMenu] = useState<{ group: string; sortGroup: string; folderPath?: string; hidden?: boolean; agentOnly?: boolean } | null>(null);
   const [groupMenuPos, setGroupMenuPos] = useState<{ top: number; left: number } | null>(null);
 
   const data = {
+    savedGroups,
+    localMachineId: props.localAgentMachineId,
     detectedProcesses: props.detectedProcesses,
     jobs: props.jobs,
     shellPanes: props.shellPanes ?? [],
@@ -108,6 +113,8 @@ export function useJobListView(props: JobListViewProps) {
   }, []);
 
   return {
+    groupPreferencesApi: props.groupPreferencesApi,
+    localHostRequest: props.localHostRequest,
     localAgentMachineId: props.localAgentMachineId,
     activeWorkspaceId: props.activeWorkspaceId,
     agentModelOptions: agent.agentModelOptions,

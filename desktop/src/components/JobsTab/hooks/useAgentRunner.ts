@@ -1,7 +1,8 @@
-import { splitResource } from "@clawtab/shared";
+import { machineState, matchesSavedGroup, savedGroupKey, splitResource } from "@clawtab/shared";
 import { useCallback, useEffect, useRef, type MutableRefObject } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { AgentEffort, PaneContent, ProcessProvider, ShellPane, Transport, useJobActions, useJobsCore, useSplitTree } from "@clawtab/shared";
+import { localMachineId } from "../../../machines/connection";
 import { requestXtermPaneFocus } from "../../XtermPane";
 import type { Job } from "../../../types";
 import type { useProcessLifecycle } from "../../../hooks/useProcessLifecycle";
@@ -102,9 +103,12 @@ export function useAgentRunner({
       return;
     }
 
-    const matchingJob = (core.jobs as Job[]).find((j) => j.folder_path === workDir || j.work_dir === workDir);
-    const matchedGroup = matchingJob ? (matchingJob.group || null) : null;
-    const targetWs = matchingJob ? (matchingJob.group || "default") : DETECTED_WORKSPACE_ID;
+    let machine = machineState().selected ?? localMachineId();
+    let savedGroup = Object.values(machineState().jobGroups).find((group) => matchesSavedGroup(group, workDir, machine));
+    const matchingJob = (core.jobs as Job[]).find((job) =>
+      (job.machine_id ?? localMachineId()) === machine && (job.folder_path === workDir || job.work_dir === workDir));
+    const matchedGroup = savedGroup ? savedGroup.name : matchingJob ? (matchingJob.group || null) : null;
+    const targetWs = savedGroup ? savedGroupKey(savedGroup) : matchingJob ? (matchingJob.group || "default") : DETECTED_WORKSPACE_ID;
 
     const result = await actions.runAgent(prompt, workDir, provider, model, effort ?? undefined);
     if (!result) {

@@ -10,15 +10,15 @@ pub async fn get_preferences(
     State(state): State<AppState>,
     claims: Claims,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let row = sqlx::query_as::<_, (Vec<String>, Option<Value>, Value)>(
-        "SELECT hidden_groups, agent_models, machine_appearance FROM user_preferences WHERE user_id = $1",
+    let row = sqlx::query_as::<_, (Vec<String>, Option<Value>, Value, Value)>(
+        "SELECT hidden_groups, agent_models, machine_appearance, job_groups FROM user_preferences WHERE user_id = $1",
     )
     .bind(claims.sub)
     .fetch_optional(&state.pool)
     .await?
-    .unwrap_or_else(|| (Vec::new(), None, json!({})));
+    .unwrap_or_else(|| (Vec::new(), None, json!({}), json!({})));
     Ok(Json(
-        json!({ "hidden_groups": row.0, "agent_models": row.1, "machine_appearance": row.2 }),
+        json!({ "hidden_groups": row.0, "agent_models": row.1, "machine_appearance": row.2, "job_groups": row.3 }),
     ))
 }
 
@@ -26,8 +26,40 @@ pub async fn get_preferences(
 #[serde(untagged)]
 pub enum Preference {
     Group(GroupPreference),
+    JobGroup(JobGroupPreference),
     Models(ModelPreference),
     Machine(MachinePreference),
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct JobGroupPreference {
+    job_group: SavedJobGroup,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SavedJobGroup {
+    id: Uuid,
+    name: String,
+    machine_id: Uuid,
+    work_dir: String,
+}
+
+impl SavedJobGroup {
+    fn validate(&self) -> Result<(), AppError> {
+        if self.name.trim().is_empty()
+            || self.name.len() > 100
+            || self.name.chars().any(char::is_control)
+            || !self.work_dir.starts_with('/')
+            || self.work_dir.len() > 4096
+            || self.work_dir.chars().any(char::is_control)
+            || self.work_dir.split('/').any(|part| part == "..")
+        {
+            return Err(AppError::BadRequest("Invalid group name or folder".into()));
+        }
+        Ok(())
+    }
 }
 
 #[derive(Deserialize)]
@@ -68,6 +100,19 @@ pub async fn set_preferences(
 ) -> Result<Json<Value>, AppError> {
     match preference {
         Preference::Group(group) => return set_hidden_group(&state, claims.sub, group).await,
+        Preference::JobGroup(preference) => {
+            let group = preference.job_group;
+            group.validate()?;
+            let changed = sqlx::query("INSERT INTO user_preferences (user_id, job_groups)
+                SELECT $1, jsonb_build_object($2::text, $3::jsonb) WHERE EXISTS (SELECT 1 FROM devices WHERE id=$4 AND user_id=$1)
+                ON CONFLICT (user_id) DO UPDATE SET job_groups = user_preferences.job_groups || EXCLUDED.job_groups")
+                .bind(claims.sub).bind(group.id.to_string())
+                .bind(json!(group)).bind(group.machine_id)
+                .execute(&state.pool).await?;
+            if changed.rows_affected() == 0 {
+                return Err(AppError::Forbidden);
+            }
+        }
         Preference::Models(preference) => {
             let models = preference.agent_models;
             let providers = ["claude", "codex", "opencode", "antigravity", "shell"];

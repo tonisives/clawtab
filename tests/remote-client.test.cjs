@@ -284,3 +284,19 @@ test('mobile subscription replay records the connection before synchronous error
   assert.equal(replayCount, 1);
   cleanup();
 });
+
+
+test('saved groups load without a desktop and are cleared on account logout', async () => {
+  let { client, sockets } = load();
+  let group = { id: 'group', name: 'Project', machine_id: b, work_dir: '/home/user/project' };
+  let preferences = { job_groups: { group } };
+  let stop = client.connectMachines(async () => 'ws://localhost/v2/ws?token=fixture', async () => preferences);
+  await new Promise(setImmediate);
+  sockets[0].onopen();
+  await new Promise(setImmediate);
+  assert.equal(client.machineState().jobGroups.group.machine_id, b);
+  await client.saveAccountPreferences(async () => ({ job_groups: { group, other: { ...group, id: 'other', work_dir: '/other' } } }), { job_group: group });
+  assert.equal(Object.keys(client.machineState().jobGroups).length, 2);
+  stop();
+  assert.equal(Object.keys(client.machineState().jobGroups).length, 0);
+});

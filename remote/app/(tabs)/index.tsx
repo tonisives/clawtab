@@ -1,4 +1,4 @@
-import { useHiddenGroups, machineRequest, machineState, scopedMessage } from "@clawtab/shared";
+import { useMachines, useHiddenGroups, machineRequest, machineState, scopedMessage } from "@clawtab/shared";
 import { MachinesPanel } from "@clawtab/shared";
 import { approveMachinePairing, machineApi } from "../../src/api/client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
@@ -168,7 +168,7 @@ function jobListLoadingState({
   loaded: boolean
 }) {
   if (!connected) return { label: "Connecting to relay...", progress: JOB_LIST_LOADING_PROGRESS }
-  if (!desktopOnline) return { label: "Connecting to desktop...", progress: JOB_LIST_LOADING_PROGRESS }
+  if (!desktopOnline) return { label: "Connecting to a machine...", progress: JOB_LIST_LOADING_PROGRESS }
   if (!loaded) return { label: "Loading jobs...", progress: JOB_LIST_LOADING_PROGRESS }
   return null
 }
@@ -233,6 +233,10 @@ export default function JobsScreen() {
   const defaultModel = useJobsStore((s) => s.defaultModel)
   const connected = useWsStore((s) => s.connected)
   const desktopOnline = useWsStore((s) => s.desktopOnline)
+  let machines = useMachines()
+  let machineOnline = machines.machines.some((machine) => machine.online)
+  let canRunAgents = machines.machines.some((machine) => machine.online && machine.owned)
+  let hostOnline = desktopOnline || machineOnline
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() =>
     readWebStringSet(COLLAPSED_GROUPS_STORAGE_KEY),
   )
@@ -274,7 +278,7 @@ export default function JobsScreen() {
     })()
   const isMobileWeb = Platform.OS === "web" && !isSplitView
 
-  const isDemo = connected && !desktopOnline && realJobs.length === 0
+  const isDemo = connected && !hostOnline && realJobs.length === 0 && detectedProcesses.length === 0 && Object.keys(machines.jobGroups).length === 0
   const jobs = isDemo ? DEMO_JOBS : realJobs
   const statuses = isDemo ? DEMO_STATUSES : realStatuses
   const visibleDetectedProcesses = isDemo ? DEMO_PROCESSES : detectedProcesses
@@ -554,6 +558,7 @@ export default function JobsScreen() {
         const pendingProcess: DetectedProcess = {
           ...existingProcess,
           pane_id: ack.pane_id,
+          machine_id: target,
           cwd: ack.work_dir ?? workDir ?? existingProcess?.cwd ?? "",
           version: existingProcess?.version ?? "",
           provider:
@@ -625,7 +630,7 @@ export default function JobsScreen() {
     }
   }, [isIosPad, searchAnimation, searchOpen])
 
-  const runAgentHandler = isDemo ? handleDemoRunAgent : desktopOnline ? handleRunAgent : undefined
+  const runAgentHandler = isDemo ? handleDemoRunAgent : canRunAgents ? handleRunAgent : undefined
 
   const handleOpenSidebarSettings = useCallback(() => {
     if (isSplitView) setSidebarSection("settings")
@@ -705,7 +710,7 @@ export default function JobsScreen() {
     })
   }, [visibleDetectedProcesses, selectedProcess, processesLoaded, split.cleanStaleLeaves])
 
-  const jobListLoading = !isDemo ? jobListLoadingState({ connected, desktopOnline, loaded }) : null
+  const jobListLoading = !isDemo ? jobListLoadingState({ connected: connected || machines.connected, desktopOnline: hostOnline, loaded }) : null
 
   const bannerContent = (
     <>
@@ -714,9 +719,9 @@ export default function JobsScreen() {
           <LoadingBar label={jobListLoading.label} progress={jobListLoading.progress} />
         </View>
       )}
-      {connected && !desktopOnline && !isDemo && realJobs.length > 0 && (
+      {connected && !hostOnline && !isDemo && realJobs.length > 0 && (
         <View style={[styles.banner, styles.bannerWarn]}>
-          <Text style={styles.bannerText}>Desktop not connected</Text>
+          <Text style={styles.bannerText}>No machines connected</Text>
         </View>
       )}
     </>
@@ -750,6 +755,7 @@ export default function JobsScreen() {
         onSaveProcessName={!isDemo && sharedPinsActive ? handleSaveProcessName : undefined}
         stoppingSlugs={stoppingJobSlugs}
         onRunAgent={runAgentHandler}
+        groupPreferencesApi={machineApi}
         agentModelOptions={agentModelOptions}
         defaultAgentProvider={defaultAgentProvider}
         defaultAgentModel={defaultModel}
@@ -758,7 +764,7 @@ export default function JobsScreen() {
         onSetAllGroupTabView={handleSetAllGroupTabView}
         headerContent={bannerContent}
         showEmpty={loaded || isDemo}
-        emptyMessage={connected ? "No jobs found. Create jobs on your desktop." : "Connecting..."}
+        emptyMessage={connected ? "Add a group below to start agents on a machine." : "Connecting..."}
         searchQuery={searchQuery}
         onSearchQueryChange={setSearchQuery}
         hideSearchBar={!isSplitView}
@@ -792,6 +798,7 @@ export default function JobsScreen() {
       onSaveProcessName={!isDemo && sharedPinsActive ? handleSaveProcessName : undefined}
       stoppingSlugs={stoppingJobSlugs}
       onRunAgent={runAgentHandler}
+      groupPreferencesApi={machineApi}
       agentModelOptions={agentModelOptions}
       defaultAgentProvider={defaultAgentProvider}
       defaultAgentModel={defaultModel}
@@ -806,7 +813,7 @@ export default function JobsScreen() {
         </>
       }
       showEmpty={loaded || isDemo}
-      emptyMessage={connected ? "No jobs found. Create jobs on your desktop." : "Connecting..."}
+      emptyMessage={connected ? "Add a group below to start agents on a machine." : "Connecting..."}
       searchQuery={searchQuery}
       onSearchQueryChange={setSearchQuery}
       compactMobileToolbar
@@ -1188,6 +1195,7 @@ export default function JobsScreen() {
             selectedItems={split.selectedItems}
             focusedItemKey={split.focusedItemKey}
             onRunAgent={runAgentHandler}
+            groupPreferencesApi={machineApi}
             agentModelOptions={agentModelOptions}
             defaultAgentProvider={defaultAgentProvider}
             defaultAgentModel={defaultModel}
@@ -1214,7 +1222,7 @@ export default function JobsScreen() {
             }
             showEmpty={loaded || isDemo}
             emptyMessage={
-              connected ? "No jobs found. Create jobs on your desktop." : "Connecting..."
+              connected ? "Add a group below to start agents on a machine." : "Connecting..."
             }
             searchQuery={searchQuery}
             onSearchQueryChange={setSearchQuery}

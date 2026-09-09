@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
-import { collectLeaves, leafContentEquals, type DetectedProcess, type PaneContent, type RemoteJob, type ShellPane, type useJobsCore, type useSplitTree } from "@clawtab/shared";
+import { machineState, matchesSavedGroup, savedGroupKey, splitResource, collectLeaves, leafContentEquals, type DetectedProcess, type PaneContent, type RemoteJob, type ShellPane, type useJobsCore, type useSplitTree } from "@clawtab/shared";
+import { localMachineId } from "../../../machines/connection";
 import { requestXtermPaneFocus } from "../../XtermPane";
 import type { useViewingState } from "./useViewingState";
 import type { Job } from "../../../types";
@@ -22,9 +23,14 @@ function groupForJob(job: RemoteJob): string {
   return (job as Job).group || "default";
 }
 
-function groupForProcess(process: DetectedProcess): string {
-  return process.matched_group ?? DETECTED_WORKSPACE_ID;
-}
+let savedWorkspaceForPane = (pane: DetectedProcess | ShellPane) => {
+  let machine = ("machine_id" in pane ? pane.machine_id : undefined) ?? splitResource(pane.pane_id)?.machine ?? localMachineId();
+  let group = Object.values(machineState().jobGroups).find((group) => matchesSavedGroup(group, pane.cwd, machine));
+  return group ? savedGroupKey(group) : undefined;
+};
+
+let groupForProcess = (process: DetectedProcess): string =>
+  savedWorkspaceForPane(process) ?? process.matched_group ?? DETECTED_WORKSPACE_ID;
 
 export function usePaneSelection({ core, onJobSelected, split, viewing }: UsePaneSelectionParams) {
   const {
@@ -170,7 +176,7 @@ export function usePaneSelection({ core, onJobSelected, split, viewing }: UsePan
 
   const handleSelectShell = useCallback((shell: ShellPane) => {
     setShowFolderRunner(false);
-    const shellWs = shell.workspace_id ?? mgr.activeId;
+    const shellWs = shell.workspace_id ?? savedWorkspaceForPane(shell) ?? mgr.activeId;
     if (shellWs !== mgr.activeId) {
       scheduleCrossWorkspace({ kind: "shell", workspaceId: shellWs, shell });
       return;

@@ -16,6 +16,7 @@ export function GroupAgentRow({
   effort,
   workDir,
   localMachineId,
+  targetMachineId,
 }: {
   onRunAgent: (prompt: string, provider?: ProcessProvider, model?: string | null, effort?: AgentEffort | null) => void | Promise<void>;
   provider?: ProcessProvider | null;
@@ -24,13 +25,14 @@ export function GroupAgentRow({
   modelOptions?: AgentModelOption[];
   workDir?: string;
   localMachineId?: string | null;
+  targetMachineId?: string;
 }) {
   const sendingRef = useRef(false);
   let machines = useMachines();
   let [busy, setBusy] = useState(false);
   let [error, setError] = useState<string | null>(null);
   let hasLocal = localMachineId !== undefined;
-  let target = machines.selected ?? localMachineId ?? (hasLocal ? null : machines.machines.find((machine) => machine.online && machine.owned)?.id);
+  let target = targetMachineId ?? machines.selected ?? localMachineId ?? (hasLocal ? null : machines.machines.find((machine) => machine.online && machine.owned)?.id);
   let isLocal = hasLocal && (target == null || target === localMachineId);
   let machine = machines.machines.find((machine) => machine.id === target);
   let settings = target ? machines.snapshots[target]?.settings_response : undefined;
@@ -62,7 +64,7 @@ export function GroupAgentRow({
       sendingRef.current = false;
       setBusy(false);
     }
-  }, [onRunAgent, target, isLocal, machine?.online, settings]);
+  }, [onRunAgent, target, isLocal, machine?.online, machine?.owned, settings]);
 
   return (
     <View
@@ -76,7 +78,9 @@ export function GroupAgentRow({
         model={model}
         effort={effort}
         modelOptions={options}
-        machinePicker={<MachineTargetPicker target={target ?? null} localMachineId={localMachineId} onSelect={chooseTarget} />}
+        machinePicker={targetMachineId
+          ? <Text style={styles.status}>{machine?.name ?? (isLocal ? "This desktop" : "Group machine")}{!isLocal && !machine?.online ? " · Offline" : ""}</Text>
+          : <MachineTargetPicker target={target ?? null} localMachineId={localMachineId} onSelect={chooseTarget} />}
         includeShell
         onChange={(selection) => launch(selection.provider, selection.modelId, selection.effort)}
         nativeBottomInset={88}

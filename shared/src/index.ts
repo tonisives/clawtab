@@ -145,3 +145,5 @@ export * from "./machines/Rentals";
 
 export { buildModelOptions, BARE_PROVIDER_OPTIONS, labelForProviderModel } from "./util/agentModels";
 export { useHiddenGroups } from "./hooks/useHiddenGroups";
+
+export { matchesSavedGroup, savedGroupKey } from "./util/jobGroups";
