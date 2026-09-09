@@ -127,3 +127,132 @@ test('a stopped account lookup cannot overwrite a newer connection error', async
   await new Promise(setImmediate);
   assert.equal(client.machineState().error, 'Current account error');
 });
+
+test('unchanged errors do not recursively notify machine subscribers', () => {
+  let { client } = load();
+  let calls = 0;
+  let unsubscribe = client.subscribeMachines(() => {
+    calls++;
+    if (calls > 3) throw new Error('Recursive machine update');
+    client.sendResource({ type: 'subscribe_pty', pane_id: '%1' });
+  });
+  client.sendResource({ type: 'subscribe_pty', pane_id: '%1' });
+  unsubscribe();
+  assert.equal(calls, 1);
+});
+
+let fakeClock = () => {
+  let time = 0;
+  let timers = new Set();
+  let intervals = new Set();
+  return {
+    timers,
+    intervals,
+    advance: (ms) => { time += ms; },
+    tools: {
+      Date: { now: () => time },
+      setTimeout: (callback, delay) => { let timer = { callback, delay }; timers.add(timer); return timer; },
+      clearTimeout: (timer) => timers.delete(timer),
+      setInterval: (callback) => { intervals.add(callback); return callback; },
+      clearInterval: (callback) => intervals.delete(callback),
+    },
+  };
+};
+
+test('resume replaces a silent socket without waiting for its close event', async (t) => {
+  let clock = fakeClock();
+  let { client, sockets } = load(clock.tools);
+  let stop = client.connectMachines(async () => 'ws://localhost/ws?token=fixture');
+  t.after(stop);
+  await new Promise(setImmediate);
+  let first = sockets[0]; first.onopen();
+  first.receive({ type: 'machines', connection_id: 'first', machines: [] });
+  let lateOpen = first.onopen;
+  first.close = () => {};
+  client.reconnectMachines();
+  assert.equal(client.machineState().connected, false);
+  await new Promise(setImmediate);
+  assert.equal(sockets.length, 2);
+  lateOpen();
+  assert.equal(client.machineState().connected, false);
+  sockets[1].onopen();
+  assert.equal(client.machineState().connected, true);
+  assert.equal(clock.timers.size, 1);
+});
+
+test('a stalled handshake retries even when close does not emit an event', async (t) => {
+  let clock = fakeClock();
+  let { client, sockets } = load(clock.tools);
+  let stop = client.connectMachines(async () => 'ws://localhost/ws?token=fixture');
+  t.after(stop);
+  await new Promise(setImmediate);
+  sockets[0].readyState = 0;
+  sockets[0].close = () => {};
+  [...clock.timers][0].callback();
+  let retry = [...clock.timers].find((timer) => timer.delay === 1000);
+  assert.ok(retry);
+  await retry.callback();
+  assert.equal(sockets.length, 2);
+});
+
+test('an open socket with no relay traffic is retired and retried', async (t) => {
+  let clock = fakeClock();
+  let { client, sockets } = load(clock.tools);
+  let stop = client.connectMachines(async () => 'ws://localhost/ws?token=fixture');
+  t.after(stop);
+  await new Promise(setImmediate);
+  sockets[0].onopen();
+  sockets[0].receive({ type: 'machines', connection_id: 'viewer', machines: [] });
+  sockets[0].close = () => {};
+  clock.advance(31_000);
+  [...clock.intervals][0]();
+  assert.equal(client.machineState().connected, false);
+  await [...clock.timers].find((timer) => timer.delay === 1000).callback();
+  assert.equal(sockets.length, 2);
+});
+
+test('cleanup from an old session cannot disconnect the current session', async (t) => {
+  let { client, sockets } = load();
+  let oldStop = client.connectMachines(async () => 'ws://localhost/ws?token=fixture');
+  await new Promise(setImmediate);
+  let stop = client.connectMachines(async () => 'ws://localhost/ws?token=fixture');
+  t.after(stop);
+  await new Promise(setImmediate);
+  sockets[1].onopen();
+  oldStop();
+  assert.equal(client.machineState().connected, true);
+  assert.equal(sockets[1].readyState, 1);
+});
+
+test('mobile subscription replay records the connection before synchronous error notifications', () => {
+  let notify, cleanup, replayCount = 0;
+  let noop = () => {};
+  let state = { connected: true, selected: null, snapshots: {}, machines: [{ id: a, online: true }] };
+  let store = Object.assign(() => true, {
+    setState: noop,
+    getState: () => new Proxy({}, { get: () => noop }),
+  });
+  let modules = {
+    react: { useEffect: (effect) => { cleanup = effect(); }, useCallback: (callback) => callback },
+    'react-native': { AppState: { addEventListener: () => ({ remove: noop }) }, Platform: { OS: 'ios' } },
+    '@clawtab/shared': {
+      machineState: () => state, machineProcesses: () => [],
+      machineJobs: () => ({ jobs: [], statuses: {} }),
+      subscribeMachines: (callback) => { notify = callback; return noop; },
+      onMachineEvent: () => noop, connectMachines: () => noop,
+    },
+    '../lib/notifications': { getPushToken: async () => null },
+    '../lib/terminalCache': { terminalCache: { clear: noop, delete: noop } },
+    './usePty': { replayActivePtySubscriptions: () => {
+      if (++replayCount > 3) throw new Error('Recursive subscription replay');
+      notify();
+    } },
+  };
+  let exports = {};
+  let source = ts.transpileModule(fs.readFileSync(require.resolve('../remote/src/hooks/useWebSocket.ts'), 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
+  vm.runInNewContext(source, { exports, require: (name) => modules[name] ?? new Proxy({}, { get: (_, key) => String(key).startsWith('use') ? store : noop }) });
+  exports.useWebSocket();
+  notify();
+  assert.equal(replayCount, 1);
+  cleanup();
+});

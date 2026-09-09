@@ -64,11 +64,13 @@ let transferSocket: WebSocket | null = null
 let transferConnection: Promise<WebSocket> | null = null
 let connectionUrl: (() => Promise<string>) | null = null
 let stopConnection: (() => void) | null = null
-let retryConnection: (() => void) | null = null
+let retryConnection: ((force?: boolean) => void) | null = null
 export let retryMachines = () => retryConnection?.()
+export let reconnectMachines = () => retryConnection?.(true)
 export let machineErrorMessage = (error: unknown, fallback = "Machine request failed") =>
   error instanceof Error ? error.message : typeof error === "string" && error ? error : fallback
 let update = (patch: Partial<MachineState>) => {
+  if (Object.entries(patch).every(([key, value]) => Object.is(state[key as keyof MachineState], value))) return
   state = { ...state, ...patch }
   listeners.forEach((listener) => listener())
 }
@@ -210,6 +212,8 @@ export let connectMachines = (getUrl: () => Promise<string>) => {
   let reconnect: ReturnType<typeof setTimeout> | undefined
   let backoff = 1000
   let connecting = false
+  let lastReceived = Date.now()
+  let disconnectSocket: (() => void) | null = null
   let connect = async () => {
     if (stopped || connecting) return
     connecting = true
@@ -218,16 +222,17 @@ export let connectMachines = (getUrl: () => Promise<string>) => {
       if (stopped) return
       let ws = new WebSocket(url.replace(/\/(?:v2\/)?ws\?/, "/v2/ws?"))
       socket = ws
+      lastReceived = Date.now()
       let watchdog = setTimeout(() => {
-        if (ws.readyState === WebSocket.CONNECTING) ws.close()
+        if (socket === ws) disconnectSocket?.()
       }, 15_000)
       ws.onopen = () => {
-        clearTimeout(watchdog)
-        backoff = 1000
+        if (stopped || socket !== ws) return
         update({ connected: true, error: null })
       }
       ws.onmessage = (event) => {
         if (socket !== ws) return
+        lastReceived = Date.now()
         let data: MachineMessage
         try {
           data = JSON.parse(event.data)
@@ -235,6 +240,8 @@ export let connectMachines = (getUrl: () => Promise<string>) => {
           return
         }
         if (data.type === "machines") {
+          clearTimeout(watchdog)
+          backoff = 1000
           let machines = data.machines as Machine[]
           let known = new Map(
             state.machines.filter((m) => m.online).map((m) => [m.id, m.connection_id]),
@@ -332,10 +339,16 @@ export let connectMachines = (getUrl: () => Promise<string>) => {
         }
         events.forEach((listener) => listener(data.machine_id, message))
       }
-      ws.onclose = () => {
+      let disconnect = () => {
         clearTimeout(watchdog)
         if (socket !== ws) return
         socket = null
+        disconnectSocket = null
+        ws.onopen = null
+        ws.onmessage = null
+        ws.onclose = null
+        ws.onerror = null
+        ws.close()
         for (let request of pending.values()) {
           clearTimeout(request.timer)
           request.reject(new Error("Connection lost; operation outcome may be pending"))
@@ -352,7 +365,9 @@ export let connectMachines = (getUrl: () => Promise<string>) => {
           backoff = Math.min(backoff * 2, 30_000)
         }
       }
-      ws.onerror = () => ws.close()
+      disconnectSocket = disconnect
+      ws.onclose = disconnect
+      ws.onerror = disconnect
     } catch (error) {
       if (stopped) return
       update({ connected: false, error: machineErrorMessage(error, "Cannot connect to the machine service") })
@@ -364,8 +379,12 @@ export let connectMachines = (getUrl: () => Promise<string>) => {
       connecting = false
     }
   }
-  retryConnection = () => {
-    if (stopped || connecting || socket) return
+  retryConnection = (force = false) => {
+    if (stopped || connecting) return
+    if (socket) {
+      if (!force && socket.readyState === WebSocket.OPEN) return
+      disconnectSocket?.()
+    }
     clearTimeout(reconnect)
     backoff = 1000
     update({ error: null })
@@ -373,8 +392,18 @@ export let connectMachines = (getUrl: () => Promise<string>) => {
   }
   void connect()
   let refresh = setInterval(() => {
-    if (socket?.readyState === WebSocket.OPEN)
-      socket.send(JSON.stringify({ type: "refresh_machines" }))
+    if (socket && Date.now() - lastReceived > 30_000) {
+      disconnectSocket?.()
+      return
+    }
+    if (socket?.readyState === WebSocket.OPEN) {
+      try {
+        socket.send(JSON.stringify({ type: "refresh_machines" }))
+      } catch {
+        disconnectSocket?.()
+        return
+      }
+    }
     for (let [key, controller] of Object.entries(state.controllers)) {
       let resource = splitResource(key)
       if (resource && controller === state.connectionId)
@@ -382,6 +411,7 @@ export let connectMachines = (getUrl: () => Promise<string>) => {
     }
   }, 10_000)
   stopConnection = () => {
+    if (stopped) return
     stopped = true
     retryConnection = null
     transferSocket?.close()
@@ -389,14 +419,12 @@ export let connectMachines = (getUrl: () => Promise<string>) => {
     transferConnection = null
     clearInterval(refresh)
     clearTimeout(reconnect)
-    let closing = socket
-    socket = null
-    closing?.close()
     for (let request of pending.values()) {
       clearTimeout(request.timer)
       request.reject(new Error("Disconnected"))
     }
     pending.clear()
+    disconnectSocket?.()
     update(initialState())
   }
   return stopConnection

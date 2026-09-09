@@ -2,6 +2,7 @@ import { useEffect, useCallback } from "react"
 import { AppState, Platform } from "react-native"
 import {
   connectMachines,
+  reconnectMachines,
   machineState,
   subscribeMachines,
   onMachineEvent,
@@ -103,7 +104,6 @@ export let useWebSocket = () => {
       for (let [pane, execution] of executions)
         if (nextExecutions.get(pane) !== execution) terminalCache.delete(pane)
       executions = nextExecutions
-      synchronize()
       let connected = machineState().connected && machineState().machines.some((m) => m.online)
       let nextHosts = new Map(
         machineState()
@@ -113,9 +113,13 @@ export let useWebSocket = () => {
       let hostReconnected = [...nextHosts].some(
         ([id, generation]) => !hostConnections.has(id) || hostConnections.get(id) !== generation,
       )
-      if (connected && (!wasConnected || hostReconnected)) replayActivePtySubscriptions()
+      let replay = connected && (!wasConnected || hostReconnected)
+      // Sending a subscription can synchronously publish a routing error. Record
+      // this generation first so that notification cannot replay it recursively.
       hostConnections = nextHosts
       wasConnected = connected
+      synchronize()
+      if (replay) replayActivePtySubscriptions()
     })
     let unlisten = onMachineEvent((machine, raw) => {
       let message = scopedMessage(machine, raw)
@@ -154,11 +158,18 @@ export let useWebSocket = () => {
           : undefined,
       )
       .catch(() => {})
+    let wasBackgrounded = AppState.currentState === "background"
     let appState = AppState.addEventListener("change", (next) => {
       if (next === "active") {
-        replayActivePtySubscriptions("resume")
+        if (wasBackgrounded || !machineState().connected) {
+          wasBackgrounded = false
+          reconnectMachines()
+        } else {
+          replayActivePtySubscriptions("resume")
+        }
         return
       }
+      if (next === "background") wasBackgrounded = true
       releaseActivePtySubscriptions()
       let state = machineState()
       for (let [key, controller] of Object.entries(state.controllers)) {

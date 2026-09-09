@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
-import { Dimensions, Keyboard, Platform, type KeyboardEvent, type LayoutChangeEvent, type View } from "react-native";
+import { AppState, Dimensions, Keyboard, Platform, type KeyboardEvent, type LayoutChangeEvent, type View } from "react-native";
 import type { XtermLogHandle } from "@clawtab/shared";
 
 type UseTerminalKeyboardOptions = {
@@ -41,9 +41,19 @@ export let useTerminalKeyboard = ({
     });
   }, [extraClearance, termRef, toolbarHeight]);
 
+  let resetKeyboard = useCallback(() => {
+    keyboardTopRef.current = null;
+    setKeyboardVisible(false);
+    setKeyboardHeight(0);
+    termRef.current?.setVisualOffset(0);
+  }, [termRef]);
+
   let handleKeyboardFrame = useCallback((event: KeyboardEvent) => {
     let nextKeyboardHeight = event.endCoordinates?.height ?? 0;
-    if (nextKeyboardHeight <= 0) return;
+    if (nextKeyboardHeight <= 0 || event.endCoordinates.screenY >= Dimensions.get("screen").height) {
+      resetKeyboard();
+      return;
+    }
     let screenY = event.endCoordinates?.screenY;
     let nextKeyboardTop = Number.isFinite(screenY)
       ? screenY
@@ -53,7 +63,7 @@ export let useTerminalKeyboard = ({
     setKeyboardVisible(true);
     setKeyboardHeight(nextKeyboardHeight);
     requestAnimationFrame(applyKeyboardOffset);
-  }, [applyKeyboardOffset]);
+  }, [applyKeyboardOffset, resetKeyboard]);
 
   useEffect(() => {
     if (Platform.OS !== "ios") return;
@@ -61,22 +71,24 @@ export let useTerminalKeyboard = ({
     let show = Keyboard.addListener("keyboardWillShow", handleKeyboardFrame);
     let changeFrame = Keyboard.addListener("keyboardWillChangeFrame", handleKeyboardFrame);
     let hide = Keyboard.addListener("keyboardWillHide", () => {
+      resetKeyboard();
       if (menuOpenRef.current) {
         setTimeout(() => termRef.current?.focus(), 0);
         return;
       }
-      keyboardTopRef.current = null;
-      setKeyboardVisible(false);
-      setKeyboardHeight(0);
-      termRef.current?.setVisualOffset(0);
+    });
+
+    let appState = AppState.addEventListener("change", (next) => {
+      if (next === "background" || next === "active" && !Keyboard.isVisible()) resetKeyboard();
     });
 
     return () => {
+      appState.remove();
       show.remove();
       changeFrame.remove();
       hide.remove();
     };
-  }, [handleKeyboardFrame, termRef]);
+  }, [handleKeyboardFrame, resetKeyboard, termRef]);
 
   let handleTerminalLayout = useCallback((_event: LayoutChangeEvent) => {
     if (keyboardTopRef.current === null) return;

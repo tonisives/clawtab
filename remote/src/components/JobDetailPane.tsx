@@ -241,6 +241,7 @@ export function JobDetailPane({ jobName, isDemo: parentIsDemo, onClose, embedded
         onToggleAutoYes={isDemo || !autoYesPaneId ? undefined : handleToggleAutoYes}
         renderTerminal={isRunningWithPty ? renderTerminal : undefined}
         hideMessageInput={isRunningWithPty}
+        expandOutput={isRunningWithPty}
         defaultOutputCollapsed
         defaultRunsCollapsed
         defaultAgentProvider={(defaultAgentProvider ?? undefined) as import("@clawtab/shared").ProcessProvider | undefined}

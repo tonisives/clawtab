@@ -343,7 +343,7 @@ export default function JobDetailScreen() {
     <View style={styles.container}>
       <Stack.Screen options={jobHeaderOptions} />
       {isDemo && <DemoBanner />}
-      <ContentContainer wide>
+      <ContentContainer wide fill>
         <JobDetailView
           transport={isDemo ? demoTransport : wsTransport}
           job={job}
@@ -361,6 +361,7 @@ export default function JobDetailScreen() {
           onToggleAutoYes={isDemo || !autoYesPaneId ? undefined : handleToggleAutoYes}
           renderTerminal={isRunningWithPty ? renderTerminal : undefined}
           hideMessageInput={isRunningWithPty}
+          expandOutput={isRunningWithPty}
           paneOverview={statusPaneId ? { paneId: statusPaneId, cwd: activeProcess?.cwd ?? job.work_dir, startedAt: activeProcess?.session_started_at, firstQuery: activeProcess?.first_query, lastQuery: activeProcess?.last_query } : undefined}
           paneOverviewActions={agentActionControls}
           paneOverviewVisible={showPaneOverview}
