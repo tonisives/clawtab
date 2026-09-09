@@ -7,9 +7,9 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web --port 1942",
-    "ota:publish": "pnpm dlx eoas publish --branch production --channel production --nonInteractive --packageRunner pnpm",
-    "ota:publish:android": "pnpm dlx eoas publish --branch production --channel production --nonInteractive --platform android --packageRunner pnpm",
-    "ota:publish:ios": "pnpm dlx eoas publish --branch production --channel production --nonInteractive --platform ios --packageRunner pnpm"
+    "ota:publish": "pnpm dlx eoas@2.3.23 publish --branch production --channel production --nonInteractive --packageRunner pnpm",
+    "ota:publish:android": "pnpm dlx eoas@2.3.23 publish --branch production --channel production --nonInteractive --platform android --packageRunner pnpm",
+    "ota:publish:ios": "pnpm dlx eoas@2.3.23 publish --branch production --channel production --nonInteractive --platform ios --packageRunner pnpm"
   },
   "dependencies": {
     "@clawtab/shared": "workspace:*",

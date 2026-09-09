@@ -1,5 +1,4 @@
 mod account;
-mod preferences;
 mod answer;
 mod apple_auth;
 mod apple_callback;
@@ -13,6 +12,7 @@ mod iap;
 mod internal;
 mod login;
 mod notifications;
+mod preferences;
 mod refresh;
 mod register;
 mod share;
@@ -102,7 +102,7 @@ pub fn router(state: AppState) -> Router<AppState> {
     let authenticated = Router::new()
         .route(
             "/account/preferences",
-            get(preferences::get_preferences).post(preferences::set_hidden_group),
+            get(preferences::get_preferences).post(preferences::set_preferences),
         )
         .route(
             "/machines/push-token",

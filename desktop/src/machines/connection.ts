@@ -1,6 +1,8 @@
 import { useEffect } from "react"
 import { invoke } from "@tauri-apps/api/core"
-import { connectMachines, machineErrorMessage } from "@clawtab/shared"
+import { listen } from "@tauri-apps/api/event"
+import { connectMachines, machineErrorMessage, saveAccountPreferences } from "@clawtab/shared"
+import type { AppSettings } from "../types"
 let machineInvoke = async <T,>(command: string, args?: Record<string, unknown>): Promise<T> => {
   try {
     return await invoke<T>(command, args)
@@ -14,16 +16,47 @@ let machineInvoke = async <T,>(command: string, args?: Record<string, unknown>):
 let localMachine: string | undefined
 export let localMachineId = () => localMachine
 export let useDesktopMachines = () => {
-  useEffect(
-    () =>
-      connectMachines(async () => {
-        let connection = await machineInvoke<{ url: string; machine_id?: string }>("machine_connection")
-        localMachine = connection.machine_id
-        return connection.url
-      }),
-    [],
-  )
+  useEffect(() => {
+    let active = true
+    let lastModels = ""
+    let queue = Promise.resolve()
+    let pending: { agent_models: ReturnType<typeof modelPreferences>; initialize: boolean } | null = null
+    let flush = () => {
+      queue = queue.then(async () => {
+        if (!pending || !active) return
+        let next = pending
+        try {
+          await saveAccountPreferences(desktopMachineApi, next)
+          if (pending === next) pending = null
+        } catch { /* Retry after connectivity returns. */ }
+      })
+    }
+    let publish = (settings: AppSettings, initialize: boolean) => {
+      let agent_models = modelPreferences(settings)
+      let serialized = JSON.stringify(agent_models)
+      if (serialized === lastModels) return
+      lastModels = serialized
+      pending = { agent_models, initialize }
+      flush()
+    }
+    let unlisten = listen<AppSettings>("settings-updated", (event) => publish(event.payload, false))
+    void invoke<AppSettings>("get_settings").then((settings) => {
+      if (active && !lastModels) publish(settings, true)
+    }).catch(() => {})
+    let retry = setInterval(flush, 10_000)
+    let stop = connectMachines(async () => {
+      let connection = await machineInvoke<{ url: string; machine_id?: string }>("machine_connection")
+      localMachine = connection.machine_id
+      return connection.url
+    }, desktopMachineApi)
+    return () => { active = false; clearInterval(retry); void unlisten.then((off) => off()); stop() }
+  }, [])
 }
+let modelPreferences = (settings: AppSettings) => ({
+  enabled_models: settings.enabled_models ?? {},
+  default_provider: settings.default_provider,
+  default_model: settings.default_model ?? null,
+})
 export let approveDesktopMachine = (code: string) => machineInvoke("machine_pair_approve", { code })
 export let localHostRequest = (request: Record<string, unknown>) =>
   invoke<Record<string, any>>("machine_local_request", { request })

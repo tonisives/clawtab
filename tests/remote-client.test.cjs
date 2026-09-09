@@ -21,6 +21,34 @@ let load = (timers = {}) => {
   return { client: exports, sockets };
 };
 let a = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa', b = 'bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb';
+test('account models load without an online desktop and clear after logout', async () => {
+  let { client, sockets } = load();
+  let preferences = { agent_models: { enabled_models: { codex: ['custom'] }, default_provider: 'codex' }, machine_appearance: { [a]: { icon: 'server', color: '#34b3a0' } } };
+  let stop = client.connectMachines(async () => 'ws://localhost/v2/ws?token=fixture', async () => preferences);
+  await new Promise(setImmediate);
+  sockets[0].onopen();
+  await new Promise(setImmediate);
+  assert.equal(client.machineState().agentModels.enabled_models.codex[0], 'custom');
+  assert.equal(client.machineState().machineAppearance[a].icon, 'server');
+  stop();
+  assert.equal(client.machineState().agentModels, null);
+  assert.equal(Object.keys(client.machineState().machineAppearance).length, 0);
+});
+test('an earlier preference fetch cannot undo a save or repopulate a signed out account', async () => {
+  let { client, sockets } = load();
+  let resolveFetch;
+  let stop = client.connectMachines(async () => 'ws://localhost/v2/ws?token=fixture', () => new Promise((resolve) => { resolveFetch = resolve; }));
+  await new Promise(setImmediate); sockets[0].onopen();
+  let newer = { agent_models: { enabled_models: { codex: ['new'] } } };
+  await client.saveAccountPreferences(async () => newer, {});
+  resolveFetch({ agent_models: { enabled_models: { codex: ['old'] } } });
+  await new Promise(setImmediate);
+  assert.equal(client.machineState().agentModels.enabled_models.codex[0], 'new');
+  let resolveSave;
+  let saving = client.saveAccountPreferences(() => new Promise((resolve) => { resolveSave = resolve; }), {});
+  stop(); resolveSave(newer); await saving;
+  assert.equal(client.machineState().agentModels, null);
+});
 test('resource identities and nested statuses stay separate across identical host pane IDs', () => {
   let { client } = load();
   let message = { type: 'status_update', name: 'job', status: { pane_id: '%1', run_id: 'run' } };

@@ -506,11 +506,7 @@ export let ModelsPanel = () => {
       const idx = list.indexOf(modelId)
       if (idx >= 0) list.splice(idx, 1)
     }
-    if (list.length > 0) {
-      next[provider] = list
-    } else {
-      delete next[provider]
-    }
+    next[provider] = list
     // If disabling the current default model, clear it
     if (!on && isDefault(provider as ProcessProvider, modelId)) {
       update({ enabled_models: next, default_model: null })
@@ -522,11 +518,7 @@ export let ModelsPanel = () => {
   const removeCustomModel = (provider: ProcessProvider, modelId: string) => {
     const next = { ...enabledModels }
     const list = (next[provider] ?? []).filter((id) => id !== modelId)
-    if (list.length > 0) {
-      next[provider] = list
-    } else {
-      delete next[provider]
-    }
+    next[provider] = list
     if (isDefault(provider, modelId)) {
       update({ enabled_models: next, default_model: null })
     } else {

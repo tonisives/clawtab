@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef, useState, type ReactNode } from "react";
 import { Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { colors } from "../theme/colors";
 import { spacing } from "../theme/spacing";
@@ -10,7 +10,7 @@ import { PopupMenu, type PopupMenuItem } from "./PopupMenu";
 
 export type AgentSelectorProps = {
   modelOptions?: AgentModelOption[];
-  targetItems?: PopupMenuItem[];
+  machinePicker?: ReactNode;
   provider?: ProcessProvider | null;
   model?: string | null;
   effort?: AgentEffort | null;
@@ -28,7 +28,7 @@ export type AgentSelectorProps = {
 
 export function AgentSelector({
   modelOptions = [],
-  targetItems = [],
+  machinePicker,
   provider,
   model,
   effort,
@@ -104,7 +104,7 @@ export function AgentSelector({
     void onChange(selection);
   }, [onChange, pending, resetMenu]);
 
-  const modelItems: PopupMenuItem[] = [...targetItems];
+  const modelItems: PopupMenuItem[] = [];
   if (includeDefault) {
     modelItems.push({
       type: "item",
@@ -164,6 +164,8 @@ export function AgentSelector({
     <View style={[styles.wrap, fullWidth && styles.fullWidth]}>
       <TouchableOpacity
         ref={buttonRef}
+        accessibilityRole="button"
+        accessibilityLabel={mode === "plus" ? "Add agent" : buttonLabel}
         onPress={openMenu}
         disabled={disabled}
         style={[
@@ -186,10 +188,10 @@ export function AgentSelector({
       {menuOpen && (
         <PopupMenu
           items={stage === "model" ? modelItems : [
-            ...targetItems.slice(0, 1),
             { type: "item", label: "Back to models", keepOpen: true, onPress: () => setStage("model") },
             ...effortItems,
           ]}
+          footer={machinePicker}
           position={menuPos}
           onClose={resetMenu}
           triggerRef={buttonRef}
