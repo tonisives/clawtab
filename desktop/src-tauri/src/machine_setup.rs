@@ -3,6 +3,17 @@ use serde_json::{json, Value};
 use std::time::Duration;
 
 pub async fn setup(args: &[String]) -> Result<(), String> {
+    if let Some(path) = args
+        .windows(2)
+        .find(|w| w[0] == "--enrollment-file")
+        .map(|w| &w[1])
+    {
+        return enroll_rental(path, args).await;
+    }
+    pair_machine(args).await
+}
+
+async fn pair_machine(args: &[String]) -> Result<(), String> {
     if args.iter().any(|a| a == "--no-service") && args.iter().any(|a| a == "--linger") {
         return Err("--no-service cannot be combined with --linger".into());
     }
@@ -77,6 +88,79 @@ pub async fn setup(args: &[String]) -> Result<(), String> {
         return save_pairing(value, server, name, args).await;
     }
     Err("pairing timed out; run setup again".into())
+}
+
+async fn enroll_rental(path: &str, args: &[String]) -> Result<(), String> {
+    let contents = std::fs::read(path).map_err(|_| "could not read enrollment file")?;
+    let config: Value = serde_json::from_slice(&contents).map_err(|_| "invalid enrollment file")?;
+    let field = |key: &str| {
+        config[key]
+            .as_str()
+            .ok_or_else(|| format!("missing enrollment {key}"))
+    };
+    let backend = field("backend")?;
+    let relay = field("relay")?;
+    for endpoint in [backend, relay] {
+        let url = reqwest::Url::parse(endpoint).map_err(|_| "invalid enrollment endpoint")?;
+        if url.scheme() != "https" {
+            return Err("enrollment requires HTTPS".into());
+        }
+    }
+    let rental = field("rental_id")?;
+    let token = field("token")?;
+    let name = field("name")?;
+    let mut settings = AppSettings::load();
+    settings.default_work_dir = dirs::home_dir()
+        .ok_or("home directory unavailable")?
+        .join("workspace")
+        .to_string_lossy()
+        .into_owned();
+    settings.default_provider = crate::agent_session::ProcessProvider::Codex;
+    settings.save()?;
+    // Persist the host-generated credential before exchange. A lost response can
+    // retry the same enrollment without issuing another credential or machine.
+    let credential_key = format!("rental_enrollment_{rental}");
+    let mut secrets = crate::secrets::SecretsManager::new();
+    let credential = match secrets.get(&credential_key).cloned() {
+        Some(value) => value,
+        None => {
+            let value = format!(
+                "{}{}",
+                uuid::Uuid::new_v4().simple(),
+                uuid::Uuid::new_v4().simple()
+            );
+            secrets.set(&credential_key, &value)?;
+            value
+        }
+    };
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(20))
+        .build()
+        .map_err(|_| "could not create enrollment client")?;
+    for _ in 0..30 {
+        let response = client
+            .post(format!("{backend}/rentals/enroll"))
+            .json(&json!({"rental_id":rental,"token":token,"device_token":credential}))
+            .send()
+            .await;
+        match response {
+            Ok(response) if response.status().is_success() => {
+                let mut value: Value = response
+                    .json()
+                    .await
+                    .map_err(|_| "invalid enrollment response")?;
+                value["device_token"] = json!(credential);
+                save_pairing(value, relay.into(), name.into(), args).await?;
+                secrets.delete(&credential_key)?;
+                return Ok(());
+            }
+            Ok(response) if response.status().is_client_error() => {
+                return Err("enrollment was rejected or expired".into())
+            }
+            _ => tokio::time::sleep(Duration::from_secs(10)).await,
+        }
+    }
+    Err("enrollment timed out".into())
 }
 
 async fn save_pairing(

@@ -128,7 +128,7 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
   let start = () =>
     void act(async () => {
       if (!machine?.online) throw new Error("Choose an online machine")
-      if (provider !== "shell" && (!model || !(models[provider] ?? []).includes(model)))
+      if (provider !== "shell" && models[provider] !== undefined && (!model || !models[provider].includes(model)))
         throw new Error("Choose an enabled model on this machine")
       let folder = await machineHostRequest(machine.id, { action: "list_directory", path })
       let operationId = newOperationId()
@@ -452,7 +452,7 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
               {tab === "agents" && (
                 <>
                   <View style={styles.row}>
-                    {[...new Set([...Object.keys(models), "shell"])].map((value) => (
+                    {[...new Set([...Object.keys(models), ...(machine.rental ? ["codex", "claude", "opencode"] : []), "shell"])].map((value) => (
                       <Pressable
                         accessibilityRole="button"
                         key={value}
@@ -467,6 +467,7 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
                     ))}
                   </View>
                   <View style={styles.row}>
+                    {provider !== "shell" && models[provider] === undefined && <Text style={styles.text}>Uses the provider’s default model.</Text>}
                     {(models[provider] ?? []).map((value) => (
                       <Pressable
                         accessibilityRole="button"

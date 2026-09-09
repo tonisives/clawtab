@@ -20,7 +20,7 @@ pub async fn connect(
     ws: WebSocketUpgrade,
 ) -> Result<Response, AppError> {
     let claims = crate::auth::validate_access_token(&auth.token, &state.config.jwt_secret)?;
-    if !crate::billing::is_subscribed(&state.pool, &state.config, claims.sub).await? {
+    if !super::rentals::can_connect(&state, claims.sub).await? {
         return Err(AppError::Forbidden);
     }
     Ok(ws

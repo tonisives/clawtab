@@ -110,9 +110,11 @@ pub async fn list_for(state: &AppState, user: Uuid) -> Result<Value, AppError> {
     let rows: Vec<(Uuid, Uuid, String, String, String, String, Value, Option<chrono::DateTime<chrono::Utc>>)> = sqlx::query_as(
         "SELECT d.id,d.user_id,d.name,d.platform,d.architecture,d.daemon_version,d.capabilities,d.last_seen FROM devices d WHERE d.user_id=$1 OR EXISTS (SELECT 1 FROM machine_grants g JOIN workspace_shares s ON s.id=g.share_id WHERE g.device_id=d.id AND s.guest_id=$1) ORDER BY d.created_at")
         .bind(user).fetch_all(&state.pool).await?;
+    let rentals: Vec<(Uuid, Value)> = sqlx::query_as("SELECT device_id,jsonb_build_object('id',id,'state',state,'traffic_paused',traffic_paused) FROM rentals WHERE device_id IS NOT NULL")
+        .fetch_all(&state.pool).await?;
     let hub = state.machines.read().await;
     Ok(Value::Array(rows.into_iter().map(|(id, owner, name, platform, architecture, version, capabilities, last_seen)| {
-        json!({"id":id,"name":name,"owner_id":owner,"owned":owner==user,"platform":platform,"architecture":architecture,"version":version,"capabilities":capabilities,"last_seen":last_seen,"online":hub.online(id),"connection_id":hub.hosts.get(&id).map(|host|host.connection)})
+        json!({"id":id,"name":name,"owner_id":owner,"owned":owner==user,"platform":platform,"architecture":architecture,"version":version,"capabilities":capabilities,"last_seen":last_seen,"online":hub.online(id),"connection_id":hub.hosts.get(&id).map(|host|host.connection),"rental":rentals.iter().find(|(machine,_)|*machine==id).map(|(_,info)|info)})
     }).collect()))
 }
 #[derive(Deserialize)]

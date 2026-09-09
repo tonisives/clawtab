@@ -480,3 +480,5 @@ export let approveMachinePairing = (code: string) => request<{ ok: boolean }>("/
 export let registerMachinePushToken = (push_token: string, platform: string) => request<{ ok: boolean }>("/machines/push-token", { method: "POST", body: JSON.stringify({ push_token, platform }) }, true);
 
 export let machineApi = (method: string, path: string, body?: Record<string, unknown>) => request<Record<string, any>>(path, { method, ...(body ? { body: JSON.stringify(body) } : {}) }, true);
+export let rentalApi = <T,>(method: string, path: string, body?: Record<string, unknown>) =>
+  backendRequest<T>(path, { method, ...(body ? { body: JSON.stringify(body) } : {}) });

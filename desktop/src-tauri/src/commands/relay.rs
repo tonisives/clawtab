@@ -633,7 +633,11 @@ pub async fn machine_api(
     path: String,
     body: Option<serde_json::Value>,
 ) -> Result<serde_json::Value, String> {
-    if !(path.starts_with("/machines/") || path.starts_with("/devices/") || path == "/shares")
+    if !(path.starts_with("/machines/")
+        || path.starts_with("/devices/")
+        || path == "/shares"
+        || path == "/rentals"
+        || path.starts_with("/rentals/"))
         || path.contains(['?', '#', '\\'])
         || path.contains("..")
     {
@@ -646,9 +650,17 @@ pub async fn machine_api(
         _ => return Err("unsupported machine API method".into()),
     };
     let (server, access, refresh) = get_relay_auth(&state)?;
+    let destination = if path == "/rentals" || path.starts_with("/rentals/") {
+        if server.trim_end_matches('/') != "https://relay.clawtab.cc" {
+            return Err("Rentals are available through the ClawTab hosted service".into());
+        }
+        "https://backend.clawtab.cc"
+    } else {
+        &server
+    };
     relay_request(
         method,
-        &format!("{server}{path}"),
+        &format!("{destination}{path}"),
         &access,
         &refresh,
         &server,

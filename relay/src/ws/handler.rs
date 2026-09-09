@@ -44,7 +44,15 @@ pub async fn ws_handler(
     let user_id = match &auth {
         AuthResult::Mobile { user_id } | AuthResult::Desktop { user_id, .. } => *user_id,
     };
-    if !crate::billing::is_subscribed(&state.pool, &state.config, user_id).await? {
+    let allowed = match &auth {
+        AuthResult::Desktop { device_id, .. } => {
+            crate::machines::rentals::host_allowed(&state, user_id, *device_id).await?
+        }
+        AuthResult::Mobile { .. } => {
+            crate::billing::is_subscribed(&state.pool, &state.config, user_id).await?
+        }
+    };
+    if !allowed {
         return Err(AppError::Forbidden);
     }
 

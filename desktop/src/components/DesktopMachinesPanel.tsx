@@ -1,4 +1,5 @@
-import { MachinesPanel, useMachines } from "@clawtab/shared"
+import { MachinesPanel, RentalsPanel, useMachines } from "@clawtab/shared"
+import { openUrl } from "@tauri-apps/plugin-opener"
 import { approveDesktopMachine, localHostRequest, desktopMachineApi, localMachineId } from "../machines/connection"
 
 export let DesktopMachinesPanel = ({ onOpenAccount }: { onOpenAccount: () => void }) => {
@@ -6,6 +7,7 @@ export let DesktopMachinesPanel = ({ onOpenAccount }: { onOpenAccount: () => voi
   return (
     <div className="desktop-machines-panel">
       <p className="section-description">Connect a Linux host, then choose where to run your agents and jobs.</p>
+      <RentalsPanel api={desktopMachineApi} purchases openUrl={openUrl} />
       <MachinesPanel
         presentation="panel"
         localMachineId={localMachineId()}

@@ -13,6 +13,7 @@ export type Machine = {
   version: string
   capabilities: string[]
   last_seen: string | null
+  rental?: { id: string; state: string; traffic_paused: boolean } | null
 }
 export type MachineMessage = Record<string, any>
 export type MachineState = {

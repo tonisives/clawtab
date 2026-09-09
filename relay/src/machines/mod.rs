@@ -1,4 +1,5 @@
 pub mod api;
+pub mod rentals;
 mod router;
 mod socket;
 pub use router::host_event;
@@ -19,7 +20,18 @@ pub async fn access(
         .fetch_optional(&state.pool)
         .await?;
     if owner == Some(user) {
+        if !rentals::host_allowed(state, user, machine).await? {
+            return Err(AppError::Forbidden);
+        }
         return Ok(None);
+    }
+    if !crate::billing::is_subscribed(&state.pool, &state.config, user).await? {
+        return Err(AppError::Forbidden);
+    }
+    if let Some(owner) = owner {
+        if !rentals::host_allowed(state, owner, machine).await? {
+            return Err(AppError::Forbidden);
+        }
     }
     let groups: Option<(Option<Vec<String>>,)> = sqlx::query_as(
         "SELECT s.allowed_groups FROM machine_grants g JOIN workspace_shares s ON s.id = g.share_id WHERE g.device_id = $1 AND s.guest_id = $2")

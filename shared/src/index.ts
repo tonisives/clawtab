@@ -141,3 +141,4 @@ export { encodeTerminalInput } from "./util/terminalInput";
 export * from "./machines/client";
 export * from "./machines/Terminal";
 export * from "./machines/Panel";
+export * from "./machines/Rentals";

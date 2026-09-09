@@ -95,6 +95,13 @@ pub async fn remove(
     claims: Claims,
     Path(device_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    let rental: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM rentals WHERE device_id=$1 AND user_id=$2 AND state NOT IN ('deleted','failed'))")
+        .bind(device_id).bind(claims.sub).fetch_one(&state.pool).await?;
+    if rental {
+        return Err(AppError::BadRequest(
+            "Use the rented box controls to cancel or permanently delete this server".into(),
+        ));
+    }
     let result = sqlx::query("DELETE FROM devices WHERE id = $1 AND user_id = $2")
         .bind(device_id)
         .bind(claims.sub)
