@@ -10,12 +10,12 @@ import { GeneralSettings, readStoredSettingsSubTab } from "./GeneralSettings";
 import type { SettingsSubTab } from "./GeneralSettings";
 import { SetupWizard } from "./SetupWizard";
 import type { AppSettings } from "../types";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { AboutPanel } from "./AboutPanel";
 import { GearIcon } from "./icons";
 import clawIcon from "../assets/icon.png";
 
-type TabId = "jobs" | "mindmap" | "machines" | "settings";
-const tabIds: TabId[] = ["jobs", "mindmap", "machines", "settings"];
+type TabId = "jobs" | "mindmap" | "machines" | "settings" | "about";
+const tabIds: TabId[] = ["jobs", "mindmap", "machines", "settings", "about"];
 const SETTINGS_ACTIVE_TAB_KEY = "desktop_settings_active_tab";
 const PANEL_SCROLL_PREFIX = "desktop_settings_panel_scroll";
 
@@ -45,7 +45,7 @@ function panelScrollKey(id: TabId): string {
 }
 
 // SF Symbol-style icons (clock, shield.lock, clock.arrow.circlepath, wrench, paperplane, gearshape)
-const tabIcons: Record<TabId, React.ReactNode> = {
+const tabIcons: Partial<Record<TabId, React.ReactNode>> = {
   // clock (SF: clock)
   jobs: (
     <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
@@ -281,40 +281,46 @@ export function SettingsApp() {
     { id: "settings", label: "Settings" },
   ];
 
+  let openAbout = () => setActiveTab((current) => current === "about" ? "jobs" : "about");
+
   const navBar = (notificationsButton: React.ReactNode) => (
     <div className="nav-bar" data-tauri-drag-region>
-      {tabs.map((tab) => (
-        <button
-          key={tab.id}
-          className={`tab ${activeTab === tab.id ? "active" : ""}`}
-          onClick={() => {
-            if (tab.id === "jobs" && activeTab === "jobs") {
-              setJobsResetKey((k) => k + 1);
-            }
-            setActiveTab((current) => (current === tab.id ? "jobs" : tab.id));
-          }}
-          title={
-            tab.id === "settings" && daemonAlert
-              ? "Settings (daemon not running)"
-              : tab.id === "settings" && relayAlert
-                ? "Settings (relay needs attention)"
-                : tab.label
-          }
-        >
-          <span className="tab-icon">{tabIcons[tab.id]}</span>
-          <span className="nav-label">{tab.label}</span>
-          {tab.id === "settings" && (relayAlert || daemonAlert) && <span className="tab-alert-dot" />}
-        </button>
-      ))}
-      {notificationsButton}
       <button
-        className="claw-icon-btn"
-        onClick={() => openUrl("https://clawtab.cc")}
-        title="Open ClawTab website"
+        className={`claw-icon-btn ${activeTab === "about" ? "active" : ""}`}
+        onClick={openAbout}
+        title="About ClawTab"
+        aria-label="About ClawTab"
+        aria-pressed={activeTab === "about"}
       >
         <img src={clawIcon} alt="" width={18} height={18} className="nav-claw-icon" />
         <span className="nav-label">ClawTab</span>
       </button>
+      <div className="nav-tools">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            className={`tab ${activeTab === tab.id ? "active" : ""}`}
+            onClick={() => {
+              if (tab.id === "jobs" && activeTab === "jobs") {
+                setJobsResetKey((k) => k + 1);
+              }
+              setActiveTab((current) => (current === tab.id ? "jobs" : tab.id));
+            }}
+            title={
+              tab.id === "settings" && daemonAlert
+                ? "Settings (daemon not running)"
+                : tab.id === "settings" && relayAlert
+                  ? "Settings (relay needs attention)"
+                  : tab.label
+            }
+          >
+            <span className="tab-icon">{tabIcons[tab.id]}</span>
+            <span className="nav-label">{tab.label}</span>
+            {tab.id === "settings" && (relayAlert || daemonAlert) && <span className="tab-alert-dot" />}
+          </button>
+        ))}
+        {notificationsButton}
+      </div>
     </div>
   );
 
@@ -371,6 +377,7 @@ export function SettingsApp() {
   const rightPanelOverlay = (
     <>
       {renderPanel("mindmap", "Mind Map", <MindMapPanel onRequestJobsTab={() => setActiveTab("jobs")} />, { fullBleed: true })}
+      {renderPanel("about", "About ClawTab", <AboutPanel />)}
       {renderPanel("machines", "Machines", <DesktopMachinesPanel onOpenAccount={openMachineAccount} />)}
       {renderPanel("settings", "Settings",
         <GeneralSettings
