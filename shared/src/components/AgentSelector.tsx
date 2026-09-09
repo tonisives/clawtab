@@ -61,6 +61,10 @@ export function AgentSelector({
       resetMenu();
       return;
     }
+    if (mode === "plus") {
+      setMenuOpen(true);
+      return;
+    }
     if (Platform.OS === "web") {
       const node = event?.currentTarget ?? event?.target;
       const rect = node?.getBoundingClientRect?.();
@@ -76,7 +80,7 @@ export function AgentSelector({
       return;
     }
     setMenuOpen(true);
-  }, [disabled, menuOpen, resetMenu]);
+  }, [disabled, menuOpen, mode, resetMenu]);
 
   const chooseModel = useCallback((nextProvider: ProcessProvider, nextModel: string | null) => {
     if (nextProvider === "shell") {
@@ -187,6 +191,9 @@ export function AgentSelector({
       </TouchableOpacity>
       {menuOpen && (
         <PopupMenu
+          presentation={mode === "plus" ? "bottom-sheet" : "popup"}
+          title={stage === "model" ? "Add agent" : "Choose effort"}
+          autoFocus={mode === "plus"}
           items={stage === "model" ? modelItems : [
             { type: "item", label: "Back to models", keepOpen: true, onPress: () => setStage("model") },
             ...effortItems,

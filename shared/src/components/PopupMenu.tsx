@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Modal, ScrollView, Pressable, View, Text, TouchableOpacity, StyleSheet, Platform, useWindowDimensions } from "react-native";
+import { Modal, SafeAreaView, ScrollView, Pressable, View, Text, TouchableOpacity, StyleSheet, Platform, useWindowDimensions } from "react-native";
 import { colors } from "../theme/colors";
 import { spacing, radius } from "../theme/spacing";
 
@@ -62,6 +62,8 @@ interface PopupMenuProps {
   initialHighlight?: boolean;
   nativeBottomInset?: number;
   nativePlacement?: "auto" | "above" | "below";
+  presentation?: "popup" | "bottom-sheet";
+  title?: string;
 }
 
 function HoverableItem({ item, onPress, highlighted = false, onHover, showDivider = false }: {
@@ -129,7 +131,8 @@ function HoverableItem({ item, onPress, highlighted = false, onHover, showDivide
   );
 }
 
-export function PopupMenu({ items, footer, position, onClose, dropdownRef, triggerRef, autoFocus = false, initialHighlight = true, nativeBottomInset = 8, nativePlacement = "auto" }: PopupMenuProps) {
+export function PopupMenu({ items, footer, position, onClose, dropdownRef, triggerRef, autoFocus = false, initialHighlight = true, nativeBottomInset = 8, nativePlacement = "auto", presentation = "popup", title }: PopupMenuProps) {
+  let isSheet = presentation === "bottom-sheet";
   const localRef = useRef<View>(null);
   const ref = dropdownRef ?? localRef;
   const windowSize = useWindowDimensions();
@@ -168,7 +171,7 @@ export function PopupMenu({ items, footer, position, onClose, dropdownRef, trigg
       setClampedPos(null);
       return;
     }
-    if (!isWeb || !position) { setClampedPos(null); return; }
+    if (isSheet || !isWeb || !position) { setClampedPos(null); return; }
     const el = ref.current as any as HTMLElement | null;
     if (!el) { setClampedPos((prev) => (prev?.top === position.top && prev?.left === position.left ? prev : position)); return; }
     const menuRect = el.getBoundingClientRect();
@@ -202,7 +205,7 @@ export function PopupMenu({ items, footer, position, onClose, dropdownRef, trigg
   });
 
   useEffect(() => {
-    if (!isWeb) return;
+    if (!isWeb || isSheet) return;
     const handler = (e: MouseEvent) => {
       const el = (ref.current as any);
       if (el && el.contains(e.target)) return;
@@ -212,17 +215,17 @@ export function PopupMenu({ items, footer, position, onClose, dropdownRef, trigg
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [onClose, ref, triggerRef]);
+  }, [isSheet, onClose, ref, triggerRef]);
 
   useEffect(() => {
-    if (isWeb || !triggerRef?.current?.measureInWindow) {
+    if (isSheet || isWeb || !triggerRef?.current?.measureInWindow) {
       setNativeTriggerRect(null);
       return;
     }
     triggerRef.current.measureInWindow((x: number, y: number, width: number, height: number) => {
       setNativeTriggerRect({ x, y, width, height });
     });
-  }, [position, triggerRef]);
+  }, [isSheet, position, triggerRef]);
 
   const estimateNativeMenuHeight = () => {
     const contentHeight = activeItems.reduce((total, item) => total + (item.type === "separator" ? 11 : 48), 16);
@@ -230,7 +233,7 @@ export function PopupMenu({ items, footer, position, onClose, dropdownRef, trigg
   };
 
   const nativeResolvedPos = (() => {
-    if (isWeb) return null;
+    if (isSheet || isWeb) return null;
     const margin = 8;
     const menuWidth = Math.min(520, Math.max(260, windowSize.width * 0.75));
     const menuHeight = nativeMenuHeight || estimateNativeMenuHeight();
@@ -303,6 +306,7 @@ export function PopupMenu({ items, footer, position, onClose, dropdownRef, trigg
 
   const handleKeyDown = (e: KeyboardEvent) => {
     if (!isWeb) return;
+    if (isSheet && e.target !== ref.current) return;
     if (e.key === "Escape") {
       e.preventDefault();
       if (submenu) {
@@ -355,15 +359,23 @@ export function PopupMenu({ items, footer, position, onClose, dropdownRef, trigg
   const menu = (
     <View
       ref={ref}
-      style={[menuStyle, footer ? { width: Math.min(328, windowSize.width - 24) } : null]}
-      onLayout={isWeb ? undefined : (event) => setNativeMenuHeight(event.nativeEvent.layout.height)}
+      style={isSheet ? styles.sheetContent : [menuStyle, footer ? { width: Math.min(328, windowSize.width - 24) } : null]}
+      onLayout={isWeb || isSheet ? undefined : (event) => setNativeMenuHeight(event.nativeEvent.layout.height)}
       {...(isWeb ? {
         dataSet: { popupMenu: "true" },
         tabIndex: -1,
         onKeyDown: handleKeyDown,
       } : {})}
     >
-      <ScrollView style={{ maxHeight: Math.max(96, windowSize.height - nativeBottomInset - 32 - (footer ? 110 : 0)) }} keyboardShouldPersistTaps="handled">
+      {isSheet && (
+        <View style={styles.sheetHeader}>
+          <Text style={styles.sheetTitle} numberOfLines={1} accessibilityRole="header">{title}</Text>
+          <Pressable style={styles.sheetClose} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close add agent">
+            <Text style={styles.sheetCloseText}>Close</Text>
+          </Pressable>
+        </View>
+      )}
+      <ScrollView style={isSheet ? styles.sheetScroll : { maxHeight: Math.max(96, windowSize.height - nativeBottomInset - 32 - (footer ? 110 : 0)) }} keyboardShouldPersistTaps="handled">
         {submenu && (
           <TouchableOpacity
             style={styles.backItem}
@@ -409,6 +421,19 @@ export function PopupMenu({ items, footer, position, onClose, dropdownRef, trigg
     </View>
   );
 
+  if (isSheet) {
+    return (
+      <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+        <View style={styles.sheetBackdrop}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityRole="button" accessibilityLabel="Dismiss add agent" />
+          <SafeAreaView style={styles.sheet}>
+            {menu}
+          </SafeAreaView>
+        </View>
+      </Modal>
+    );
+  }
+
   if (!isWeb) {
     return (
       <Modal visible transparent animationType="fade" onRequestClose={onClose}>
@@ -428,6 +453,61 @@ export function PopupMenu({ items, footer, position, onClose, dropdownRef, trigg
 }
 
 const styles = StyleSheet.create({
+  sheetBackdrop: {
+    flex: 1,
+    justifyContent: "flex-end",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.62)",
+  },
+  sheet: {
+    width: "100%",
+    maxWidth: 520,
+    height: "85%",
+    maxHeight: 640,
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    borderWidth: 1,
+    borderBottomWidth: 0,
+    borderColor: colors.borderLight,
+    overflow: "hidden",
+    ...(isWeb ? { paddingBottom: "env(safe-area-inset-bottom, 0px)" as any } : {}),
+  },
+  sheetContent: {
+    flex: 1,
+    minHeight: 0,
+  },
+  sheetHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.lg,
+    height: 56,
+    flexShrink: 0,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    gap: spacing.md,
+  },
+  sheetTitle: {
+    color: colors.text,
+    fontSize: 17,
+    fontWeight: "600",
+    flex: 1,
+  },
+  sheetClose: {
+    minHeight: 44,
+    justifyContent: "center",
+    paddingHorizontal: spacing.sm,
+  },
+  sheetCloseText: {
+    color: colors.accent,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  sheetScroll: {
+    flex: 1,
+    minHeight: 0,
+  },
   menu: {
     position: "absolute",
     marginTop: 4,
