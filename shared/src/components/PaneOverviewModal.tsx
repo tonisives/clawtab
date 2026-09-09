@@ -16,6 +16,7 @@ export type PaneOverviewData = {
   startedAt?: string | null;
   cwd?: string | null;
   tmuxSession?: string | null;
+  windowName?: string | null;
   firstQuery?: string | null;
   lastQuery?: string | null;
 };
@@ -124,7 +125,7 @@ export const PaneOverviewModal = ({ visible, onClose, actions, ...pane }: PaneOv
           <View style={styles.headerText}>
             <Text style={styles.title} numberOfLines={1}>{title}</Text>
             <View style={styles.headerMeta}>
-              <Text style={styles.sessionTitle} numberOfLines={1}>{pane.tmuxSession || "-"}</Text>
+              <Text style={styles.sessionTitle} selectable>{pane.tmuxSession || "-"}{pane.windowName ? ` / ${pane.windowName}` : ""}</Text>
               <Text style={styles.metaSeparator}>·</Text>
               <Text style={styles.paneIdTitle} numberOfLines={1}>{isIOS ? resourceLabel(pane.paneId) : pane.paneId}</Text>
             </View>
@@ -338,13 +339,12 @@ const styles = StyleSheet.create({
   headerText: {
     flex: 1,
     minWidth: 0,
-    flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     gap: spacing.sm,
   },
   title: {
-    flex: 1,
     minWidth: 0,
+    maxWidth: "100%",
     color: colors.text,
     fontSize: 17,
     fontWeight: "600",
@@ -353,8 +353,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.xs,
-    maxWidth: "52%",
-    flexShrink: 0,
+    maxWidth: "100%",
   },
   sessionTitle: {
     flexShrink: 1,
@@ -377,6 +376,11 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     marginLeft: spacing.md,
+    paddingHorizontal: spacing.md,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.groupedSurface,
   },
   actions: {
     flexDirection: "row",
@@ -449,8 +453,9 @@ const styles = StyleSheet.create({
   compactButton: {
     minHeight: 30,
     justifyContent: "center",
-    paddingHorizontal: spacing.sm,
-    borderRadius: radius.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: 999,
+    backgroundColor: colors.groupedSurface,
     borderWidth: 1,
     borderColor: colors.border,
   },
@@ -479,7 +484,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     justifyContent: "center",
     alignItems: "center",
-    borderRadius: radius.sm,
+    borderRadius: 999,
     borderWidth: 1,
     borderColor: colors.borderLight,
     backgroundColor: colors.bg,

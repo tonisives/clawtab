@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react"
 import { View, Text, Pressable, StyleSheet } from "react-native"
 import { XtermLog, type XtermLogHandle } from "../components/XtermLog"
 import { colors } from "../theme/colors"
-import { radius, spacing } from "../theme/spacing"
+import { spacing } from "../theme/spacing"
 import {
   useMachines,
   machineRequest,
@@ -147,8 +147,9 @@ let styles = StyleSheet.create({
   button: {
     minHeight: 30,
     justifyContent: "center",
-    paddingHorizontal: spacing.sm,
-    borderRadius: radius.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: 999,
+    backgroundColor: colors.groupedSurface,
     borderWidth: 1,
     borderColor: colors.border,
   },

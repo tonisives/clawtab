@@ -422,6 +422,7 @@ export default function ProcessDetailScreen() {
         startedAt={activeProcess?.session_started_at}
         cwd={activeProcess?.cwd ?? paneQuestion?.cwd}
         tmuxSession={tmuxSession}
+        windowName={activeProcess?.window_name ?? paneQuestion?.window_name}
         firstQuery={activeProcess?.first_query}
         lastQuery={activeProcess?.last_query}
         actions={{

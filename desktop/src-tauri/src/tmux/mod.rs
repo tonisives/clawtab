@@ -3,6 +3,9 @@ use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::process::{Command, Output};
 
+mod group_window;
+pub use group_window::create_group_agent_pane;
+
 const AUTO_YES_MONITOR_BELL_ORIGINAL: &str = "@clawtab-auto-yes-monitor-bell-original";
 const AUTO_YES_PANE_OPTION: &str = "@clawtab-auto-yes";
 

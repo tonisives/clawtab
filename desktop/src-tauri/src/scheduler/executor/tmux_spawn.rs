@@ -20,6 +20,7 @@ pub(super) struct SpawnArgs<'a> {
     pub effort: Option<String>,
     pub prompt_content: String,
     pub slug: &'a str,
+    pub reuse_group_window: bool,
     pub aerospace_workspace: Option<&'a str>,
 }
 
@@ -40,6 +41,7 @@ pub(super) async fn spawn_agent_pane(
         effort,
         prompt_content,
         slug,
+        reuse_group_window,
         aerospace_workspace,
     } = args;
 
@@ -53,24 +55,28 @@ pub(super) async fn spawn_agent_pane(
         Some(write_prompt_file(&prompt_content)?)
     };
 
-    if !tmux::session_exists(&tmux_session) {
+    if !reuse_group_window && !tmux::session_exists(&tmux_session) {
         if let Err(error) = tmux::create_session(&tmux_session) {
             remove_prompt_file(prompt_file.as_deref());
             return Err(error);
         }
     }
 
-    // Every spawn gets its own window - clawtab needs independent geometry
-    // per tab, which tmux splits can't give us.
-    let pane_id =
-        match tmux::create_window_with_cwd(&tmux_session, &window_name, Some(&work_dir), &env_vars)
-        {
-            Ok(pane_id) => pane_id,
-            Err(error) => {
-                remove_prompt_file(prompt_file.as_deref());
-                return Err(error);
-            }
-        };
+    // Ad-hoc agents join their group's last window. The PTY viewer extracts
+    // panes from shared windows when it needs independent geometry.
+    let created = if reuse_group_window {
+        tmux::create_group_agent_pane(&tmux_session, &window_name, &work_dir, &env_vars)
+    } else {
+        tmux::create_window_with_cwd(&tmux_session, &window_name, Some(&work_dir), &env_vars)
+            .map(|pane_id| (tmux_session, pane_id))
+    };
+    let (tmux_session, pane_id) = match created {
+        Ok(created) => created,
+        Err(error) => {
+            remove_prompt_file(prompt_file.as_deref());
+            return Err(error);
+        }
+    };
 
     let send_cmd = build_send_cmd(
         provider,

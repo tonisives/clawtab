@@ -362,7 +362,7 @@ export default function JobDetailScreen() {
           renderTerminal={isRunningWithPty ? renderTerminal : undefined}
           hideMessageInput={isRunningWithPty}
           expandOutput={isRunningWithPty}
-          paneOverview={statusPaneId ? { paneId: statusPaneId, cwd: activeProcess?.cwd ?? job.work_dir, startedAt: activeProcess?.session_started_at, firstQuery: activeProcess?.first_query, lastQuery: activeProcess?.last_query } : undefined}
+          paneOverview={statusPaneId ? { paneId: statusPaneId, tmuxSession: activeProcess?.tmux_session, windowName: activeProcess?.window_name, cwd: activeProcess?.cwd ?? job.work_dir, startedAt: activeProcess?.session_started_at, firstQuery: activeProcess?.first_query, lastQuery: activeProcess?.last_query } : undefined}
           paneOverviewActions={agentActionControls}
           paneOverviewVisible={showPaneOverview}
           onPaneOverviewVisibleChange={setShowPaneOverview}
