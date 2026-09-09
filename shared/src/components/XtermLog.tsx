@@ -75,7 +75,9 @@ var term = new Terminal({
     brightMagenta:'#e599f7',brightCyan:'#99e9f2',brightWhite:'#ffffff'
   },
   allowProposedApi: true,
-  scrollback: 10000,
+  // Native history controls use tmux copy mode. Disable local scrollback so
+  // FitAddon does not reserve an unused scrollbar gutter along the right edge.
+  scrollback: 0,
   disableStdin: false
 });
 var fit = new FitAddon.FitAddon();
