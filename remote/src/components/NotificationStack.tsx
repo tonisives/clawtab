@@ -11,7 +11,7 @@ import { colors } from "@clawtab/shared";
 import { spacing } from "@clawtab/shared";
 import type { AutoYesEntry, DetectedProcess, ClaudeQuestion } from "@clawtab/shared";
 import type { NotificationDetailTarget } from "./notificationTypes";
-import { jobRoute, processRoute } from "../lib/notificationRoutes";
+import { notificationJobRoute, notificationProcessRoute } from "../lib/notificationRoutes";
 
 function syncAutoYesToRelay(paneIds: Set<string>) {
   const send = getWsSend();
@@ -80,9 +80,9 @@ export function NotificationStack({
 
       onNavigateAway?.();
       if (jobName) {
-        router.push(jobRoute(jobName));
+        router.push(notificationJobRoute(jobName));
       } else {
-        router.push(processRoute(_q.pane_id));
+        router.push(notificationProcessRoute(_q.pane_id));
       }
     },
     [onNavigateAway, onSelectDetail, processMap, router],
@@ -227,9 +227,9 @@ export function NotificationStack({
 
       onNavigateAway?.();
       if (entry.jobSlug) {
-        router.push(jobRoute(entry.jobSlug));
+        router.push(notificationJobRoute(entry.jobSlug));
       } else {
-        router.push(processRoute(entry.paneId));
+        router.push(notificationProcessRoute(entry.paneId));
       }
     },
     [onNavigateAway, onSelectDetail, processMap, router],

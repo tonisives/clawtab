@@ -1,9 +1,12 @@
+import { NextNotification } from "../../src/components/NextNotification";
+import { notificationProcessRoute } from "../../src/lib/notificationRoutes";
+import type { ClaudeQuestion } from "@clawtab/shared";
 import { MachineTerminalControls } from "@clawtab/shared";
 import { useAgentActions } from "../../src/hooks/useAgentActions";
 import { encodeTerminalInput } from "@clawtab/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, View, Text, StyleSheet, Platform, Keyboard, TouchableOpacity, TextInput } from "react-native";
-import { useLocalSearchParams, Stack } from "expo-router";
+import { useLocalSearchParams, Stack, useRouter } from "expo-router";
 import { TerminalPasteButton } from "../../src/components/TerminalPasteButton";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -73,7 +76,12 @@ function agentJobFromSlug(slug: string): RemoteJob {
 }
 
 export default function JobDetailScreen() {
-  const { name, run_id, demo } = useLocalSearchParams<{ name: string; run_id?: string; demo?: string }>();
+  const { name, run_id, demo, source } = useLocalSearchParams<{ name: string; run_id?: string; demo?: string; source?: string }>();
+  let router = useRouter();
+  let handleSelectNotification = (question: ClaudeQuestion) => {
+    Keyboard.dismiss();
+    router.replace(notificationProcessRoute(question.pane_id));
+  };
   const insets = useSafeAreaInsets();
   const { isWide } = useResponsive();
   const storeJob = useJob(name);
@@ -375,6 +383,9 @@ export default function JobDetailScreen() {
           optionBarBottomInset={insets.bottom}
         />
       </ContentContainer>
+      {source === "notifications" && (
+        <NextNotification paneId={autoYesPaneId} jobName={slug} isDemo={isDemo} onSelect={handleSelectNotification} />
+      )}
       {(keyboardVisible || terminalMenuOpen) && isRunningWithPty ? (
         <TerminalKeyboardToolbar
           bottom={keyboardVisible ? keyboardHeight : insets.bottom}

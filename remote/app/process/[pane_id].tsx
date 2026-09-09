@@ -1,3 +1,5 @@
+import { NextNotification } from "../../src/components/NextNotification";
+import type { ClaudeQuestion } from "@clawtab/shared";
 import { MachineTerminalControls } from "@clawtab/shared";
 import { useAgentActions } from "../../src/hooks/useAgentActions";
 import { encodeTerminalInput } from "@clawtab/shared";
@@ -33,14 +35,34 @@ const TERMINAL_BG = "#1c1c1e";
 
 export default function ProcessDetailScreen() {
   const { pane_id: rawPaneId, source } = useLocalSearchParams<{ pane_id: string; source?: string }>();
+  let routePaneId = (rawPaneId ?? "").replace(/_pct_/g, "%");
+  let [selection, setSelection] = useState<{ routePaneId: string; paneId: string } | null>(null);
+  let paneId = selection?.routePaneId === routePaneId ? selection.paneId : routePaneId;
+  let handleSelectNotification = (question: ClaudeQuestion) => {
+    Keyboard.dismiss();
+    setSelection({ routePaneId, paneId: question.pane_id });
+  };
+  return (
+    <ProcessDetailContent
+      key={paneId}
+      pane_id={paneId}
+      preserveTerminal={source === "notifications"}
+      onSelectNotification={handleSelectNotification}
+    />
+  );
+}
+
+type ProcessDetailContentProps = {
+  pane_id: string;
+  preserveTerminal: boolean;
+  onSelectNotification: (question: ClaudeQuestion) => void;
+};
+
+let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }: ProcessDetailContentProps) => {
   const router = useRouter();
   const goBack = useDetailBack("/(tabs)");
   const insets = useSafeAreaInsets();
   const { isWide } = useResponsive();
-  // Tmux pane_ids start with % (e.g. %714) which gets mangled by URL encoding.
-  // We encode % as _pct_ in URLs and decode it back here.
-  const pane_id = (rawPaneId ?? "").replace(/_pct_/g, "%");
-  const preserveTerminal = source === "notifications";
 
   const storeProcess = useJobsStore((s) =>
     s.detectedProcesses.find((p) => p.pane_id === pane_id),
@@ -105,16 +127,19 @@ export default function ProcessDetailScreen() {
 
   // Derive tmux info from process or question (for panes not in detectedProcesses)
   const paneQuestion = questions.find((q) => q.pane_id === pane_id);
-  const tmuxSession = (process ?? lastProcess)?.tmux_session ?? paneQuestion?.tmux_session ?? "";
+  let lastQuestionRef = useRef(paneQuestion);
+  if (paneQuestion) lastQuestionRef.current = paneQuestion;
+  let questionInfo = paneQuestion ?? lastQuestionRef.current;
+  const tmuxSession = (process ?? lastProcess)?.tmux_session ?? questionInfo?.tmux_session ?? "";
 
   const activeProcess = process ?? lastProcess;
   const displayName = activeProcess
     ? activeProcess.cwd.replace(/^\/Users\/[^/]+/, "~")
-    : paneQuestion?.cwd.replace(/^\/Users\/[^/]+/, "~") ?? pane_id;
+    : questionInfo?.cwd.replace(/^\/Users\/[^/]+/, "~") ?? pane_id;
   const headerTitle = activeProcess
     ? compactPath(activeProcess.cwd)
-    : paneQuestion?.cwd
-      ? compactPath(paneQuestion.cwd)
+    : questionInfo?.cwd
+      ? compactPath(questionInfo.cwd)
       : pane_id;
   const headerKind = activeProcess ? kindForProcess(activeProcess) : "claude";
   const [showPaneOverview, setShowPaneOverview] = useState(false);
@@ -415,12 +440,15 @@ export default function ProcessDetailScreen() {
           bottomInset={insets.bottom}
         />
       )}
+      {preserveTerminal && (
+        <NextNotification paneId={pane_id} isDemo={!!demoProcess} onSelect={onSelectNotification} />
+      )}
       <PaneOverviewModal
         visible={showPaneOverview}
         onClose={() => setShowPaneOverview(false)}
         paneId={pane_id}
         startedAt={activeProcess?.session_started_at}
-        cwd={activeProcess?.cwd ?? paneQuestion?.cwd}
+        cwd={activeProcess?.cwd ?? questionInfo?.cwd}
         tmuxSession={tmuxSession}
         firstQuery={activeProcess?.first_query}
         lastQuery={activeProcess?.last_query}

@@ -137,8 +137,8 @@ async function handleNotificationResponse(
   if (navigate && !alreadyNavigated) {
     navigatedResponses.add(key);
     const target = clawtab.matched_job
-      ? `/job/${clawtab.matched_job}`
-      : `/process/${clawtab.pane_id.replace(/%/g, "_pct_")}`;
+      ? `/job/${clawtab.matched_job}?source=notifications`
+      : `/process/${clawtab.pane_id.replace(/%/g, "_pct_")}?source=notifications`;
     console.log("[notif] navigating to: " + target);
 
     navigate(target);
@@ -168,9 +168,9 @@ export function handleColdStartAnswer() {
             const params = ct.run_id ? `?run_id=${ct.run_id}` : "";
             pendingNavigation = `/job/${ct.job_id}${params}`;
           } else if (ct.matched_job) {
-            pendingNavigation = `/job/${ct.matched_job}`;
+            pendingNavigation = `/job/${ct.matched_job}?source=notifications`;
           } else if (ct.pane_id) {
-            pendingNavigation = `/process/${ct.pane_id.replace(/%/g, "_pct_")}`;
+            pendingNavigation = `/process/${ct.pane_id.replace(/%/g, "_pct_")}?source=notifications`;
           }
         }
         console.log("[notif] cold-start pending: " + pendingNavigation + " (bodyTap=" + isBodyTap + ")");

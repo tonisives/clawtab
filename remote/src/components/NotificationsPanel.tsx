@@ -5,7 +5,9 @@ import type { LayoutChangeEvent } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { colors, radius, spacing } from "@clawtab/shared";
-import { DEMO_QUESTIONS } from "../demo/data";
+import { NextNotification } from "./NextNotification";
+import type { ClaudeQuestion } from "@clawtab/shared";
+import { DEMO_PROCESSES, DEMO_QUESTIONS } from "../demo/data";
 import { useJobsStore } from "../store/jobs";
 import { useNotificationStore } from "../store/notifications";
 import { useWsStore } from "../store/ws";
@@ -54,6 +56,18 @@ export function NotificationsPanel({
       setLocalDetailTarget(target);
     }
   }, [onDetailTargetChange, onSelectDetail]);
+
+  let handleSelectNextNotification = (question: ClaudeQuestion) => {
+    if (question.matched_job) {
+      setDetailTarget({ kind: "job", jobName: question.matched_job, paneId: question.pane_id, isDemo });
+      return;
+    }
+    setDetailTarget({
+      kind: "process",
+      paneId: question.pane_id,
+      demoProcess: isDemo ? DEMO_PROCESSES.find((process) => process.pane_id === question.pane_id) : undefined,
+    });
+  };
 
   const handlePanelLayout = useCallback((event: LayoutChangeEvent) => {
     const nextHeight = event.nativeEvent.layout.height;
@@ -134,6 +148,12 @@ export function NotificationsPanel({
             />
           )}
         </View>
+        <NextNotification
+          paneId={detailTarget.paneId}
+          jobName={detailTarget.kind === "job" ? detailTarget.jobName : undefined}
+          isDemo={isDemo}
+          onSelect={handleSelectNextNotification}
+        />
       </View>
     );
   }
