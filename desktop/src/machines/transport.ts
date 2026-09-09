@@ -128,6 +128,7 @@ export let withMachines = (local: Transport): Transport => {
           effort,
         }),
       )
+      if (response.success === false || response.error) throw new Error(response.error ?? response.message ?? "Could not start agent")
       return response.pane_id
         ? { pane_id: response.pane_id, tmux_session: response.tmux_session }
         : null

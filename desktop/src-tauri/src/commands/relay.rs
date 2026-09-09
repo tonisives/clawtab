@@ -635,6 +635,7 @@ pub async fn machine_api(
 ) -> Result<serde_json::Value, String> {
     if !(path.starts_with("/machines/")
         || path.starts_with("/devices/")
+        || path == "/account/preferences"
         || path == "/shares"
         || path == "/rentals"
         || path.starts_with("/rentals/"))

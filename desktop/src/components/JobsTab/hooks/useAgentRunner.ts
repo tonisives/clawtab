@@ -1,3 +1,4 @@
+import { splitResource } from "@clawtab/shared";
 import { useCallback, useEffect, useRef, type MutableRefObject } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { AgentEffort, PaneContent, ProcessProvider, ShellPane, Transport, useJobActions, useJobsCore, useSplitTree } from "@clawtab/shared";
@@ -113,7 +114,7 @@ export function useAgentRunner({
 
     // Pin the group override so backend detection won't reassign this pane.
     // Only set when group is known - if unknown, let backend CWD matching assign it.
-    if (matchedGroup !== null) {
+    if (matchedGroup !== null && !splitResource(result.pane_id)) {
       invoke("set_detected_process_group", {
         paneId: result.pane_id,
         group: matchedGroup,

@@ -1,3 +1,4 @@
+import { useHiddenGroups, machineRequest, machineState, scopedMessage } from "@clawtab/shared";
 import { MachinesPanel } from "@clawtab/shared";
 import { approveMachinePairing, machineApi } from "../../src/api/client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
@@ -70,7 +71,6 @@ type GroupLatestSortMode = Record<string, LatestSortMode>
 type SidebarSection = LiquidSidebarSection | "notifications"
 
 const COLLAPSED_GROUPS_STORAGE_KEY = "remote_collapsed_groups"
-const HIDDEN_GROUPS_STORAGE_KEY = "remote_hidden_groups"
 const GROUP_TAB_VIEW_STORAGE_KEY = "remote_group_tab_view"
 const LIST_MODE_STORAGE_KEY = "remote_job_list_mode"
 const JOB_LIST_LOADING_PROGRESS = 0.62
@@ -236,9 +236,7 @@ export default function JobsScreen() {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() =>
     readWebStringSet(COLLAPSED_GROUPS_STORAGE_KEY),
   )
-  const [hiddenGroups, setHiddenGroups] = useState<Set<string>>(() =>
-    readWebStringSet(HIDDEN_GROUPS_STORAGE_KEY),
-  )
+  let { hiddenGroups, hideGroup, unhideGroup } = useHiddenGroups(machineApi)
   const [sortMode, setSortMode] = useState<JobSortMode>("name")
   const [latestSortMode, setLatestSortMode] = useState<LatestSortMode>("message")
   const [groupLatestSortMode, setGroupLatestSortMode] = useState<GroupLatestSortMode>({})
@@ -308,33 +306,14 @@ export default function JobsScreen() {
     })
   }, [])
 
-  const hideGroup = useCallback((group: string) => {
-    setHiddenGroups((prev) => {
-      const next = new Set(prev)
-      next.add(group)
-      saveStringSet(HIDDEN_GROUPS_STORAGE_KEY, next)
-      return next
-    })
-  }, [])
-
-  const unhideGroup = useCallback((group: string) => {
-    setHiddenGroups((prev) => {
-      const next = new Set(prev)
-      next.delete(group)
-      saveStringSet(HIDDEN_GROUPS_STORAGE_KEY, next)
-      return next
-    })
-  }, [])
-
   useEffect(() => {
     if (Platform.OS === "web") return
     let cancelled = false
-    AsyncStorage.multiGet([COLLAPSED_GROUPS_STORAGE_KEY, HIDDEN_GROUPS_STORAGE_KEY, LIST_MODE_STORAGE_KEY])
+    AsyncStorage.multiGet([COLLAPSED_GROUPS_STORAGE_KEY, LIST_MODE_STORAGE_KEY])
       .then((entries) => {
         if (cancelled) return
         const values = new Map(entries)
         setCollapsedGroups(parseStringSet(values.get(COLLAPSED_GROUPS_STORAGE_KEY) ?? null))
-        setHiddenGroups(parseStringSet(values.get(HIDDEN_GROUPS_STORAGE_KEY) ?? null))
         const storedListMode = values.get(LIST_MODE_STORAGE_KEY)
         if (storedListMode === "tabs" || storedListMode === "latest" || storedListMode === "jobs") {
           setListMode(storedListMode)
@@ -563,72 +542,55 @@ export default function JobsScreen() {
   )
 
   const handleRunAgent = useCallback(
-    (prompt: string, workDir?: string, provider?: ProcessProvider, model?: string | null, effort?: AgentEffort | null) => {
-      const send = getWsSend()
-      if (!send) return
-      const id = nextId()
-      send({
-        type: "run_agent",
-        id,
-        prompt,
-        work_dir: workDir,
-        ...(provider ? { provider } : {}),
-        ...(model ? { model } : {}),
-        ...(effort ? { effort } : {}),
-      })
-      registerRequest<{
-        success?: boolean
-        job_id?: string
-        pane_id?: string
-        tmux_session?: string
-        work_dir?: string
-        provider?: string
-        error?: string
-      }>(id).then((ack) => {
-        if (ack.success === false) return
-        if (ack.pane_id && ack.tmux_session) {
-          const existing = useJobsStore.getState().detectedProcesses
-          const existingProcess = existing.find((process) => process.pane_id === ack.pane_id)
-          const pendingProcess: DetectedProcess = {
-            ...existingProcess,
-            pane_id: ack.pane_id,
-            cwd: ack.work_dir ?? workDir ?? existingProcess?.cwd ?? "",
-            version: existingProcess?.version ?? "",
-            provider:
-              provider ??
-              (isProcessProvider(ack.provider)
-                ? ack.provider
-                : (existingProcess?.provider ?? "claude")),
-            can_fork_session: existingProcess?.can_fork_session ?? false,
-            can_send_skills: existingProcess?.can_send_skills ?? false,
-            can_inject_secrets: existingProcess?.can_inject_secrets ?? false,
-            tmux_session: ack.tmux_session,
-            window_name: existingProcess?.window_name ?? "",
-            matched_group: existingProcess?.matched_group ?? null,
-            matched_job: ack.job_id ?? existingProcess?.matched_job ?? null,
-            log_lines: existingProcess?.log_lines ?? "",
-            first_query: (prompt || existingProcess?.first_query) ?? null,
-            last_query: existingProcess?.last_query ?? null,
-            session_started_at: existingProcess?.session_started_at ?? new Date().toISOString(),
-            token_count: existingProcess?.token_count ?? null,
-            _transient_state: "starting",
-          }
-          useJobsStore.getState().upsertDetectedProcess(pendingProcess)
-          if (isSplitView) {
-            setSidebarSection("jobs")
-            handleSelectProcessWithTree(pendingProcess)
-          } else {
-            router.push(processRoute(ack.pane_id))
-          }
-        } else if (ack.job_id) {
-          if (isSplitView) {
-            setSidebarSection("jobs")
-            setSelectedJob(ack.job_id)
-          } else {
-            router.push(jobIdRoute(ack.job_id))
-          }
+    async (prompt: string, workDir?: string, provider?: ProcessProvider, model?: string | null, effort?: AgentEffort | null) => {
+      let target = machineState().selected
+      if (!target) throw new Error("Choose a target machine")
+      let ack = scopedMessage(target, await machineRequest(target, {
+        type: "run_agent", prompt, work_dir: workDir, provider, model, effort,
+      }))
+      if (ack.success === false || ack.error) throw new Error(ack.error ?? ack.message ?? "Could not start agent")
+      if (ack.pane_id && ack.tmux_session) {
+        const existing = useJobsStore.getState().detectedProcesses
+        const existingProcess = existing.find((process) => process.pane_id === ack.pane_id)
+        const pendingProcess: DetectedProcess = {
+          ...existingProcess,
+          pane_id: ack.pane_id,
+          cwd: ack.work_dir ?? workDir ?? existingProcess?.cwd ?? "",
+          version: existingProcess?.version ?? "",
+          provider:
+            provider ??
+            (isProcessProvider(ack.provider)
+              ? ack.provider
+              : (existingProcess?.provider ?? "claude")),
+          can_fork_session: existingProcess?.can_fork_session ?? false,
+          can_send_skills: existingProcess?.can_send_skills ?? false,
+          can_inject_secrets: existingProcess?.can_inject_secrets ?? false,
+          tmux_session: ack.tmux_session,
+          window_name: existingProcess?.window_name ?? "",
+          matched_group: existingProcess?.matched_group ?? null,
+          matched_job: ack.job_id ?? existingProcess?.matched_job ?? null,
+          log_lines: existingProcess?.log_lines ?? "",
+          first_query: (prompt || existingProcess?.first_query) ?? null,
+          last_query: existingProcess?.last_query ?? null,
+          session_started_at: existingProcess?.session_started_at ?? new Date().toISOString(),
+          token_count: existingProcess?.token_count ?? null,
+          _transient_state: "starting",
         }
-      })
+        useJobsStore.getState().upsertDetectedProcess(pendingProcess)
+        if (isSplitView) {
+          setSidebarSection("jobs")
+          handleSelectProcessWithTree(pendingProcess)
+        } else {
+          router.push(processRoute(ack.pane_id))
+        }
+      } else if (ack.job_id) {
+        if (isSplitView) {
+          setSidebarSection("jobs")
+          setSelectedJob(ack.job_id)
+        } else {
+          router.push(jobIdRoute(ack.job_id))
+        }
+      }
     },
     [handleSelectProcessWithTree, isSplitView, router],
   )

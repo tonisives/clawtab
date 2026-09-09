@@ -10,6 +10,7 @@ import { PopupMenu, type PopupMenuItem } from "./PopupMenu";
 
 export type AgentSelectorProps = {
   modelOptions?: AgentModelOption[];
+  targetItems?: PopupMenuItem[];
   provider?: ProcessProvider | null;
   model?: string | null;
   effort?: AgentEffort | null;
@@ -27,6 +28,7 @@ export type AgentSelectorProps = {
 
 export function AgentSelector({
   modelOptions = [],
+  targetItems = [],
   provider,
   model,
   effort,
@@ -102,7 +104,7 @@ export function AgentSelector({
     void onChange(selection);
   }, [onChange, pending, resetMenu]);
 
-  const modelItems: PopupMenuItem[] = [];
+  const modelItems: PopupMenuItem[] = [...targetItems];
   if (includeDefault) {
     modelItems.push({
       type: "item",
@@ -125,6 +127,7 @@ export function AgentSelector({
         hint: labelForProvider(option.provider),
         active: provider === option.provider && (model ?? null) === option.modelId,
         icon: <JobKindIcon kind={option.provider} size={16} compact bare />,
+        keepOpen: true,
         onPress: () => chooseModel(option.provider, option.modelId),
       });
     });
@@ -182,7 +185,11 @@ export function AgentSelector({
       </TouchableOpacity>
       {menuOpen && (
         <PopupMenu
-          items={stage === "model" ? modelItems : effortItems}
+          items={stage === "model" ? modelItems : [
+            ...targetItems.slice(0, 1),
+            { type: "item", label: "Back to models", keepOpen: true, onPress: () => setStage("model") },
+            ...effortItems,
+          ]}
           position={menuPos}
           onClose={resetMenu}
           triggerRef={buttonRef}

@@ -1,3 +1,4 @@
+import { localMachineId } from "../../../machines/connection";
 import { useCallback, useMemo, type ReactNode, type RefObject } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
@@ -412,6 +413,7 @@ export function JobsSidebar({
       onSelectShell={onSelectShell}
       selectedItems={split.selectedItems}
       focusedItemKey={split.focusedItemKey}
+      localAgentMachineId={localMachineId() ?? null}
       onRunAgent={handleRunAgent}
       getAgentProviders={agentRunner.handleGetAgentProviders}
       defaultAgentProvider={defaultProvider}

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Modal, Pressable, View, Text, TouchableOpacity, StyleSheet, Platform, useWindowDimensions } from "react-native";
+import { Modal, ScrollView, Pressable, View, Text, TouchableOpacity, StyleSheet, Platform, useWindowDimensions } from "react-native";
 import { colors } from "../theme/colors";
 import { spacing, radius } from "../theme/spacing";
 
@@ -46,7 +46,7 @@ function PortalWeb({ children }: { children: ReactNode }) {
 }
 
 export type PopupMenuItem =
-  | { type: "item"; label: string; onPress: () => void; color?: string; active?: boolean; icon?: ReactNode; hint?: string; disabled?: boolean }
+  | { type: "item"; label: string; onPress: () => void; color?: string; active?: boolean; icon?: ReactNode; hint?: string; disabled?: boolean; keepOpen?: boolean }
   | { type: "separator" }
   | { type: "submenu"; label: string; items: PopupMenuItem[] };
 
@@ -296,7 +296,7 @@ export function PopupMenu({ items, position, onClose, dropdownRef, triggerRef, a
       setSubmenu({ label: item.label, items: item.items });
       return;
     }
-    onClose();
+    if (!item.keepOpen) onClose();
     item.onPress();
   };
 
@@ -362,24 +362,36 @@ export function PopupMenu({ items, position, onClose, dropdownRef, triggerRef, a
         onKeyDown: handleKeyDown,
       } : {})}
     >
-      {submenu && (
-        <TouchableOpacity
-          style={styles.backItem}
-          onPress={() => {
-            setSubmenu(null);
-            setHighlightedIndex(actionableIndexes[0] ?? -1);
-          }}
-          activeOpacity={0.6}
-        >
-          <Text style={styles.backText}>{"\u2039"} {submenu.label}</Text>
-        </TouchableOpacity>
-      )}
-      {activeItems.map((item, i) => {
-        if (item.type === "separator") {
-          return <View key={`sep-${i}`} style={styles.separator} />;
-        }
-        const showDivider = activeItems[i + 1] != null && activeItems[i + 1]?.type !== "separator";
-        if (item.type === "submenu") {
+      <ScrollView style={{ maxHeight: windowSize.height - nativeBottomInset - 32 }} keyboardShouldPersistTaps="handled">
+        {submenu && (
+          <TouchableOpacity
+            style={styles.backItem}
+            onPress={() => {
+              setSubmenu(null);
+              setHighlightedIndex(actionableIndexes[0] ?? -1);
+            }}
+            activeOpacity={0.6}
+          >
+            <Text style={styles.backText}>{"\u2039"} {submenu.label}</Text>
+          </TouchableOpacity>
+        )}
+        {activeItems.map((item, i) => {
+          if (item.type === "separator") {
+            return <View key={`sep-${i}`} style={styles.separator} />;
+          }
+          const showDivider = activeItems[i + 1] != null && activeItems[i + 1]?.type !== "separator";
+          if (item.type === "submenu") {
+            return (
+              <HoverableItem
+                key={`${item.label}-${i}`}
+                item={item}
+                highlighted={i === highlightedIndex}
+                onHover={() => setHighlightedIndex(i)}
+                showDivider={showDivider}
+                onPress={() => setSubmenu({ label: item.label, items: item.items })}
+              />
+            );
+          }
           return (
             <HoverableItem
               key={`${item.label}-${i}`}
@@ -387,21 +399,11 @@ export function PopupMenu({ items, position, onClose, dropdownRef, triggerRef, a
               highlighted={i === highlightedIndex}
               onHover={() => setHighlightedIndex(i)}
               showDivider={showDivider}
-              onPress={() => setSubmenu({ label: item.label, items: item.items })}
+              onPress={() => activateIndex(i)}
             />
           );
-        }
-        return (
-          <HoverableItem
-            key={`${item.label}-${i}`}
-            item={item}
-            highlighted={i === highlightedIndex}
-            onHover={() => setHighlightedIndex(i)}
-            showDivider={showDivider}
-            onPress={() => { onClose(); item.onPress(); }}
-          />
-        );
-      })}
+        })}
+      </ScrollView>
     </View>
   );
 

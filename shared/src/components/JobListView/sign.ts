@@ -56,6 +56,7 @@ export interface JobListViewProps {
   // Single selection (backward compat with desktop) - uses accent color
   selectedSlug?: string | null;
   // Agent
+  localAgentMachineId?: string | null;
   onRunAgent?: (prompt: string, workDir?: string, provider?: ProcessProvider, model?: string | null, effort?: AgentEffort | null) => void;
   getAgentProviders?: () => Promise<ProcessProvider[]>;
   defaultAgentProvider?: ProcessProvider;

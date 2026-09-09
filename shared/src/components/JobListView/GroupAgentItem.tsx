@@ -16,6 +16,7 @@ export function JobListGroupAgentItem({ hook, workDir, footerPath, itemKey }: Jo
   return (
     <View key={itemKey} style={[styles.groupAgentFooterRow, { marginTop: spacing.sm }]}>
       <GroupAgentRow
+        localMachineId={hook.localAgentMachineId}
         provider={hook.groupAgent.resolveGroupAgentProvider(workDir)}
         model={hook.groupAgent.resolveGroupAgentModel(workDir)}
         effort={hook.groupAgent.resolveGroupAgentEffort(workDir)}

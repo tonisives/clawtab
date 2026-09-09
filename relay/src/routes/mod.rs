@@ -1,4 +1,5 @@
 mod account;
+mod preferences;
 mod answer;
 mod apple_auth;
 mod apple_callback;
@@ -99,6 +100,10 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/auth/session/{id}", get(auth_session::poll_session));
 
     let authenticated = Router::new()
+        .route(
+            "/account/preferences",
+            get(preferences::get_preferences).post(preferences::set_hidden_group),
+        )
         .route(
             "/machines/push-token",
             post(crate::machines::api::push_token),

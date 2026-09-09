@@ -1,3 +1,5 @@
+import { useHiddenGroups } from "@clawtab/shared";
+import { desktopMachineApi } from "../../../machines/connection";
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -49,7 +51,7 @@ export function useJobsTabSettings() {
       return [];
     }
   });
-  const [hiddenGroups, setHiddenGroups] = useState<Set<string>>(new Set());
+  let { hiddenGroups, hideGroup: handleHideGroup, unhideGroup: handleUnhideGroup } = useHiddenGroups(desktopMachineApi);
   const [sortMode, setSortMode] = useState<JobSortMode>("name");
   const [listMode, setListModeState] = useState<JobListMode>(() => {
     const value = localStorage.getItem("desktop_job_list_mode");
@@ -124,9 +126,6 @@ export function useJobsTabSettings() {
       if (s.job_order) {
         setJobOrder(s.job_order);
       }
-      if (s.hidden_groups && s.hidden_groups.length > 0) {
-        setHiddenGroups(new Set(s.hidden_groups));
-      }
     }).catch(() => {});
   }, []);
 
@@ -187,28 +186,6 @@ export function useJobsTabSettings() {
   const setListMode = useCallback((mode: JobListMode) => {
     setListModeState(mode);
     localStorage.setItem("desktop_job_list_mode", mode);
-  }, []);
-
-  const handleHideGroup = useCallback((group: string) => {
-    setHiddenGroups((prev) => {
-      const next = new Set(prev);
-      next.add(group);
-      invoke<AppSettings>("get_settings").then((s) => {
-        invoke("set_settings", { newSettings: { ...s, hidden_groups: [...next] } }).catch(() => {});
-      }).catch(() => {});
-      return next;
-    });
-  }, []);
-
-  const handleUnhideGroup = useCallback((group: string) => {
-    setHiddenGroups((prev) => {
-      const next = new Set(prev);
-      next.delete(group);
-      invoke<AppSettings>("get_settings").then((s) => {
-        invoke("set_settings", { newSettings: { ...s, hidden_groups: [...next] } }).catch(() => {});
-      }).catch(() => {});
-      return next;
-    });
   }, []);
 
   return {

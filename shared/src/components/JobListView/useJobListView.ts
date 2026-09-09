@@ -109,6 +109,7 @@ export function useJobListView(props: JobListViewProps) {
   }, []);
 
   return {
+    localAgentMachineId: props.localAgentMachineId,
     activeWorkspaceId: props.activeWorkspaceId,
     agentModelOptions: agent.agentModelOptions,
     autoYesPaneIds: props.autoYesPaneIds,
