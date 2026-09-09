@@ -317,8 +317,8 @@
   min-height: 0;
 }
 
-/* Keep the desktop navigation consistent as icon labels wrap at small widths. */
-.nav-bar { flex-wrap: wrap; gap: 2px; padding: 4px 8px; margin-top: auto; border-top: 1px solid var(--border-light); }
+/* Keep the brand at the left while navigation buttons wrap at small widths. */
+.nav-bar { flex-wrap: nowrap; justify-content: flex-start; gap: 2px; padding: 4px 8px; margin-top: auto; border-top: 1px solid var(--border-light); }
 .nav-bar .tab, .nav-bar .claw-icon-btn, .nav-bar .notifications-menu-btn {
   flex-direction: column;
   gap: 4px;
@@ -346,3 +346,18 @@
 .nav-bar .tab.active { color: var(--text-primary); }
 
 .sidebar-window-controls-space { height: 36px; flex-shrink: 0; -webkit-app-region: drag; }
+
+.nav-bar .claw-icon-btn { flex-shrink: 0; align-self: stretch; height: auto; }
+.nav-bar .claw-icon-btn.active { background: var(--accent-hover); color: var(--text-primary); }
+.nav-tools {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  margin-left: 4px;
+  padding-left: 6px;
+  border-left: 1px solid var(--border-color);
+}
