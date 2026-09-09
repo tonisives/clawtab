@@ -2,6 +2,8 @@ import { MachineActions } from "./Actions"
 import { useEffect, useRef, useState } from "react"
 import { View, Text, Pressable, StyleSheet } from "react-native"
 import { XtermLog, type XtermLogHandle } from "../components/XtermLog"
+import { colors } from "../theme/colors"
+import { radius, spacing } from "../theme/spacing"
 import {
   useMachines,
   machineRequest,
@@ -25,17 +27,20 @@ export let MachineTerminalControls = ({ paneId, connectedOnly = false }: { paneI
     machineSend(resource.machine, { type: "release_control", pane_id: resource.id })
   return (
     <View style={styles.bar}>
-      <Text style={styles.text}>
-        {machine?.name ?? "Remote machine"} ·{" "}
-        {machine?.online ? (controlled ? "You have control" : "Watching") : "Offline"}
-      </Text>
+      <View style={styles.controlInfo}>
+        <Text style={styles.machineName}>{machine?.name ?? "Remote machine"}</Text>
+        <Text style={styles.controlStatus}>
+          {machine?.online ? (controlled ? "You have control" : "Watching") : "Offline"}
+        </Text>
+      </View>
       <Pressable
         accessibilityRole="button"
+        accessibilityState={{ disabled: !machine?.online }}
         disabled={!machine?.online}
         onPress={controlled ? release : take}
-        style={styles.button}
+        style={[styles.button, !machine?.online && styles.disabledButton]}
       >
-        <Text style={styles.text}>{controlled ? "Release control" : "Take control"}</Text>
+        <Text style={styles.buttonText}>{controlled ? "Release control" : "Take control"}</Text>
       </Pressable>
     </View>
   )
@@ -120,13 +125,34 @@ let styles = StyleSheet.create({
   bar: {
     flexDirection: "row",
     alignItems: "center",
-    flexWrap: "wrap",
     justifyContent: "space-between",
-    gap: 12,
-    padding: 8,
-    backgroundColor: "#24262a",
+    gap: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  controlInfo: {
+    flex: 1,
+    minWidth: 0,
+  },
+  machineName: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  controlStatus: {
+    color: colors.textMuted,
+    fontSize: 11,
+    marginTop: 2,
   },
   text: { color: "#e5e7eb", fontSize: 13 },
-  button: { padding: 8, borderRadius: 6, backgroundColor: "#3a3e47" },
+  button: {
+    minHeight: 30,
+    justifyContent: "center",
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  buttonText: { color: colors.text, fontSize: 11 },
+  disabledButton: { opacity: 0.4 },
   error: { color: "#f8a7a7", padding: 8 },
 })
