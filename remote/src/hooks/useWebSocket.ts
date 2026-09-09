@@ -14,7 +14,7 @@ import {
   splitResource,
   type MachineMessage,
 } from "@clawtab/shared"
-import { getWsUrl, registerMachinePushToken, isInvalidRefreshError } from "../api/client"
+import { getWsUrl, registerMachinePushToken, isInvalidRefreshError, machineApi } from "../api/client"
 import { usePinsStore } from "../store/pins"
 import { useAuthStore } from "../store/auth"
 import { useJobsStore } from "../store/jobs"
@@ -77,7 +77,7 @@ let synchronize = () => {
           scopedMessage(id, snapshot.pinned_items ?? { type: "pinned_items", items: [] }).items,
       ),
     )
-  let settings = state.selected ? state.snapshots[state.selected]?.settings_response : null
+  let settings = state.agentModels ?? (state.selected ? state.snapshots[state.selected]?.settings_response : null)
   jobs.setDesktopSettings(
     settings?.enabled_models ?? {},
     settings?.default_provider ?? "codex",
@@ -150,7 +150,7 @@ export let useWebSocket = () => {
         if (isInvalidRefreshError(error)) await useAuthStore.getState().logout()
         throw error
       }
-    })
+    }, machineApi)
     void getPushToken()
       .then((token) =>
         token

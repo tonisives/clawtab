@@ -1,4 +1,5 @@
 import { useState, useRef } from "react"
+import { MachineIcon, machineAppearance, MachineAppearanceEditor } from "./Appearance"
 import { View, Text, Pressable, TextInput, ScrollView, StyleSheet } from "react-native"
 import {
   useMachines,
@@ -10,6 +11,7 @@ import {
   clearMachineError,
   machineErrorMessage,
   retryMachines,
+  saveAccountPreferences,
   type MachineMessage,
 } from "./client"
 
@@ -56,9 +58,9 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
   let [progress, setProgress] = useState("")
   let [operation, setOperation] = useState<{ id: string; machine: string } | null>(null)
   let machine = state.machines.find((m) => m.id === state.selected)
-  let models: Record<string, string[]> = machine
+  let models: Record<string, string[]> = state.agentModels?.enabled_models ?? (machine
     ? (state.snapshots[machine.id]?.settings_response?.enabled_models ?? {})
-    : {}
+    : {})
   let choose = (id: string) => {
     selectMachine(id)
     setPath("~")
@@ -230,20 +232,20 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
   }
   let saveModels = () =>
     void act(async () => {
-      if (!machine || !["codex", "claude", "opencode", "agy"].includes(modelProvider))
+      if (!api || !["codex", "claude", "opencode", "antigravity"].includes(modelProvider))
         throw new Error("Choose a supported provider")
-      await host({
-        action: "set_models",
-        models: {
+      await saveAccountPreferences(api, { agent_models: {
+        default_provider: state.agentModels?.default_provider ?? "codex",
+        default_model: state.agentModels?.default_provider === modelProvider ? null : state.agentModels?.default_model ?? null,
+        enabled_models: {
           ...models,
           [modelProvider]: modelNames
             .split("\n")
             .map((name) => name.trim())
             .filter(Boolean),
         },
-      })
-      await machineRequest(machine.id, { type: "get_settings" })
-      setProgress("Enabled models saved on " + machine.name)
+      } })
+      setProgress("Enabled models saved for all machines")
     })
   let loadShares = () =>
     void act(async () => {
@@ -297,6 +299,7 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
           style={[styles.button, styles.machineButton, m.id === state.selected && styles.selectedMachine]}
         >
           <View style={styles.labelRow}>
+            <MachineIcon appearance={machineAppearance(m, state.machineAppearance)} />
             <Text style={[styles.text, styles.machineName]}>{m.name}{m.id === localMachineId ? " · This Mac" : ""}</Text>
             {m.id === state.selected && <View style={styles.selectionDot} />}
           </View>
@@ -358,6 +361,7 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
       {(expanded || presentation === "panel") && (
         <ScrollView style={presentation === "panel" ? styles.panelBody : styles.body}>
           {presentation === "panel" && tab !== "pair" && machineChoices}
+          {presentation === "panel" && tab !== "pair" && machine?.owned && api && <MachineAppearanceEditor key={machine.id} machine={machine} api={api} />}
           <View style={styles.row}>
             {[
               "agents",
@@ -502,10 +506,10 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
               )}
               {tab === "models" && machine.owned && (
                 <>
-                  <Text style={styles.title}>Enabled models on {machine.name}</Text>
+                  <Text style={styles.title}>Your enabled models</Text>
                   <Text style={styles.text}>
-                    Use model identifiers supported by the provider installed on this host. One
-                    model per line; an empty list disables that provider’s models.
+                    These choices apply to all your machines and apps. Enter one model per line;
+                    an empty list disables that provider’s models.
                   </Text>
                   <TextInput
                     accessibilityLabel="Model provider"

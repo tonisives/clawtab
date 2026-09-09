@@ -47,7 +47,7 @@ let find = (node, predicate) => {
   if (predicate(node)) return node;
   return find(node.props?.children, predicate);
 };
-let selector = (tree) => find(tree, (node) => node.props?.targetItems);
+let selector = (tree) => find(tree, (node) => node.props?.machinePicker);
 let machineMock = (state) => ({ '../machines/client': { useMachines: () => state, selectMachine: (id) => { state.selected = id; } } });
 
 test('mobile defaults to an online owned machine and uses its enabled models', async () => {
@@ -55,7 +55,7 @@ test('mobile defaults to an online owned machine and uses its enabled models', a
   let launched;
   let view = harness('../shared/src/components/GroupAgentRow.tsx', machineMock(state));
   let picker = selector(view.render(view.exports.GroupAgentRow, { onRunAgent: (...args) => { launched = { target: state.selected, args }; } }));
-  assert.match(picker.props.targetItems[0].label, /Desktop A/);
+  assert.equal(picker.props.machinePicker.props.target, 'a');
   assert.deepEqual(Array.from(picker.props.modelOptions, (model) => model.modelId), ['opus']);
   await picker.props.onChange({ provider: 'claude', modelId: 'opus', effort: 'high' });
   assert.equal(launched.target, 'a');
@@ -68,7 +68,7 @@ test('target changes refresh models and launch errors are visible', async () => 
   let props = { onRunAgent: async () => { throw new Error('Working directory missing'); } };
   let picker = selector(view.render(view.exports.GroupAgentRow, props));
   assert.equal(picker.props.modelOptions.length, 0);
-  picker.props.targetItems.find((item) => item.label === 'b').onPress();
+  picker.props.machinePicker.props.onSelect('b');
   picker = selector(view.render(view.exports.GroupAgentRow, props));
   assert.equal(picker.props.modelOptions[0].modelId, 'gpt-test');
   await picker.props.onChange({ provider: 'codex', modelId: 'gpt-test', effort: 'high' });
@@ -79,7 +79,7 @@ test('desktop defaults locally without a relay connection', async () => {
   let state = { selected: null, machines: [], snapshots: {} }, called = false;
   let view = harness('../shared/src/components/GroupAgentRow.tsx', machineMock(state));
   let picker = selector(view.render(view.exports.GroupAgentRow, { localMachineId: null, modelOptions: [{ provider: 'codex', modelId: 'local-model' }], onRunAgent: () => { called = true; } }));
-  assert.match(picker.props.targetItems[0].label, /This desktop/);
+  assert.equal(picker.props.machinePicker.props.localMachineId, null);
   assert.equal(picker.props.modelOptions[0].modelId, 'local-model');
   await picker.props.onChange({ provider: 'shell', modelId: null, effort: null });
   assert.equal(called, true);
@@ -102,4 +102,32 @@ test('native model selection keeps the popup open for effort selection', () => {
   assert.equal(chosen.modelId, 'gpt-test');
   assert.equal(chosen.effort, 'high');
   assert.equal(find(render(), (node) => Array.isArray(node.props?.items)), undefined);
+});
+
+
+test('configured account models stay the same across desktop and remote targets', async () => {
+  let state = { selected: 'a', machines: ['a', 'b'].map((id) => ({ id, name: id, owned: true, online: true })),
+    agentModels: { enabled_models: { codex: ['my-custom-model'], claude: [], opencode: [], antigravity: [] } }, snapshots: {} };
+  let view = harness('../shared/src/components/GroupAgentRow.tsx', machineMock(state));
+  let launched;
+  let props = { localMachineId: 'a', modelOptions: [{ provider: 'codex', modelId: 'old-default' }], onRunAgent: (...args) => { launched = args; } };
+  let render = () => selector(view.render(view.exports.GroupAgentRow, props));
+  assert.deepEqual(Array.from(render().props.modelOptions, (option) => option.modelId), ['my-custom-model']);
+  render().props.machinePicker.props.onSelect('b');
+  assert.deepEqual(Array.from(render().props.modelOptions, (option) => option.modelId), ['my-custom-model']);
+  await render().props.onChange({ provider: 'codex', modelId: 'my-custom-model', effort: 'high' });
+  assert.equal(launched[2], 'my-custom-model');
+});
+
+test('machine choices remain in the footer through model and effort selection', () => {
+  let view = harness('../shared/src/components/AgentSelector.tsx');
+  let footer = { type: 'MachineTargetPicker' };
+  let props = { modelOptions: [{ provider: 'codex', modelId: 'custom', label: 'Custom' }], machinePicker: footer, onChange: () => {} };
+  let render = () => view.render(view.exports.AgentSelector, props);
+  find(render(), (node) => node.type === 'TouchableOpacity').props.onPress({});
+  let popup = find(render(), (node) => Array.isArray(node.props?.items));
+  assert.equal(popup.props.footer, footer);
+  assert.equal(popup.props.items.length, 1);
+  popup.props.items[0].onPress();
+  assert.equal(find(render(), (node) => Array.isArray(node.props?.items)).props.footer, footer);
 });

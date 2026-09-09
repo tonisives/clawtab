@@ -51,6 +51,7 @@ export type PopupMenuItem =
   | { type: "submenu"; label: string; items: PopupMenuItem[] };
 
 interface PopupMenuProps {
+  footer?: ReactNode;
   items: PopupMenuItem[];
   position?: { top: number; left: number } | null;
   onClose: () => void;
@@ -128,7 +129,7 @@ function HoverableItem({ item, onPress, highlighted = false, onHover, showDivide
   );
 }
 
-export function PopupMenu({ items, position, onClose, dropdownRef, triggerRef, autoFocus = false, initialHighlight = true, nativeBottomInset = 8, nativePlacement = "auto" }: PopupMenuProps) {
+export function PopupMenu({ items, footer, position, onClose, dropdownRef, triggerRef, autoFocus = false, initialHighlight = true, nativeBottomInset = 8, nativePlacement = "auto" }: PopupMenuProps) {
   const localRef = useRef<View>(null);
   const ref = dropdownRef ?? localRef;
   const windowSize = useWindowDimensions();
@@ -225,7 +226,7 @@ export function PopupMenu({ items, position, onClose, dropdownRef, triggerRef, a
 
   const estimateNativeMenuHeight = () => {
     const contentHeight = activeItems.reduce((total, item) => total + (item.type === "separator" ? 11 : 48), 16);
-    return contentHeight + (submenu ? 48 : 0);
+    return contentHeight + (submenu ? 48 : 0) + (footer ? 110 : 0);
   };
 
   const nativeResolvedPos = (() => {
@@ -354,7 +355,7 @@ export function PopupMenu({ items, position, onClose, dropdownRef, triggerRef, a
   const menu = (
     <View
       ref={ref}
-      style={menuStyle}
+      style={[menuStyle, footer ? { width: Math.min(328, windowSize.width - 24) } : null]}
       onLayout={isWeb ? undefined : (event) => setNativeMenuHeight(event.nativeEvent.layout.height)}
       {...(isWeb ? {
         dataSet: { popupMenu: "true" },
@@ -362,7 +363,7 @@ export function PopupMenu({ items, position, onClose, dropdownRef, triggerRef, a
         onKeyDown: handleKeyDown,
       } : {})}
     >
-      <ScrollView style={{ maxHeight: windowSize.height - nativeBottomInset - 32 }} keyboardShouldPersistTaps="handled">
+      <ScrollView style={{ maxHeight: Math.max(96, windowSize.height - nativeBottomInset - 32 - (footer ? 110 : 0)) }} keyboardShouldPersistTaps="handled">
         {submenu && (
           <TouchableOpacity
             style={styles.backItem}
@@ -404,6 +405,7 @@ export function PopupMenu({ items, position, onClose, dropdownRef, triggerRef, a
           );
         })}
       </ScrollView>
+      {footer}
     </View>
   );
 

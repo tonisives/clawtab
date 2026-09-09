@@ -16,6 +16,13 @@ export type Machine = {
   rental?: { id: string; state: string; traffic_paused: boolean } | null
 }
 export type MachineMessage = Record<string, any>
+export type AgentModelPreferences = {
+  enabled_models: Record<string, string[]>
+  default_provider: string
+  default_model?: string | null
+}
+export type MachineAppearance = { icon: "desktop" | "laptop" | "server" | "terminal" | "chip"; color: string }
+export type PreferencesApi = (method: string, path: string, body?: Record<string, unknown>) => Promise<Record<string, any>>
 export type MachineState = {
   connected: boolean
   machines: Machine[]
@@ -25,6 +32,8 @@ export type MachineState = {
   snapshots: Record<string, Record<string, MachineMessage>>
   controllers: Record<string, string | null>
   error: string | null
+  agentModels: AgentModelPreferences | null
+  machineAppearance: Record<string, MachineAppearance>
 }
 export let newOperationId = () =>
   globalThis.crypto?.randomUUID?.() ??
@@ -47,8 +56,12 @@ let initialState = (): MachineState => ({
   snapshots: {},
   controllers: {},
   error: null,
+  agentModels: null,
+  machineAppearance: {},
 })
 let state = initialState()
+let preferencesGeneration = 0
+let preferencesRevision = 0
 let listeners = new Set<() => void>()
 let events = new Set<(machine: string, message: MachineMessage) => void>()
 let pending = new Map<
@@ -83,6 +96,22 @@ export let subscribeMachines = (listener: () => void) => {
 }
 export let useMachines = () => useSyncExternalStore(subscribeMachines, machineState, machineState)
 export let selectMachine = (selected: string | null) => update({ selected })
+export let applyAccountPreferences = (preferences: Record<string, any>) => {
+  let agentModels = preferences.agent_models ?? null
+  let machineAppearance = preferences.machine_appearance ?? {}
+  if (JSON.stringify([agentModels, machineAppearance]) === JSON.stringify([state.agentModels, state.machineAppearance])) return
+  update({ agentModels, machineAppearance })
+}
+export let saveAccountPreferences = async (api: PreferencesApi, preferences: Record<string, unknown>) => {
+  let generation = preferencesGeneration
+  let revision = ++preferencesRevision
+  let result = await api("POST", "/account/preferences", preferences)
+  if (generation === preferencesGeneration && revision === preferencesRevision) {
+    preferencesRevision++
+    applyAccountPreferences(result)
+  }
+  return result
+}
 export let filterMachine = (filter: string | null) => update({ filter })
 export let clearMachineError = () => update({ error: null })
 export let onMachineEvent = (listener: (machine: string, message: MachineMessage) => void) => {
@@ -205,7 +234,7 @@ export let sendResource = (message: MachineMessage) => {
     })
 }
 
-export let connectMachines = (getUrl: () => Promise<string>) => {
+export let connectMachines = (getUrl: () => Promise<string>, preferencesApi?: PreferencesApi) => {
   stopConnection?.()
   connectionUrl = getUrl
   let stopped = false
@@ -214,6 +243,17 @@ export let connectMachines = (getUrl: () => Promise<string>) => {
   let connecting = false
   let lastReceived = Date.now()
   let disconnectSocket: (() => void) | null = null
+  let preferencesLoading = false
+  let refreshPreferences = async () => {
+    if (!preferencesApi || preferencesLoading || stopped) return
+    preferencesLoading = true
+    let revision = preferencesRevision
+    try {
+      let result = await preferencesApi("GET", "/account/preferences")
+      if (!stopped && revision === preferencesRevision) applyAccountPreferences(result)
+    } catch { /* Preserve the last confirmed account settings during reconnection. */ }
+    finally { preferencesLoading = false }
+  }
   let connect = async () => {
     if (stopped || connecting) return
     connecting = true
@@ -229,6 +269,7 @@ export let connectMachines = (getUrl: () => Promise<string>) => {
       ws.onopen = () => {
         if (stopped || socket !== ws) return
         update({ connected: true, error: null })
+        void refreshPreferences()
       }
       ws.onmessage = (event) => {
         if (socket !== ws) return
@@ -392,6 +433,7 @@ export let connectMachines = (getUrl: () => Promise<string>) => {
   }
   void connect()
   let refresh = setInterval(() => {
+    void refreshPreferences()
     if (socket && Date.now() - lastReceived > 30_000) {
       disconnectSocket?.()
       return
@@ -413,6 +455,8 @@ export let connectMachines = (getUrl: () => Promise<string>) => {
   stopConnection = () => {
     if (stopped) return
     stopped = true
+    preferencesGeneration++
+    preferencesRevision++
     retryConnection = null
     transferSocket?.close()
     transferSocket = null

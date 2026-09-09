@@ -31,7 +31,7 @@ type Rental = {
 }
 type RentalApi = (method: string, path: string, body?: Record<string, unknown>) => Promise<any>
 type Props = { api: RentalApi; purchases: boolean; openUrl?: (url: string) => Promise<unknown> }
-type Terminal = { machine: string; pane: string; session: string }
+type Terminal = { machine: string; pane: string; session: string; command: string }
 let money = (quote: Quote) => new Intl.NumberFormat(undefined, { style: "currency", currency: quote.currency }).format(quote.monthly_cents / 100)
 let date = (value: string) => new Date(value).toLocaleString()
 let quoteId = (quote: Quote) => `${quote.region}/${quote.server_type}`
@@ -115,7 +115,7 @@ export let RentalsPanel = ({ api, purchases, openUrl }: Props) => {
     selectMachine(rental.machine_id)
     let result = await machineRequest(rental.machine_id, { type: "run_agent", provider: "shell", prompt: command, work_dir: "/home/clawtab/workspace", operation_id: newOperationId() }, 120_000)
     if (!result.success || !result.pane_id || !result.tmux_session) throw new Error(result.error ?? "Could not open a terminal")
-    setTerminal({ machine: rental.machine_id, pane: result.pane_id, session: result.tmux_session })
+    setTerminal({ machine: rental.machine_id, pane: result.pane_id, session: result.tmux_session, command })
   })
   let pay = (rental: Rental) => () => act(async () => {
     let response = await api("POST", `/rentals/${rental.id}/payment`)
@@ -199,7 +199,9 @@ export let RentalsPanel = ({ api, purchases, openUrl }: Props) => {
         </View>
       })}
       {terminal && <View style={styles.terminal}>
-        <Text style={styles.detail}>Take control below, then sign in using your own account: codex login --device-auth, claude auth login, or opencode auth login.</Text>
+        <Text style={styles.detail}>{terminal.command
+          ? `Started ${terminal.command} in a new terminal. Take control below and follow the sign-in prompts. Open any login link in your browser.`
+          : "This is a shell terminal. Use an Authorize button above to start sign-in for Codex, Claude Code, or OpenCode. Shell commands cannot be entered as slash commands inside an agent."}</Text>
         <MachineTerminal machineId={terminal.machine} paneId={terminal.pane} tmuxSession={terminal.session} onClose={closeTerminal} />
       </View>}
     </View>

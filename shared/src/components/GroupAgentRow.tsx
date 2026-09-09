@@ -4,7 +4,7 @@ import { spacing } from "../theme/spacing";
 import type { AgentEffort, AgentModelOption, ProcessProvider } from "../types/process";
 import { useMachines, selectMachine } from "../machines/client";
 import { buildModelOptions } from "../util/agentModels";
-import type { PopupMenuItem } from "./PopupMenu";
+import { MachineTargetPicker } from "../machines/TargetPicker";
 import { colors } from "../theme/colors";
 import { AgentSelector } from "./AgentSelector";
 
@@ -34,28 +34,20 @@ export function GroupAgentRow({
   let isLocal = hasLocal && (target == null || target === localMachineId);
   let machine = machines.machines.find((machine) => machine.id === target);
   let settings = target ? machines.snapshots[target]?.settings_response : undefined;
-  let options = isLocal ? modelOptions : settings
-    ? buildModelOptions(["claude", "codex", "opencode", "antigravity"], settings.enabled_models ?? {})
-    : [];
+  let options = machines.agentModels
+    ? buildModelOptions(["claude", "codex", "opencode", "antigravity"], machines.agentModels.enabled_models)
+    : modelOptions.length ? modelOptions : settings
+      ? buildModelOptions(["claude", "codex", "opencode", "antigravity"], settings.enabled_models ?? {})
+      : [];
   let chooseTarget = (id: string | null) => {
     selectMachine(id);
     setError(null);
   };
-  let targetItems: PopupMenuItem[] = [
-    { type: "item", label: `Target: ${isLocal ? machine?.name ?? "This desktop" : machine?.name ?? "No machine available"}`, hint: "Default", disabled: true, onPress: () => {} },
-    ...(hasLocal ? [{ type: "item" as const, label: "This desktop", active: isLocal, keepOpen: true, onPress: () => chooseTarget(localMachineId ?? null) }] : []),
-    ...machines.machines.filter((item) => item.owned && item.id !== localMachineId).map((item) => ({
-      type: "item" as const, label: item.name, active: target === item.id, hint: item.online ? undefined : "Offline",
-      disabled: !item.online, keepOpen: true, onPress: () => chooseTarget(item.id),
-    })),
-    { type: "separator" },
-    ...(!isLocal && !settings ? [{ type: "item" as const, label: machine?.online ? "Loading machine models…" : "Choose an online machine", disabled: true, onPress: () => {} }] : []),
-  ];
 
   const launch = useCallback(async (nextProvider: ProcessProvider, modelId: string | null, nextEffort: AgentEffort | null) => {
     if (sendingRef.current) return;
-    if (!isLocal && (!machine?.online || !machine.owned || !settings)) {
-      setError("Choose an online machine and wait for its settings.");
+    if (!isLocal && (!machine?.online || !machine.owned)) {
+      setError("Choose an online machine.");
       return;
     }
     sendingRef.current = true;
@@ -84,7 +76,7 @@ export function GroupAgentRow({
         model={model}
         effort={effort}
         modelOptions={options}
-        targetItems={targetItems}
+        machinePicker={<MachineTargetPicker target={target ?? null} localMachineId={localMachineId} onSelect={chooseTarget} />}
         includeShell
         onChange={(selection) => launch(selection.provider, selection.modelId, selection.effort)}
         nativeBottomInset={88}
