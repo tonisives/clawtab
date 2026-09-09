@@ -4,6 +4,8 @@ mod codex;
 mod common;
 mod opencode;
 
+pub(crate) use codex::completed_turn_after as codex_completed_turn_after;
+
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::process::Command;

@@ -343,6 +343,63 @@ fn read_codex_last_query(thread_id: &str) -> Option<String> {
     result
 }
 
+/// Interrupting Codex can end a turn without emitting a Stop hook.
+/// Consult the recorded lifecycle, never inactivity, to repair that hook state.
+pub(crate) fn completed_turn_after(thread_id: &str, hook_timestamp_ms: u64) -> Option<u64> {
+    let thread = read_codex_thread(thread_id)?;
+    let path = PathBuf::from(thread.rollout_path?);
+    read_completed_turn_after(&path, hook_timestamp_ms)
+}
+
+fn read_completed_turn_after(path: &std::path::Path, hook_timestamp_ms: u64) -> Option<u64> {
+    use std::io::{Read, Seek, SeekFrom};
+
+    // Bound polling work even for long sessions. Missing or truncated evidence
+    // leaves the hook authoritative until a subsequent poll can resolve it.
+    const MAX_TAIL_BYTES: u64 = 64 * 1024;
+    let mut file = fs::File::open(path).ok()?;
+    let length = file.metadata().ok()?.len();
+    let start = length.saturating_sub(MAX_TAIL_BYTES);
+    file.seek(SeekFrom::Start(start)).ok()?;
+    let mut bytes = Vec::new();
+    file.take(MAX_TAIL_BYTES).read_to_end(&mut bytes).ok()?;
+    let text = String::from_utf8_lossy(&bytes);
+    let text = if start > 0 {
+        text.split_once('\n')?.1
+    } else {
+        &text
+    };
+    // A partial record could be a newer turn start; wait for it to finish.
+    if !text.ends_with('\n') {
+        return None;
+    }
+    let (complete_lines, _) = text.rsplit_once('\n')?;
+    for line in complete_lines.lines().rev() {
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if value.get("type").and_then(|value| value.as_str()) != Some("event_msg") {
+            continue;
+        }
+        match value
+            .pointer("/payload/type")
+            .and_then(|value| value.as_str())
+        {
+            Some("task_started") => return None,
+            Some("task_complete" | "turn_aborted") => {
+                let timestamp =
+                    chrono::DateTime::parse_from_rfc3339(value.get("timestamp")?.as_str()?)
+                        .ok()?
+                        .timestamp_millis();
+                let timestamp = u64::try_from(timestamp).ok()?;
+                return (timestamp > hook_timestamp_ms).then_some(timestamp);
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 /// History is append-only, so the current session's latest prompt is usually
 /// in the tail. Avoid scanning every historical session on each short-lived
 /// `cwtctl agent info` process; retain the full-file fallback for old or
@@ -639,9 +696,72 @@ fn read_codex_rollout_messages(path: &PathBuf) -> (Option<String>, Option<String
 
 #[cfg(test)]
 mod tests {
-    use super::read_codex_last_query_from_tail;
+    use super::{read_codex_last_query_from_tail, read_completed_turn_after};
     use std::fs;
     use std::io::Write;
+
+    #[test]
+    fn codex_completion_requires_a_later_terminal_lifecycle_event() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let path = directory.path().join("rollout.jsonl");
+        let event = |kind: &str, seconds: u64| {
+            format!(
+                "{}\n",
+                serde_json::json!({
+                    "timestamp": format!("2026-07-07T00:00:{seconds:02}.000Z"),
+                    "type": "event_msg",
+                    "payload": {"type": kind}
+                })
+            )
+        };
+        let hook_timestamp = chrono::DateTime::parse_from_rfc3339("2026-07-07T00:00:00Z")
+            .expect("timestamp")
+            .timestamp_millis() as u64;
+        for kind in ["turn_aborted", "task_complete"] {
+            let finished = event(kind, 2);
+            fs::write(&path, event("task_started", 0) + &finished).expect("rollout");
+            assert_eq!(
+                read_completed_turn_after(&path, hook_timestamp + 1_000),
+                Some(hook_timestamp + 2_000)
+            );
+            assert_eq!(
+                read_completed_turn_after(&path, hook_timestamp + 2_000),
+                None
+            );
+            assert_eq!(
+                read_completed_turn_after(&path, hook_timestamp + 3_000),
+                None
+            );
+
+            fs::write(&path, finished.clone() + &event("task_started", 3)).expect("rollout");
+            assert_eq!(read_completed_turn_after(&path, hook_timestamp), None);
+            fs::write(&path, finished + "{\"type\":\"event_msg\"").expect("partial rollout");
+            assert_eq!(read_completed_turn_after(&path, hook_timestamp), None);
+        }
+        fs::write(&path, event("task_started", 0) + &event("token_count", 3))
+            .expect("running rollout");
+        assert_eq!(read_completed_turn_after(&path, hook_timestamp), None);
+        assert_eq!(
+            read_completed_turn_after(&directory.path().join("missing"), hook_timestamp),
+            None
+        );
+    }
+
+    #[test]
+    fn codex_completion_reads_bounded_tail_past_unrelated_output() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let path = directory.path().join("rollout.jsonl");
+        let finished = r#"{"timestamp":"2026-07-07T00:00:02Z","type":"event_msg","payload":{"type":"turn_aborted"}}"#;
+        fs::write(
+            &path,
+            format!(
+                "{}\n{finished}\nnot json\n{{\"type\":\"response_item\"}}\n",
+                "x".repeat(70_000)
+            ),
+        )
+        .expect("rollout");
+        assert!(read_completed_turn_after(&path, 0).is_some());
+    }
 
     #[test]
     fn reads_latest_matching_query_from_history_tail() {
