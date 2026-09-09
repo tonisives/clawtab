@@ -37,8 +37,6 @@ export interface JobListViewProps {
   // Sorting
   sortMode?: JobSortMode;
   onSortChange?: (mode: JobSortMode) => void;
-  latestSortMode?: LatestSortMode;
-  onLatestSortChange?: (mode: LatestSortMode) => void;
   groupLatestSortMode?: Record<string, LatestSortMode>;
   onGroupLatestSortChange?: (group: string, mode: LatestSortMode) => void;
   listMode?: JobListMode;

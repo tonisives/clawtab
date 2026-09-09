@@ -2,8 +2,7 @@ import { useCallback, useMemo } from "react";
 import { Platform, Text, TextInput, TouchableOpacity, View } from "react-native";
 
 import { colors } from "../../theme/colors";
-import type { LatestSortMode } from "../../types/job";
-import { LATEST_SORT_OPTIONS, SORT_OPTIONS } from "./sign";
+import { SORT_OPTIONS } from "./sign";
 import { styles } from "./styles";
 import type { JobListViewHook } from "./useJobListView";
 import { PopupMenu } from "../PopupMenu";
@@ -69,14 +68,8 @@ export function JobListToolbar({ hook }: JobListToolbarProps) {
     }
   }, [globalTabsView.groups, hook]);
 
-  const handleSelectLatestSort = useCallback((mode: LatestSortMode) => {
-    hook.onLatestSortChange?.(mode);
-    hook.onListModeChange?.("latest");
-    hook.setSortOpen(false);
-  }, [hook]);
-
   if (hook.compactMobileToolbar) {
-    const compactViews = ["tabs", "jobs"] as const;
+    let compactViews = ["tabs", "jobs", "latest"] as const;
     return (
       <View style={styles.compactToolbarRow}>
         <View style={styles.compactSegment}>
@@ -92,55 +85,12 @@ export function JobListToolbar({ hook }: JobListToolbarProps) {
                 style={[styles.compactSegmentButton, active ? styles.compactSegmentButtonActive : null]}
               >
                 <Text style={[styles.compactSegmentText, active ? styles.compactSegmentTextActive : null]}>
-                  {view === "tabs" ? "Tabs" : "Jobs"}
+                  {view === "tabs" ? "Tabs" : view === "jobs" ? "Jobs" : "Latest"}
                 </Text>
               </TouchableOpacity>
             );
           })}
-          <TouchableOpacity
-            ref={hook.sortTriggerRef}
-            accessibilityRole="button"
-            accessibilityLabel="Latest sorting"
-            accessibilityState={{ selected: hook.listMode === "latest", expanded: hook.sortOpen }}
-            onPress={() => hook.setSortOpen(!hook.sortOpen)}
-            activeOpacity={0.7}
-            style={[
-              styles.compactSegmentButton,
-              styles.compactLatestButton,
-              hook.listMode === "latest" ? styles.compactSegmentButtonActive : null,
-            ]}
-          >
-            <Text
-              style={[
-                styles.compactSegmentText,
-                hook.listMode === "latest" ? styles.compactSegmentTextActive : null,
-              ]}
-            >
-              Latest
-            </Text>
-            <Text
-              style={[
-                styles.compactSegmentArrow,
-                hook.listMode === "latest" ? styles.compactSegmentTextActive : null,
-              ]}
-            >
-              {hook.sortOpen ? "\u25B4" : "\u25BE"}
-            </Text>
-          </TouchableOpacity>
         </View>
-        {hook.sortOpen && (
-          <PopupMenu
-            items={LATEST_SORT_OPTIONS.map((option) => ({
-              type: "item" as const,
-              label: option.label,
-              onPress: () => handleSelectLatestSort(option.value),
-              active: hook.listMode === "latest" && hook.latestSortMode === option.value,
-            }))}
-            triggerRef={hook.sortTriggerRef}
-            onClose={() => hook.setSortOpen(false)}
-            nativePlacement="below"
-          />
-        )}
       </View>
     );
   }
