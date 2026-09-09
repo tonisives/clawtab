@@ -9,7 +9,6 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use super::capture::capture_pane;
-use super::emit::refresh_attached_pane;
 use super::viewer::{OutputSink, PaneViewer, SpawnResult, ATTACH_COUNTER};
 use super::PtyManager;
 
@@ -84,14 +83,12 @@ pub(super) fn run(
         let _ = crate::tmux::resize_window(&captured.window_id, cols, rows);
     }
 
-    // Let attach-session settle, then push a full snapshot and force redraw.
-    refresh_attached_pane(&sink, &manager.recent, pane_id);
-    log::info!(
-        "[pty {}] initial refresh done after {}ms",
-        pane_id,
-        spawn_started.elapsed().as_millis()
-    );
-
+    // Reset only before a new attach stream, which establishes all terminal
+    // modes again. Never reset a running tmux client's incremental output.
+    manager.recent.lock().append(pane_id, b"\x1bc");
+    super::emit::emit_bytes(&sink, pane_id, b"\x1bc".to_vec());
+    // The attach stream includes the initial full redraw. Start draining it
+    // immediately; injecting a separate screen capture races with this output.
     reader::spawn_reader_thread(
         attached.reader,
         Arc::clone(&stop),

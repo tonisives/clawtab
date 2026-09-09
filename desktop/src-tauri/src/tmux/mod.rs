@@ -1556,6 +1556,18 @@ pub fn set_session_status_off(session: &str) -> Result<(), String> {
     )
 }
 
+/// Request a complete redraw on the dedicated viewer's existing PTY stream.
+pub fn refresh_session_clients(session: &str) -> Result<(), String> {
+    let clients = run_capture(
+        &["list-clients", "-t", session, "-F", "#{client_tty}"],
+        "tmux::refresh_session_clients",
+    )?;
+    for client in clients.lines().filter(|client| !client.is_empty()) {
+        run_ok(&["refresh-client", "-t", client], "tmux::refresh_session_clients")?;
+    }
+    Ok(())
+}
+
 /// `capture-pane -e -p -t <pane_id>` — the escaped-output variant used for the
 /// initial viewer snapshot.
 pub fn capture_pane_escaped(pane_id: &str) -> Result<String, String> {

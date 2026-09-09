@@ -33,7 +33,7 @@ pub(super) fn try_reuse_existing_viewer(
     pane_id: &str,
     cols: u16,
     rows: u16,
-    sink: &OutputSink,
+    _sink: &OutputSink,
     spawn_started: Instant,
 ) -> Result<Option<SpawnResult>, String> {
     if !manager.sessions.contains_key(pane_id) {
@@ -54,7 +54,9 @@ pub(super) fn try_reuse_existing_viewer(
         attach_generation,
         spawn_started.elapsed().as_millis()
     );
-    refresh_attached_pane(sink, &manager.recent, pane_id);
+    if let Some(viewer) = manager.sessions.get(pane_id) {
+        refresh_attached_pane(&viewer.view_session)?;
+    }
 
     let result = SpawnResult {
         native_cols: native_size.0,

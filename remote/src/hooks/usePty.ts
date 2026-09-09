@@ -16,6 +16,7 @@ type PtySubscription = {
   error?: string;
   stateListeners: Set<(state: PtyConnectionState, error?: string) => void>;
   pendingAckId?: string;
+  awaitingDimensions?: boolean;
   ackTimer?: ReturnType<typeof setTimeout>;
   subscribeTimer?: ReturnType<typeof setTimeout>;
   unsubscribeTimer?: ReturnType<typeof setTimeout>;
@@ -33,7 +34,7 @@ const SUBSCRIBE_ACK_TIMEOUT_MS = 15000;
 const SUBSCRIBE_RETRY_WINDOW_MS = 45000;
 const SUBSCRIBE_RETRY_BASE_MS = 700;
 const SUBSCRIBE_RETRY_MAX_MS = 3000;
-const DEFAULT_DIMS = { cols: 80, rows: 24 };
+const DEFAULT_DIMS = { cols: 0, rows: 0 };
 const TERMINAL_RESET_B64 = "G2M=";
 
 function setSubscriptionState(
@@ -94,6 +95,12 @@ function sendSubscribe(paneId: string, subscription: PtySubscription) {
   const send = getWsSend();
   if (!send) return false;
   const dims = subscription.getDimensions();
+  // Native WebViews must measure their grid before tmux starts drawing.
+  if (dims.cols <= 0 || dims.rows <= 0) {
+    subscription.awaitingDimensions = true;
+    return false;
+  }
+  subscription.awaitingDimensions = false;
   const id = nextId();
 
   clearSubscribeWait(subscription);
@@ -303,6 +310,10 @@ export function usePty(
       };
       existing.stateListeners.add(stateListener);
       stateListener(existing.state, existing.error);
+      // A remounted terminal needs a complete redraw even if the previous
+      // subscription is still in its unsubscribe grace period. Its cache may
+      // be unavailable or may have been rendered with different dimensions.
+      sendSubscribe(paneId, existing);
     } else {
       stateListener = (state: PtyConnectionState, message?: string) => {
         const waitingForFirstOutput = state === "connecting" && !gotDataRef.current;
@@ -379,10 +390,14 @@ export function usePty(
 
   const sendResize = useCallback(
     (cols: number, rows: number) => {
+      if (cols <= 0 || rows <= 0) return;
+      let subscription = ptySubscriptions.get(paneId);
+      if (subscription?.awaitingDimensions) {
+        sendSubscribe(paneId, subscription);
+      }
       let resource = splitResource(paneId);
       let state = machineState();
       if (resource && state.controllers[paneId] !== state.connectionId) return;
-      if (cols <= 0 || rows <= 0) return;
       const last = lastResizeRef.current;
       if (last?.cols === cols && last?.rows === rows) return;
       lastResizeRef.current = { cols, rows };

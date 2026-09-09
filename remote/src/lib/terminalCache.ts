@@ -17,13 +17,19 @@ export let createTerminalCache = (initialLimit = 5) => {
     delete: (paneId: string) => entries.delete(paneId),
     append: (paneId: string, data: string) => {
       if (!limit || !data) return;
-      let entry = entries.get(paneId) ?? { chunks: [], size: 0 };
-      // Desktop sends ESC c followed by the current screen in a single message.
+      let entry = entries.get(paneId) ?? { chunks: [], size: MAX_ENCODED_BYTES + 1 };
+      // A new attach starts with ESC c, alone or followed by screen data.
       if (data.length >= 4 && atob(data.slice(0, 4)).startsWith("\x1bc")) entry = { chunks: [], size: 0 };
-      if (data.length > MAX_ENCODED_BYTES) { entries.delete(paneId); return; }
-      entry.chunks.push(data);
+      // A suffix of a terminal stream is not a snapshot: it can start inside
+      // an escape sequence and lacks cursor/mode state. Stop caching until a
+      // new attach reset instead of replaying a truncated stream.
       entry.size += data.length;
-      while (entry.size > MAX_ENCODED_BYTES) entry.size -= entry.chunks.shift()?.length ?? 0;
+      if (entry.size > MAX_ENCODED_BYTES) {
+        entry.chunks = [];
+        entry.size = MAX_ENCODED_BYTES + 1;
+      } else {
+        entry.chunks.push(data);
+      }
       entries.set(paneId, entry);
       trim();
     },

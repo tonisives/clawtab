@@ -286,6 +286,8 @@ reportResize();
 window.ReactNativeWebView.postMessage(JSON.stringify({type:'ready'}));
 var visualOffsetMax = 0;
 window.applyVisualOffset = function() {
+  term.options.cursorStyle = 'bar';
+  term.options.cursorInactiveStyle = 'bar';
   var el = document.getElementById('terminal');
   if (!el) return;
   var maxPx = Math.max(0, Math.round(visualOffsetMax || 0));
@@ -344,7 +346,7 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
     const useNativeKeyboard = Platform.OS === "ios";
     const webViewRef = useRef<any>(null);
     const nativeInputRef = useRef<TextInput | null>(null);
-    const dimsRef = useRef({ cols: 80, rows: 24 });
+    const dimsRef = useRef({ cols: 0, rows: 0 });
     const lastResizeRef = useRef({ cols: 0, rows: 0 });
     const readyRef = useRef(false);
     const pendingWritesRef = useRef<string[]>([]);
@@ -406,32 +408,32 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
       [sendNativeInput],
     );
 
-    const injectWrite = useCallback((b64: string) => {
-      webViewRef.current?.injectJavaScript(
-        `window.enqueueTerminalWrite && window.enqueueTerminalWrite(${JSON.stringify(b64)});true;`
-      );
+    // Queue resets and plain text alongside bytes until the page is ready.
+    // Separate queues can replay stale output after a reconnect reset.
+    let injectOperation = useCallback((script: string) => {
+      if (!readyRef.current) {
+        pendingWritesRef.current.push(script);
+        return;
+      }
+      webViewRef.current?.injectJavaScript(script);
     }, []);
 
     const flushPendingWrites = useCallback(() => {
-      if (!readyRef.current || pendingWritesRef.current.length === 0) return;
-      for (const b64 of pendingWritesRef.current) injectWrite(b64);
+      if (!readyRef.current) return;
+      for (let script of pendingWritesRef.current) webViewRef.current?.injectJavaScript(script);
       pendingWritesRef.current = [];
-    }, [injectWrite]);
+    }, []);
 
     useImperativeHandle(ref, () => ({
       write(b64: string) {
-        if (!readyRef.current) {
-          pendingWritesRef.current.push(b64);
-          return;
-        }
-        injectWrite(b64);
+        injectOperation(`window.enqueueTerminalWrite(${JSON.stringify(b64)});true;`);
       },
       writeText(text: string) {
-        const normalised = text.replace(/\r?\n/g, "\r\n");
-        webViewRef.current?.injectJavaScript(`window.enqueueTerminalText && window.enqueueTerminalText(${JSON.stringify(normalised)});true;`);
+        let normalised = text.replace(/\r?\n/g, "\r\n");
+        injectOperation(`window.enqueueTerminalText(${JSON.stringify(normalised)});true;`);
       },
       clear() {
-        webViewRef.current?.injectJavaScript(`window.enqueueTerminalReset && window.enqueueTerminalReset();true;`);
+        injectOperation(`window.enqueueTerminalReset();true;`);
       },
       dimensions() {
         return dimsRef.current;
