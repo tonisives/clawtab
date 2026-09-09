@@ -91,7 +91,6 @@ interface UseJobListDerivedItemsParams {
   ordering: {
     groupLatestSortMode?: Record<string, LatestSortMode>;
     jobOrder: Record<string, string[]>;
-    latestSortMode?: LatestSortMode;
     processOrder: Record<string, string[]>;
     sortMode: JobSortMode;
   };
@@ -120,7 +119,7 @@ export function useJobListDerivedItems({
   agent,
 }: UseJobListDerivedItemsParams) {
   const { detectedProcesses, jobs, shellPanes, statuses } = data;
-  const { groupLatestSortMode, jobOrder, latestSortMode, processOrder, sortMode } = ordering;
+  const { groupLatestSortMode, jobOrder, processOrder, sortMode } = ordering;
   const { collapsedGroups, groupTabView, hiddenGroups, hiddenSectionCollapsed, interactiveHiddenGroups, listMode, pinnedItems } = grouping;
   const { query } = filters;
   const { onRunAgent } = agent;
@@ -414,9 +413,7 @@ export function useJobListDerivedItems({
       rows.push({
         item: { kind: "process", process, inGroup: true },
         name: processDisplayTitle(process),
-        timestamp: latestSortMode
-          ? processLatestTimestamp(process, latestSortMode)
-          : processSortTimestamp(process, sortMode),
+        timestamp: processLatestTimestamp(process, "activity"),
       });
     }
 
@@ -433,15 +430,13 @@ export function useJobListDerivedItems({
       rows.push({
         item: { kind: "job", job, idx: 0 },
         name: job.name,
-        timestamp: jobSortTimestamp(job, status, sortMode),
+        timestamp: jobActivityTimestamp(status),
       });
     }
 
     rows.sort((left, right) => (
-      !latestSortMode && sortMode === "name"
-        ? left.name.localeCompare(right.name, undefined, { sensitivity: "base" })
-        : right.timestamp - left.timestamp
-          || left.name.localeCompare(right.name, undefined, { sensitivity: "base" })
+      right.timestamp - left.timestamp
+      || left.name.localeCompare(right.name, undefined, { sensitivity: "base" })
     ));
     const result: ListItem[] = [];
     if (pinnedRows.length > 0) {
@@ -452,7 +447,7 @@ export function useJobListDerivedItems({
     }
     result.push(...rows.map((row) => row.item));
     return result;
-  }, [collapsedGroups, detectedProcesses, inferredJobSlugByPaneId, jobs, latestSortMode, pinnedRows, query, sortMode, statuses]);
+  }, [collapsedGroups, detectedProcesses, inferredJobSlugByPaneId, jobs, pinnedRows, query, statuses]);
 
   const groupedItems = useMemo(() => {
     const result: ListItem[] = [];

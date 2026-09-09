@@ -24,7 +24,6 @@ export function useJobListView(props: JobListViewProps) {
   const ordering = {
     groupLatestSortMode: props.groupLatestSortMode,
     jobOrder: props.jobOrder ?? {},
-    latestSortMode: props.latestSortMode,
     processOrder: props.processOrder ?? {},
     sortMode: props.sortMode ?? "name",
   };
@@ -148,7 +147,6 @@ export function useJobListView(props: JobListViewProps) {
     jobs: data.jobs,
     latestItemCount: derived.latestItemCount,
     latestPinnedItemCount: derived.latestPinnedItemCount,
-    latestSortMode: props.latestSortMode,
     listMode: grouping.listMode,
     matchedProcessesByJob: derived.matchedProcessesByJob,
     onActivateWorkspace: props.onActivateWorkspace,
@@ -156,7 +154,6 @@ export function useJobListView(props: JobListViewProps) {
     onGroupTabViewChange: callbacks.onGroupTabViewChange,
     onGroupLatestSortChange: props.onGroupLatestSortChange,
     onListModeChange: props.onListModeChange,
-    onLatestSortChange: props.onLatestSortChange,
     onHideGroup: props.onHideGroup,
     onProcessRenameDraftChange: props.onProcessRenameDraftChange,
     onProcessRenameStateChange: props.onProcessRenameStateChange,

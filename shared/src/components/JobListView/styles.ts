@@ -257,9 +257,6 @@ export const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
-  compactLatestButton: {
-    flex: 1.2,
-  },
   compactSegmentButtonActive: {
     backgroundColor: colors.accent,
   },
@@ -270,10 +267,6 @@ export const styles = StyleSheet.create({
   },
   compactSegmentTextActive: {
     color: "#ffffff",
-  },
-  compactSegmentArrow: {
-    color: colors.textSecondary,
-    fontSize: 9,
   },
   sortControl: {
     marginLeft: "auto",

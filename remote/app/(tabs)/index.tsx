@@ -238,7 +238,6 @@ export default function JobsScreen() {
   )
   let { hiddenGroups, hideGroup, unhideGroup } = useHiddenGroups(machineApi)
   const [sortMode, setSortMode] = useState<JobSortMode>("name")
-  const [latestSortMode, setLatestSortMode] = useState<LatestSortMode>("message")
   const [groupLatestSortMode, setGroupLatestSortMode] = useState<GroupLatestSortMode>({})
   const [listMode, setListMode] = useState<JobListMode>(() => readListMode())
   const [groupTabView, setGroupTabView] = useState<GroupTabView>(() => readGroupTabView())
@@ -780,8 +779,6 @@ export default function JobsScreen() {
       interactiveHiddenGroups
       onRefresh={handleRefresh}
       sortMode={sortMode}
-      latestSortMode={latestSortMode}
-      onLatestSortChange={setLatestSortMode}
       groupLatestSortMode={groupLatestSortMode}
       onGroupLatestSortChange={handleGroupLatestSortChange}
       listMode={listMode}

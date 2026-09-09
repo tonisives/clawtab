@@ -18,7 +18,7 @@ export function processRoute(paneId: string, options?: { preserveTerminal?: bool
 export function notificationJobRoute(jobName: string) {
   return {
     pathname: "/notifications/job/[name]",
-    params: { name: jobName },
+    params: { name: jobName, source: "notifications" },
   } as const;
 }
 
