@@ -530,7 +530,10 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
             autoCapitalize="none"
             autoCorrect={false}
             spellCheck={false}
-            keyboardType="default"
+            smartInsertDelete={false}
+            // iOS smart dashes and quotes remain enabled on the default keyboard
+            // even with autocorrection off, corrupting shell flags and strings.
+            keyboardType="ascii-capable"
             caretHidden
             contextMenuHidden
             importantForAutofill="no"
