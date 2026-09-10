@@ -533,6 +533,8 @@ mod tests {
 
     fn mk_process(pane: &str, group: &str) -> DetectedProcess {
         DetectedProcess {
+            display_name: None,
+            pane_title: None,
             execution_id: None,
             pane_id: pane.to_string(),
             cwd: "/tmp".to_string(),

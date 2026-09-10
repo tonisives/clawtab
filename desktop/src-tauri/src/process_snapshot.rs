@@ -33,7 +33,7 @@ pub async fn detect_processes_snapshot(
 fn detect_processes(
     jobs_config: &Arc<Mutex<JobsConfig>>,
     job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
-    live_viewer_panes: HashSet<String>,
+    _live_viewer_panes: HashSet<String>,
 ) -> Vec<DetectedProcess> {
     let Some(stdout) = list_panes() else {
         return vec![];
@@ -55,6 +55,8 @@ fn detect_processes(
         log::trace!("detect_processes: tmux returned 0 pane lines");
     }
 
+    let process_snapshot = crate::agent_session::ProcessSnapshot::capture();
+    let overrides = crate::config::settings::AppSettings::load().process_overrides;
     let running_panes = collect_running_panes(jobs_config, job_status);
     let slug_to_group = collect_slug_to_group(jobs_config);
     let match_entries = collect_match_entries(jobs_config);
@@ -76,7 +78,7 @@ fn detect_processes(
             counters.placeholder += 1;
             continue;
         }
-        let Some(provider) = resolve_provider(&row) else {
+        let Some(provider) = resolve_provider(&row, &process_snapshot) else {
             continue;
         };
         if !seen.insert(row.pane_id.to_string()) {
@@ -89,7 +91,8 @@ fn detect_processes(
             provider,
             matched_group,
             matched_job,
-            &live_viewer_panes,
+            &process_snapshot,
+            overrides.get(row.pane_id),
         ));
     }
 
@@ -106,7 +109,7 @@ fn list_panes() -> Option<String> {
         "tmux",
         &[
             "list-panes", "-a", "-F",
-            "#{pane_id}|CT|#{pane_current_command}|CT|#{pane_current_path}|CT|#{session_name}|CT|#{window_name}|CT|#{pane_pid}|CT|#{window_id}|CT|#{pane_title}|CT|#{@clawtab-slug}",
+            "#{pane_id}|CT|#{pane_current_command}|CT|#{pane_current_path}|CT|#{session_name}|CT|#{window_name}|CT|#{pane_pid}|CT|#{window_id}|CT|#{pane_title}|CT|#{@clawtab-slug}|CT|#{@clawtab-display-name}",
         ],
         "process_snapshot::list_panes",
     );
@@ -182,6 +185,8 @@ struct ProcessRow<'a> {
     window: &'a str,
     pane_pid: &'a str,
     pane_slug_tag: Option<String>,
+    pane_title: Option<String>,
+    display_name: Option<String>,
 }
 
 #[derive(Default)]
@@ -192,7 +197,7 @@ struct SkipCounters {
 }
 
 fn parse_row(line: &str) -> Option<ProcessRow<'_>> {
-    let parts: Vec<&str> = line.splitn(9, "|CT|").collect();
+    let parts: Vec<&str> = line.splitn(10, "|CT|").collect();
     if parts.len() < 8 {
         return None;
     }
@@ -203,15 +208,22 @@ fn parse_row(line: &str) -> Option<ProcessRow<'_>> {
         session: parts[3],
         window: parts[4],
         pane_pid: parts[5],
+        pane_title: normalize_optional_text(parts[7].to_string()),
+        display_name: parts
+            .get(9)
+            .and_then(|s| normalize_optional_text((*s).to_string())),
         pane_slug_tag: parts
             .get(8)
             .and_then(|s| normalize_optional_text((*s).to_string())),
     })
 }
 
-fn resolve_provider(row: &ProcessRow<'_>) -> Option<crate::agent_session::ProcessProvider> {
+fn resolve_provider(
+    row: &ProcessRow<'_>,
+    snapshot: &crate::agent_session::ProcessSnapshot,
+) -> Option<crate::agent_session::ProcessProvider> {
     let agent_provider =
-        crate::agent_session::detect_process_provider(row.pane_pid, None).or_else(|| {
+        crate::agent_session::detect_process_provider(row.pane_pid, Some(snapshot)).or_else(|| {
             provider_from_tmux_command(row.command).or_else(|| {
                 is_semver(row.command).then_some(crate::agent_session::ProcessProvider::Claude)
             })
@@ -269,15 +281,18 @@ fn build_remote(
     provider: crate::agent_session::ProcessProvider,
     matched_group: Option<String>,
     matched_job: Option<String>,
-    _live_viewer_panes: &HashSet<String>,
+    snapshot: &crate::agent_session::ProcessSnapshot,
+    override_meta: Option<&crate::config::settings::DetectedProcessOverride>,
 ) -> DetectedProcess {
     let log_lines = String::new();
     let session_info = crate::agent_session::resolve_session_info_for_provider_with_cwd(
         row.pane_pid,
         Some(provider),
-        None,
+        Some(snapshot),
         Some(row.cwd),
     );
+    let override_meta = override_meta
+        .filter(|meta| meta.matches_identity(row.pane_pid, session_info.session_id.as_deref()));
     let (can_fork_session, can_send_skills, can_inject_secrets) = match provider {
         crate::agent_session::ProcessProvider::Claude => (true, true, true),
         _ => (false, false, false),
@@ -290,6 +305,11 @@ fn build_remote(
         ),
         pane_id: row.pane_id.to_string(),
         cwd: row.cwd.to_string(),
+        display_name: row
+            .display_name
+            .clone()
+            .or_else(|| override_meta.and_then(|meta| meta.display_name.clone())),
+        pane_title: row.pane_title.clone(),
         version: if is_semver(row.command) {
             row.command.to_string()
         } else {
@@ -331,5 +351,25 @@ fn normalize_optional_text(value: String) -> Option<String> {
         None
     } else {
         Some(trimmed.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_row;
+
+    #[test]
+    fn preserves_saved_name_separately_from_terminal_title() {
+        let row = parse_row("%325|CT|codex|CT|/work|CT|main|CT|agent|CT|74826|CT|@1|CT|working title|CT||CT|dust repair").expect("valid pane row");
+        assert_eq!(row.display_name.as_deref(), Some("dust repair"));
+        assert_eq!(row.pane_title.as_deref(), Some("working title"));
+    }
+
+    #[test]
+    fn accepts_rows_without_a_saved_name() {
+        let row = parse_row("%325|CT|codex|CT|/work|CT|main|CT|agent|CT|74826|CT|@1|CT||CT|")
+            .expect("valid legacy row");
+        assert!(row.display_name.is_none());
+        assert!(row.pane_title.is_none());
     }
 }

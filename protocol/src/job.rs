@@ -256,6 +256,10 @@ pub struct DetectedProcess {
     pub execution_id: Option<String>,
     pub pane_id: String,
     pub cwd: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pane_title: Option<String>,
     pub version: String,
     pub provider: String,
     #[serde(skip_serializing_if = "Option::is_none")]

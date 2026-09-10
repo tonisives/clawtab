@@ -1,3 +1,4 @@
+import { compactAgentSelectionLabel } from "../util/agent";
 import { MachineBadge } from "../machines/Badge";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform } from "react-native";
@@ -61,11 +62,9 @@ export function ProcessCard({
   agentLabel?: string | null;
   groupedPosition?: GroupedRowPosition;
 }) {
+  let modelLabel = agentLabel ?? (process.model_id ? compactAgentSelectionLabel(null, process.model_id, process.agent_effort) : null);
   const displayName = processDisplayTitle(process);
-  const firstQueryTitle = compactProcessQuery(process.first_query);
-  const subtitle = inGroup
-    ? (process.last_query && process.last_query !== process.first_query ? process.last_query : null)
-    : (displayName !== firstQueryTitle ? process.first_query ?? null : null);
+  let subtitle = compactProcessQuery(process.last_query) ?? compactProcessQuery(process.first_query);
   const transient = process._transient_state;
   const listItemSubtitle = transient
     ? (transient === "starting" ? "Starting..." : "Stopping...")
@@ -213,7 +212,10 @@ export function ProcessCard({
         onLongPress={openMenu}
         activeOpacity={0.7}
       >
-        <JobKindIcon kind={kind} />{Platform.OS !== "ios" && <MachineBadge machineId={process.machine_id} />}
+        <View style={styles.paneIcon}>
+          <JobKindIcon kind={kind} />
+          <Text style={styles.paneId}>{process.pane_id}</Text>
+        </View>{Platform.OS !== "ios" && <MachineBadge machineId={process.machine_id} />}
         <View style={styles.processInfo}>
           <View style={styles.titleRow}>
             {editing ? (
@@ -262,10 +264,9 @@ export function ProcessCard({
           {!editing ? (
             <View style={styles.processMeta}>
               <Text style={[styles.queryPreview, transient ? styles.transientPreview : null]} numberOfLines={1}>
-                <Text style={styles.paneId}>{process.pane_id}</Text>
-                {listItemSubtitle ? ` \u00b7 ${listItemSubtitle}` : null}
+                {listItemSubtitle}
               </Text>
-              {agentLabel ? <Text style={styles.agentText} numberOfLines={1}>{agentLabel}</Text> : null}
+              {modelLabel ? <Text style={styles.agentText} numberOfLines={1}>{modelLabel}</Text> : null}
             </View>
           ) : null}
         </View>
@@ -365,7 +366,13 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     maxWidth: 130,
   },
+  paneIcon: {
+    alignItems: "center",
+    gap: 3,
+    flexShrink: 0,
+  },
   paneId: {
+    fontSize: 10,
     color: colors.textMuted,
     fontFamily: "monospace",
     fontStyle: "normal",
