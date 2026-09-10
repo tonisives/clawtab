@@ -517,46 +517,22 @@ fn read_codex_rollout(path: &PathBuf, include_messages: bool) -> CachedRollout {
 }
 
 fn read_codex_rollout_selection(path: &PathBuf) -> (Option<String>, Option<String>) {
-    use std::io::{Read, Seek, SeekFrom};
-
-    let mut file = match fs::File::open(path) {
-        Ok(file) => file,
-        Err(_) => return (None, None),
-    };
-    let len = match file.metadata() {
-        Ok(metadata) => metadata.len(),
-        Err(_) => return (None, None),
-    };
-    let start = len.saturating_sub(512 * 1024);
-    if file.seek(SeekFrom::Start(start)).is_err() {
-        return (None, None);
-    }
-    let mut bytes = Vec::with_capacity((len - start) as usize);
-    if file.read_to_end(&mut bytes).is_err() {
-        return (None, None);
-    }
-    let text = String::from_utf8_lossy(&bytes);
-
-    for line in text.lines().rev() {
-        let value: serde_json::Value = match serde_json::from_str(&line) {
-            Ok(value) => value,
-            Err(_) => continue,
-        };
-        if value.get("type").and_then(|value| value.as_str()) == Some("turn_context") {
-            let payload = value.get("payload");
-            if let Some(model) = payload
-                .and_then(|payload| payload.get("model"))
-                .and_then(|value| value.as_str())
-            {
-                let effort = payload
-                    .and_then(|payload| payload.get("effort"))
-                    .and_then(|value| value.as_str())
-                    .map(str::to_string);
-                return (Some(model.to_string()), effort);
-            }
+    super::common::read_latest_jsonl(path, |value| {
+        if value.get("type")?.as_str()? != "turn_context" {
+            return None;
         }
-    }
-    (None, None)
+        let payload = value.get("payload")?;
+        let model = payload
+            .get("model")?
+            .as_str()
+            .and_then(normalize_optional_str)?;
+        let effort = payload
+            .get("effort")
+            .and_then(|value| value.as_str())
+            .and_then(normalize_optional_str);
+        Some((Some(model), effort))
+    })
+    .unwrap_or((None, None))
 }
 
 fn read_codex_rollout_token_count(path: &PathBuf) -> Option<u64> {
@@ -699,6 +675,27 @@ mod tests {
     use super::{read_codex_last_query_from_tail, read_completed_turn_after};
     use std::fs;
     use std::io::Write;
+
+    #[test]
+    fn reads_latest_model_before_long_tool_output() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let path = directory.path().join("rollout.jsonl");
+        let old = r#"{"type":"turn_context","payload":{"model":"old-model","effort":"low"}}"#;
+        let latest = r#"{"type":"turn_context","payload":{"model":"gpt-6-astra","effort":"high"}}"#;
+        let output = format!(
+            "{{\"type\":\"response_item\",\"text\":\"{}\"}}\n",
+            "x".repeat(70_000)
+        );
+        fs::write(
+            &path,
+            format!("{old}\n{latest}\n{}{{\"partial\":", output.repeat(10)),
+        )
+        .expect("rollout");
+        assert_eq!(
+            super::read_codex_rollout_selection(&path),
+            (Some("gpt-6-astra".into()), Some("high".into()))
+        );
+    }
 
     #[test]
     fn codex_completion_requires_a_later_terminal_lifecycle_event() {

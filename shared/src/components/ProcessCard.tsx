@@ -1,4 +1,5 @@
 import { compactAgentSelectionLabel } from "../util/agent";
+import { resourceLabel } from "../machines/client";
 import { MachineBadge } from "../machines/Badge";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform } from "react-native";
@@ -213,7 +214,7 @@ export function ProcessCard({
       >
         <View style={styles.paneIcon}>
           <JobKindIcon kind={kind} />
-          <Text style={styles.paneId}>{process.pane_id}</Text>
+          <Text style={styles.paneId} numberOfLines={1} adjustsFontSizeToFit>{resourceLabel(process.pane_id)}</Text>
         </View>{Platform.OS !== "ios" && <MachineBadge machineId={process.machine_id} />}
         <View style={styles.processInfo}>
           <View style={styles.titleRow}>
@@ -366,6 +367,7 @@ const styles = StyleSheet.create({
     maxWidth: 130,
   },
   paneIcon: {
+    width: 40,
     alignItems: "center",
     gap: 3,
     flexShrink: 0,

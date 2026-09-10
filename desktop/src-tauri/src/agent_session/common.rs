@@ -91,3 +91,41 @@ mod tests {
         );
     }
 }
+
+/// Search newest complete JSONL records first, including metadata before long tool output.
+pub(super) fn read_latest_jsonl<T>(
+    path: &std::path::Path,
+    extract: impl Fn(&serde_json::Value) -> Option<T>,
+) -> Option<T> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = std::fs::File::open(path).ok()?;
+    let mut position = file.metadata().ok()?.len();
+    let mut remainder = Vec::new();
+    while position > 0 {
+        let start = position.saturating_sub(64 * 1024);
+        let mut bytes = vec![0; (position - start) as usize];
+        file.seek(SeekFrom::Start(start)).ok()?;
+        file.read_exact(&mut bytes).ok()?;
+        bytes.extend_from_slice(&remainder);
+        let first_complete = if start == 0 {
+            0
+        } else {
+            bytes
+                .iter()
+                .position(|byte| *byte == b'\n')
+                .map(|index| index + 1)
+                .unwrap_or(bytes.len())
+        };
+        for line in bytes[first_complete..].rsplit(|byte| *byte == b'\n') {
+            if let Some(result) = serde_json::from_slice(line)
+                .ok()
+                .and_then(|value| extract(&value))
+            {
+                return Some(result);
+            }
+        }
+        remainder = bytes[..first_complete].to_vec();
+        position = start;
+    }
+    None
+}
