@@ -42,6 +42,7 @@ struct CachedMessages {
     first: Option<String>,
     last: Option<String>,
     token_count: Option<u64>,
+    model_id: Option<String>,
 }
 
 fn jsonl_cache() -> &'static Mutex<HashMap<PathBuf, CachedMessages>> {
@@ -100,10 +101,11 @@ pub(super) fn resolve_session_info(
         .join(&project_dir);
     let jsonl_path = project_path.join(format!("{}.jsonl", session.session_id));
 
-    let (first, last, token_count) = read_session_messages(&jsonl_path);
+    let (first, last, token_count, model_id) = read_session_messages(&jsonl_path);
     info.first_query = first;
     info.last_query = last;
     info.token_count = token_count;
+    info.model_id = model_id;
 
     info
 }
@@ -124,10 +126,12 @@ fn is_claude_command(command: &str) -> bool {
     command.contains("claude") && !command.contains("Claude.app")
 }
 
-fn read_session_messages(path: &PathBuf) -> (Option<String>, Option<String>, Option<u64>) {
+fn read_session_messages(
+    path: &PathBuf,
+) -> (Option<String>, Option<String>, Option<u64>, Option<String>) {
     let metadata = match fs::metadata(path) {
         Ok(metadata) => metadata,
-        Err(_) => return (None, None, None),
+        Err(_) => return (None, None, None, None),
     };
     let modified = metadata.modified().ok();
     let len = metadata.len();
@@ -140,6 +144,7 @@ fn read_session_messages(path: &PathBuf) -> (Option<String>, Option<String>, Opt
                     cached.first.clone(),
                     cached.last.clone(),
                     cached.token_count,
+                    cached.model_id.clone(),
                 );
             }
         }
@@ -148,6 +153,7 @@ fn read_session_messages(path: &PathBuf) -> (Option<String>, Option<String>, Opt
     let first = read_first_user_message(path);
     let last = read_last_user_message(path);
     let token_count = read_latest_token_count(path);
+    let model_id = read_latest_model(path);
     let last = if first.is_some() && first == last {
         None
     } else {
@@ -164,11 +170,12 @@ fn read_session_messages(path: &PathBuf) -> (Option<String>, Option<String>, Opt
                 first: first.clone(),
                 last: last.clone(),
                 token_count,
+                model_id: model_id.clone(),
             },
         );
     }
 
-    (first, last, token_count)
+    (first, last, token_count, model_id)
 }
 
 fn read_first_user_message(path: &PathBuf) -> Option<String> {
@@ -355,4 +362,41 @@ fn extract_user_text_from_jsonl_line(line: &str) -> Option<String> {
     };
 
     (!user_text.is_empty()).then_some(user_text)
+}
+
+fn read_latest_model(path: &std::path::Path) -> Option<String> {
+    super::common::read_latest_jsonl(path, |value| {
+        if value.get("type")?.as_str()? != "assistant" {
+            return None;
+        }
+        let model = value.get("message")?.get("model")?.as_str()?.trim();
+        (!model.is_empty() && model != "<synthetic>").then(|| model.to_string())
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn reads_latest_assistant_model_and_ignores_synthetic_messages() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let path = directory.path().join("session.jsonl");
+        std::fs::write(
+            &path,
+            concat!(
+                "{\"type\":\"assistant\",\"message\":{\"model\":\"claude-old\"}}\n",
+                "{\"type\":\"assistant\",\"message\":{\"model\":\"claude-sonnet-5\"}}\n",
+                "{\"type\":\"assistant\",\"message\":{\"model\":\"<synthetic>\"}}\n",
+                "{\"type\":\"user\",\"message\":{\"model\":\"ignore\"}}\n"
+            ),
+        )
+        .expect("session");
+        assert_eq!(
+            super::read_session_messages(&path).3.as_deref(),
+            Some("claude-sonnet-5")
+        );
+        assert_eq!(
+            super::read_session_messages(&path).3.as_deref(),
+            Some("claude-sonnet-5")
+        );
+    }
 }
