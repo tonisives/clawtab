@@ -214,11 +214,13 @@ export function ProcessCard({
         activeOpacity={0.7}
       >
         <View style={styles.paneIcon}>
-          <JobKindIcon kind={kind} />
-          <View style={styles.paneIdentity}>
-            <MachineMark machineId={machineId} />
-            <Text style={styles.paneId} numberOfLines={1} adjustsFontSizeToFit>{resourceLabel(process.pane_id)}</Text>
+          <View style={styles.agentIcon}>
+            <JobKindIcon kind={kind} />
+            {machineId ? <View style={styles.machineOverlay}>
+              <MachineMark machineId={machineId} />
+            </View> : null}
           </View>
+          <Text style={styles.paneId} numberOfLines={1} adjustsFontSizeToFit>{resourceLabel(process.pane_id)}</Text>
         </View>
         <View style={styles.processInfo}>
           <View style={styles.titleRow}>
@@ -371,17 +373,26 @@ const styles = StyleSheet.create({
     maxWidth: 130,
   },
   paneIcon: {
-    width: 52,
+    width: 40,
     alignItems: "center",
     gap: 3,
     flexShrink: 0,
   },
-  paneIdentity: {
-    flexDirection: "row",
+  agentIcon: {
+    width: 32,
+    height: 32,
+    position: "relative",
+  },
+  machineOverlay: {
+    position: "absolute",
+    top: -3,
+    right: -4,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
     alignItems: "center",
     justifyContent: "center",
-    gap: 3,
-    maxWidth: 52,
+    backgroundColor: colors.surface,
   },
   paneId: {
     fontSize: 10,

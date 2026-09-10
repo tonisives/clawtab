@@ -19,19 +19,19 @@ export let machineAppearance = (
   return { icon: ICONS[index % ICONS.length], color: PALETTE[Math.floor(index / ICONS.length) % PALETTE.length] }
 }
 
-export let MachineIcon = ({ appearance, size = 20 }: { appearance: MachineAppearance; size?: number }) => {
+export let MachineIcon = ({ appearance, size = 20, strokeWidth = 1.5 }: { appearance: MachineAppearance; size?: number; strokeWidth?: number }) => {
   let iconStyles = useMemo(() => StyleSheet.create({
     frame: { width: size, height: size, justifyContent: "center", alignItems: "center" },
-    screen: { width: size * 0.9, height: size * 0.65, borderWidth: 1.5, borderColor: appearance.color, borderRadius: 2 },
-    stand: { width: size * 0.4, height: size * 0.16, borderBottomWidth: 1.5, borderColor: appearance.color },
-    base: { width: size, borderBottomWidth: 1.5, borderColor: appearance.color, marginTop: 2 },
-    rack: { width: size * 0.8, height: size * 0.35, borderWidth: 1.5, borderColor: appearance.color, borderRadius: 2, marginVertical: 1, justifyContent: "center", paddingLeft: 2 },
-    dot: { width: 2, height: 2, backgroundColor: appearance.color },
-    chip: { width: size * 0.65, height: size * 0.65, borderWidth: 2, borderColor: appearance.color, borderRadius: 2 },
-    pins: { width: size * 0.35, height: size, position: "absolute", borderTopWidth: 2, borderBottomWidth: 2, borderColor: appearance.color },
-    pinsAcross: { width: size, height: size * 0.35, position: "absolute", borderLeftWidth: 2, borderRightWidth: 2, borderColor: appearance.color },
+    screen: { width: size * 0.9, height: size * 0.65, borderWidth: strokeWidth, borderColor: appearance.color, borderRadius: 2 },
+    stand: { width: size * 0.4, height: size * 0.16, borderBottomWidth: strokeWidth, borderColor: appearance.color },
+    base: { width: size, borderBottomWidth: strokeWidth, borderColor: appearance.color, marginTop: 2 },
+    rack: { width: size * 0.8, height: size * 0.35, borderWidth: strokeWidth, borderColor: appearance.color, borderRadius: 2, marginVertical: 1, justifyContent: "center", paddingLeft: 2 },
+    dot: { width: strokeWidth, height: strokeWidth, backgroundColor: appearance.color },
+    chip: { width: size * 0.65, height: size * 0.65, borderWidth: strokeWidth, borderColor: appearance.color, borderRadius: 2 },
+    pins: { width: size * 0.35, height: size, position: "absolute", borderTopWidth: strokeWidth, borderBottomWidth: strokeWidth, borderColor: appearance.color },
+    pinsAcross: { width: size, height: size * 0.35, position: "absolute", borderLeftWidth: strokeWidth, borderRightWidth: strokeWidth, borderColor: appearance.color },
     terminal: { color: appearance.color, fontSize: size * 0.5, fontWeight: "700", textAlign: "center" },
-  }), [appearance.color, size])
+  }), [appearance.color, size, strokeWidth])
   return <View style={iconStyles.frame} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
     {appearance.icon === "server" ? <><View style={iconStyles.rack}><View style={iconStyles.dot} /></View><View style={iconStyles.rack}><View style={iconStyles.dot} /></View></>
       : appearance.icon === "chip" ? <><View style={iconStyles.pins} /><View style={iconStyles.pinsAcross} /><View style={iconStyles.chip} /></>
