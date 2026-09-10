@@ -1,6 +1,6 @@
 import { MachineActions } from "./Actions"
 import { useEffect, useRef, useState } from "react"
-import { View, Text, Pressable, StyleSheet } from "react-native"
+import { View, Text, Pressable, StyleSheet, Modal, SafeAreaView, KeyboardAvoidingView, Platform } from "react-native"
 import { XtermLog, type XtermLogHandle } from "../components/XtermLog"
 import { colors } from "../theme/colors"
 import { spacing } from "../theme/spacing"
@@ -50,11 +50,13 @@ export let MachineTerminal = ({
   paneId,
   tmuxSession,
   onClose,
+  showActions = true,
 }: {
   machineId: string
   paneId: string
   tmuxSession: string
   onClose?: () => void
+  showActions?: boolean
 }) => {
   let terminal = useRef<XtermLogHandle>(null)
   let state = useMachines()
@@ -103,9 +105,9 @@ export let MachineTerminal = ({
   return (
     <View style={styles.terminal}>
       <MachineTerminalControls paneId={key} />
-      <MachineActions machineId={machineId} paneId={paneId} controlled={controlled} />
+      {showActions && <MachineActions machineId={machineId} paneId={paneId} controlled={controlled} />}
       {onClose && (
-        <Pressable accessibilityRole="button" onPress={onClose}>
+        <Pressable accessibilityRole="button" onPress={onClose} style={styles.button}>
           <Text style={styles.text}>Close terminal</Text>
         </Pressable>
       )}
@@ -120,8 +122,38 @@ export let MachineTerminal = ({
     </View>
   )
 }
+export let MachineTerminalScreen = ({ machineId, paneId, tmuxSession, title, signIn = false, onClose }: {
+  machineId: string
+  paneId: string
+  tmuxSession: string
+  title: string
+  signIn?: boolean
+  onClose: () => void
+}) => (
+  <Modal visible presentationStyle="fullScreen" animationType="slide" onRequestClose={onClose}>
+    <SafeAreaView style={styles.screen}>
+      <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <View style={styles.header}>
+          <Text numberOfLines={1} style={styles.title}>{title}</Text>
+          <Pressable accessibilityRole="button" onPress={onClose} style={styles.closeButton}>
+            <Text style={styles.buttonText}>Done</Text>
+          </Pressable>
+        </View>
+        <View style={styles.terminalBody}>
+          <MachineTerminal machineId={machineId} paneId={paneId} tmuxSession={tmuxSession} showActions={!signIn} />
+        </View>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  </Modal>
+)
+
 let styles = StyleSheet.create({
-  terminal: { flex: 1, minHeight: 300 },
+  screen: { flex: 1, backgroundColor: colors.bg },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, padding: 12 },
+  title: { flex: 1, color: colors.text, fontSize: 16, fontWeight: "600" },
+  closeButton: { minHeight: 44, paddingHorizontal: 20, borderRadius: 999, alignItems: "center", justifyContent: "center", backgroundColor: colors.groupedSurface, borderWidth: 1, borderColor: colors.border },
+  terminalBody: { flex: 1, minHeight: 0, paddingHorizontal: 8 },
+  terminal: { flex: 1, minHeight: 0 },
   bar: {
     flexDirection: "row",
     alignItems: "center",

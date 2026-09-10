@@ -147,3 +147,5 @@ export { buildModelOptions, BARE_PROVIDER_OPTIONS, labelForProviderModel } from 
 export { useHiddenGroups } from "./hooks/useHiddenGroups";
 
 export { matchesSavedGroup, savedGroupKey } from "./util/jobGroups";
+
+export * from "./machines/Connect";

@@ -9,6 +9,11 @@ let find = (tree, label) => {
   if (Array.isArray(tree)) return tree.map((node) => find(node, label)).find(Boolean);
   return tree.props?.label === label ? tree : find(tree.props?.children, label);
 };
+let findType = (tree, type) => {
+  if (!tree) return;
+  if (Array.isArray(tree)) return tree.map((node) => findType(node, type)).find(Boolean);
+  return tree.type === type ? tree : findType(tree.props?.children, type);
+};
 let flush = () => new Promise((resolve) => setImmediate(resolve));
 let harness = (rental, launch) => {
   let states = [], cursor = 0, effects = [], operation = 0;
@@ -23,7 +28,8 @@ let harness = (rental, launch) => {
     react,
     'react/jsx-runtime': { jsx: element, jsxs: element },
     'react-native': { StyleSheet: { create: (value) => value }, ...Object.fromEntries(['View','Text','TextInput','Pressable'].map((name) => [name, name])) },
-    './Terminal': { MachineTerminal: 'MachineTerminal' },
+    './Terminal': { MachineTerminalScreen: 'MachineTerminalScreen' },
+    '../theme/colors': { colors: {} },
     './client': { useMachines: () => machines, machineState: () => machines, machineRequest: launch, machineSend: () => {}, resourceKey: (m, p) => `${m}::${p}`, selectMachine: (id) => { machines.selected = id; }, newOperationId: () => `request-${++operation}` },
   };
   let exports = {};
@@ -49,7 +55,7 @@ test('first agent runs on the rental workspace and repeated clicks share one ope
   let box = rental(), requests = [];
   let view = harness(box, async (machine, message) => { requests.push({ machine, message }); return { success: true, pane_id: '%1', tmux_session: 'agent' }; });
   view.render(); await flush();
-  let start = find(view.render(), 'I’ve signed in · Start agent');
+  let start = find(view.render(), 'Start agent');
   start.props.onPress(); start.props.onPress();
   await flush();
   assert.equal(requests.length, 1);
@@ -76,9 +82,16 @@ test('provider sign-in is a shell command and uses its own stable operation', as
   let box = rental(), request;
   let view = harness(box, async (machine, message) => { request = message; return { success: true, pane_id: '%2', tmux_session: 'login' }; });
   view.render(); await flush();
-  find(view.render(), 'Sign in to codex').props.onPress(); await flush();
+  find(view.render(), 'Sign in to Codex').props.onPress(); await flush();
   assert.equal(request.provider, 'shell');
   assert.equal(request.prompt, 'codex login --device-auth');
   assert.equal(request.operation_id, 'login-stable');
   assert.equal(box.setup.login_terminal.pane_id, '%2');
+  let screen = findType(view.render(), 'MachineTerminalScreen');
+  assert.equal(screen.props.signIn, true);
+  assert.equal(screen.props.machineId, 'remote-only');
+  screen.props.onClose();
+  assert.equal(findType(view.render(), 'MachineTerminalScreen'), undefined);
+  find(view.render(), 'Resume sign-in').props.onPress(); await flush();
+  assert.equal(findType(view.render(), 'MachineTerminalScreen').props.paneId, '%2');
 });

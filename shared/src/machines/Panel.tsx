@@ -1,3 +1,5 @@
+import { ConnectMachine } from "./Connect"
+import { colors } from "../theme/colors"
 import { useState, useRef } from "react"
 import { MachineIcon, machineAppearance, MachineAppearanceEditor } from "./Appearance"
 import { View, Text, Pressable, TextInput, ScrollView, StyleSheet } from "react-native"
@@ -33,7 +35,6 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
   let [modelNames, setModelNames] = useState("")
   let [shares, setShares] = useState<MachineMessage[]>([])
   let [removeConfirm, setRemoveConfirm] = useState(false)
-  let [code, setCode] = useState("")
   let [path, setPath] = useState("~")
   let [url, setUrl] = useState("")
   let [branch, setBranch] = useState("")
@@ -92,12 +93,6 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
     setOutput(result)
     return result
   }
-  let approve = () =>
-    void act(async () => {
-      await approvePairing(code)
-      setCode("")
-      setProgress("Machine approved; waiting for host setup to finish")
-    })
   let browse = () =>
     void act(() =>
       host({ action: "list_directory", path }).then((result) => {
@@ -390,33 +385,7 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
               </Pressable>
             ))}
           </View>
-          {tab === "pair" && (
-            <>
-              <Text style={styles.title}>Add a Linux machine</Text>
-              <Text style={styles.text}>
-                Install the Linux package, run cwtctl setup on the host, then enter its pairing code
-                here.
-              </Text>
-              <View style={styles.row}>
-                <TextInput
-                  accessibilityLabel="Pairing code"
-                  style={styles.input}
-                  placeholder="Pairing code"
-                  placeholderTextColor="#989ca6"
-                  value={code}
-                  onChangeText={setCode}
-                />
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={busy || !code}
-                  onPress={approve}
-                  style={styles.button}
-                >
-                  <Text style={styles.text}>Approve machine</Text>
-                </Pressable>
-              </View>
-            </>
-          )}
+          {tab === "pair" && <ConnectMachine approvePairing={approvePairing} initiallyExpanded />}
           {tab !== "pair" && <Text style={styles.title}>{tab[0].toUpperCase() + tab.slice(1)}</Text>}
           {!machine && tab !== "pair" && (
             <>
@@ -817,40 +786,40 @@ let createStyles = (desktop: boolean) => StyleSheet.create({
   panelBody: { paddingRight: 8 },
   body: { maxHeight: 440, paddingRight: 8 },
   row: { flexDirection: "row", flexWrap: "wrap", gap: 6, paddingVertical: 4 },
-  title: { color: desktop ? "var(--text-primary)" : "#fff", fontWeight: "600", marginTop: 18, marginBottom: 8 },
-  text: { color: desktop ? "var(--text-primary)" : "#e5e7eb", fontSize: 13 },
-  detail: { color: desktop ? "var(--text-secondary)" : "#b6bbc5", fontSize: 12 },
+  title: { color: desktop ? colors.text : "#fff", fontWeight: "600", marginTop: 18, marginBottom: 8 },
+  text: { color: desktop ? colors.text : "#e5e7eb", fontSize: 13 },
+  detail: { color: desktop ? colors.textSecondary : "#b6bbc5", fontSize: 12 },
   labelRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   statusRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 5 },
   statusDot: { width: 7, height: 7, borderRadius: 4, flexShrink: 0, alignSelf: "center" },
-  onlineDot: { backgroundColor: desktop ? "var(--success-color, #30d158)" : "#4ade80" },
-  offlineDot: { backgroundColor: desktop ? "var(--text-muted, #a1a1a6)" : "#989ca6" },
-  errorDot: { backgroundColor: desktop ? "var(--danger-color, #ff3b30)" : "#ffabab" },
-  connectingDot: { backgroundColor: desktop ? "var(--warning-color, #ff9f0a)" : "#fbbf24" },
-  selectionDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: desktop ? "var(--accent-color, #5c6bc0)" : "#9fa8da" },
+  onlineDot: { backgroundColor: desktop ? colors.success : "#4ade80" },
+  offlineDot: { backgroundColor: desktop ? colors.textMuted : "#989ca6" },
+  errorDot: { backgroundColor: desktop ? colors.danger : "#ffabab" },
+  connectingDot: { backgroundColor: desktop ? colors.warning : "#fbbf24" },
+  selectionDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: desktop ? colors.accent : "#9fa8da" },
   machineName: { fontWeight: "600" },
-  activeText: { color: desktop ? "var(--accent-color, #5c6bc0)" : "#fff", fontWeight: "600" },
-  error: { color: desktop ? "var(--error-color, #c53030)" : "#ffabab", padding: 8 },
-  code: { fontFamily: "monospace", color: desktop ? "var(--text-secondary)" : "#d1d5db", fontSize: 12, padding: 8 },
+  activeText: { color: desktop ? colors.accent : "#fff", fontWeight: "600" },
+  error: { color: desktop ? colors.danger : "#ffabab", padding: 8 },
+  code: { fontFamily: "monospace", color: desktop ? colors.textSecondary : "#d1d5db", fontSize: 12, padding: 8 },
   button: {
-    backgroundColor: desktop ? "var(--bg-tertiary)" : "#353942",
+    backgroundColor: desktop ? colors.groupedSurface : "#353942",
     paddingVertical: 9,
     paddingHorizontal: desktop ? 15 : 9,
-    borderRadius: desktop ? 999 : 6,
+    borderRadius: 999,
     borderWidth: desktop ? 1 : 0,
     borderColor: "transparent",
     alignSelf: "flex-start",
     marginVertical: 3,
   },
-  machineButton: { borderWidth: 1, borderColor: desktop ? "var(--border-light)" : "transparent", borderRadius: desktop ? 16 : 6, paddingVertical: 12, minWidth: desktop ? 160 : undefined },
-  selectedMachine: { borderColor: desktop ? "var(--accent-color, #5c6bc0)" : "#9fa8da", backgroundColor: desktop ? "var(--accent-bg)" : "#353942" },
-  activeButton: { backgroundColor: desktop ? "var(--accent-hover)" : "#4b5262", borderColor: desktop ? "var(--accent-color, #5c6bc0)" : "transparent" },
+  machineButton: { borderWidth: 1, borderColor: desktop ? colors.borderLight : "transparent", borderRadius: 16, paddingVertical: 12, minWidth: desktop ? 160 : undefined },
+  selectedMachine: { borderColor: desktop ? colors.accent : "#9fa8da", backgroundColor: desktop ? colors.accentBg : "#353942" },
+  activeButton: { backgroundColor: desktop ? colors.accentBg : "#4b5262", borderColor: desktop ? colors.accent : "transparent" },
   input: {
-    borderColor: desktop ? "var(--border-color)" : "#50545d",
+    borderColor: desktop ? colors.border : "#50545d",
     borderWidth: 1,
-    borderRadius: desktop ? 12 : 6,
+    borderRadius: 12,
     padding: 10,
-    color: desktop ? "var(--text-primary)" : "#fff",
+    color: desktop ? colors.text : "#fff",
     minWidth: 180,
     marginVertical: 5,
   },

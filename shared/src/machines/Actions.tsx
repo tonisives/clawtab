@@ -153,7 +153,7 @@ export let MachineActions = ({ machineId, paneId, controlled }: Props) => {
 let styles = StyleSheet.create({
   panel: { paddingHorizontal: 8 },
   row: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 6 },
-  button: { padding: 6, backgroundColor: "#353942", borderRadius: 4 },
+  button: { paddingHorizontal: 16, paddingVertical: 10, minHeight: 44, justifyContent: "center", backgroundColor: "#353942", borderRadius: 999 },
   text: { color: "#e5e7eb", fontSize: 12 },
   error: { color: "#ffabab" },
   input: { color: "#fff", padding: 8, borderColor: "#50545d", borderWidth: 1 },

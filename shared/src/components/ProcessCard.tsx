@@ -24,7 +24,6 @@ function groupedCardStyle(position?: GroupedRowPosition) {
 export function ProcessCard({
   process,
   onPress,
-  inGroup,
   selected,
   softBorder,
   onStop,
