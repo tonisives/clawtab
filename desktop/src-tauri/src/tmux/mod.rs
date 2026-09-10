@@ -5,6 +5,8 @@ use std::process::{Command, Output};
 
 mod window_name;
 pub use window_name::next_ct_window_name;
+mod group_session;
+pub use group_session::find_group_session;
 
 const AUTO_YES_MONITOR_BELL_ORIGINAL: &str = "@clawtab-auto-yes-monitor-bell-original";
 const AUTO_YES_PANE_OPTION: &str = "@clawtab-auto-yes";

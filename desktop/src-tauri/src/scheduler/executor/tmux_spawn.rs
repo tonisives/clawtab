@@ -55,6 +55,12 @@ pub(super) async fn spawn_agent_pane(
         Some(write_prompt_file(&prompt_content)?)
     };
 
+    let tmux_session = if use_agent_window_name {
+        tmux::find_group_session(&work_dir).unwrap_or(tmux_session)
+    } else {
+        tmux_session
+    };
+
     if !tmux::session_exists(&tmux_session) {
         if let Err(error) = tmux::create_session(&tmux_session) {
             remove_prompt_file(prompt_file.as_deref());
