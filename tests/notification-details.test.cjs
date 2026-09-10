@@ -25,7 +25,6 @@ let harness = (questions) => {
     '@expo/vector-icons': { Ionicons: 'Ionicons' },
     '@clawtab/shared': { colors: {}, spacing: {}, stripSeparators: (value) => value },
     '../store/notifications': { useNotificationStore: (select) => select(state) },
-    '../demo/data': { DEMO_QUESTIONS: [] },
   };
   let source = fs.readFileSync(path.resolve(__dirname, '../remote/src/components/NextNotification.tsx'), 'utf8');
   let compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;

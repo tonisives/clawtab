@@ -19,19 +19,16 @@ import type { XtermLogHandle } from "@clawtab/shared";
 import { JobDetailView, findYesOption } from "@clawtab/shared";
 import type { AgentModelOption, JobUpdate, ProcessProvider } from "@clawtab/shared";
 import { ContentContainer } from "../../src/components/ContentContainer";
-import { DemoBanner } from "../../src/components/DemoOverlay";
 import { useLogs } from "../../src/hooks/useLogs";
 import { usePty } from "../../src/hooks/usePty";
 import { createWsTransport } from "../../src/transport/wsTransport";
 import { getWsSend, nextId } from "../../src/lib/wsRuntime";
 import { registerRequest } from "../../src/lib/useRequestMap";
-import { DEMO_JOBS, DEMO_STATUSES, DEMO_LOGS, DEMO_RUNS, isDemoJob } from "../../src/demo/data";
 import { HeaderStatusDot, HeaderTitleWithIcon } from "../../src/components/HeaderButtons";
 import { useDetailBack } from "../../src/hooks/useDetailBack";
 import { useResponsive } from "../../src/hooks/useResponsive";
 import { useTerminalKeyboard } from "../../src/hooks/useTerminalKeyboard";
 import { colors } from "@clawtab/shared";
-import type { Transport } from "@clawtab/shared";
 import type { RemoteJob, RunRecord } from "@clawtab/shared";
 import { buildModelOptions } from "../../src/lib/agentModels";
 
@@ -43,24 +40,6 @@ const AGENT_PROVIDERS: ProcessProvider[] = ["claude", "codex", "opencode", "anti
 
 const wsTransport = createWsTransport();
 
-const noop = async () => {};
-const noopRunJob = async () => null;
-const demoTransport: Transport = {
-  listJobs: async () => ({ jobs: [], statuses: {} }),
-  getStatuses: async () => ({}),
-  runJob: noopRunJob,
-  stopJob: noop,
-  pauseJob: noop,
-  resumeJob: noop,
-  toggleJob: noop,
-  deleteJob: noop,
-  getRunHistory: async () => [],
-  getRunDetail: async () => null,
-  detectProcesses: async () => [],
-  sendInput: noop,
-  subscribeLogs: () => () => {},
-  runAgent: async () => null,
-};
 
 function agentJobFromSlug(slug: string): RemoteJob {
   const folder = slug.replace(/^agent-/, "");
@@ -76,7 +55,7 @@ function agentJobFromSlug(slug: string): RemoteJob {
 }
 
 export default function JobDetailScreen() {
-  const { name, run_id, demo, source } = useLocalSearchParams<{ name: string; run_id?: string; demo?: string; source?: string }>();
+  const { name, run_id, source } = useLocalSearchParams<{ name: string; run_id?: string; source?: string }>();
   let router = useRouter();
   let handleSelectNotification = (question: ClaudeQuestion) => {
     Keyboard.dismiss();
@@ -89,16 +68,14 @@ export default function JobDetailScreen() {
   const defaultAgentModel = useJobsStore((s) => s.defaultModel);
   const enabledModels = useJobsStore((s) => s.enabledModels);
   const isAgent = !storeJob && name.startsWith("agent-");
-  const isDemo = demo === "1" || (!storeJob && !isAgent && isDemoJob(name));
-  const demoJob = isDemo ? DEMO_JOBS.find((j) => j.name === name || j.slug === name) : undefined;
-  const job = storeJob ?? (isAgent ? agentJobFromSlug(name) : demoJob);
+  const job = storeJob ?? (isAgent ? agentJobFromSlug(name) : undefined);
   const slug = job?.slug ?? name;
   const modelOptions: AgentModelOption[] = buildModelOptions(AGENT_PROVIDERS, enabledModels ?? {});
   const onUpdateJob = useCallback(async (patch: JobUpdate) => {
     if (wsTransport.updateJob) await wsTransport.updateJob(slug, patch);
   }, [slug]);
   const realStatus = useJobStatus(name);
-  const status = isDemo ? (DEMO_STATUSES[slug] ?? realStatus) : realStatus;
+  const status = realStatus;
   const statusPaneId = status?.state === "running" ? (status as any).pane_id ?? "" : "";
   let [showPaneOverview, setShowPaneOverview] = useState(false);
   let agentActionControls = useAgentActions(statusPaneId, showPaneOverview);
@@ -115,10 +92,9 @@ export default function JobDetailScreen() {
   const answerQuestion = useNotificationStore((s) => s.answerQuestion);
   const jobQuestion = questions.find((q) => q.matched_job === slug);
   const autoYesPaneId = jobQuestion?.pane_id ?? statusPaneId;
-  const autoYesActive = !isDemo && !!autoYesPaneId && autoYesPaneIds.has(autoYesPaneId);
+  const autoYesActive = !!autoYesPaneId && autoYesPaneIds.has(autoYesPaneId);
 
   const loadRuns = useCallback(() => {
-    if (isDemo) return;
     const send = getWsSend();
     if (!send || !name) return;
     const id = nextId();
@@ -128,7 +104,7 @@ export default function JobDetailScreen() {
       useRunsStore.getState().setRuns(slug, result);
       setRunsLoading(false);
     });
-  }, [slug, isDemo]);
+  }, [slug]);
 
   useEffect(() => {
     loadRuns();
@@ -136,10 +112,10 @@ export default function JobDetailScreen() {
 
   // Reload runs when WebSocket reconnects (e.g. after page refresh)
   useEffect(() => {
-    if (connected && !isDemo) {
+    if (connected) {
       loadRuns();
     }
-  }, [connected, isDemo]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [connected]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleToggleAutoYes = useCallback(() => {
     if (!autoYesPaneId) return;
@@ -192,7 +168,7 @@ export default function JobDetailScreen() {
     connecting: ptyConnecting,
     error: ptyError,
   } = usePty(statusPaneId, statusTmuxSession, termRef);
-  const isRunningWithPty = !!statusPaneId && !!statusTmuxSession && !isDemo;
+  const isRunningWithPty = !!statusPaneId && !!statusTmuxSession;
   const [copyModeActive, setCopyModeActive] = useState(false);
   const [terminalMenuOpen, setTerminalMenuOpen] = useState(false);
   const {
@@ -320,11 +296,11 @@ export default function JobDetailScreen() {
     headerRight: () => (
       <HeaderStatusDot
         color={autoYesActive ? colors.warning : statusColor(status)}
-        onPress={isDemo || !autoYesPaneId ? undefined : handleToggleAutoYes}
-        accessibilityLabel={isDemo || !autoYesPaneId ? "Status" : autoYesActive ? "Disable auto-yes" : "Enable auto-yes"}
+        onPress={!autoYesPaneId ? undefined : handleToggleAutoYes}
+        accessibilityLabel={!autoYesPaneId ? "Status" : autoYesActive ? "Disable auto-yes" : "Enable auto-yes"}
       />
     ),
-  }), [autoYesActive, autoYesPaneId, handleToggleAutoYes, isDemo, isWide, jobHeaderKind, jobHeaderName, status]);
+  }), [autoYesActive, autoYesPaneId, handleToggleAutoYes, isWide, jobHeaderKind, jobHeaderName, status]);
   if (!job) {
     // If jobs haven't loaded yet (cold start from notification), show loading state
     const waiting = !loaded || !connected;
@@ -350,23 +326,23 @@ export default function JobDetailScreen() {
   return (
     <View style={styles.container}>
       <Stack.Screen options={jobHeaderOptions} />
-      {isDemo && <DemoBanner />}
+
       <ContentContainer wide fill>
         <JobDetailView
-          transport={isDemo ? demoTransport : wsTransport}
+          transport={wsTransport}
           job={job}
           status={status}
-          logs={isDemo ? (DEMO_LOGS[slug] ?? "") : logs}
-          runs={isDemo ? (DEMO_RUNS[slug] ?? []) : runs}
-          runsLoading={isDemo ? false : runsLoading}
+          logs={logs}
+          runs={runs}
+          runsLoading={runsLoading}
           onBack={goBack}
           showBackButton={false}
-          onReloadRuns={isDemo ? undefined : loadRuns}
+          onReloadRuns={loadRuns}
           expandRunId={run_id}
-          options={isDemo ? undefined : jobQuestion?.options}
-          questionContext={isDemo ? undefined : jobQuestion?.context_lines}
-          autoYesActive={isDemo ? false : autoYesActive}
-          onToggleAutoYes={isDemo || !autoYesPaneId ? undefined : handleToggleAutoYes}
+          options={jobQuestion?.options}
+          questionContext={jobQuestion?.context_lines}
+          autoYesActive={autoYesActive}
+          onToggleAutoYes={!autoYesPaneId ? undefined : handleToggleAutoYes}
           renderTerminal={isRunningWithPty ? renderTerminal : undefined}
           hideMessageInput={isRunningWithPty}
           expandOutput={isRunningWithPty}
@@ -379,12 +355,12 @@ export default function JobDetailScreen() {
           defaultAgentProvider={(defaultAgentProvider ?? undefined) as import("@clawtab/shared").ProcessProvider | undefined}
           defaultAgentModel={defaultAgentModel}
           agentModelOptions={modelOptions}
-          onUpdateJob={!isDemo && !isAgent ? onUpdateJob : undefined}
+          onUpdateJob={!isAgent ? onUpdateJob : undefined}
           optionBarBottomInset={insets.bottom}
         />
       </ContentContainer>
       {source === "notifications" && (
-        <NextNotification paneId={autoYesPaneId} jobName={slug} isDemo={isDemo} onSelect={handleSelectNotification} />
+        <NextNotification paneId={autoYesPaneId} jobName={slug} onSelect={handleSelectNotification} />
       )}
       {(keyboardVisible || terminalMenuOpen) && isRunningWithPty ? (
         <TerminalKeyboardToolbar

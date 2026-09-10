@@ -32,9 +32,9 @@ const navTheme = {
 function RootHeaderRight() {
   const isPad = Platform.OS === "ios" && Platform.isPad === true;
   return isPad ? (
-    <NotificationsMenuButton variant="fluid" showDemoQuestions={false} />
+    <NotificationsMenuButton variant="fluid" />
   ) : (
-    <NotificationsMenuButton countOnly showDemoQuestions={false} />
+    <NotificationsMenuButton countOnly />
   );
 }
 
@@ -78,7 +78,7 @@ let MobileWebHeaderActions = ({ isSettingsTab }: MobileWebHeaderActionsProps) =>
       >
         <Ionicons name="search" size={20} color={colors.text} />
       </Pressable>
-      <NotificationsMenuButton countOnly showDemoQuestions={false} />
+      <NotificationsMenuButton countOnly />
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={isSettingsTab ? "Jobs" : "Settings"}

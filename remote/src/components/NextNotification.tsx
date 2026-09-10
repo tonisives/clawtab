@@ -5,18 +5,16 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, spacing, stripSeparators } from "@clawtab/shared";
 import type { ClaudeQuestion } from "@clawtab/shared";
 import { useNotificationStore } from "../store/notifications";
-import { DEMO_QUESTIONS } from "../demo/data";
 
 type NextNotificationProps = {
   paneId?: string;
   jobName?: string;
-  isDemo?: boolean;
   onSelect: (question: ClaudeQuestion) => void;
 };
 
-export let NextNotification = ({ paneId, jobName, isDemo, onSelect }: NextNotificationProps) => {
+export let NextNotification = ({ paneId, jobName, onSelect }: NextNotificationProps) => {
   let storedQuestions = useNotificationStore((state) => state.questions);
-  let questions = isDemo ? DEMO_QUESTIONS : storedQuestions;
+  let questions = storedQuestions;
   let currentIndex = questions.findIndex((question) => (
     paneId ? question.pane_id === paneId : question.matched_job === jobName
   ));

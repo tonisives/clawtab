@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import type { LayoutChangeEvent } from "react-native";
@@ -7,11 +7,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, radius, spacing } from "@clawtab/shared";
 import { NextNotification } from "./NextNotification";
 import type { ClaudeQuestion } from "@clawtab/shared";
-import { DEMO_PROCESSES, DEMO_QUESTIONS } from "../demo/data";
-import { useJobsStore } from "../store/jobs";
 import { useNotificationStore } from "../store/notifications";
-import { useWsStore } from "../store/ws";
-import { DemoNotificationStack } from "./DemoNotificationStack";
 import { JobDetailPane } from "./JobDetailPane";
 import { ProcessDetailPane } from "./ProcessDetailPane";
 import { NotificationStack } from "./NotificationStack";
@@ -36,10 +32,6 @@ export function NotificationsPanel({
   const insets = useSafeAreaInsets();
   const questions = useNotificationStore((s) => s.questions);
   const autoYesPaneIds = useNotificationStore((s) => s.autoYesPaneIds);
-  const realJobs = useJobsStore((s) => s.jobs);
-  const connected = useWsStore((s) => s.connected);
-  const desktopOnline = useWsStore((s) => s.desktopOnline);
-  const isDemo = connected && !desktopOnline && realJobs.length === 0;
   const [localDetailTarget, setLocalDetailTarget] = useState<NotificationDetailTarget | null>(null);
   const [panelHeight, setPanelHeight] = useState(0);
   const detailTarget = onDetailTargetChange !== undefined
@@ -59,13 +51,12 @@ export function NotificationsPanel({
 
   let handleSelectNextNotification = (question: ClaudeQuestion) => {
     if (question.matched_job) {
-      setDetailTarget({ kind: "job", jobName: question.matched_job, paneId: question.pane_id, isDemo });
+      setDetailTarget({ kind: "job", jobName: question.matched_job, paneId: question.pane_id });
       return;
     }
     setDetailTarget({
       kind: "process",
       paneId: question.pane_id,
-      demoProcess: isDemo ? DEMO_PROCESSES.find((process) => process.pane_id === question.pane_id) : undefined,
     });
   };
 
@@ -76,13 +67,9 @@ export function NotificationsPanel({
     ));
   }, []);
 
-  const activeQuestionCount = useMemo(() => {
-    if (isDemo) return DEMO_QUESTIONS.length;
+  const activeQuestionCount = questions.length;
 
-    return questions.length;
-  }, [isDemo, questions]);
-
-  const hasContent = activeQuestionCount > 0 || (!isDemo && autoYesPaneIds.size > 0);
+  const hasContent = activeQuestionCount > 0 || autoYesPaneIds.size > 0;
   const nativeTop = insets.top + 58;
   const nativeBottom = insets.bottom + 58;
   const nativeAvailableHeight = Math.max(260, windowSize.height - nativeTop - nativeBottom - 24);
@@ -90,7 +77,7 @@ export function NotificationsPanel({
   const nativeScreenAvailableHeight = panelHeight > 0 ? panelHeight : estimatedScreenHeight;
   const cardBottomInset = Platform.OS === "web" || mode !== "screen" ? 0 : insets.bottom;
   const nativeScreenTopReserve = (activeQuestionCount > 1 ? 36 : 0)
-    + (!isDemo && autoYesPaneIds.size > 0
+    + (autoYesPaneIds.size > 0
       ? autoYesPaneIds.size > 1 ? 46 : 42
       : 0);
   const nativeScreenCardMinHeight = Math.min(
@@ -134,7 +121,6 @@ export function NotificationsPanel({
             <JobDetailPane
               key={`job-${detailTarget.jobName}`}
               jobName={detailTarget.jobName}
-              isDemo={detailTarget.isDemo ?? false}
               embedded
               onClose={() => setDetailTarget(null)}
             />
@@ -142,7 +128,6 @@ export function NotificationsPanel({
             <ProcessDetailPane
               key={`process-${detailTarget.paneId}`}
               paneId={detailTarget.paneId}
-              demoProcess={detailTarget.demoProcess}
               embedded
               onClose={() => setDetailTarget(null)}
             />
@@ -151,7 +136,6 @@ export function NotificationsPanel({
         <NextNotification
           paneId={detailTarget.paneId}
           jobName={detailTarget.kind === "job" ? detailTarget.jobName : undefined}
-          isDemo={isDemo}
           onSelect={handleSelectNextNotification}
         />
       </View>
@@ -166,19 +150,9 @@ export function NotificationsPanel({
         styles.content,
         mode === "screen" && styles.screenContent,
         mode === "screen" && Platform.OS !== "web" && styles.nativeScreenContent,
-        isDemo && styles.demoContent,
       ]}
     >
       {hasContent ? (
-        isDemo ? (
-          <DemoNotificationStack
-            embedded
-            cardMinHeight={Platform.OS === "web" ? undefined : nativeCardMinHeight}
-            cardBottomInset={cardBottomInset}
-            cardBottomRadius={cardBottomRadius}
-            onSelectDetail={setDetailTarget}
-          />
-        ) : (
           <NotificationStack
             embedded
             cardMinHeight={Platform.OS === "web" ? undefined : nativeCardMinHeight}
@@ -188,7 +162,6 @@ export function NotificationsPanel({
             onSelectDetail={setDetailTarget}
             maxAutoYesEntries={Platform.OS === "web" ? undefined : 1}
           />
-        )
       ) : (
         <Text style={styles.empty}>No pending questions.</Text>
       )}
@@ -209,9 +182,6 @@ const styles = StyleSheet.create({
   },
   nativeScreenContent: {
     paddingBottom: spacing.md,
-  },
-  demoContent: {
-    minHeight: 280,
   },
   detailRoot: {
     flex: 1,

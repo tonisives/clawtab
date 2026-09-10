@@ -9,7 +9,7 @@ import {
   Modal,
   Image,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Google from "expo-auth-session/providers/google";
 import * as WebBrowser from "expo-web-browser";
 import { useAuthStore } from "../src/store/auth";
@@ -52,6 +52,8 @@ WebBrowser.maybeCompleteAuthSession();
 
 export default function LoginScreen() {
   const router = useRouter();
+  let { return_to } = useLocalSearchParams<{ return_to?: string }>();
+  let destination = return_to === "devices" ? "/devices" : "/(tabs)";
   const googleLogin = useAuthStore((s) => s.googleLogin);
   const appleLogin = useAuthStore((s) => s.appleLogin);
 
@@ -69,8 +71,8 @@ export default function LoginScreen() {
 
   const completeGoogleLogin = useCallback(async (idToken: string) => {
     await googleLogin(idToken);
-    router.replace("/(tabs)");
-  }, [googleLogin, router]);
+    router.replace(destination);
+  }, [googleLogin, router, destination]);
 
   useEffect(() => {
     if (!loading || !googleAuthSessionResult) return;
@@ -152,7 +154,7 @@ export default function LoginScreen() {
         if (data.status === "complete") {
           await api.storeTokens(data.access_token, data.refresh_token, data.user_id);
           setAuth(data.user_id, data.access_token);
-          router.replace("/(tabs)");
+          router.replace(destination);
           return true;
         }
       } catch {
@@ -199,7 +201,7 @@ export default function LoginScreen() {
             .filter(Boolean)
             .join(" ") || undefined;
           await appleLogin(credential.identityToken, name, credential.email ?? undefined);
-          router.replace("/(tabs)");
+          router.replace(destination);
         } else {
           setError("No identity token received from Apple");
         }

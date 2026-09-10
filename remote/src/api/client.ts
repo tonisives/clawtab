@@ -287,6 +287,7 @@ export async function verifyIapReceipt(req: VerifyReceiptRequest): Promise<{ sub
 }
 
 export interface SubscriptionStatus {
+  relay_included: boolean;
   subscribed: boolean;
   status: string | null;
   current_period_end: string | null;

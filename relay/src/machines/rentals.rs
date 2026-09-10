@@ -2,7 +2,7 @@ use crate::{error::AppError, AppState};
 use uuid::Uuid;
 
 pub async fn host_allowed(state: &AppState, owner: Uuid, machine: Uuid) -> Result<bool, AppError> {
-    let rental: Option<bool> = sqlx::query_scalar("SELECT r.user_id IS NOT NULL AND r.state IN ('provisioning','ready') AND (r.delete_at IS NULL OR r.delete_at>now()) AND (r.paid_until>now() OR (r.unpaid_since IS NOT NULL AND r.unpaid_since+interval '10 days'>now())) FROM rentals r WHERE r.device_id=$1")
+    let rental: Option<bool> = sqlx::query_scalar("SELECT r.user_id IS NOT NULL AND r.state IN ('provisioning','ready') AND (r.delete_at IS NULL OR r.delete_at>now()) AND (r.paid_until>now() OR (NOT r.cancel_requested AND r.unpaid_since IS NOT NULL AND r.unpaid_since+interval '10 days'>now())) FROM rentals r WHERE r.device_id=$1")
         .bind(machine).fetch_optional(&state.pool).await?;
     match rental {
         Some(allowed) => Ok(allowed),
@@ -10,11 +10,7 @@ pub async fn host_allowed(state: &AppState, owner: Uuid, machine: Uuid) -> Resul
     }
 }
 pub async fn can_connect(state: &AppState, user: Uuid) -> Result<bool, AppError> {
-    if crate::billing::is_subscribed(&state.pool, &state.config, user).await? {
-        return Ok(true);
-    }
-    Ok(sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM rentals WHERE user_id=$1 AND state IN ('provisioning','ready') AND (delete_at IS NULL OR delete_at>now()) AND (paid_until>now() OR (unpaid_since IS NOT NULL AND unpaid_since+interval '10 days'>now())))")
-        .bind(user).fetch_one(&state.pool).await?)
+    crate::billing::is_subscribed(&state.pool, &state.config, user).await
 }
 pub async fn watch(state: AppState) {
     let mut timer = tokio::time::interval(std::time::Duration::from_secs(15));
@@ -44,7 +40,7 @@ pub async fn watch(state: AppState) {
             }
         }
         // Reconnect clears cached snapshots/leases when an account loses its
-        // base entitlement. Subsequent connections are scoped to paid rentals.
+        // relay entitlement, including the last eligible rental.
         let clients: Vec<(Uuid, Uuid)> = state
             .machines
             .read()

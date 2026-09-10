@@ -17,6 +17,8 @@ let harness = (entry, extras = {}) => {
     useCallback: (callback) => callback,
     useMemo: (callback) => callback(),
     useEffect: () => {},
+    createContext: (value) => ({ value }),
+    useContext: (context) => context.value,
   };
   let element = (type, props) => ({ type, props });
   let modules = {

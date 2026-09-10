@@ -385,9 +385,9 @@ export default function SettingsScreen({ inModal = false }: { inModal?: boolean 
                 <View style={styles.listGroup}>
                   <View style={styles.row}>
                     <Text style={styles.label}>Status</Text>
-                    <Text style={[styles.value, { color: colors.success }]}>Active</Text>
+                    <Text style={[styles.value, { color: colors.success }]}>{sub.relay_included ? "Included with your box" : "Active"}</Text>
                   </View>
-                  {sub.current_period_end && (
+                  {!sub.relay_included && sub.current_period_end && (
                     <View style={styles.row}>
                       <Text style={styles.label}>Period ends</Text>
                       <Text style={styles.value}>
@@ -398,11 +398,11 @@ export default function SettingsScreen({ inModal = false }: { inModal?: boolean 
                 </View>
                 <Pressable
                   style={[styles.billingBtn, actionLoading && styles.btnDisabled]}
-                  onPress={handleManageBilling}
+                  onPress={sub.relay_included && sub.provider !== "apple" ? () => router.push("/devices") : handleManageBilling}
                   disabled={actionLoading}
                 >
                   <Text style={styles.billingBtnText}>
-                    {actionLoading ? "Loading..." : "Manage Subscription"}
+                    {actionLoading ? "Loading..." : sub.relay_included ? (sub.provider === "apple" ? "Manage existing Apple subscription" : "Manage boxes") : "Manage Subscription"}
                   </Text>
                 </Pressable>
               </View>

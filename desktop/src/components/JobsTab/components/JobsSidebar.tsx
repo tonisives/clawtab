@@ -1,3 +1,4 @@
+import { DesktopMachinesPanel } from "../../DesktopMachinesPanel";
 import { localMachineId, localHostRequest, desktopMachineApi } from "../../../machines/connection";
 import { useCallback, useMemo, type ReactNode, type RefObject } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -395,6 +396,7 @@ export function JobsSidebar({
 
   return (
     <JobListView
+      machineOnboarding={(close) => <DesktopMachinesPanel onOpenAccount={() => { close(); window.dispatchEvent(new CustomEvent("open-machine-account")); }} />}
       jobs={core.jobs}
       statuses={core.statuses}
       detectedProcesses={sidebarItems.detectedProcesses}

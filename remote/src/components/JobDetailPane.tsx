@@ -13,33 +13,13 @@ import { usePty } from "../hooks/usePty"
 import { createWsTransport } from "../transport/wsTransport"
 import { getWsSend, nextId } from "../lib/wsRuntime"
 import { registerRequest } from "../lib/useRequestMap"
-import { DEMO_JOBS, DEMO_STATUSES, DEMO_LOGS, DEMO_RUNS, isDemoJob } from "../demo/data"
 import { colors, spacing } from "@clawtab/shared"
-import type { Transport } from "@clawtab/shared"
 import type { AgentModelOption, JobUpdate, ProcessProvider, RemoteJob, RunRecord } from "@clawtab/shared"
 import { buildModelOptions } from "../lib/agentModels"
 
 const wsTransport = createWsTransport()
 const AGENT_PROVIDERS: ProcessProvider[] = ["claude", "codex", "opencode", "antigravity"]
 
-const noop = async () => {}
-const noopRunJob = async () => null
-const demoTransport: Transport = {
-  listJobs: async () => ({ jobs: [], statuses: {} }),
-  getStatuses: async () => ({}),
-  runJob: noopRunJob,
-  stopJob: noop,
-  pauseJob: noop,
-  resumeJob: noop,
-  toggleJob: noop,
-  deleteJob: noop,
-  getRunHistory: async () => [],
-  getRunDetail: async () => null,
-  detectProcesses: async () => [],
-  sendInput: noop,
-  subscribeLogs: () => () => {},
-  runAgent: async () => null,
-}
 
 function agentJobFromSlug(slug: string): RemoteJob {
   const folder = slug.replace(/^agent-/, "")
@@ -56,28 +36,25 @@ function agentJobFromSlug(slug: string): RemoteJob {
 
 interface JobDetailPaneProps {
   jobName: string
-  isDemo: boolean
   onClose: () => void
   embedded?: boolean
 }
 
-export function JobDetailPane({ jobName, isDemo: parentIsDemo, onClose, embedded = false }: JobDetailPaneProps) {
+export function JobDetailPane({ jobName, onClose, embedded = false }: JobDetailPaneProps) {
   const insets = useSafeAreaInsets()
   const storeJob = useJob(jobName)
   const defaultAgentProvider = useJobsStore((s) => s.defaultProvider)
   const defaultAgentModel = useJobsStore((s) => s.defaultModel)
   const enabledModels = useJobsStore((s) => s.enabledModels)
   const isAgent = !storeJob && jobName.startsWith("agent-")
-  const isDemo = parentIsDemo || (!storeJob && !isAgent && isDemoJob(jobName))
-  const demoJob = isDemo ? DEMO_JOBS.find((j) => j.name === jobName || j.slug === jobName) : undefined
-  const job = storeJob ?? (isAgent ? agentJobFromSlug(jobName) : demoJob)
+  const job = storeJob ?? (isAgent ? agentJobFromSlug(jobName) : undefined)
   const slug = job?.slug ?? jobName
   const modelOptions: AgentModelOption[] = buildModelOptions(AGENT_PROVIDERS, enabledModels ?? {})
   const onUpdateJob = useCallback(async (patch: JobUpdate) => {
     if (wsTransport.updateJob) await wsTransport.updateJob(slug, patch)
   }, [slug])
   const realStatus = useJobStatus(jobName)
-  const status = isDemo ? (DEMO_STATUSES[slug] ?? realStatus) : realStatus
+  const status = realStatus
   const statusPaneId = status?.state === "running" ? (status as any).pane_id ?? "" : ""
   const { logs } = useLogs(slug)
   const runs = useRunsStore((s) => s.runs[slug]) ?? null
@@ -91,11 +68,10 @@ export function JobDetailPane({ jobName, isDemo: parentIsDemo, onClose, embedded
   const answerQuestion = useNotificationStore((s) => s.answerQuestion)
   const jobQuestion = questions.find((q) => q.matched_job === slug)
   const autoYesPaneId = jobQuestion?.pane_id ?? statusPaneId
-  const autoYesActive = !isDemo && !!autoYesPaneId && autoYesPaneIds.has(autoYesPaneId)
-  const canToggleAutoYes = !isDemo && !!autoYesPaneId
+  const autoYesActive = !!autoYesPaneId && autoYesPaneIds.has(autoYesPaneId)
+  const canToggleAutoYes = !!autoYesPaneId
 
   const loadRuns = useCallback(() => {
-    if (isDemo) return
     const send = getWsSend()
     if (!send || !jobName) return
     const id = nextId()
@@ -105,17 +81,17 @@ export function JobDetailPane({ jobName, isDemo: parentIsDemo, onClose, embedded
       useRunsStore.getState().setRuns(slug, result)
       setRunsLoading(false)
     })
-  }, [slug, isDemo, jobName])
+  }, [slug, jobName])
 
   useEffect(() => {
     loadRuns()
   }, [loadRuns])
 
   useEffect(() => {
-    if (connected && !isDemo) {
+    if (connected) {
       loadRuns()
     }
-  }, [connected, isDemo]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [connected]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleToggleAutoYes = useCallback(() => {
     if (!autoYesPaneId) return
@@ -164,7 +140,7 @@ export function JobDetailPane({ jobName, isDemo: parentIsDemo, onClose, embedded
   const statusTmuxSession = status?.state === "running" ? (status as any).tmux_session ?? "" : ""
   const termRef = useRef<XtermLogHandle | null>(null)
   const { sendInput, sendResize, connecting: ptyConnecting, error: ptyError } = usePty(statusPaneId, statusTmuxSession, termRef)
-  const isRunningWithPty = !!statusPaneId && !!statusTmuxSession && !isDemo
+  const isRunningWithPty = !!statusPaneId && !!statusTmuxSession
 
   const renderTerminal = useCallback(
     () => (
@@ -225,20 +201,20 @@ export function JobDetailPane({ jobName, isDemo: parentIsDemo, onClose, embedded
         </TouchableOpacity>
       </View>
       <JobDetailView
-        transport={isDemo ? demoTransport : wsTransport}
+        transport={wsTransport}
         job={job}
         status={status}
-        logs={isDemo ? (DEMO_LOGS[slug] ?? "") : logs}
-        runs={isDemo ? (DEMO_RUNS[slug] ?? []) : runs}
-        runsLoading={isDemo ? false : runsLoading}
+        logs={logs}
+        runs={runs}
+        runsLoading={runsLoading}
         onBack={onClose}
         showBackButton={false}
         hidePath
-        onReloadRuns={isDemo ? undefined : loadRuns}
-        options={isDemo ? undefined : jobQuestion?.options}
-        questionContext={isDemo ? undefined : jobQuestion?.context_lines}
-        autoYesActive={isDemo ? false : autoYesActive}
-        onToggleAutoYes={isDemo || !autoYesPaneId ? undefined : handleToggleAutoYes}
+        onReloadRuns={loadRuns}
+        options={jobQuestion?.options}
+        questionContext={jobQuestion?.context_lines}
+        autoYesActive={autoYesActive}
+        onToggleAutoYes={!autoYesPaneId ? undefined : handleToggleAutoYes}
         renderTerminal={isRunningWithPty ? renderTerminal : undefined}
         hideMessageInput={isRunningWithPty}
         expandOutput={isRunningWithPty}
@@ -247,7 +223,7 @@ export function JobDetailPane({ jobName, isDemo: parentIsDemo, onClose, embedded
         defaultAgentProvider={(defaultAgentProvider ?? undefined) as import("@clawtab/shared").ProcessProvider | undefined}
         defaultAgentModel={defaultAgentModel}
         agentModelOptions={modelOptions}
-        onUpdateJob={!isDemo && !isAgent ? onUpdateJob : undefined}
+        onUpdateJob={!isAgent ? onUpdateJob : undefined}
       />
     </View>
   )

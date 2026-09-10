@@ -18,14 +18,12 @@ import { useWsStore } from "../../src/store/ws";
 import { getWsSend, nextId } from "../../src/lib/wsRuntime";
 import { registerRequest } from "../../src/lib/useRequestMap";
 import { usePty } from "../../src/hooks/usePty";
-import { useDemoPty } from "../../src/hooks/useDemoPty";
 import { HeaderTitleWithIcon } from "../../src/components/HeaderButtons";
 import { LoadingBar } from "../../src/components/LoadingBar";
 import { useDetailBack } from "../../src/hooks/useDetailBack";
 import { useResponsive } from "../../src/hooks/useResponsive";
 import { useTerminalKeyboard } from "../../src/hooks/useTerminalKeyboard";
 import { confirm } from "../../src/lib/platform";
-import { DEMO_PROCESSES } from "../../src/demo/data";
 import { jobRoute } from "../../src/lib/notificationRoutes";
 
 const KEYBOARD_TOOLBAR_HEIGHT = 48;
@@ -67,8 +65,7 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
   const storeProcess = useJobsStore((s) =>
     s.detectedProcesses.find((p) => p.pane_id === pane_id),
   );
-  const demoProcess = DEMO_PROCESSES.find((p) => p.pane_id === pane_id);
-  const process = storeProcess ?? demoProcess;
+  const process = storeProcess;
 
   // If this pane belongs to a tracked job (not in detectedProcesses), redirect
   // to the job detail page instead.
@@ -166,7 +163,6 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
     error: ptyError,
     hasOutput: ptyHasOutput,
   } = usePty(pane_id, tmuxSession, termRef);
-  useDemoPty(pane_id, !!demoProcess);
   useEffect(() => {
     hydratePins();
   }, [hydratePins]);
@@ -368,7 +364,7 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
     );
   }
 
-  const terminalLoading = !demoProcess && !ptyError && (!connected || !desktopOnline || !tmuxSession || ptyConnecting || !ptyHasOutput);
+  const terminalLoading = !ptyError && (!connected || !desktopOnline || !tmuxSession || ptyConnecting || !ptyHasOutput);
   const terminalLoadingState = processLoadingState({
     connected,
     desktopOnline,
@@ -441,7 +437,7 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
         />
       )}
       {preserveTerminal && (
-        <NextNotification paneId={pane_id} isDemo={!!demoProcess} onSelect={onSelectNotification} />
+        <NextNotification paneId={pane_id} onSelect={onSelectNotification} />
       )}
       <PaneOverviewModal
         visible={showPaneOverview}

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Dimensions, Modal, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { GlassView, isGlassEffectAPIAvailable } from "expo-glass-effect";
@@ -6,10 +6,7 @@ import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { colors } from "@clawtab/shared";
-import { DEMO_QUESTIONS } from "../demo/data";
-import { useJobsStore } from "../store/jobs";
 import { useNotificationStore } from "../store/notifications";
-import { useWsStore } from "../store/ws";
 import { NotificationsPanel } from "./NotificationsPanel";
 import type { NotificationDetailTarget } from "./notificationTypes";
 
@@ -17,12 +14,10 @@ export function NotificationsMenuButton({
   hideWhenEmpty = false,
   variant = "compact",
   countOnly = false,
-  showDemoQuestions = true,
 }: {
   hideWhenEmpty?: boolean;
   variant?: "compact" | "fluid";
   countOnly?: boolean;
-  showDemoQuestions?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [detailTarget, setDetailTarget] = useState<NotificationDetailTarget | null>(null);
@@ -33,18 +28,10 @@ export function NotificationsMenuButton({
   const buttonRef = useRef<View | null>(null);
   const questions = useNotificationStore((s) => s.questions);
   const autoYesPaneIds = useNotificationStore((s) => s.autoYesPaneIds);
-  const realJobs = useJobsStore((s) => s.jobs);
-  const connected = useWsStore((s) => s.connected);
-  const desktopOnline = useWsStore((s) => s.desktopOnline);
-  const isDemo = connected && !desktopOnline && realJobs.length === 0;
 
-  const activeQuestionCount = useMemo(() => {
-    if (isDemo && showDemoQuestions) return DEMO_QUESTIONS.length;
+  const activeQuestionCount = questions.length;
 
-    return questions.length;
-  }, [isDemo, questions, showDemoQuestions]);
-
-  const hasContent = activeQuestionCount > 0 || (!isDemo && autoYesPaneIds.size > 0);
+  const hasContent = activeQuestionCount > 0 || autoYesPaneIds.size > 0;
   const closeMenu = () => {
     setOpen(false);
     setDetailTarget(null);
@@ -160,7 +147,7 @@ export function NotificationsMenuButton({
           {Platform.OS === "web" ? (
             <Pressable style={StyleSheet.absoluteFill} onPress={closeMenu} />
           ) : null}
-          <View style={[styles.popup, Platform.OS !== "web" && [styles.nativePopup, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 16 }], isDemo && styles.demoPopup, popupFrame]}>
+          <View style={[styles.popup, Platform.OS !== "web" && [styles.nativePopup, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 16 }], popupFrame]}>
             <View style={styles.modalHeader}>
               <Pressable
                 onPress={detailTarget ? () => setDetailTarget(null) : closeMenu}
@@ -339,14 +326,6 @@ const styles = StyleSheet.create({
     borderWidth: 0,
     borderRadius: 0,
     elevation: 0,
-  },
-  demoPopup: {
-    ...(Platform.OS === "web"
-      ? {
-          width: Math.min(520, Dimensions.get("window").width - 20),
-          maxHeight: Math.min(720, Dimensions.get("window").height * 0.82),
-        }
-      : null),
   },
   title: {
     color: colors.text,

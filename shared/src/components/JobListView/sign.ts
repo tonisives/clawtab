@@ -1,3 +1,4 @@
+import type { MachineOnboardingContent } from "../../machines/Onboarding";
 import type { PreferencesApi, MachineMessage } from "../../machines/client";
 import type * as React from "react";
 import type { ScrollViewProps, StyleProp, ViewStyle } from "react-native";
@@ -25,6 +26,7 @@ export const GROUP_AGENT_PROVIDER_STORAGE_KEY = "clawtab_group_agent_providers";
 export type GroupedRowPosition = "single" | "first" | "middle" | "last";
 
 export interface JobListViewProps {
+  machineOnboarding?: MachineOnboardingContent;
   jobs: RemoteJob[];
   statuses: Record<string, JobStatus>;
   detectedProcesses: DetectedProcess[];

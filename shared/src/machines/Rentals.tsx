@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { View, Text, TextInput, Pressable, StyleSheet } from "react-native"
-import { machineRequest, newOperationId, selectMachine, useMachines } from "./client"
+import { machineRequest, machineSend, machineState, resourceKey, newOperationId, selectMachine, useMachines } from "./client"
 import { MachineTerminal } from "./Terminal"
 
 type Quote = {
@@ -25,12 +25,16 @@ type Rental = {
   delete_at: string | null
   past_due: boolean
   cancel_requested: boolean
-  base_ended: boolean
+  checkout_url?: string | null
+  agent_provider: string
+  setup: Record<string, any>
+  apple_relay_subscription: boolean
+  billing_transition_pending: boolean
   traffic_paused: boolean
   needs_attention: boolean
 }
 type RentalApi = (method: string, path: string, body?: Record<string, unknown>) => Promise<any>
-type Props = { api: RentalApi; purchases: boolean; openUrl?: (url: string) => Promise<unknown> }
+type Props = { api: RentalApi; purchases: boolean; platform?: "web" | "desktop" | "ios" | "android"; storefront?: string; openUrl?: (url: string) => Promise<unknown> }
 type Terminal = { machine: string; pane: string; session: string; command: string }
 let money = (quote: Quote) => new Intl.NumberFormat(undefined, { style: "currency", currency: quote.currency }).format(quote.monthly_cents / 100)
 let date = (value: string) => new Date(value).toLocaleString()
@@ -47,14 +51,21 @@ let Button = ({ label, onPress, disabled = false }: { label: string; onPress: ()
   </Pressable>
 )
 
-export let RentalsPanel = ({ api, purchases, openUrl }: Props) => {
+export let RentalsPanel = ({ api, purchases, platform = "web", storefront, openUrl }: Props) => {
   let machines = useMachines()
   let [rentals, setRentals] = useState<Rental[]>([])
   let [catalog, setCatalog] = useState<Quote[]>([])
   let [enabled, setEnabled] = useState(false)
+  let [customize, setCustomize] = useState(false)
+  let [showTerms, setShowTerms] = useState(false)
   let [showOrder, setShowOrder] = useState(false)
   let [selected, setSelected] = useState("")
   let [name, setName] = useState("My coding box")
+  let [provider, setProvider] = useState(() => {
+    let preferred = machines.agentModels?.default_provider
+    return preferred && ["codex", "claude", "opencode"].includes(preferred) ? preferred : "codex"
+  })
+  let pending = useRef(false)
   let [keys, setKeys] = useState("")
   let [accepted, setAccepted] = useState(false)
   let [busy, setBusy] = useState(false)
@@ -83,10 +94,11 @@ export let RentalsPanel = ({ api, purchases, openUrl }: Props) => {
     return () => { active = false; clearInterval(timer) }
   }, [api])
   let act = (work: () => Promise<void>) => {
-    if (busy) return
+    if (pending.current) return
+    pending.current = true
     setBusy(true)
     setError(null)
-    void work().catch((error) => setError(error instanceof Error ? error.message : "Box operation failed")).finally(() => setBusy(false))
+    void work().catch((error) => setError(error instanceof Error ? error.message : "Box operation failed")).finally(() => { pending.current = false; setBusy(false) })
   }
   let startOrder = () => act(async () => {
     let result = await api("GET", "/rentals/catalog")
@@ -97,6 +109,8 @@ export let RentalsPanel = ({ api, purchases, openUrl }: Props) => {
     let suggested = quotes.find((quote) => quote.region === region && quote.memory_gb === 4) ?? quotes[0]
     setSelected(suggested ? quoteId(suggested) : "")
     setShowOrder(true)
+    setCustomize(false)
+    setShowTerms(false)
     setAccepted(false)
     requestId.current = null
   })
@@ -104,7 +118,7 @@ export let RentalsPanel = ({ api, purchases, openUrl }: Props) => {
     if (!quote || !accepted || !openUrl) return
     requestId.current ??= newOperationId()
     let response = await api("POST", "/rentals/checkout", {
-      request_id: requestId.current, name, quote, ssh_keys: keys.split("\n").map((key) => key.trim()).filter(Boolean), accepted_terms: accepted,
+      request_id: requestId.current, name, quote, agent_provider: provider, platform, storefront, ssh_keys: keys.split("\n").map((key) => key.trim()).filter(Boolean), accepted_terms: accepted,
     })
     await refresh()
     await openUrl(response.url)
@@ -116,6 +130,29 @@ export let RentalsPanel = ({ api, purchases, openUrl }: Props) => {
     let result = await machineRequest(rental.machine_id, { type: "run_agent", provider: "shell", prompt: command, work_dir: "/home/clawtab/workspace", operation_id: newOperationId() }, 120_000)
     if (!result.success || !result.pane_id || !result.tmux_session) throw new Error(result.error ?? "Could not open a terminal")
     setTerminal({ machine: rental.machine_id, pane: result.pane_id, session: result.tmux_session, command })
+  })
+  let setupAgent = (rental: Rental, action: "login" | "agent", restart = false) => () => act(async () => {
+    if (!rental.machine_id) return
+    let provider = rental.agent_provider
+    let setup = await api("POST", `/rentals/${rental.id}/setup`, { action: restart ? `restart_${action}` : "prepare", provider })
+    let command = action === "login" ? ({ codex: "codex login --device-auth", claude: "claude auth login", opencode: "opencode auth login" }[provider] ?? "") : ""
+    if (restart) await refresh()
+    let saved = setup[`${action}_terminal`]
+    let result = saved ?? await machineRequest(rental.machine_id, {
+      type: "run_agent", provider: action === "login" ? "shell" : provider,
+      prompt: command, work_dir: "/home/clawtab/workspace", operation_id: setup[`${action}_operation_id`],
+    }, 120_000)
+    if ((!saved && !result.success) || !result.pane_id || !result.tmux_session) throw new Error(result.error ?? "Could not start setup terminal")
+    if (!saved) await api("POST", `/rentals/${rental.id}/setup`, { action, provider, terminal: { pane_id: result.pane_id, tmux_session: result.tmux_session } })
+    selectMachine(rental.machine_id)
+    if (!machineState().controllers[resourceKey(rental.machine_id, result.pane_id)]) {
+      machineSend(rental.machine_id, { type: "take_control", pane_id: result.pane_id })
+    }
+    setTerminal({ machine: rental.machine_id, pane: result.pane_id, session: result.tmux_session, command })
+    await refresh()
+  })
+  let resumeCheckout = (rental: Rental) => () => act(async () => {
+    if (rental.checkout_url && openUrl) await openUrl(rental.checkout_url)
   })
   let pay = (rental: Rental) => () => act(async () => {
     let response = await api("POST", `/rentals/${rental.id}/payment`)
@@ -150,19 +187,32 @@ export let RentalsPanel = ({ api, purchases, openUrl }: Props) => {
       {showOrder && <View style={styles.card}>
         {!enabled ? <Text style={styles.text}>New rentals are currently unavailable.</Text> : <>
           <Text style={styles.heading}>Choose your box</Text>
-          <Text style={styles.detail}>Suggested region is based on your timezone. You can choose another region below.</Text>
-          <View style={styles.row}>{catalog.map((candidate) => <Pressable key={quoteId(candidate)} accessibilityRole="button" accessibilityState={{ selected: selected === quoteId(candidate) }} onPress={choose(candidate)} style={[styles.choice, selected === quoteId(candidate) && styles.selected]}>
+          <Text style={styles.detail}>Suggested region is based on your timezone.</Text>
+          <View style={styles.row}>{(customize ? catalog : quote ? [quote] : []).map((candidate) => <Pressable key={quoteId(candidate)} accessibilityRole="button" accessibilityState={{ selected: selected === quoteId(candidate) }} onPress={choose(candidate)} style={[styles.choice, selected === quoteId(candidate) && styles.selected]}>
             <Text style={styles.text}>{candidate.memory_gb} GB · {candidate.region_description}</Text>
             <Text style={styles.detail}>{candidate.cores} vCPU · {candidate.disk_gb} GB disk · {(candidate.traffic_bytes / 1e12).toFixed(1)} TB outgoing traffic</Text>
             <Text style={styles.text}>{money(candidate)} / month, plus applicable tax</Text>
           </Pressable>)}</View>
           {!catalog.length && <Text style={styles.text}>No eligible boxes are available right now.</Text>}
-          <Text style={styles.text}>Box name</Text>
-          <TextInput accessibilityLabel="Box name" value={name} onChangeText={editName} maxLength={80} style={styles.input} />
-          <Text style={styles.text}>SSH public keys (optional, one per line)</Text>
-          <TextInput accessibilityLabel="SSH public keys" value={keys} onChangeText={editKeys} multiline autoCapitalize="none" style={styles.input} />
-          <Text style={styles.detail}>Includes ClawTab, tmux, Git, Claude Code, Codex, and OpenCode. Authorize your own AI accounts in the terminal. An active paid ClawTab subscription is required.</Text>
+          <Button label={customize ? "Use these choices" : "Customize box"} onPress={() => setCustomize(!customize)} />
+          {customize && <>
+            <Text style={styles.text}>Box name</Text>
+            <TextInput accessibilityLabel="Box name" value={name} onChangeText={editName} maxLength={80} style={styles.input} />
+          </>}
+          <Text style={styles.text}>First agent</Text>
+          <View style={styles.row}>{["codex", "claude", "opencode"].map((choice) => <Pressable key={choice} accessibilityRole="radio" accessibilityState={{ selected: provider === choice }} onPress={() => { setProvider(choice); requestId.current = null }} style={[styles.choice, provider === choice && styles.selected]}><Text style={styles.text}>{choice === "claude" ? "Claude Code" : choice === "codex" ? "Codex" : "OpenCode"}</Text></Pressable>)}</View>
+          {customize && <>
+            <Text style={styles.text}>SSH public keys (optional, one per line)</Text>
+            <TextInput accessibilityLabel="SSH public keys" value={keys} onChangeText={editKeys} multiline autoCapitalize="none" style={styles.input} />
+          </>}
+          <Text style={styles.detail}>Relay for all your machines is included. Bring your own AI account. Billed monthly; no automatic backups.</Text>
+          <Text style={styles.detail}>An existing Stripe relay plan will be replaced, with unused paid time credited. Apple plans must be canceled in Apple settings.</Text>
+          <Button label={showTerms ? "Hide rental terms" : "Rental and deletion terms"} onPress={() => setShowTerms(!showTerms)} />
+          {showTerms && <>
+          <Text style={styles.detail}>Includes ClawTab, tmux, Git, Claude Code, Codex, and OpenCode. Authorize your own AI accounts in the terminal. Relay access for this box and your own machines is included. AI usage is billed by your AI provider.</Text>
+          <Text style={styles.detail}>Once your box is ready, an existing Stripe relay plan is canceled and its unused paid time credited to future invoices (refunded if the currency differs). Apple plans must be canceled in Apple subscription settings.</Text>
           <Text style={styles.detail}>Billed monthly in advance at provider cost plus 20%. No automatic backups. Cancellation ends renewal; the box is deleted at period end. A failed renewal has 10 days to recover before permanent deletion. Networking pauses at 90% of included traffic until the next provider month. Immediate deletion has no automatic prorated refund.</Text>
+          </>}
           <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: accepted }} onPress={toggleAccepted} style={styles.row}>
             <Text style={styles.text}>{accepted ? "[x]" : "[ ]"} I accept these rental and permanent-deletion terms.</Text>
           </Pressable>
@@ -180,13 +230,18 @@ export let RentalsPanel = ({ api, purchases, openUrl }: Props) => {
           {rental.traffic_paused && <Text style={styles.error}>Networking is paused until the next provider month because this box reached its traffic allowance.</Text>}
           {rental.past_due && !finished && <Text style={styles.error}>Renewal payment is overdue. Pay before the deletion deadline to keep your box.</Text>}
           {rental.delete_at && !finished && <Text style={styles.error}>Permanent deletion: {date(rental.delete_at)}. Download important files before then.</Text>}
-          {rental.base_ended && !finished && <Text style={styles.detail}>Your ClawTab plan has ended. This box stays accessible through its paid period.</Text>}
+          {rental.state === "ready" && <Text style={styles.detail}>Relay is included for all your machines. Your group uses /home/clawtab/workspace on this box. Sign in to your AI provider, then start your first agent.</Text>}
+          {rental.billing_transition_pending && <Text style={styles.detail}>Switching your existing relay billing. Any unused paid time will be credited automatically.</Text>}
+          {rental.apple_relay_subscription && !finished && <Text style={styles.detail}>Your Apple relay subscription is still active. Cancel it in Apple subscription settings to avoid paying for relay twice; Apple billing cannot be changed here.</Text>}
           {rental.needs_attention && !finished && <Text style={styles.detail}>An operation is being retried. Your box status will update automatically.</Text>}
           <View style={styles.row}>
             {rental.state === "ready" && <Button label="Open terminal" onPress={openTerminal(rental)} disabled={busy || !available} />}
-            {rental.state === "ready" && <Button label="Authorize Codex" onPress={openTerminal(rental, "codex login --device-auth")} disabled={busy || !available} />}
-            {rental.state === "ready" && <Button label="Authorize Claude Code" onPress={openTerminal(rental, "claude auth login")} disabled={busy || !available} />}
-            {rental.state === "ready" && <Button label="Authorize OpenCode" onPress={openTerminal(rental, "opencode auth login")} disabled={busy || !available} />}
+            {rental.state === "ready" && <Button label={rental.setup.login_terminal ? "Resume provider sign-in" : `Sign in to ${rental.agent_provider}`} onPress={setupAgent(rental, "login")} disabled={busy || !available} />}
+            {rental.state === "ready" && <Button label={rental.setup.agent_terminal ? "Open agent" : "I’ve signed in · Start agent"} onPress={setupAgent(rental, "agent")} disabled={busy || !available} />}
+            {rental.state === "ready" && rental.setup.login_terminal && <Button label="New sign-in terminal" onPress={setupAgent(rental, "login", true)} disabled={busy || !available} />}
+            {rental.state === "ready" && rental.setup.agent_terminal && <Button label="Start another agent" onPress={setupAgent(rental, "agent", true)} disabled={busy || !available} />}
+            {purchases && rental.state === "checkout" && rental.checkout_url && <Button label="Resume checkout" onPress={resumeCheckout(rental)} disabled={busy} />}
+            {rental.apple_relay_subscription && openUrl && <Button label="Manage Apple subscription" onPress={() => act(async () => { await openUrl("https://apps.apple.com/account/subscriptions") })} disabled={busy} />}
             {purchases && !finished && <Button label="Manage payment" onPress={pay(rental)} disabled={busy} />}
             {purchases && !finished && !rental.cancel_requested && <Button label="Cancel renewal" onPress={ask(rental, "cancel")} disabled={busy} />}
             {purchases && !finished && <Button label="Delete now" onPress={ask(rental, "delete")} disabled={busy} />}
@@ -201,7 +256,7 @@ export let RentalsPanel = ({ api, purchases, openUrl }: Props) => {
       {terminal && <View style={styles.terminal}>
         <Text style={styles.detail}>{terminal.command
           ? `Started ${terminal.command} in a new terminal. Take control below and follow the sign-in prompts. Open any login link in your browser.`
-          : "This is a shell terminal. Use an Authorize button above to start sign-in for Codex, Claude Code, or OpenCode. Shell commands cannot be entered as slash commands inside an agent."}</Text>
+          : "Your terminal is ready. Your agent and files stay on this box when you close the app."}</Text>
         <MachineTerminal machineId={terminal.machine} paneId={terminal.pane} tmuxSession={terminal.session} onClose={closeTerminal} />
       </View>}
     </View>

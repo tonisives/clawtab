@@ -61,12 +61,12 @@ export let AddGroup = ({ hook }: { hook: JobListViewHook }) => {
   if (!hook.groupPreferencesApi) return null;
   if (!open) return (
     <Pressable accessibilityRole="button" onPress={show} style={styles.add}>
-      <Text style={styles.action}>Add new group</Text>
+      <Text style={styles.action}>Add group / machine</Text>
     </Pressable>
   );
   return (
     <View style={styles.form}>
-      <Text style={styles.title}>Add new group</Text>
+      <Text style={styles.title}>Add group / machine</Text>
       <TextInput accessibilityLabel="Group name" placeholder="Group name" placeholderTextColor={colors.textSecondary} value={name} onChangeText={setName} editable={!busy} maxLength={100} autoFocus style={styles.input} />
       <TextInput accessibilityLabel="Group folder" placeholder="Folder on selected machine" placeholderTextColor={colors.textSecondary} value={path} onChangeText={setPath} editable={!busy} autoCapitalize="none" autoCorrect={false} style={styles.input} />
       <Text style={styles.hint}>Use an existing folder. ~ opens the selected machine’s home folder.</Text>

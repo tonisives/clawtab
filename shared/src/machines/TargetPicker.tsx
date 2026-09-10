@@ -1,3 +1,4 @@
+import { AddMachineButton } from "./Onboarding"
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import { colors } from "../theme/colors"
 import { MachineIcon, machineAppearance } from "./Appearance"
@@ -19,6 +20,7 @@ export let MachineTargetPicker = ({ target, localMachineId, onSelect }: { target
         <Text numberOfLines={1} style={styles.name}>{machine.name}</Text>
         {!machine.online && <Text style={styles.status}>Offline</Text>}
       </Pressable>)}
+      <AddMachineButton />
     </ScrollView>
     {!options.length && <Text style={styles.status}>No machine available</Text>}
   </View>

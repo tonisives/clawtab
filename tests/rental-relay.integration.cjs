@@ -39,11 +39,14 @@ let run = async () => {
     UPDATE devices SET rental_id='${id}' WHERE id='${rented.device_id}';`);
   let path = `/ws?device_token=${encodeURIComponent(rented.device_token)}`;
   let host = await connect(path);
-  await assert.rejects(connect(`/ws?device_token=${encodeURIComponent(ordinary.device_token)}`));
+  let ownHost = await connect(`/ws?device_token=${encodeURIComponent(ordinary.device_token)}`);
   let client = await connect(`/v2/ws?token=${owner.access_token}`);
   await assert.rejects(connect(`/v2/ws?token=${stranger.access_token}`));
   let machines = await api('/machines', owner.access_token);
-  assert.deepEqual(machines.filter((m) => m.online).map((m) => m.id), [rented.device_id]);
+  assert.deepEqual(machines.filter((m) => m.online).map((m) => m.id).sort(), [rented.device_id, ordinary.device_id].sort());
+  let status = await api('/subscription/status', owner.access_token);
+  assert.equal(status.subscribed, true);
+  assert.equal(status.relay_included, true);
   assert.equal(machines.find((m) => m.id === rented.device_id).rental.id, id);
   sql(`UPDATE rentals SET paid_until=now()-interval '9 days',unpaid_since=now()-interval '9 days',delete_at=now()+interval '1 day' WHERE id='${id}';`);
   let disconnected = closes(host);
@@ -51,12 +54,12 @@ let run = async () => {
   await disconnected;
   host = await connect(path);
   // The relay enforces ten days even if the billing worker has not run yet.
-  let revokedHost = closes(host), revokedClient = closes(client);
+  let revokedHost = closes(host), revokedOwn = closes(ownHost), revokedClient = closes(client);
   sql(`UPDATE rentals SET paid_until=now()-interval '11 days',unpaid_since=now()-interval '11 days' WHERE id='${id}';`);
-  await Promise.all([revokedHost, revokedClient]);
+  await Promise.all([revokedHost, revokedOwn, revokedClient]);
   await assert.rejects(connect(path));
   await assert.rejects(connect(`/v2/ws?token=${owner.access_token}`));
-  console.log('PASS: paid rental without base plan, owner isolation, ordinary-host gating, grace access, and live expiry revocation');
+  console.log('PASS: paid rental without base plan, owner isolation, account-wide own-host access, grace access, and live expiry revocation');
 };
 run().catch((error) => { console.error(error.message); process.exitCode = 1; }).finally(() => sockets.forEach((ws) => {
   if (ws.readyState === WebSocket.OPEN) ws.close();

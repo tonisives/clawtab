@@ -129,6 +129,11 @@ export function SettingsApp() {
     setActiveTab("settings");
   };
 
+  useEffect(() => {
+    window.addEventListener("open-machine-account", openMachineAccount);
+    return () => window.removeEventListener("open-machine-account", openMachineAccount);
+  }, []);
+
   const handlePanelScroll = (id: TabId, event: UIEvent<HTMLDivElement>) => {
     try {
       localStorage.setItem(panelScrollKey(id), String(event.currentTarget.scrollTop));
@@ -209,6 +214,11 @@ export function SettingsApp() {
       if (templateMatch) {
         setActiveTab("jobs");
         setPendingTemplateId(templateMatch[1]);
+        continue;
+      }
+
+      if (url.startsWith("clawtab://rental-return")) {
+        setActiveTab("machines");
         continue;
       }
 

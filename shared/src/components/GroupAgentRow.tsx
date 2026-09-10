@@ -1,3 +1,4 @@
+import { AddMachineButton } from "../machines/Onboarding";
 import { useCallback, useRef, useState } from "react";
 import { Platform, StyleSheet, Text, View } from "react-native";
 import { spacing } from "../theme/spacing";
@@ -79,7 +80,7 @@ export function GroupAgentRow({
         effort={effort}
         modelOptions={options}
         machinePicker={targetMachineId
-          ? <Text style={styles.status}>{machine?.name ?? (isLocal ? "This desktop" : "Group machine")}{!isLocal && !machine?.online ? " · Offline" : ""}</Text>
+          ? <View><Text style={styles.status}>{machine?.name ?? (isLocal ? "This desktop" : "Group machine")}{!isLocal && !machine?.online ? " · Offline" : ""}</Text><AddMachineButton /></View>
           : <MachineTargetPicker target={target ?? null} localMachineId={localMachineId} onSelect={chooseTarget} />}
         includeShell
         onChange={(selection) => launch(selection.provider, selection.modelId, selection.effort)}

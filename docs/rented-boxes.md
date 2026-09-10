@@ -1,25 +1,25 @@
 # Rented boxes: setup preview
 
-**Status: upcoming, September 9, 2026.** Hetzner rentals are under implementation. Purchases remain disabled pending provider configuration and end-to-end validation. The steps and policies below describe the planned first version; they are not a claim that checkout is available today. To connect a host now, follow [remote machine setup](https://clawtab.cc/docs#remote-machines).
+**Status: upcoming, September 10, 2026.** Hetzner rentals are under implementation. Purchases remain disabled pending provider configuration and end-to-end validation. The steps and policies below describe the planned first version; they are not a claim that checkout is available today. To connect a host now, follow [remote machine setup](https://clawtab.cc/docs#remote-machines).
 
 A rented box is a Linux server prepared by ClawTab and attached to your account. It is intended to appear alongside your other machines and use the existing terminal, repository, job, and access controls. Your agent processes and repositories live on that server.
 
 ## Planned prerequisites
 
-- A signed-in account with an active paid ClawTab subscription.
-- Desktop or web for purchasing. iOS is intended to access existing rentals without offering checkout.
+- A signed-in ClawTab account. A rental includes relay access for all your machines; no separate relay plan is needed.
+- Desktop, web, or a supported mobile storefront for purchasing. The first mobile rollout supports the US iOS storefront; Android external checkout requires an explicitly enabled storefront. Other storefronts can connect and use existing machines.
 - Your own coding-tool subscriptions or API credentials. Server rental does not include AI usage.
 - Git access for any private repositories you will clone.
 - Optionally, an SSH **public** key for direct administration. Do not submit a private key.
 
 ## Planned purchase and setup
 
-1. Open **Machines → Rent a box** on desktop or web when purchases become available.
+1. At the end of the job list, open **Add group / machine → + Add machine → Rent a box** when purchases become available. Existing groups also offer **+ Add machine** in the agent picker.
 2. Choose a name, size, and region. The first version targets x86 shared-CPU boxes with 4 GB or 8 GB RAM. Review the actual CPU, disk, included outgoing traffic, region, and monthly price shown in the quote. A timezone-based region suggestion is approximate; confirm the location you want.
 3. Add an SSH public key if you want SSH access. Review the deletion and backup terms before paying.
-4. Complete checkout. Provisioning starts only after the initial payment is verified. Returning from checkout alone does not mean the server is ready.
+4. Complete the account-linked checkout in the secure browser. Return to ClawTab from the confirmation page. Provisioning starts only after the initial payment is verified. Returning from checkout alone does not mean the server is ready.
 5. Wait for provisioning to finish and the machine to connect. Enrollment is intended to happen automatically, without running `cwtctl setup` or entering a pairing code.
-6. Select the box and open its terminal. Authorize your coding tools, prepare a repository, and launch your first agent as described below.
+6. A group named after the box is saved automatically, using `/home/clawtab/workspace` on that machine. Use **Sign in** for your chosen provider, then **I’ve signed in · Start agent**. The supported account default provider is preselected, with Codex as the fallback. Setup resumes from the same order and terminal after an app restart; **Start another agent** creates a new session.
 
 Exact prices and available regions come from the catalog. The plan does not silently substitute a different region after payment. A failed or timed-out setup is intended to trigger resource cleanup, rental subscription cancellation, and a full initial-payment refund.
 
@@ -54,7 +54,7 @@ Provider and Git credentials remain on the host unless you explicitly transfer c
 
 ## Planned billing and deletion rules
 
-Each box has a separate monthly subscription paid in advance. The planned price is provider cost, including required IPv4 and other mandatory provider charges, multiplied by 1.20. Applicable taxes are shown before payment. Your base ClawTab subscription and AI usage remain separate. The quote is retained through the purchased period; future price increases require advance notice.
+Each box has a separate monthly subscription paid in advance. The planned price is provider cost, including required IPv4 and other mandatory provider charges, multiplied by 1.20. Applicable taxes are shown before payment. Relay access for the rental and your own machines is included; AI usage remains separate. Once the first box is ready, existing Stripe relay billing ends and unused paid time is credited to future invoices. If currencies differ, that unused amount is refunded to the original payment. Apple subscriptions must be canceled in Apple subscription settings; ClawTab cannot cancel or credit Apple billing. The quote is retained through the purchased period; future price increases require advance notice.
 
 | Event | Planned result |
 | --- | --- |
@@ -65,7 +65,7 @@ Each box has a separate monthly subscription paid in advance. The planned price 
 | Payment arrives after deletion begins | Refund the late payment rather than recreate the box. |
 | Cancel renewal | Retain access until the current paid period ends, then delete. The failed-payment grace period does not extend voluntary cancellation. |
 | Confirm immediate deletion | Delete immediately, without an automatic prorated refund. |
-| Base ClawTab subscription expires | Preserve the box's already-paid period but disable rental renewal. Restoring the base subscription before deletion restores renewal. |
+| Separate relay plan expires | Rental renewal and account-wide relay access continue while a rental is paid or within its failed-renewal grace period. |
 
 Use the rental's billing and deletion controls for a rented server. Removing a machine entry is not a substitute for confirming the rental lifecycle has ended. [Hetzner bills servers until deletion, even when powered off](https://docs.hetzner.com/cloud/billing/faq/), and retained Primary IPv4 addresses can continue to incur charges separately.
 

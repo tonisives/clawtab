@@ -1,4 +1,3 @@
-import { useMemo } from "react";
 import { GlassView, isGlassEffectAPIAvailable } from "expo-glass-effect";
 import { Ionicons } from "@expo/vector-icons";
 import {
@@ -12,10 +11,7 @@ import {
 } from "react-native";
 
 import { colors } from "@clawtab/shared";
-import { DEMO_QUESTIONS } from "../demo/data";
-import { useJobsStore } from "../store/jobs";
 import { useNotificationStore } from "../store/notifications";
-import { useWsStore } from "../store/ws";
 
 export type IpadNavigationItem = "jobs" | "settings" | "search" | "notifications";
 export type IpadBarSection = Exclude<IpadNavigationItem, "search">;
@@ -31,15 +27,8 @@ export function IpadBottomBar({
 }) {
   const questions = useNotificationStore((s) => s.questions);
   const autoYesPaneIds = useNotificationStore((s) => s.autoYesPaneIds);
-  const realJobs = useJobsStore((s) => s.jobs);
-  const connected = useWsStore((s) => s.connected);
-  const desktopOnline = useWsStore((s) => s.desktopOnline);
-  const isDemo = connected && !desktopOnline && realJobs.length === 0;
-  const notificationCount = useMemo(
-    () => (isDemo ? DEMO_QUESTIONS.length : questions.length),
-    [isDemo, questions.length],
-  );
-  const hasAutoYes = !isDemo && autoYesPaneIds.size > 0;
+  const notificationCount = questions.length;
+  const hasAutoYes = autoYesPaneIds.size > 0;
   const glassAvailable =
     Platform.OS === "ios" &&
     (() => {

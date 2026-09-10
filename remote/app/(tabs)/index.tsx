@@ -1,6 +1,6 @@
+import { MachineSetup } from "../../src/components/MachineSetup";
 import { useMachines, useHiddenGroups, machineRequest, machineState, scopedMessage } from "@clawtab/shared";
-import { MachinesPanel } from "@clawtab/shared";
-import { approveMachinePairing, machineApi } from "../../src/api/client";
+import { machineApi } from "../../src/api/client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   View,
@@ -57,9 +57,7 @@ import {
 import { getWsSend, nextId } from "../../src/lib/wsRuntime"
 import { registerRequest } from "../../src/lib/useRequestMap"
 import { useResponsive } from "../../src/hooks/useResponsive"
-import { DemoBanner } from "../../src/components/DemoOverlay"
 import { NotificationsMenuButton } from "../../src/components/NotificationsMenuButton"
-import { DEMO_JOBS, DEMO_PROCESSES, DEMO_STATUSES } from "../../src/demo/data"
 import { colors } from "@clawtab/shared"
 import { spacing } from "@clawtab/shared"
 import type { AgentEffort, RemoteJob, JobListMode, JobSortMode, JobStatus, AgentModelOption, LatestSortMode } from "@clawtab/shared"
@@ -123,12 +121,11 @@ function persistSelection(job: string | null, process: string | null) {
   else sessionStorage.removeItem("sel_process")
 }
 
-function jobRoute(job: RemoteJob, isDemo: boolean) {
+function jobRoute(job: RemoteJob) {
   return {
     pathname: "/job/[name]",
     params: {
       name: job.slug,
-      ...(isDemo ? { demo: "1" } : {}),
     },
   } as const
 }
@@ -168,7 +165,7 @@ function jobListLoadingState({
   loaded: boolean
 }) {
   if (!connected) return { label: "Connecting to relay...", progress: JOB_LIST_LOADING_PROGRESS }
-  if (!desktopOnline) return { label: "Connecting to a machine...", progress: JOB_LIST_LOADING_PROGRESS }
+  if (!desktopOnline) return null
   if (!loaded) return { label: "Loading jobs...", progress: JOB_LIST_LOADING_PROGRESS }
   return null
 }
@@ -251,7 +248,6 @@ export default function JobsScreen() {
   )
   const [sidebarSection, setSidebarSection] = useState<SidebarSection>("jobs")
   const [stoppingJobSlugs, setStoppingJobSlugs] = useState<Set<string>>(() => new Set())
-  const [demoToastVisible, setDemoToastVisible] = useState(false)
   const { isIosPad, isIosPadPortrait, isSplitView, isWide } = useResponsive()
   const router = useRouter()
   const insets = useSafeAreaInsets()
@@ -278,10 +274,9 @@ export default function JobsScreen() {
     })()
   const isMobileWeb = Platform.OS === "web" && !isSplitView
 
-  const isDemo = connected && !hostOnline && realJobs.length === 0 && detectedProcesses.length === 0 && Object.keys(machines.jobGroups).length === 0
-  const jobs = isDemo ? DEMO_JOBS : realJobs
-  const statuses = isDemo ? DEMO_STATUSES : realStatuses
-  const visibleDetectedProcesses = isDemo ? DEMO_PROCESSES : detectedProcesses
+  const jobs = realJobs
+  const statuses = realStatuses
+  const visibleDetectedProcesses = detectedProcesses
 
   useEffect(() => {
     setStoppingJobSlugs((prev) => {
@@ -434,10 +429,10 @@ export default function JobsScreen() {
         setSelectedProcess(null)
         setSelection("job", job.slug)
       } else {
-        router.push(jobRoute(job, isDemo))
+        router.push(jobRoute(job))
       }
     },
-    [router, isDemo, isSplitView],
+    [router, isSplitView],
   )
 
   const handleSelectProcess = useCallback(
@@ -515,7 +510,7 @@ export default function JobsScreen() {
   const handleSelectJobWithTree = useCallback(
     (job: RemoteJob) => {
       if (!isSplitView) {
-        router.push(jobRoute(job, isDemo))
+        router.push(jobRoute(job))
         return
       }
       const content: PaneContent = { kind: "job", slug: job.slug }
@@ -525,7 +520,7 @@ export default function JobsScreen() {
       }
       handleSelectJob(job)
     },
-    [isSplitView, isDemo, router, split.tree, split.handleSelectInTree, handleSelectJob],
+    [isSplitView, router, split.tree, split.handleSelectInTree, handleSelectJob],
   )
 
   const handleSelectProcessWithTree = useCallback(
@@ -599,16 +594,6 @@ export default function JobsScreen() {
     [handleSelectProcessWithTree, isSplitView, router],
   )
 
-  const handleDemoRunAgent = useCallback(() => {
-    setDemoToastVisible(true)
-  }, [])
-
-  useEffect(() => {
-    if (!demoToastVisible) return
-    const timer = setTimeout(() => setDemoToastVisible(false), 2400)
-    return () => clearTimeout(timer)
-  }, [demoToastVisible])
-
   useEffect(() => {
     if (!searchOpen) {
       searchAnimation.setValue(0)
@@ -630,7 +615,7 @@ export default function JobsScreen() {
     }
   }, [isIosPad, searchAnimation, searchOpen])
 
-  const runAgentHandler = isDemo ? handleDemoRunAgent : canRunAgents ? handleRunAgent : undefined
+  const runAgentHandler = canRunAgents ? handleRunAgent : undefined
 
   const handleOpenSidebarSettings = useCallback(() => {
     if (isSplitView) setSidebarSection("settings")
@@ -710,7 +695,7 @@ export default function JobsScreen() {
     })
   }, [visibleDetectedProcesses, selectedProcess, processesLoaded, split.cleanStaleLeaves])
 
-  const jobListLoading = !isDemo ? jobListLoadingState({ connected: connected || machines.connected, desktopOnline: hostOnline, loaded }) : null
+  const jobListLoading = machines.machines.length ? jobListLoadingState({ connected: connected || machines.connected, desktopOnline: hostOnline, loaded }) : null
 
   const bannerContent = (
     <>
@@ -719,7 +704,7 @@ export default function JobsScreen() {
           <LoadingBar label={jobListLoading.label} progress={jobListLoading.progress} />
         </View>
       )}
-      {connected && !hostOnline && !isDemo && realJobs.length > 0 && (
+      {connected && !hostOnline && realJobs.length > 0 && (
         <View style={[styles.banner, styles.bannerWarn]}>
           <Text style={styles.bannerText}>No machines connected</Text>
         </View>
@@ -729,9 +714,10 @@ export default function JobsScreen() {
 
   const jobList = (
     <View style={styles.container}>
-      {Platform.OS !== "ios" && !isDemo && <MachinesPanel approvePairing={approveMachinePairing} api={machineApi} />}
-      {isDemo && <DemoBanner />}
+
+
       <JobListView
+        machineOnboarding={(close) => <MachineSetup onNavigate={close} />}
         jobs={jobs}
         statuses={statuses}
         detectedProcesses={visibleDetectedProcesses}
@@ -750,9 +736,9 @@ export default function JobsScreen() {
         onSelectProcess={handleSelectProcess}
         pinnedItems={pinnedItems}
         onTogglePin={togglePin}
-        onStopJob={isDemo ? undefined : handleStopJob}
-        onStopProcess={isDemo ? undefined : handleStopProcess}
-        onSaveProcessName={!isDemo && sharedPinsActive ? handleSaveProcessName : undefined}
+        onStopJob={handleStopJob}
+        onStopProcess={handleStopProcess}
+        onSaveProcessName={sharedPinsActive ? handleSaveProcessName : undefined}
         stoppingSlugs={stoppingJobSlugs}
         onRunAgent={runAgentHandler}
         groupPreferencesApi={machineApi}
@@ -763,8 +749,8 @@ export default function JobsScreen() {
         onGroupTabViewChange={handleGroupTabViewChange}
         onSetAllGroupTabView={handleSetAllGroupTabView}
         headerContent={bannerContent}
-        showEmpty={loaded || isDemo}
-        emptyMessage={connected ? "Add a group below to start agents on a machine." : "Connecting..."}
+        showEmpty={loaded || machines.machines.length === 0}
+        emptyMessage={"Add a group or machine below to start your first agent."}
         searchQuery={searchQuery}
         onSearchQueryChange={setSearchQuery}
         hideSearchBar={!isSplitView}
@@ -774,6 +760,7 @@ export default function JobsScreen() {
 
   const mobileJobList = (
     <JobListView
+        machineOnboarding={(close) => <MachineSetup onNavigate={close} />}
       jobs={jobs}
       statuses={statuses}
       detectedProcesses={visibleDetectedProcesses}
@@ -793,9 +780,9 @@ export default function JobsScreen() {
       onSelectProcess={handleSelectProcess}
       pinnedItems={pinnedItems}
       onTogglePin={togglePin}
-      onStopJob={isDemo ? undefined : handleStopJob}
-      onStopProcess={isDemo ? undefined : handleStopProcess}
-      onSaveProcessName={!isDemo && sharedPinsActive ? handleSaveProcessName : undefined}
+      onStopJob={handleStopJob}
+      onStopProcess={handleStopProcess}
+      onSaveProcessName={sharedPinsActive ? handleSaveProcessName : undefined}
       stoppingSlugs={stoppingJobSlugs}
       onRunAgent={runAgentHandler}
       groupPreferencesApi={machineApi}
@@ -808,12 +795,12 @@ export default function JobsScreen() {
       headerContent={
         <>
           {isIosPadPortrait ? <Text style={styles.portraitPageTitle}>ClawTab</Text> : null}
-          {isDemo ? <DemoBanner /> : null}
+
           {bannerContent}
         </>
       }
-      showEmpty={loaded || isDemo}
-      emptyMessage={connected ? "Add a group below to start agents on a machine." : "Connecting..."}
+      showEmpty={loaded || machines.machines.length === 0}
+      emptyMessage={"Add a group or machine below to start your first agent."}
       searchQuery={searchQuery}
       onSearchQueryChange={setSearchQuery}
       compactMobileToolbar
@@ -873,7 +860,7 @@ export default function JobsScreen() {
           <JobDetailPane
             key={`leaf-${leafId}-${content.slug}`}
             jobName={content.slug}
-            isDemo={isDemo}
+
             onClose={() => split.handleClosePane(leafId)}
           />
         )
@@ -883,18 +870,13 @@ export default function JobsScreen() {
           <ProcessDetailPane
             key={`leaf-${leafId}-${content.paneId}`}
             paneId={content.paneId}
-            demoProcess={
-              isDemo
-                ? visibleDetectedProcesses.find((p) => p.pane_id === content.paneId)
-                : undefined
-            }
             onClose={() => split.handleClosePane(leafId)}
           />
         )
       }
       return null
     },
-    [isDemo, split.handleClosePane, visibleDetectedProcesses],
+    [split.handleClosePane, visibleDetectedProcesses],
   )
 
   const mobileWebSearch = isMobileWeb && searchOpen ? (
@@ -1009,21 +991,13 @@ export default function JobsScreen() {
     </Modal>
   ) : null
 
-  const demoToast = demoToastVisible ? (
-    <View style={styles.toast} pointerEvents="none">
-      <Text style={styles.toastText}>
-        Demo mode: cannot launch agents. Please connect desktop.
-      </Text>
-    </View>
-  ) : null
-
   if (!isSplitView) {
     if (Platform.OS !== "web" && !isIosPadPortrait) {
       return (
         <>
           {mobileJobList}
           {searchModal}
-          {demoToast}
+
         </>
       )
     }
@@ -1033,7 +1007,7 @@ export default function JobsScreen() {
         {mobileWebSearch}
         {mobileJobList}
         {searchModal}
-        {demoToast}
+
       </View>
     )
   }
@@ -1043,7 +1017,7 @@ export default function JobsScreen() {
     <JobDetailPane
       key={selectedJob}
       jobName={selectedJob}
-      isDemo={isDemo}
+
       onClose={() => {
         setSelectedJob(null)
         setSelection("job", null)
@@ -1053,9 +1027,6 @@ export default function JobsScreen() {
     <ProcessDetailPane
       key={selectedProcess}
       paneId={selectedProcess}
-      demoProcess={
-        isDemo ? visibleDetectedProcesses.find((p) => p.pane_id === selectedProcess) : undefined
-      }
       onClose={() => {
         setSelectedProcess(null)
         setSelection("process", null)
@@ -1170,6 +1141,7 @@ export default function JobsScreen() {
         {!isIosPad ? sidebarHeader : null}
         <View style={styles.listPaneScrollArea}>
           <JobListView
+        machineOnboarding={(close) => <MachineSetup onNavigate={close} />}
             jobs={jobs}
             statuses={statuses}
             detectedProcesses={visibleDetectedProcesses}
@@ -1188,9 +1160,9 @@ export default function JobsScreen() {
             onSelectProcess={handleSelectProcessWithTree}
             pinnedItems={pinnedItems}
             onTogglePin={togglePin}
-            onStopJob={isDemo ? undefined : handleStopJob}
-            onStopProcess={isDemo ? undefined : handleStopProcess}
-            onSaveProcessName={!isDemo && sharedPinsActive ? handleSaveProcessName : undefined}
+            onStopJob={handleStopJob}
+            onStopProcess={handleStopProcess}
+            onSaveProcessName={sharedPinsActive ? handleSaveProcessName : undefined}
             stoppingSlugs={stoppingJobSlugs}
             selectedItems={split.selectedItems}
             focusedItemKey={split.focusedItemKey}
@@ -1216,13 +1188,13 @@ export default function JobsScreen() {
                     </Pressable>
                   </View>
                 ) : null}
-                {isDemo ? <DemoBanner /> : null}
+
                 {bannerContent}
               </>
             }
-            showEmpty={loaded || isDemo}
+            showEmpty={loaded || machines.machines.length === 0}
             emptyMessage={
-              connected ? "Add a group below to start agents on a machine." : "Connecting..."
+              "Add a group or machine below to start your first agent."
             }
             searchQuery={searchQuery}
             onSearchQueryChange={setSearchQuery}
@@ -1261,24 +1233,12 @@ export default function JobsScreen() {
     </View>
   )
 
-  const toast = (
-    <>
-      {demoToastVisible ? (
-        <View style={styles.toast} pointerEvents="none">
-          <Text style={styles.toastText}>
-            Demo mode: cannot launch agents. Please connect desktop.
-          </Text>
-        </View>
-      ) : null}
-    </>
-  )
-
   if (Platform.OS !== "web") {
     return (
       <View style={styles.screenRoot}>
         {splitContent}
         {searchModal}
-        {toast}
+
       </View>
     )
   }
@@ -1296,7 +1256,7 @@ export default function JobsScreen() {
         <DragOverlay dropAnimation={null}>{dragOverlayContent}</DragOverlay>
       </DndContext>
       {searchModal}
-      {toast}
+
     </View>
   )
 }

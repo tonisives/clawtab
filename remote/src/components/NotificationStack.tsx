@@ -72,7 +72,6 @@ export function NotificationStack({
           onSelectDetail({
             kind: "process",
             paneId: _q.pane_id,
-            demoProcess: processMap.get(_q.pane_id),
           });
         }
         return;
@@ -219,7 +218,6 @@ export function NotificationStack({
           onSelectDetail({
             kind: "process",
             paneId: entry.paneId,
-            demoProcess: processMap.get(entry.paneId),
           });
         }
         return;

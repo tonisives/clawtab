@@ -10,6 +10,7 @@ use crate::AppState;
 #[derive(Serialize)]
 pub struct SubscriptionStatus {
     pub subscribed: bool,
+    pub relay_included: bool,
     pub status: Option<String>,
     pub current_period_end: Option<String>,
     pub provider: Option<String>,
@@ -24,6 +25,7 @@ pub async fn status(
 
     Ok(Json(SubscriptionStatus {
         subscribed,
+        relay_included: billing::rental_included(&state.pool, claims.sub).await?,
         status: sub.as_ref().map(|s| s.status.clone()),
         current_period_end: sub
             .as_ref()
