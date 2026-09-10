@@ -294,7 +294,7 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
           style={[styles.button, styles.machineButton, m.id === state.selected && styles.selectedMachine]}
         >
           <View style={styles.labelRow}>
-            <MachineIcon appearance={machineAppearance(m, state.machineAppearance)} />
+            <MachineIcon appearance={machineAppearance(m, state.machineAppearance, state.machines)} />
             <Text style={[styles.text, styles.machineName]}>{m.name}{m.id === localMachineId ? " · This Mac" : ""}</Text>
             {m.id === state.selected && <View style={styles.selectionDot} />}
           </View>

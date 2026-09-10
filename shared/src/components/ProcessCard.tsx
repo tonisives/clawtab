@@ -1,6 +1,6 @@
 import { compactAgentSelectionLabel } from "../util/agent";
-import { resourceLabel } from "../machines/client";
-import { MachineBadge } from "../machines/Badge";
+import { resourceLabel, splitResource } from "../machines/client";
+import { MachineMark } from "../machines/Badge";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform } from "react-native";
 import type { DetectedProcess } from "../types/process";
@@ -187,6 +187,7 @@ export function ProcessCard({
   const canMoveToWorkspace = !!onMoveToWorkspace && !!moveToWorkspaceLabel && !transient;
   const showMenu = (onStop || onRename || onSaveName || onTogglePin || canMoveToWorkspace) && !transient;
   const kind = kindForProcess(process);
+  let machineId = process.machine_id ?? splitResource(process.pane_id)?.machine;
   const openMenu = useCallback((e?: any) => {
     if (!showMenu || editing) return;
     if (isWeb) {
@@ -214,8 +215,11 @@ export function ProcessCard({
       >
         <View style={styles.paneIcon}>
           <JobKindIcon kind={kind} />
-          <Text style={styles.paneId} numberOfLines={1} adjustsFontSizeToFit>{resourceLabel(process.pane_id)}</Text>
-        </View>{Platform.OS !== "ios" && <MachineBadge machineId={process.machine_id} />}
+          <View style={styles.paneIdentity}>
+            <MachineMark machineId={machineId} />
+            <Text style={styles.paneId} numberOfLines={1} adjustsFontSizeToFit>{resourceLabel(process.pane_id)}</Text>
+          </View>
+        </View>
         <View style={styles.processInfo}>
           <View style={styles.titleRow}>
             {editing ? (
@@ -367,10 +371,17 @@ const styles = StyleSheet.create({
     maxWidth: 130,
   },
   paneIcon: {
-    width: 40,
+    width: 52,
     alignItems: "center",
     gap: 3,
     flexShrink: 0,
+  },
+  paneIdentity: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 3,
+    maxWidth: 52,
   },
   paneId: {
     fontSize: 10,

@@ -16,7 +16,7 @@ export let MachineTargetPicker = ({ target, localMachineId, onSelect }: { target
     <Text style={styles.heading}>Run on</Text>
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row} keyboardShouldPersistTaps="handled">
       {options.map((machine) => <Pressable key={machine.id ?? "local"} accessibilityRole="radio" accessibilityLabel={`Run on ${machine.name}${machine.online ? "" : ", offline"}`} accessibilityState={{ selected: machine.id === target, disabled: !machine.online }} disabled={!machine.online} onPress={select(machine.id)} style={[styles.machine, machine.id === target && styles.selected, !machine.online && styles.offline]}>
-        <MachineIcon appearance={machineAppearance({ ...machine, id: machine.id ?? "local" }, state.machineAppearance)} />
+        <MachineIcon appearance={machineAppearance({ ...machine, id: machine.id ?? "local" }, state.machineAppearance, state.machines)} />
         <Text numberOfLines={1} style={styles.name}>{machine.name}</Text>
         {!machine.online && <Text style={styles.status}>Offline</Text>}
       </Pressable>)}

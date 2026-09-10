@@ -3,8 +3,21 @@ import { Pressable, StyleSheet, Text, TextInput, View } from "react-native"
 import { colors } from "../theme/colors"
 import { saveAccountPreferences, useMachines, type Machine, type MachineAppearance, type PreferencesApi } from "./client"
 
-export let machineAppearance = (machine?: Pick<Machine, "id" | "platform">, configured?: Record<string, MachineAppearance>): MachineAppearance =>
-  (machine && configured?.[machine.id]) ?? { icon: machine?.platform === "linux" ? "server" : "desktop", color: machine?.platform === "linux" ? "#34b3a0" : "#8d9fff" }
+let ICONS: MachineAppearance["icon"][] = ["desktop", "laptop", "server", "terminal", "chip"]
+let PALETTE = ["#8d9fff", "#34b3a0", "#e5a450", "#dc7d9c", "#a78bfa", "#94a3b8"]
+
+export let machineAppearance = (
+  machine?: Pick<Machine, "id" | "platform">,
+  configured?: Record<string, MachineAppearance>,
+  machines: Pick<Machine, "id">[] = [],
+): MachineAppearance => {
+  let saved = machine && configured?.[machine.id]
+  if (saved) return saved
+  let orderedIds = machines.map((item) => item.id).sort()
+  let index = machine ? orderedIds.indexOf(machine.id) : -1
+  if (index < 0) return { icon: machine?.platform === "linux" ? "server" : "desktop", color: machine?.platform === "linux" ? "#34b3a0" : "#8d9fff" }
+  return { icon: ICONS[index % ICONS.length], color: PALETTE[Math.floor(index / ICONS.length) % PALETTE.length] }
+}
 
 export let MachineIcon = ({ appearance, size = 20 }: { appearance: MachineAppearance; size?: number }) => {
   let iconStyles = useMemo(() => StyleSheet.create({
@@ -26,12 +39,9 @@ export let MachineIcon = ({ appearance, size = 20 }: { appearance: MachineAppear
   </View>
 }
 
-let ICONS: MachineAppearance["icon"][] = ["desktop", "laptop", "server", "terminal", "chip"]
-let PALETTE = ["#8d9fff", "#34b3a0", "#e5a450", "#dc7d9c", "#a78bfa", "#94a3b8"]
-
 export let MachineAppearanceEditor = ({ machine, api }: { machine: Machine; api: PreferencesApi }) => {
   let state = useMachines()
-  let saved = machineAppearance(machine, state.machineAppearance)
+  let saved = machineAppearance(machine, state.machineAppearance, state.machines)
   let [icon, setIcon] = useState(saved.icon)
   let [color, setColor] = useState(saved.color)
   let [busy, setBusy] = useState(false)
