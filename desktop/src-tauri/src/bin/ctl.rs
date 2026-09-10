@@ -1491,7 +1491,7 @@ async fn handle_secrets_command(args: &[String]) {
             }
 
             if secret_exists(&key).await && !yes {
-                confirm_or_exit(&format!("Overwrite secret '{}'", key), &key);
+                confirm_overwrite_or_exit(&key);
             }
             let value = rpassword::prompt_password("Secret value: ")
                 .unwrap_or_else(|e| exit_error(&format!("failed to read secret value: {}", e)));
@@ -1556,6 +1556,22 @@ async fn secret_exists(key: &str) -> bool {
         Ok(IpcResponse::Error(msg)) => exit_error(&msg),
         Ok(_) => exit_error("unexpected response from daemon"),
         Err(e) => exit_error(&e),
+    }
+}
+
+fn confirm_overwrite_or_exit(key: &str) {
+    eprint!("Overwrite secret '{}'? [y/N]: ", key);
+    let _ = io::stderr().flush();
+
+    let mut input = String::new();
+    if let Err(e) = io::stdin().read_line(&mut input) {
+        exit_error(&format!("failed to read confirmation: {}", e));
+    }
+
+    let input = input.trim();
+    if !input.eq_ignore_ascii_case("y") && !input.eq_ignore_ascii_case("yes") {
+        eprintln!("Aborted");
+        std::process::exit(1);
     }
 }
 
