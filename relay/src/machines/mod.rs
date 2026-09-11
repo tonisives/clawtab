@@ -1,4 +1,5 @@
 pub mod api;
+pub mod journal;
 pub mod rentals;
 mod router;
 mod socket;

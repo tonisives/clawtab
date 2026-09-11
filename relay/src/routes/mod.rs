@@ -100,6 +100,7 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/auth/session/{id}", get(auth_session::poll_session));
 
     let authenticated = Router::new()
+        .merge(crate::machines::journal::owner_routes())
         .route(
             "/account/preferences",
             get(preferences::get_preferences).post(preferences::set_preferences),
@@ -145,6 +146,14 @@ pub fn router(state: AppState) -> Router<AppState> {
         ));
 
     public
+        .merge(
+            Router::new()
+                .route(
+                    "/v1/machines/{id}/journal/context",
+                    post(crate::machines::journal::query),
+                )
+                .layer(axum::extract::DefaultBodyLimit::max(32 * 1024)),
+        )
         .merge(rate_limited_auth)
         .merge(auth_session_routes)
         .merge(authenticated)
