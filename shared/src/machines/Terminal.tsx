@@ -1,3 +1,5 @@
+import { TerminalKeyBar } from "./TerminalKeyBar"
+import { encodeTerminalInput } from "../util/terminalInput"
 import { MachineActions } from "./Actions"
 import { useEffect, useRef, useState } from "react"
 import { View, Text, Pressable, StyleSheet, Modal, SafeAreaView, KeyboardAvoidingView, Platform } from "react-native"
@@ -65,7 +67,7 @@ export let MachineTerminal = ({
   let key = resourceKey(machineId, paneId)
   let execution = executionFor(machineId, paneId)
   let hostConnection = state.machines.find((machine) => machine.id === machineId)?.connection_id
-  let controlled = state.controllers[key] === state.connectionId
+  let controlled = !!state.connectionId && state.controllers[key] === state.connectionId
   let send = (message: MachineMessage) => {
     void machineRequest(machineId, { ...message, pane_id: paneId }).catch((e) =>
       setError(e.message),
@@ -98,7 +100,10 @@ export let MachineTerminal = ({
       if (dimensions) machineSend(machineId, { type: "pty_resize", pane_id: paneId, ...dimensions })
     }
   }, [controlled, online, machineId, paneId])
-  let onData = (data: string) => send({ type: "pty_input", data })
+  let onData = (data: string) => {
+    if (online && controlled) send({ type: "pty_input", data })
+  }
+  let sendKey = (value: string) => onData(encodeTerminalInput(value))
   let onResize = (cols: number, rows: number) => {
     if (controlled) send({ type: "pty_resize", cols, rows })
   }
@@ -112,6 +117,7 @@ export let MachineTerminal = ({
         </Pressable>
       )}
       {error && <Text style={styles.error}>{error}</Text>}
+      <TerminalKeyBar disabled={!online || !controlled} onKey={sendKey} />
       <XtermLog
         ref={terminal}
         onData={onData}

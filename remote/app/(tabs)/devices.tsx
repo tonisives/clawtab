@@ -1,4 +1,3 @@
-import { ScrollView } from "react-native";
-import { MachineSetup } from "../../src/components/MachineSetup";
-let DevicesScreen = () => <ScrollView><MachineSetup /></ScrollView>;
-export default DevicesScreen;
+import { Redirect } from "expo-router"
+let DevicesScreen = () => <Redirect href="/machines" />
+export default DevicesScreen

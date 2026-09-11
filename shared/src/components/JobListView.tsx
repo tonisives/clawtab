@@ -7,5 +7,5 @@ export type { JobListViewProps, SidebarSelectableItem } from "./JobListView/sign
 
 export function JobListView(props: JobListViewProps) {
   const hook = useJobListView(props);
-  return <MachineOnboardingProvider content={props.machineOnboarding}><JobListViewComponent hook={hook} /></MachineOnboardingProvider>;
+  return <MachineOnboardingProvider content={props.machineOnboarding} management={props.machineManagement}><JobListViewComponent hook={hook} /></MachineOnboardingProvider>;
 }

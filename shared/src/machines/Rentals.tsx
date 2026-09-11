@@ -35,7 +35,7 @@ type Rental = {
   needs_attention: boolean
 }
 type RentalApi = (method: string, path: string, body?: Record<string, unknown>) => Promise<any>
-type Props = { onOrderingChange?: (ordering: boolean) => void; api: RentalApi; purchases: boolean; platform?: "web" | "desktop" | "ios" | "android"; storefront?: string; openUrl?: (url: string) => Promise<unknown> }
+type Props = { showExistingRentals?: boolean; allowNewRentals?: boolean; onOrderingChange?: (ordering: boolean) => void; api: RentalApi; purchases: boolean; platform?: "web" | "desktop" | "ios" | "android"; storefront?: string; openUrl?: (url: string) => Promise<unknown> }
 type Terminal = { machine: string; pane: string; session: string; command: string }
 let money = (quote: Quote) => new Intl.NumberFormat(undefined, { style: "currency", currency: quote.currency }).format(quote.monthly_cents / 100)
 let date = (value: string) => new Date(value).toLocaleString()
@@ -52,9 +52,11 @@ let Button = ({ label, onPress, disabled = false, primary = false }: { label: st
   </Pressable>
 )
 
-export let RentalsPanel = ({ api, purchases, platform = "web", storefront, openUrl, onOrderingChange }: Props) => {
+export let RentalsPanel = ({ api, purchases, platform = "web", storefront, openUrl, onOrderingChange, allowNewRentals = true, showExistingRentals = true }: Props) => {
   let machines = useMachines()
   let [rentals, setRentals] = useState<Rental[]>([])
+  let [purchasedRental, setPurchasedRental] = useState<string | null>(null)
+  let visibleRentals = showExistingRentals ? rentals : rentals.filter((rental) => rental.id === purchasedRental)
   let [catalog, setCatalog] = useState<Quote[]>([])
   let [enabled, setEnabled] = useState(false)
   let [managed, setManaged] = useState<string | null>(null)
@@ -123,6 +125,7 @@ export let RentalsPanel = ({ api, purchases, platform = "web", storefront, openU
     let response = await api("POST", "/rentals/checkout", {
       request_id: requestId.current, name, quote, agent_provider: provider, platform, storefront, ssh_keys: keys.split("\n").map((key) => key.trim()).filter(Boolean), accepted_terms: accepted,
     })
+    setPurchasedRental(response.rental_id)
     await refresh()
     await openUrl(response.url)
     setShowOrder(false)
@@ -180,15 +183,15 @@ export let RentalsPanel = ({ api, purchases, platform = "web", storefront, openU
   let choose = (quote: Quote) => () => { setSelected(quoteId(quote)); setAccepted(false); requestId.current = null }
   let editName = (value: string) => { setName(value); requestId.current = null }
   let editKeys = (value: string) => { setKeys(value); requestId.current = null }
-  if (!purchases && rentals.length === 0 && !error) return null
+  if ((!purchases || !allowNewRentals) && visibleRentals.length === 0 && !error) return null
   return (
     <View style={styles.panel}>
       {!showOrder && <View style={styles.row}>
-        <Text style={styles.heading}>{rentals.length ? "Your boxes" : "Rent a machine"}</Text>
-        {purchases && rentals.length > 0 && !showOrder && <Button label="Rent a box" onPress={startOrder} disabled={busy} />}
+        <Text style={styles.heading}>{visibleRentals.length ? "Your boxes" : "Rent a machine"}</Text>
+        {allowNewRentals && purchases && visibleRentals.length > 0 && !showOrder && <Button label="Rent a box" onPress={startOrder} disabled={busy} />}
       </View>}
       {error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
-      {purchases && !rentals.length && !showOrder && <>
+      {allowNewRentals && purchases && !visibleRentals.length && !showOrder && <>
         <Text style={styles.detail}>Ready for your agents. Relay included.</Text>
         <Button label={busy ? "Loading boxes…" : "Rent a box"} onPress={startOrder} disabled={busy} primary />
       </>}
@@ -227,7 +230,7 @@ export let RentalsPanel = ({ api, purchases, platform = "web", storefront, openU
         </>}
         <Button label="Close" onPress={closeOrder} />
       </View>}
-      {rentals.map((rental) => {
+      {visibleRentals.map((rental) => {
         let available = rental.machine_id && machines.machines.some((machine) => machine.id === rental.machine_id && machine.online)
         let managing = managed === rental.id
         let providerName = rental.agent_provider === "claude" ? "Claude Code" : rental.agent_provider === "codex" ? "Codex" : "OpenCode"
