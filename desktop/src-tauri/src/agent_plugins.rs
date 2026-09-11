@@ -1957,12 +1957,22 @@ fn codex_composer_draft(screen: &str) -> Option<String> {
             return None;
         }
         let value = line.trim_start().strip_prefix('›')?.trim().to_string();
-        Some(if value == "Ask Codex to do anything" {
+        Some(if codex_empty_composer(&value) {
             String::new()
         } else {
             value
         })
     })
+}
+
+fn codex_empty_composer(value: &str) -> bool {
+    value
+        .strip_prefix("Ask Codex to do anything")
+        .is_some_and(|suffix| {
+            suffix.chars().all(|character| {
+                character.is_whitespace() || ('\u{2800}'..='\u{28ff}').contains(&character)
+            })
+        })
 }
 
 fn selected_option_matches(line: &str, target: &str) -> bool {
@@ -2464,6 +2474,23 @@ actions:
             "› Ask Codex to do anything\n\n  Select Model and Effort\n› 2. gpt-5.6-sol (current)";
 
         assert_eq!(codex_composer_draft(screen).as_deref(), Some(""));
+    }
+
+    #[test]
+    fn codex_composer_draft_ignores_placeholder_animation_cells() {
+        let screen = "⠁   ⠈         ⠄\n› Ask Codex to do anything   ⠈ ⠂  ⠁ ⠀\n\n  gpt-6-astra xhigh · Context 100% left · Vim: Insert";
+
+        assert_eq!(codex_composer_draft(screen).as_deref(), Some(""));
+    }
+
+    #[test]
+    fn codex_composer_draft_keeps_text_that_starts_with_the_placeholder() {
+        let screen = "› Ask Codex to do anything involving plugins\n\nVim: Insert";
+
+        assert_eq!(
+            codex_composer_draft(screen).as_deref(),
+            Some("Ask Codex to do anything involving plugins")
+        );
     }
 
     #[test]
