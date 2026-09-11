@@ -1956,23 +1956,45 @@ fn codex_composer_draft(screen: &str) -> Option<String> {
         if !codex_composer_line(line) {
             return None;
         }
-        let value = line.trim_start().strip_prefix('›')?.trim().to_string();
-        Some(if codex_empty_composer(&value) {
+        let value = line.trim_start().strip_prefix('›')?.trim();
+        let value = strip_codex_composer_animation(value);
+        Some(if value == "Ask Codex to do anything" {
             String::new()
         } else {
-            value
+            value.to_string()
         })
     })
 }
 
-fn codex_empty_composer(value: &str) -> bool {
-    value
-        .strip_prefix("Ask Codex to do anything")
-        .is_some_and(|suffix| {
-            suffix.chars().all(|character| {
-                character.is_whitespace() || ('\u{2800}'..='\u{28ff}').contains(&character)
-            })
-        })
+fn strip_codex_composer_animation(value: &str) -> &str {
+    let Some(animation_start) = value
+        .char_indices()
+        .find_map(|(index, character)| is_braille(character).then_some(index))
+    else {
+        return value;
+    };
+    let suffix = &value[animation_start..];
+    let braille_count = suffix
+        .chars()
+        .filter(|character| is_braille(*character))
+        .count();
+    if !suffix
+        .chars()
+        .all(|character| character.is_whitespace() || is_braille(character))
+    {
+        return value;
+    }
+    let prefix = value[..animation_start].trim_end();
+    let known_control_text = matches!(prefix, "Ask Codex to do anything" | "/model");
+    if known_control_text || braille_count >= 2 && suffix.chars().count() >= 8 {
+        prefix
+    } else {
+        value
+    }
+}
+
+fn is_braille(character: char) -> bool {
+    ('\u{2800}'..='\u{28ff}').contains(&character)
 }
 
 fn selected_option_matches(line: &str, target: &str) -> bool {
@@ -2478,9 +2500,24 @@ actions:
 
     #[test]
     fn codex_composer_draft_ignores_placeholder_animation_cells() {
-        let screen = "⠁   ⠈         ⠄\n› Ask Codex to do anything   ⠈ ⠂  ⠁ ⠀\n\n  gpt-6-astra xhigh · Context 100% left · Vim: Insert";
+        let screen = "⠁   ⠈         ⠄\n› Ask Codex to do anything⡀  ⠈                                      ⠂        ⠁⠐     ⢀    ⠁               ⠂               ⡀\n\n  gpt-6-astra xhigh · Context 100% left · Vim: Insert";
 
         assert_eq!(codex_composer_draft(screen).as_deref(), Some(""));
+    }
+
+    #[test]
+    fn codex_composer_draft_removes_animation_from_model_command() {
+        let screen =
+            "› /model⡀  ⠈                                      ⠂        ⠁⠐     ⢀\n\nVim: Insert";
+
+        assert_eq!(codex_composer_draft(screen).as_deref(), Some("/model"));
+    }
+
+    #[test]
+    fn codex_composer_draft_preserves_short_braille_text() {
+        let screen = "› remember ⠁\n\nVim: Insert";
+
+        assert_eq!(codex_composer_draft(screen).as_deref(), Some("remember ⠁"));
     }
 
     #[test]
