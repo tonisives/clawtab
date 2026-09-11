@@ -2,6 +2,7 @@ pub mod git;
 pub mod journal;
 mod operations;
 mod transfer;
+mod work_journal;
 use clawtab_protocol::HostRequest;
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
@@ -16,6 +17,7 @@ pub async fn execute(request: HostRequest) -> Result<Value, String> {
             }
         }
         HostRequest::Info => Ok(info()),
+        HostRequest::JournalContext { query } => work_journal::context(&query).await,
         HostRequest::Repository { path } => {
             serde_json::to_value(git::get_git_repository(path).await?).map_err(|e| e.to_string())
         }
@@ -84,7 +86,7 @@ fn info() -> Value {
         (name, available)
     })
     .collect::<std::collections::HashMap<_, _>>();
-    json!({"platform":std::env::consts::OS,"architecture":std::env::consts::ARCH,"version":env!("CARGO_PKG_VERSION"),"capabilities":["machine_v2","host_management","transfer_v1"],"home":dirs::home_dir(),"tools":tools,"models":settings.enabled_models,"machine_id":settings.relay.as_ref().map(|r|&r.device_id)})
+    json!({"platform":std::env::consts::OS,"architecture":std::env::consts::ARCH,"version":env!("CARGO_PKG_VERSION"),"capabilities":["machine_v2","host_management","transfer_v1","journal_query_v1"],"home":dirs::home_dir(),"tools":tools,"models":settings.enabled_models,"machine_id":settings.relay.as_ref().map(|r|&r.device_id)})
 }
 
 pub fn resolve_path(value: &str) -> Result<PathBuf, String> {

@@ -34,6 +34,7 @@ pub struct Lease {
 }
 #[derive(Default)]
 pub struct MachineHub {
+    pub journal_pending: HashMap<String, super::journal::Pending>,
     pub hosts: HashMap<Uuid, Host>,
     pub clients: HashMap<Uuid, Client>,
     pub snapshots: HashMap<(Uuid, String), Value>,
@@ -167,6 +168,14 @@ pub async fn host_event(state: &AppState, machine: Uuid, connection: Uuid, text:
     let Some(kind) = message["type"].as_str().map(str::to_owned) else {
         return;
     };
+    // Journal responses are private RPC results, never event broadcasts.
+    if message["id"]
+        .as_str()
+        .is_some_and(|id| id.starts_with("journal:"))
+    {
+        super::journal::deliver(state, machine, &message).await;
+        return;
+    }
     if message["id"] == "machine_info" && kind == "host_response" {
         let info = &message["result"];
         let _=sqlx::query("UPDATE devices SET platform=$1,architecture=$2,daemon_version=$3,capabilities=$4 WHERE id=$5")
