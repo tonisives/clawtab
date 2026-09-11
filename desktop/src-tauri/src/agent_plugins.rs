@@ -1967,6 +1967,16 @@ fn codex_composer_draft(screen: &str) -> Option<String> {
 }
 
 fn strip_codex_composer_animation(value: &str) -> &str {
+    let after_leading_animation = value
+        .trim_start_matches(|character: char| character.is_whitespace() || is_braille(character));
+    let value = if ["Ask Codex to do anything", "/model"]
+        .into_iter()
+        .any(|control| after_leading_animation.starts_with(control))
+    {
+        after_leading_animation
+    } else {
+        value
+    };
     let Some(animation_start) = value
         .char_indices()
         .find_map(|(index, character)| is_braille(character).then_some(index))
@@ -2500,7 +2510,7 @@ actions:
 
     #[test]
     fn codex_composer_draft_ignores_placeholder_animation_cells() {
-        let screen = "⠁   ⠈         ⠄\n› Ask Codex to do anything⡀  ⠈                                      ⠂        ⠁⠐     ⢀    ⠁               ⠂               ⡀\n\n  gpt-6-astra xhigh · Context 100% left · Vim: Insert";
+        let screen = "⠁   ⠈         ⠄\n›⠁Ask Codex to do anything⡀  ⠈                                      ⠂        ⠁⠐     ⢀    ⠁               ⠂               ⡀\n\n  gpt-6-astra xhigh · Context 100% left · Vim: Normal";
 
         assert_eq!(codex_composer_draft(screen).as_deref(), Some(""));
     }
@@ -2508,7 +2518,7 @@ actions:
     #[test]
     fn codex_composer_draft_removes_animation_from_model_command() {
         let screen =
-            "› /model⡀  ⠈                                      ⠂        ⠁⠐     ⢀\n\nVim: Insert";
+            "›⠂/model⡀  ⠈                                      ⠂        ⠁⠐     ⢀\n\nVim: Insert";
 
         assert_eq!(codex_composer_draft(screen).as_deref(), Some("/model"));
     }
@@ -2518,6 +2528,16 @@ actions:
         let screen = "› remember ⠁\n\nVim: Insert";
 
         assert_eq!(codex_composer_draft(screen).as_deref(), Some("remember ⠁"));
+    }
+
+    #[test]
+    fn codex_composer_draft_preserves_user_text_starting_with_braille() {
+        let screen = "› ⠁ intentional braille\n\nVim: Insert";
+
+        assert_eq!(
+            codex_composer_draft(screen).as_deref(),
+            Some("⠁ intentional braille")
+        );
     }
 
     #[test]
