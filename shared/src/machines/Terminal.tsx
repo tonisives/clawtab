@@ -6,6 +6,7 @@ import { View, Text, Pressable, StyleSheet, Modal, SafeAreaView, KeyboardAvoidin
 import { XtermLog, type XtermLogHandle } from "../components/XtermLog"
 import { colors } from "../theme/colors"
 import { spacing } from "../theme/spacing"
+import { MachineIcon, machineAppearance } from "./Appearance"
 import {
   useMachines,
   machineRequest,
@@ -19,6 +20,7 @@ import {
 
 export let MachineTerminalControls = ({ paneId, connectedOnly = false }: { paneId: string; connectedOnly?: boolean }) => {
   let state = useMachines()
+  let [showControlInfo, setShowControlInfo] = useState(false)
   let resource = splitResource(paneId)
   if (!resource) return null
   let machine = state.machines.find((m) => m.id === resource.machine)
@@ -28,22 +30,40 @@ export let MachineTerminalControls = ({ paneId, connectedOnly = false }: { paneI
   let release = () =>
     machineSend(resource.machine, { type: "release_control", pane_id: resource.id })
   return (
-    <View style={styles.bar}>
-      <View style={styles.controlInfo}>
-        <Text style={styles.machineName}>{machine?.name ?? "Remote machine"}</Text>
-        <Text style={styles.controlStatus}>
-          {machine?.online ? (controlled ? "You have control" : "Watching") : "Offline"}
-        </Text>
+    <View style={styles.controlSection}>
+      <View style={styles.bar}>
+        <MachineIcon appearance={machineAppearance(machine, state.machineAppearance, state.machines)} />
+        <View style={styles.controlInfo}>
+          <Text style={styles.machineName}>{machine?.name ?? "Remote machine"}</Text>
+          <Text style={styles.controlStatus}>
+            {machine?.online ? (controlled ? "You have control" : "Watching") : "Offline"}
+          </Text>
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ disabled: !machine?.online }}
+          disabled={!machine?.online}
+          onPress={controlled ? release : take}
+          style={[styles.button, !machine?.online && styles.disabledButton]}
+        >
+          <Text style={styles.buttonText}>{controlled ? "Release control" : "Take control"}</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="About terminal control"
+          aria-expanded={showControlInfo}
+          onPress={() => setShowControlInfo((visible) => !visible)}
+          hitSlop={6}
+          style={styles.infoButton}
+        >
+          <View style={styles.infoIcon}><Text style={styles.infoIconText}>i</Text></View>
+        </Pressable>
       </View>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityState={{ disabled: !machine?.online }}
-        disabled={!machine?.online}
-        onPress={controlled ? release : take}
-        style={[styles.button, !machine?.online && styles.disabledButton]}
-      >
-        <Text style={styles.buttonText}>{controlled ? "Release control" : "Take control"}</Text>
-      </Pressable>
+      {showControlInfo && (
+        <Text style={styles.controlHelp}>
+          Release control switches this device to Watching. The agent keeps running and you can still watch its output. Select Take control to send terminal input or resize it again. Only one connected device controls the terminal at a time.
+        </Text>
+      )}
     </View>
   )
 }
@@ -160,6 +180,11 @@ let styles = StyleSheet.create({
   closeButton: { minHeight: 44, paddingHorizontal: 20, borderRadius: 999, alignItems: "center", justifyContent: "center", backgroundColor: colors.groupedSurface, borderWidth: 1, borderColor: colors.border },
   terminalBody: { flex: 1, minHeight: 0, paddingHorizontal: 8 },
   terminal: { flex: 1, minHeight: 0 },
+  controlSection: {
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    paddingBottom: spacing.sm,
+  },
   bar: {
     flexDirection: "row",
     alignItems: "center",
@@ -170,6 +195,33 @@ let styles = StyleSheet.create({
   controlInfo: {
     flex: 1,
     minWidth: 0,
+  },
+  infoButton: {
+    width: 30,
+    height: 30,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  infoIcon: {
+    width: 16,
+    height: 16,
+    borderWidth: 1,
+    borderColor: colors.textMuted,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  infoIconText: {
+    color: colors.textMuted,
+    fontSize: 11,
+    lineHeight: 13,
+    fontWeight: "600",
+  },
+  controlHelp: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+    paddingTop: spacing.sm,
   },
   machineName: {
     color: colors.text,

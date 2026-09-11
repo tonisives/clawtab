@@ -1,5 +1,5 @@
 import { Modal, SafeAreaView, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { MachineTerminalControls } from "../machines/Terminal";
 import { resourceLabel } from "../machines/client";
 import { AgentActionFormModal } from "./AgentActionFormModal";
@@ -9,6 +9,7 @@ import { radius, spacing } from "../theme/spacing";
 import { compactPath, formatTime, timeAgo } from "../util/format";
 
 const MAX_QUERY_CHARS = 640;
+const MAX_VISIBLE_ACTIONS = 4;
 const isIOS = Platform.OS === "ios";
 
 export type PaneOverviewData = {
@@ -86,6 +87,32 @@ const QueryBlock = ({ label, value }: { label: string; value?: string | null }) 
   );
 };
 
+let AgentActionList = ({ children }: { children: ReactNode[] }) => {
+  let [visibleHeight, setVisibleHeight] = useState<number>();
+  let overflowing = children.length > MAX_VISIBLE_ACTIONS;
+  let listStyles = useMemo(() => StyleSheet.create({
+    viewport: { maxHeight: overflowing ? visibleHeight : undefined },
+  }), [overflowing, visibleHeight]);
+
+  return (
+    <ScrollView
+      style={[styles.agentActionScroll, listStyles.viewport]}
+      contentContainerStyle={styles.agentActionList}
+      nestedScrollEnabled
+      keyboardShouldPersistTaps="handled"
+      accessibilityLabel="Agent actions"
+    >
+      <View
+        style={styles.agentActionList}
+        onLayout={(event) => setVisibleHeight(event.nativeEvent.layout.height)}
+      >
+        {children.slice(0, MAX_VISIBLE_ACTIONS)}
+      </View>
+      {children.slice(MAX_VISIBLE_ACTIONS)}
+    </ScrollView>
+  );
+};
+
 export const PaneOverviewModal = ({ visible, onClose, actions, ...pane }: PaneOverviewModalProps) => {
   const latestQuery = pane.lastQuery && pane.lastQuery !== pane.firstQuery ? pane.lastQuery : null;
   const title = pane.cwd ? compactPath(pane.cwd) : "Pane overview";
@@ -127,7 +154,7 @@ export const PaneOverviewModal = ({ visible, onClose, actions, ...pane }: PaneOv
             <View style={styles.headerMeta}>
               <Text style={styles.sessionTitle} selectable>{pane.tmuxSession || "-"} / {pane.windowName || "-"}</Text>
               <Text style={styles.metaSeparator}>·</Text>
-              <Text style={styles.paneIdTitle} numberOfLines={1}>{isIOS ? resourceLabel(pane.paneId) : pane.paneId}</Text>
+              <Text style={styles.paneIdTitle} numberOfLines={1}>{resourceLabel(pane.paneId)}</Text>
             </View>
           </View>
           <Pressable
@@ -200,7 +227,6 @@ export const PaneOverviewModal = ({ visible, onClose, actions, ...pane }: PaneOv
               ) : null}
             </View>
           ) : null}
-          <DetailRow label="Window" value={pane.windowName || "-"} monospace />
           <DetailRow label="Started" value={formatStartedAt(pane.startedAt)} />
           {actions?.agentActions?.length ? (
             <View style={styles.agentActions}>
@@ -220,7 +246,7 @@ export const PaneOverviewModal = ({ visible, onClose, actions, ...pane }: PaneOv
                   ) : null}
                 </View>
               ) : null}
-              {actions.agentActions.map((action) => {
+              <AgentActionList>{actions.agentActions.map((action) => {
                 const actionDisabled = !action.available || actionRunActive || !actions.onRunAgentAction;
                 const actionButtonLabel = !action.available
                   ? "Unavailable"
@@ -249,11 +275,15 @@ export const PaneOverviewModal = ({ visible, onClose, actions, ...pane }: PaneOv
                     </Pressable>
                   </View>
                 );
-              })}
+              })}</AgentActionList>
             </View>
           ) : null}
-          <QueryBlock label="First query" value={pane.firstQuery} />
-          <QueryBlock label="Latest query" value={latestQuery} />
+          {(pane.firstQuery?.trim() || latestQuery?.trim()) ? (
+            <View style={styles.queries}>
+              <QueryBlock label="First query" value={pane.firstQuery} />
+              <QueryBlock label="Latest query" value={latestQuery} />
+            </View>
+          ) : null}
         </ScrollView>
       </View>
       <AgentActionFormModal
@@ -413,6 +443,14 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
+  agentActionScroll: {
+    flexGrow: 0,
+    flexShrink: 0,
+  },
+  agentActionList: {
+    gap: spacing.sm,
+    flexShrink: 0,
+  },
   sectionTitle: {
     color: colors.text,
     fontSize: 13,
@@ -541,6 +579,12 @@ const styles = StyleSheet.create({
   },
   monospace: {
     fontFamily: "monospace",
+  },
+  queries: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: spacing.md,
+    gap: spacing.md,
   },
   queryBlock: {
     gap: spacing.xs,
