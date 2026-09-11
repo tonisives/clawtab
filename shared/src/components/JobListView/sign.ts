@@ -27,6 +27,7 @@ export type GroupedRowPosition = "single" | "first" | "middle" | "last";
 
 export interface JobListViewProps {
   machineOnboarding?: MachineOnboardingContent;
+  machineManagement?: MachineOnboardingContent;
   jobs: RemoteJob[];
   statuses: Record<string, JobStatus>;
   detectedProcesses: DetectedProcess[];

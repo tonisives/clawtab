@@ -206,6 +206,7 @@ export default function SettingsScreen({ inModal = false }: { inModal?: boolean 
   const [deleteLoading, setDeleteLoading] = useState(false)
   const [dangerExpanded, setDangerExpanded] = useState(false)
   const router = useRouter()
+  let openMachines = () => router.push("/machines")
   const handleLogout = () => {
     confirm("Log out", "Are you sure you want to log out?", async () => {
       await logout()
@@ -338,6 +339,10 @@ export default function SettingsScreen({ inModal = false }: { inModal?: boolean 
             </View>
 
             <View style={styles.section}>
+              <Pressable accessibilityRole="button" onPress={openMachines} style={styles.billingBtn}><Text style={styles.billingBtnText}>Manage machines</Text></Pressable>
+            </View>
+
+            <View style={styles.section}>
               <View style={styles.sectionHeadingRow}>
                 <Text style={styles.sectionTitle}>Model Usage</Text>
                 <Pressable
@@ -398,7 +403,7 @@ export default function SettingsScreen({ inModal = false }: { inModal?: boolean 
                 </View>
                 <Pressable
                   style={[styles.billingBtn, actionLoading && styles.btnDisabled]}
-                  onPress={sub.relay_included && sub.provider !== "apple" ? () => router.push("/devices") : handleManageBilling}
+                  onPress={sub.relay_included && sub.provider !== "apple" ? openMachines : handleManageBilling}
                   disabled={actionLoading}
                 >
                   <Text style={styles.billingBtnText}>

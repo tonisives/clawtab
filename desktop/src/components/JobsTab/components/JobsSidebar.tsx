@@ -396,7 +396,8 @@ export function JobsSidebar({
 
   return (
     <JobListView
-      machineOnboarding={(close) => <DesktopMachinesPanel onOpenAccount={() => { close(); window.dispatchEvent(new CustomEvent("open-machine-account")); }} />}
+      machineManagement={(close) => <DesktopMachinesPanel onOpenAccount={() => { close(); window.dispatchEvent(new CustomEvent("open-machine-account")); }} />}
+      machineOnboarding={(close) => <DesktopMachinesPanel manage={false} onOpenAccount={() => { close(); window.dispatchEvent(new CustomEvent("open-machine-account")); }} />}
       jobs={core.jobs}
       statuses={core.statuses}
       detectedProcesses={sidebarItems.detectedProcesses}

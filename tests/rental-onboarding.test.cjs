@@ -15,7 +15,7 @@ let findType = (tree, type) => {
   return tree.type === type ? tree : findType(tree.props?.children, type);
 };
 let flush = () => new Promise((resolve) => setImmediate(resolve));
-let harness = (rental, launch) => {
+let harness = (rental, launch, props = {}) => {
   let states = [], cursor = 0, effects = [], operation = 0;
   let machines = { machines: [{ id: rental.machine_id, online: true }], agentModels: { default_provider: 'codex' }, controllers: {} };
   let react = {
@@ -46,7 +46,7 @@ let harness = (rental, launch) => {
     } else rental.setup[`${body.action}_terminal`] = body.terminal;
     return { ...rental.setup };
   };
-  let render = () => { cursor = 0; let tree = exports.RentalsPanel({ api, purchases: true }); effects.splice(0).forEach((effect) => effect()); return tree; };
+  let render = () => { cursor = 0; let tree = exports.RentalsPanel({ api, purchases: true, ...props }); effects.splice(0).forEach((effect) => effect()); return tree; };
   return { render, calls, machines };
 };
 let rental = () => ({ id: 'rental-1', machine_id: 'remote-only', name: 'My box', state: 'ready', quote: { currency: 'eur', monthly_cents: 540 }, agent_provider: 'codex', setup: {} });
@@ -94,4 +94,12 @@ test('provider sign-in is a shell command and uses its own stable operation', as
   assert.equal(findType(view.render(), 'MachineTerminalScreen'), undefined);
   find(view.render(), 'Resume sign-in').props.onPress(); await flush();
   assert.equal(findType(view.render(), 'MachineTerminalScreen').props.paneId, '%2');
+});
+
+
+test('add-machine view keeps existing boxes in management', async () => {
+  let view = harness(rental(), async () => {}, { showExistingRentals: false });
+  view.render(); await flush();
+  assert.equal(find(view.render(), 'Sign in to Codex'), undefined);
+  assert.ok(find(view.render(), 'Rent a box'));
 });

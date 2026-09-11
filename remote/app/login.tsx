@@ -53,7 +53,7 @@ WebBrowser.maybeCompleteAuthSession();
 export default function LoginScreen() {
   const router = useRouter();
   let { return_to } = useLocalSearchParams<{ return_to?: string }>();
-  let destination = return_to === "devices" ? "/devices" : "/(tabs)";
+  let destination = ["devices", "machines"].includes(return_to ?? "") ? "/machines" : "/(tabs)";
   const googleLogin = useAuthStore((s) => s.googleLogin);
   const appleLogin = useAuthStore((s) => s.appleLogin);
 

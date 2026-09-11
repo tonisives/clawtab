@@ -184,6 +184,7 @@ export default function RootLayout() {
                   : () => <RootHeaderRight />,
             }}
           />
+          <Stack.Screen name="machines" options={{ title: "Manage machines", headerShown: true, headerTintColor: colors.text, headerStyle: { backgroundColor: colors.bg }, headerBackButtonDisplayMode: "minimal", animation: "slide_from_right" }} />
           <Stack.Screen name="job/[name]" options={{ animation: "slide_from_right" }} />
           <Stack.Screen name="process/[pane_id]" options={{ animation: "slide_from_right" }} />
           <Stack.Screen

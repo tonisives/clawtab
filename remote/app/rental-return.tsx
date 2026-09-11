@@ -12,7 +12,7 @@ let RentalReturn = () => {
     <Text style={styles.title}>{outcome === "cancel" ? "Checkout paused" : "Setting up your box"}</Text>
     <Text style={styles.detail}>{outcome === "cancel" ? "You can resume your order below." : "Payment is being verified. Your box will appear here as it connects. You can close this page and return to Machines at any time."}</Text>
     {appReturn && <Pressable accessibilityRole="button" onPress={openApp} style={styles.button}><Text style={styles.action}>Continue in ClawTab</Text></Pressable>}
-    <MachineSetup />
+    <MachineSetup manage />
     <Pressable accessibilityRole="button" onPress={() => router.replace("/(tabs)")} style={styles.button}><Text style={styles.action}>Go to jobs</Text></Pressable>
   </ScrollView>
 }

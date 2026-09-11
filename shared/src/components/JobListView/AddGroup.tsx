@@ -1,3 +1,4 @@
+import { MachineModal, ManageMachinesButton } from "../../machines/Onboarding";
 import { useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { machineHostRequest, newOperationId, saveAccountPreferences, useMachines } from "../../machines/client";
@@ -59,37 +60,37 @@ export let AddGroup = ({ hook }: { hook: JobListViewHook }) => {
   };
 
   if (!hook.groupPreferencesApi) return null;
-  if (!open) return (
+  return (
+    <>
     <Pressable accessibilityRole="button" onPress={show} style={styles.add}>
       <Text style={styles.action}>Add group / machine</Text>
     </Pressable>
-  );
-  return (
+    {open && <MachineModal title="Add group / machine" onClose={cancel}>
     <View style={styles.form}>
-      <Text style={styles.title}>Add group / machine</Text>
-      <TextInput accessibilityLabel="Group name" placeholder="Group name" placeholderTextColor={colors.textSecondary} value={name} onChangeText={setName} editable={!busy} maxLength={100} autoFocus style={styles.input} />
+      <TextInput accessibilityLabel="Group name" placeholder="Group name" placeholderTextColor={colors.textSecondary} value={name} onChangeText={setName} editable={!busy} maxLength={100} style={styles.input} />
       <TextInput accessibilityLabel="Group folder" placeholder="Folder on selected machine" placeholderTextColor={colors.textSecondary} value={path} onChangeText={setPath} editable={!busy} autoCapitalize="none" autoCorrect={false} style={styles.input} />
       <Text style={styles.hint}>Use an existing folder. ~ opens the selected machine’s home folder.</Text>
       <View pointerEvents={busy ? "none" : "auto"}>
         <MachineTargetPicker target={target} localMachineId={hook.localAgentMachineId} onSelect={setTarget} />
       </View>
+      <ManageMachinesButton />
       {error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
       <View style={styles.actions}>
-        <Pressable accessibilityRole="button" disabled={busy} onPress={cancel} style={styles.button}><Text style={styles.hint}>Cancel</Text></Pressable>
         <Pressable accessibilityRole="button" disabled={busy} onPress={create} style={styles.button}><Text style={styles.action}>{busy ? "Creating…" : "Create group"}</Text></Pressable>
       </View>
     </View>
+    </MachineModal>}
+    </>
   );
 };
 
 let styles = StyleSheet.create({
-  add: { padding: spacing.md, marginTop: spacing.md, alignItems: "center" },
+  add: { minHeight: 44, padding: spacing.md, marginTop: spacing.md, marginBottom: spacing.sm, alignItems: "center", backgroundColor: colors.accentBg, borderRadius: 999, borderWidth: 1, borderColor: colors.border },
   action: { color: colors.accent, fontSize: 14, fontWeight: "600" },
-  form: { marginTop: spacing.md, padding: spacing.md, gap: spacing.sm, borderWidth: 1, borderColor: colors.border, borderRadius: 8 },
-  title: { color: colors.text, fontSize: 14, fontWeight: "600" },
-  input: { color: colors.text, borderWidth: 1, borderColor: colors.border, borderRadius: 6, padding: spacing.sm, fontSize: 14 },
+  form: { padding: spacing.md, gap: spacing.md },
+  input: { color: colors.text, borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: spacing.sm, fontSize: 14 },
   hint: { color: colors.textSecondary, fontSize: 12 },
   error: { color: colors.danger, fontSize: 12 },
   actions: { flexDirection: "row", justifyContent: "flex-end", gap: spacing.sm },
-  button: { padding: spacing.sm },
+  button: { paddingHorizontal: spacing.md, minHeight: 44, justifyContent: "center", borderRadius: 999, backgroundColor: colors.groupedSurface, borderWidth: 1, borderColor: colors.border },
 });
