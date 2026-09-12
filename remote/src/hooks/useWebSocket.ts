@@ -161,12 +161,13 @@ export let useWebSocket = () => {
     let wasBackgrounded = AppState.currentState === "background"
     let appState = AppState.addEventListener("change", (next) => {
       if (next === "active") {
-        if (wasBackgrounded || !machineState().connected) {
-          wasBackgrounded = false
-          reconnectMachines()
-        } else {
-          replayActivePtySubscriptions("resume")
-        }
+        // Web dialogs and tab focus can interrupt a pending action if they
+        // replace an otherwise healthy socket. Native backgrounding can suspend
+        // the network, so those clients still reconnect after resuming.
+        let reconnect = !machineState().connected || (Platform.OS !== "web" && wasBackgrounded)
+        wasBackgrounded = false
+        if (reconnect) reconnectMachines()
+        else replayActivePtySubscriptions("resume")
         return
       }
       if (next === "background") wasBackgrounded = true

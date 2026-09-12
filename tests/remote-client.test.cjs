@@ -300,3 +300,35 @@ test('saved groups load without a desktop and are cleared on account logout', as
   stop();
   assert.equal(Object.keys(client.machineState().jobGroups).length, 0);
 });
+
+for (let platform of ['web', 'ios']) {
+  test(`${platform} foreground preserves pending actions while recovering suspended native connections`, () => {
+    let onStateChange, cleanup, reconnects = 0, replays = 0;
+    let noop = () => {};
+    let state = { connected: true, controllers: {} };
+    let store = Object.assign(() => true, { getState: () => new Proxy({}, { get: () => noop }) });
+    let modules = {
+      react: { useEffect: (effect) => { cleanup = effect(); }, useCallback: (callback) => callback },
+      'react-native': { AppState: { currentState: 'active', addEventListener: (_, callback) => { onStateChange = callback; return { remove: noop }; } }, Platform: { OS: platform } },
+      '@clawtab/shared': {
+        machineState: () => state, subscribeMachines: () => noop, onMachineEvent: () => noop,
+        connectMachines: () => noop, reconnectMachines: () => { reconnects++; },
+      },
+      '../lib/notifications': { getPushToken: async () => null },
+      '../lib/terminalCache': { terminalCache: { clear: noop } },
+      './usePty': { releaseActivePtySubscriptions: noop, replayActivePtySubscriptions: () => { replays++; } },
+    };
+    let exports = {};
+    let source = ts.transpileModule(fs.readFileSync(require.resolve('../remote/src/hooks/useWebSocket.ts'), 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
+    vm.runInNewContext(source, { exports, require: (name) => modules[name] ?? new Proxy({}, { get: (_, key) => String(key).startsWith('use') ? store : noop }) });
+    exports.useWebSocket();
+    onStateChange('background');
+    onStateChange('active');
+    assert.equal(reconnects, platform === 'web' ? 0 : 1);
+    assert.equal(replays, platform === 'web' ? 1 : 0);
+    state.connected = false;
+    onStateChange('active');
+    assert.equal(reconnects, platform === 'web' ? 1 : 2);
+    cleanup();
+  });
+}
