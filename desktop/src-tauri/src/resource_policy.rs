@@ -344,7 +344,7 @@ fn persist_state(path: Option<&Path>, state: &PersistedState) -> std::io::Result
 
 #[cfg(test)]
 impl ResourcePolicyManager {
-    fn for_tests(config: ResourcePolicyConfig) -> Self {
+    pub(crate) fn for_tests(config: ResourcePolicyConfig) -> Self {
         Self::with_path(config, None)
     }
 }

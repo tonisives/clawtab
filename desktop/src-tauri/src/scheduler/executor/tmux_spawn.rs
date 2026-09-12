@@ -93,6 +93,11 @@ pub(super) async fn spawn_agent_pane(
         prompt_file.as_deref(),
         &prompt_content,
     );
+    if let Err(error) = prepare_guarded_pane(&pane_id, &env_vars) {
+        let _ = tmux::kill_pane(&pane_id);
+        remove_prompt_file(prompt_file.as_deref());
+        return Err(error);
+    }
     if let Err(error) = tmux::send_keys_to_pane(&tmux_session, &pane_id, &send_cmd) {
         remove_prompt_file(prompt_file.as_deref());
         return Err(error);
@@ -109,6 +114,16 @@ pub(super) async fn spawn_agent_pane(
         pane_id,
     };
     Ok((Some(0), String::new(), String::new(), Some(handle)))
+}
+
+fn prepare_guarded_pane(pane_id: &str, env_vars: &[(String, String)]) -> Result<(), String> {
+    if env_vars
+        .iter()
+        .any(|(key, value)| key == "CLAWTAB_JOB_POLICY" && value == "crm_social_research")
+    {
+        tmux::retain_exited_pane(pane_id)?;
+    }
+    Ok(())
 }
 
 /// Compose the shell command sent to the pane: cd into the work dir, then
@@ -137,7 +152,7 @@ fn build_send_cmd(
     let cleanup = prompt_file
         .map(|path| {
             format!(
-                "; status=$?; rm -f {}; exit $status",
+                "; clawtab_agent_exit_code=$?; rm -f {}; exit $clawtab_agent_exit_code",
                 shell_quote(&path.display().to_string())
             )
         })
@@ -222,6 +237,8 @@ mod tests {
 
         assert!(command.contains("\"$(cat '/tmp/clawtab-prompt-test.md')\""));
         assert!(command.contains("rm -f '/tmp/clawtab-prompt-test.md'"));
+        assert!(command.contains("exit $clawtab_agent_exit_code"));
+        assert!(!command.contains("; status="), "zsh status is read-only");
         assert!(!command.contains("prompt content must not be embedded"));
     }
 
@@ -238,6 +255,29 @@ mod tests {
         );
 
         assert_eq!(command, "cd /tmp/project && echo hello");
+    }
+
+    #[test]
+    fn zsh_cleanup_preserves_agent_exit_code_and_removes_only_its_prompt() {
+        let directory = tempfile::tempdir().expect("test directory");
+        let prompt = directory.path().join("prompt.md");
+        std::fs::write(&prompt, "test prompt").expect("test prompt");
+        let command = build_send_cmd(
+            ProcessProvider::Codex,
+            "/tmp",
+            "/bin/sh -c 'exit 7' --",
+            None,
+            None,
+            Some(&prompt),
+            "",
+        );
+        let output = std::process::Command::new("/bin/zsh")
+            .args(["-f", "-c", &command])
+            .output()
+            .expect("test zsh");
+        assert_eq!(output.status.code(), Some(7));
+        assert!(!prompt.exists());
+        assert!(directory.path().exists());
     }
 }
 
