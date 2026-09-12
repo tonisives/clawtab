@@ -1,4 +1,4 @@
-import { machineOnboardingContent, machineManagementContent } from "../../src/components/MachineSetup";
+import { machineOnboardingChrome, machineOnboardingContent, machineManagementContent } from "../../src/components/MachineSetup";
 import { useMachines, useHiddenGroups, machineRequest, machineState, scopedMessage } from "@clawtab/shared";
 import { machineApi } from "../../src/api/client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
@@ -719,6 +719,7 @@ export default function JobsScreen() {
       <JobListView
         machineOnboarding={machineOnboardingContent}
         machineManagement={machineManagementContent}
+        machineChrome={machineOnboardingChrome}
         jobs={jobs}
         statuses={statuses}
         detectedProcesses={visibleDetectedProcesses}
@@ -761,8 +762,9 @@ export default function JobsScreen() {
 
   const mobileJobList = (
     <JobListView
-        machineOnboarding={machineOnboardingContent}
-        machineManagement={machineManagementContent}
+      machineOnboarding={machineOnboardingContent}
+      machineManagement={machineManagementContent}
+      machineChrome={machineOnboardingChrome}
       jobs={jobs}
       statuses={statuses}
       detectedProcesses={visibleDetectedProcesses}
@@ -1143,8 +1145,9 @@ export default function JobsScreen() {
         {!isIosPad ? sidebarHeader : null}
         <View style={styles.listPaneScrollArea}>
           <JobListView
-        machineOnboarding={machineOnboardingContent}
-        machineManagement={machineManagementContent}
+            machineOnboarding={machineOnboardingContent}
+            machineManagement={machineManagementContent}
+            machineChrome={machineOnboardingChrome}
             jobs={jobs}
             statuses={statuses}
             detectedProcesses={visibleDetectedProcesses}

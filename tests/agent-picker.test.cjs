@@ -99,6 +99,8 @@ test('native model selection keeps the popup open for effort selection', () => {
   assert.equal(model.keepOpen, true);
   model.onPress();
   popup = find(render(), (node) => Array.isArray(node.props?.items));
+  assert.equal(typeof popup.props.onBack, 'function');
+  assert.equal(popup.props.items.some((item) => item.label === 'Back to models'), false);
   let high = popup.props.items.find((item) => item.label.toLowerCase() === 'high');
   assert.ok(high);
   high.onPress();
@@ -206,10 +208,10 @@ let createGroupHarness = (fail = false) => {
   });
   let hook = { groupPreferencesApi: async () => ({}), setSearchQuery: () => {}, onListModeChange: (value) => { listMode = value; }, collapsedGroups: new Set() };
   let render = () => view.render(view.exports.AddGroup, { hook });
-  find(render(), (node) => node.type === 'Pressable').props.onPress();
+  find(render(), (node) => node.props?.label === 'Add group / machine').props.onPress();
   find(render(), (node) => node.props?.accessibilityLabel === 'Group name').props.onChangeText('Project');
   find(render(), (node) => node.props?.accessibilityLabel === 'Group folder').props.onChangeText('~/project');
-  let create = () => find(render(), (node) => node.type === 'Pressable' && node.props.children.props?.children === 'Create group').props.onPress();
+  let create = () => find(render(), (node) => node.props?.label === 'Create group').props.onPress();
   return { render, create, state, saved, requests, listMode: () => listMode };
 };
 

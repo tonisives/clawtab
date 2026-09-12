@@ -1,4 +1,4 @@
-import type { MachineOnboardingContent } from "../../machines/Onboarding";
+import type { MachineOnboardingChrome, MachineOnboardingContent } from "../../machines/Onboarding";
 import type { PreferencesApi, MachineMessage } from "../../machines/client";
 import type * as React from "react";
 import type { ScrollViewProps, StyleProp, ViewStyle } from "react-native";
@@ -28,6 +28,7 @@ export type GroupedRowPosition = "single" | "first" | "middle" | "last";
 export interface JobListViewProps {
   machineOnboarding?: MachineOnboardingContent;
   machineManagement?: MachineOnboardingContent;
+  machineChrome?: MachineOnboardingChrome;
   jobs: RemoteJob[];
   statuses: Record<string, JobStatus>;
   detectedProcesses: DetectedProcess[];

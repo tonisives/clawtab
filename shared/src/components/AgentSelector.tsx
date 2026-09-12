@@ -193,9 +193,10 @@ export function AgentSelector({
         <PopupMenu
           presentation={mode === "plus" ? "bottom-sheet" : "popup"}
           title={stage === "model" ? "Add agent" : "Choose effort"}
+          onBack={stage === "effort" ? () => setStage("model") : resetMenu}
           autoFocus={mode === "plus"}
           items={stage === "model" ? modelItems : [
-            { type: "item", label: "Back to models", keepOpen: true, onPress: () => setStage("model") },
+            ...(Platform.OS === "ios" ? [] : [{ type: "item" as const, label: "Back to models", keepOpen: true, onPress: () => setStage("model") }]),
             ...effortItems,
           ]}
           footer={machinePicker}

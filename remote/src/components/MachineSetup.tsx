@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react"
 import { Linking, Platform, Pressable, StyleSheet, Text, View } from "react-native"
+import { Ionicons } from "@expo/vector-icons"
+import { GlassView, isGlassEffectAPIAvailable } from "expo-glass-effect"
 import { useRouter } from "expo-router"
 import { openBrowserAsync } from "expo-web-browser"
-import { MachinesPanel, RentalsPanel, ConnectMachine, AddMachineButton, ManageMachinesButton, MachineOnboardingProvider, colors, type MachineOnboardingContent } from "@clawtab/shared"
+import { MachinesPanel, RentalsPanel, ConnectMachine, AddMachineButton, ManageMachinesButton, MachineOnboardingProvider, colors, type MachineActionButtonProps, type MachineOnboardingChrome, type MachineOnboardingContent } from "@clawtab/shared"
 import { approveMachinePairing, machineApi, rentalApi } from "../api/client"
 import { useAuthStore } from "../store/auth"
 import { resolveRentalAvailability, rentalAvailabilityMessage, type RentalAvailability, type RentalCapabilities } from "../lib/rentalAvailability"
@@ -15,6 +17,33 @@ let getStorefront = async () => {
 }
 export let machineOnboardingContent: MachineOnboardingContent = (close) => <MachineSetup onNavigate={close} />
 export let machineManagementContent: MachineOnboardingContent = (close) => <MachineSetup manage onNavigate={close} />
+
+let LiquidMachineActionButton = ({ label, onPress, accessibilityLabel, disabled, icon, style }: MachineActionButtonProps) => {
+  let glassAvailable = Platform.OS === "ios" && (() => {
+    try {
+      return isGlassEffectAPIAvailable()
+    } catch {
+      return false
+    }
+  })()
+  let button = <Pressable
+    accessibilityRole="button"
+    accessibilityLabel={accessibilityLabel ?? label}
+    disabled={disabled}
+    onPress={onPress}
+    style={({ pressed }) => [styles.liquidPressable, icon === "back" && styles.liquidBackPressable, pressed && styles.liquidPressed]}
+  >
+    {icon === "back" ? <Ionicons name="chevron-back" size={22} color={colors.text} /> : <Text style={styles.liquidAction}>{label}</Text>}
+  </Pressable>
+
+  return <View style={[styles.liquidFrame, icon === "back" && styles.liquidBackFrame, !glassAvailable && styles.liquidFallback, disabled && styles.liquidDisabled, style]}>
+    {glassAvailable ? <GlassView glassEffectStyle="regular" isInteractive colorScheme="dark" style={styles.liquidGlass}>{button}</GlassView> : button}
+  </View>
+}
+
+export let machineOnboardingChrome: MachineOnboardingChrome = {
+  renderActionButton: (props) => <LiquidMachineActionButton {...props} />,
+}
 
 export let MachineSetup = ({ onNavigate, manage = false }: { onNavigate?: () => void; manage?: boolean }) => {
   let authenticated = useAuthStore((state) => state.isAuthenticated)
@@ -41,7 +70,7 @@ export let MachineSetup = ({ onNavigate, manage = false }: { onNavigate?: () => 
     <Text style={styles.text}>Sign in to connect your machines and save groups across your ClawTab apps.</Text>
     <Pressable accessibilityRole="button" onPress={signIn} style={styles.button}><Text style={styles.action}>Sign in</Text></Pressable>
   </View>
-  return <MachineOnboardingProvider content={machineOnboardingContent} management={machineManagementContent}>
+  return <MachineOnboardingProvider content={machineOnboardingContent} management={machineManagementContent} chrome={machineOnboardingChrome}>
     {manage && <View style={styles.navigation}><AddMachineButton /></View>}
     <RentalsPanel showExistingRentals={manage} allowNewRentals={!manage} onOrderingChange={setOrdering} api={rentalApi} {...checkout} platform={Platform.OS === "ios" ? "ios" : Platform.OS === "android" ? "android" : "web"} openUrl={openCheckout} />
     {!manage && !checkout.purchases && <View style={styles.unavailable}>
@@ -66,4 +95,13 @@ let styles = StyleSheet.create({
   connection: { paddingTop: 16 },
   navigation: { padding: 16 },
   management: { paddingHorizontal: 16, paddingBottom: 16 },
+  liquidFrame: { minHeight: 44, borderRadius: 999, overflow: "hidden", alignSelf: "flex-start" },
+  liquidBackFrame: { width: 44, height: 44 },
+  liquidFallback: { backgroundColor: colors.groupedSurface, borderWidth: 1, borderColor: colors.border },
+  liquidGlass: { minHeight: 44, borderRadius: 999, overflow: "hidden" },
+  liquidPressable: { minHeight: 44, paddingHorizontal: 18, alignItems: "center", justifyContent: "center" },
+  liquidBackPressable: { width: 44, paddingHorizontal: 0 },
+  liquidPressed: { opacity: 0.72, transform: [{ scale: 0.97 }] },
+  liquidDisabled: { opacity: 0.45 },
+  liquidAction: { color: colors.accent, fontSize: 13, fontWeight: "600" },
 })
