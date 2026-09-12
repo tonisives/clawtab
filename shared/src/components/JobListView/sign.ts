@@ -156,7 +156,7 @@ export type ListItem =
   | { kind: "job"; job: RemoteJob; idx: number }
   | { kind: "process"; process: DetectedProcess; inGroup?: boolean }
   | { kind: "shell"; shell: ShellPane }
-  | { kind: "group-agent"; workDir: string; machineId?: string; footerPath?: string }
+  | { kind: "group-agent"; workDir: string; machineId?: string; sourceMachineId?: string; footerPath?: string }
   | { kind: "hidden-section" }
   | { kind: "hidden-header"; group: string; displayGroup: string };
 

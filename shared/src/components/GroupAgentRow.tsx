@@ -1,9 +1,10 @@
 import { AddMachineButton } from "../machines/Onboarding";
 import { useCallback, useRef, useState } from "react";
-import { Platform, StyleSheet, Text, View } from "react-native";
+import { Platform, StyleSheet, Text, TextInput, View } from "react-native";
 import { spacing } from "../theme/spacing";
 import type { AgentEffort, AgentModelOption, ProcessProvider } from "../types/process";
-import { useMachines, selectMachine } from "../machines/client";
+import { useMachines, selectMachine, machineHostRequest, type MachineMessage } from "../machines/client";
+import { defaultAgentFolder, resolveAgentFolder } from "../util/agentFolder";
 import { buildModelOptions } from "../util/agentModels";
 import { MachineTargetPicker } from "../machines/TargetPicker";
 import { colors } from "../theme/colors";
@@ -18,8 +19,10 @@ export function GroupAgentRow({
   workDir,
   localMachineId,
   targetMachineId,
+  sourceMachineId,
+  localHostRequest,
 }: {
-  onRunAgent: (prompt: string, provider?: ProcessProvider, model?: string | null, effort?: AgentEffort | null) => void | Promise<void>;
+  onRunAgent: (prompt: string, provider?: ProcessProvider, model?: string | null, effort?: AgentEffort | null, workDir?: string) => void | Promise<void>;
   provider?: ProcessProvider | null;
   model?: string | null;
   effort?: AgentEffort | null;
@@ -27,6 +30,8 @@ export function GroupAgentRow({
   workDir?: string;
   localMachineId?: string | null;
   targetMachineId?: string;
+  sourceMachineId?: string;
+  localHostRequest?: (request: MachineMessage) => Promise<MachineMessage>;
 }) {
   const sendingRef = useRef(false);
   let machines = useMachines();
@@ -36,6 +41,9 @@ export function GroupAgentRow({
   let target = targetMachineId ?? machines.selected ?? localMachineId ?? (hasLocal ? null : machines.machines.find((machine) => machine.online && machine.owned)?.id);
   let isLocal = hasLocal && (target == null || target === localMachineId);
   let machine = machines.machines.find((machine) => machine.id === target);
+  let [folders, setFolders] = useState<Record<string, string>>({});
+  let folderKey = target ?? "local";
+  let folder = folders[folderKey] ?? defaultAgentFolder(workDir, sourceMachineId ?? localMachineId, target);
   let settings = target ? machines.snapshots[target]?.settings_response : undefined;
   let options = machines.agentModels
     ? buildModelOptions(["claude", "codex", "opencode", "antigravity"], machines.agentModels.enabled_models)
@@ -58,14 +66,18 @@ export function GroupAgentRow({
     setError(null);
     selectMachine(target ?? null);
     try {
-      await onRunAgent("", nextProvider, modelId, nextEffort);
+      let request = isLocal ? localHostRequest : target ? (request: MachineMessage) => machineHostRequest(target, request) : undefined;
+      if (!request) throw new Error("Could not check the folder on this machine.");
+      let resolvedFolder = await resolveAgentFolder(folder, request);
+      selectMachine(target ?? null);
+      await onRunAgent("", nextProvider, modelId, nextEffort, resolvedFolder);
     } catch (error) {
       setError(error instanceof Error ? error.message : "Could not start agent");
     } finally {
       sendingRef.current = false;
       setBusy(false);
     }
-  }, [onRunAgent, target, isLocal, machine?.online, machine?.owned, settings]);
+  }, [onRunAgent, target, isLocal, machine?.online, machine?.owned, localHostRequest, folder]);
 
   return (
     <View
@@ -79,9 +91,16 @@ export function GroupAgentRow({
         model={model}
         effort={effort}
         modelOptions={options}
-        machinePicker={targetMachineId
+        machinePicker={<View>
+          <View style={styles.folder}>
+            <Text style={styles.folderLabel}>Folder on {machine?.name ?? "this desktop"}</Text>
+            <TextInput accessibilityLabel="Agent folder" value={folder} onChangeText={(value) => setFolders((previous) => ({ ...previous, [folderKey]: value }))} autoCapitalize="none" autoCorrect={false} editable={!busy} style={styles.folderInput} />
+            <Text style={styles.folderHint}>~ opens this machine’s home folder.</Text>
+          </View>
+          {targetMachineId
           ? <View><Text style={styles.status}>{machine?.name ?? (isLocal ? "This desktop" : "Group machine")}{!isLocal && !machine?.online ? " · Offline" : ""}</Text><AddMachineButton /></View>
           : <MachineTargetPicker target={target ?? null} localMachineId={localMachineId} onSelect={chooseTarget} />}
+        </View>}
         includeShell
         onChange={(selection) => launch(selection.provider, selection.modelId, selection.effort)}
         nativeBottomInset={88}
@@ -93,6 +112,10 @@ export function GroupAgentRow({
 }
 
 const styles = StyleSheet.create({
+  folder: { padding: spacing.sm, gap: spacing.xs },
+  folderLabel: { color: colors.textSecondary, fontSize: 12 },
+  folderHint: { color: colors.textSecondary, fontSize: 11 },
+  folderInput: { color: colors.text, borderWidth: 1, borderColor: colors.border, borderRadius: 8, padding: spacing.sm, fontSize: 13 },
   status: { color: colors.textSecondary, marginLeft: spacing.sm },
   error: { color: colors.danger, flexShrink: 1, marginLeft: spacing.sm },
   row: {

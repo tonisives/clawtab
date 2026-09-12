@@ -666,7 +666,7 @@ export function useJobListDerivedItems({
               if (onRunAgent) {
                 const groupWorkDir = entry.jobs[0]?.folder_path ?? entry.jobs[0]?.work_dir;
                 if (groupWorkDir) {
-                  result.push({ kind: "group-agent", workDir: groupWorkDir, footerPath: entry.folderPath });
+                  result.push({ kind: "group-agent", workDir: groupWorkDir, footerPath: entry.folderPath, sourceMachineId: entry.jobs[0]?.machine_id ?? splitResource(entry.jobs[0]?.name ?? "")?.machine });
                 }
               }
             } else {
@@ -679,7 +679,7 @@ export function useJobListDerivedItems({
               if (onRunAgent) {
                 const groupWorkDir = entry.jobs[0]?.folder_path ?? entry.jobs[0]?.work_dir;
                 if (groupWorkDir) {
-                  result.push({ kind: "group-agent", workDir: groupWorkDir, footerPath: entry.folderPath });
+                  result.push({ kind: "group-agent", workDir: groupWorkDir, footerPath: entry.folderPath, sourceMachineId: entry.jobs[0]?.machine_id ?? splitResource(entry.jobs[0]?.name ?? "")?.machine });
                 }
               }
             }
@@ -694,7 +694,7 @@ export function useJobListDerivedItems({
               result.push({ kind: "process", process: proc });
             }
             if (onRunAgent && entry.folderPath) {
-              result.push({ kind: "group-agent", workDir: entry.folderPath, footerPath: entry.folderPath });
+              result.push({ kind: "group-agent", workDir: entry.folderPath, footerPath: entry.folderPath, sourceMachineId: entry.procs[0]?.machine_id ?? splitResource(entry.procs[0]?.pane_id ?? "")?.machine });
             }
             if (entry.folderPath && !onRunAgent) {
               result.push({ kind: "group-footer", group: entry.groupKey, folderPath: entry.folderPath });

@@ -23,6 +23,9 @@ pub(super) fn run(
     rows: u16,
     sink: OutputSink,
 ) -> Result<SpawnResult, String> {
+    if !crate::tmux::pane_exists(pane_id) {
+        return Err("This terminal session has closed.".to_string());
+    }
     let spawn_started = Instant::now();
     log::info!(
         "[pty {}] spawn start session={} size={}x{}",

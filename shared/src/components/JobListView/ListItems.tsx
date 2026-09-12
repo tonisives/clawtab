@@ -275,7 +275,7 @@ function renderSingleItem(
     );
   }
   if (item.kind === "group-agent") {
-    return <JobListGroupAgentItem key={key} hook={hook} workDir={item.workDir} machineId={item.machineId} footerPath={item.footerPath} itemKey={key} />;
+    return <JobListGroupAgentItem key={key} hook={hook} workDir={item.workDir} machineId={item.machineId} sourceMachineId={item.sourceMachineId} footerPath={item.footerPath} itemKey={key} />;
   }
   if (item.kind === "hidden-section") {
     return <JobListHiddenSection key={key} hook={hook} itemKey={key} />;

@@ -1540,13 +1540,33 @@ pub fn new_session_with_placeholder(session: &str) -> Result<(), String> {
     )
 }
 
-/// `new-session -d -s <view_name> -t <base_session>`. Creates an ephemeral
-/// grouped view session sharing windows with `base_session`.
-pub fn new_grouped_view_session(view_name: &str, base_session: &str) -> Result<(), String> {
-    run_ok(
-        &["new-session", "-d", "-s", view_name, "-t", base_session],
-        "tmux::new_grouped_view_session",
+/// Link only the requested window. A viewer must end when that window closes,
+/// rather than switching to another window in the user's session group.
+pub fn new_window_view_session(view_name: &str, window_id: &str) -> Result<(), String> {
+    new_session_with_placeholder(view_name)?;
+    let placeholder = format!("{}:__tmp", view_name);
+    let result = run_ok(
+        &[
+            "link-window",
+            "-a",
+            "-d",
+            "-s",
+            window_id,
+            "-t",
+            &placeholder,
+        ],
+        "tmux::new_window_view_session",
     )
+    .and_then(|_| {
+        run_ok(
+            &["kill-window", "-t", &placeholder],
+            "tmux::remove_view_placeholder",
+        )
+    });
+    if result.is_err() {
+        let _ = kill_session(view_name);
+    }
+    result
 }
 
 /// `select-window -t <target>`. `target` is a `session:window_id` string.
@@ -1570,7 +1590,10 @@ pub fn refresh_session_clients(session: &str) -> Result<(), String> {
         "tmux::refresh_session_clients",
     )?;
     for client in clients.lines().filter(|client| !client.is_empty()) {
-        run_ok(&["refresh-client", "-t", client], "tmux::refresh_session_clients")?;
+        run_ok(
+            &["refresh-client", "-t", client],
+            "tmux::refresh_session_clients",
+        )?;
     }
     Ok(())
 }

@@ -318,6 +318,9 @@ pub fn build_agent_job(
     model: Option<String>,
     effort: Option<String>,
 ) -> Result<Job, String> {
+    if let Some(dir) = target_dir {
+        validate_agent_directory(dir)?;
+    }
     let agent_dir = agent_dir_path();
     std::fs::create_dir_all(&agent_dir)
         .map_err(|e| format!("Failed to create agent dir: {}", e))?;
@@ -410,4 +413,32 @@ pub fn build_agent_job(
         added_at: Some(chrono::Utc::now().to_rfc3339()),
         max_history: 3,
     })
+}
+
+fn validate_agent_directory(dir: &str) -> Result<(), String> {
+    let path = std::path::Path::new(dir);
+    if !path.is_absolute() || !path.is_dir() {
+        return Err(format!(
+            "Folder '{}' is not an existing directory on this machine. Choose a folder on the selected machine.",
+            dir
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod directory_tests {
+    use super::validate_agent_directory;
+
+    #[test]
+    fn rejects_foreign_machine_paths_before_starting_a_session() {
+        let temp = tempfile::tempdir().unwrap();
+        let missing = temp.path().join("missing-project");
+        assert!(validate_agent_directory(missing.to_str().unwrap()).is_err());
+        assert!(validate_agent_directory("~/project").is_err());
+        let file = temp.path().join("file");
+        std::fs::write(&file, "test").unwrap();
+        assert!(validate_agent_directory(file.to_str().unwrap()).is_err());
+        assert!(validate_agent_directory(temp.path().to_str().unwrap()).is_ok());
+    }
 }

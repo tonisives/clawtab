@@ -11,10 +11,11 @@ interface JobListGroupAgentItemProps {
   workDir: string;
   footerPath?: string;
   machineId?: string;
+  sourceMachineId?: string;
   itemKey: string;
 }
 
-export function JobListGroupAgentItem({ hook, workDir, footerPath, machineId, itemKey }: JobListGroupAgentItemProps) {
+export function JobListGroupAgentItem({ hook, workDir, footerPath, machineId, sourceMachineId, itemKey }: JobListGroupAgentItemProps) {
   let machines = useMachines();
   let machineName = machines.machines.find((machine) => machine.id === machineId)?.name;
   return (
@@ -22,13 +23,15 @@ export function JobListGroupAgentItem({ hook, workDir, footerPath, machineId, it
       <GroupAgentRow
         localMachineId={hook.localAgentMachineId}
         targetMachineId={machineId}
+        sourceMachineId={sourceMachineId ?? machineId}
+        localHostRequest={hook.localHostRequest}
         provider={hook.groupAgent.resolveGroupAgentProvider(workDir)}
         model={hook.groupAgent.resolveGroupAgentModel(workDir)}
         effort={hook.groupAgent.resolveGroupAgentEffort(workDir)}
         modelOptions={hook.agentModelOptions}
-        onRunAgent={(prompt, provider, model, effort) => {
+        onRunAgent={(prompt, provider, model, effort, resolvedWorkDir) => {
           if (provider) hook.groupAgent.handleSetGroupAgentModel(workDir, provider, model ?? null, effort ?? null);
-          return hook.onRunAgent?.(prompt, workDir, provider, model, effort);
+          return hook.onRunAgent?.(prompt, resolvedWorkDir ?? workDir, provider, model, effort);
         }}
         workDir={workDir}
       />
