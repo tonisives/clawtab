@@ -16,14 +16,14 @@ import { JobKindIcon, OptionButtons, PaneOverviewModal, XtermLog, compactPath, f
 import type { XtermLogHandle } from "@clawtab/shared";
 import { useWsStore } from "../../src/store/ws";
 import { getWsSend, nextId } from "../../src/lib/wsRuntime";
-import { registerRequest } from "../../src/lib/useRequestMap";
+import { stopSession } from "../../src/lib/stopSession";
 import { usePty } from "../../src/hooks/usePty";
 import { HeaderTitleWithIcon } from "../../src/components/HeaderButtons";
 import { LoadingBar } from "../../src/components/LoadingBar";
 import { useDetailBack } from "../../src/hooks/useDetailBack";
 import { useResponsive } from "../../src/hooks/useResponsive";
 import { useTerminalKeyboard } from "../../src/hooks/useTerminalKeyboard";
-import { confirm } from "../../src/lib/platform";
+import { alertError, confirm } from "../../src/lib/platform";
 import { jobRoute } from "../../src/lib/notificationRoutes";
 
 const KEYBOARD_TOOLBAR_HEIGHT = 48;
@@ -277,38 +277,24 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
   }, []);
 
   const doStop = useCallback(async () => {
-    const send = getWsSend();
-    if (!send || stopping) return;
+    if (stopping) return;
     setStopping(true);
-    const id = nextId();
-    send({ type: "stop_detected_process", id, pane_id });
-    const timeout = new Promise<void>((resolve) => setTimeout(resolve, 5000));
-    const ack = await Promise.race([
-      registerRequest<{ success?: boolean; error?: string }>(id),
-      timeout.then(() => null),
-    ]);
-    if (ack?.success !== false) {
+    try {
+      await stopSession(pane_id);
+      setShowPaneOverview(false);
       useJobsStore.getState().removeDetectedProcess(pane_id);
       if (router.canGoBack()) router.back();
       else router.replace("/(tabs)");
+    } catch (error) {
+      alertError("Could not stop session", error instanceof Error ? error.message : "Please try again.");
+    } finally {
+      setStopping(false);
     }
-    setStopping(false);
   }, [pane_id, router, stopping]);
 
   const handleStop = useCallback(() => {
-    confirm("Stop process", `Kill the Claude process in ${displayName}?`, doStop);
+    confirm("Stop session", `Close the terminal session in ${displayName} and stop any program running in it?`, doStop);
   }, [displayName, doStop]);
-
-  const [starting, setStarting] = useState(false);
-  const handleStart = useCallback(async () => {
-    const send = getWsSend();
-    if (!send || starting) return;
-    setStarting(true);
-    const workDir = (process ?? lastProcess)?.cwd;
-    const id = nextId();
-    send({ type: "run_agent", id, prompt: "", work_dir: workDir });
-    setTimeout(() => setStarting(false), 3000);
-  }, [lastProcess, process, starting]);
 
   const openPaneOverview = useCallback(() => setShowPaneOverview(true), []);
   const waitingHeaderOptions = useMemo(() => ({
@@ -455,10 +441,8 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
           onToggleAutoYes: handleToggleAutoYes,
           isPinned,
           onTogglePin: handleTogglePin,
-          onStop: isAlive ? handleStop : undefined,
+          onStop: handleStop,
           stopping,
-          onStart: !isAlive ? handleStart : undefined,
-          starting,
         }}
       />
     </View>

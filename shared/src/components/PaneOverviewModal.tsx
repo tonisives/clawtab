@@ -206,7 +206,7 @@ export const PaneOverviewModal = ({ visible, onClose, actions, ...pane }: PaneOv
                   onPress={actions.onStop}
                   disabled={actions.stopping}
                   accessibilityRole="button"
-                  accessibilityLabel="Stop process"
+                  accessibilityLabel="Stop session"
                 >
                   <Text style={[styles.actionText, styles.stopText]}>
                     {actions.stopping ? "Stopping..." : "Stop"}

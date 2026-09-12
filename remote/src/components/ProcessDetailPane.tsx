@@ -11,7 +11,8 @@ import type { XtermLogHandle } from "@clawtab/shared"
 import { getWsSend, nextId } from "../lib/wsRuntime"
 import { usePty } from "../hooks/usePty"
 import { registerRequest } from "../lib/useRequestMap"
-import { confirm } from "../lib/platform"
+import { alertError, confirm } from "../lib/platform"
+import { stopSession } from "../lib/stopSession"
 import type { Transport, RemoteJob, JobStatus } from "@clawtab/shared"
 import { useAgentActions } from "../hooks/useAgentActions"
 
@@ -23,16 +24,8 @@ function createProcessTransport(paneId: string, onStopped?: () => void): Transpo
     getStatuses: async () => ({}),
     runJob: noopRunJob,
     stopJob: async () => {
-      const send = getWsSend()
-      if (!send) return
-      const id = nextId()
-      send({ type: "stop_detected_process", id, pane_id: paneId })
-      const timeout = new Promise<void>((resolve) => setTimeout(resolve, 5000))
-      const ack = await Promise.race([
-        registerRequest<{ success?: boolean; error?: string }>(id),
-        timeout.then(() => null),
-      ])
-      if (ack?.success !== false) onStopped?.()
+      await stopSession(paneId)
+      onStopped?.()
     },
     pauseJob: noop,
     resumeJob: noop,
@@ -72,16 +65,8 @@ function createProcessTransport(paneId: string, onStopped?: () => void): Transpo
     subscribeLogs: () => () => {},
     runAgent: async () => null,
     sigintJob: async () => {
-      const send = getWsSend()
-      if (!send) return
-      const id = nextId()
-      send({ type: "stop_detected_process", id, pane_id: paneId })
-      const timeout = new Promise<void>((resolve) => setTimeout(resolve, 5000))
-      const ack = await Promise.race([
-        registerRequest<{ success?: boolean; error?: string }>(id),
-        timeout.then(() => null),
-      ])
-      if (ack?.success !== false) onStopped?.()
+      await stopSession(paneId)
+      onStopped?.()
     },
   }
 }
@@ -228,10 +213,12 @@ export function ProcessDetailPane({ paneId, onClose, embedded = false }: Process
   const [stopping, setStopping] = useState(false)
   const handleStop = useCallback(() => {
     if (stopping) return
-    confirm("Stop process", `Kill the Claude process in ${displayName}?`, async () => {
+    confirm("Stop session", `Close the terminal session in ${displayName} and stop any program running in it?`, async () => {
       setStopping(true)
       try {
         await transport.stopJob(paneId)
+      } catch (error) {
+        alertError("Could not stop session", error instanceof Error ? error.message : "Please try again.")
       } finally {
         setStopping(false)
       }
@@ -267,7 +254,8 @@ export function ProcessDetailPane({ paneId, onClose, embedded = false }: Process
     [sendInput, sendResize, ptyConnecting, ptyError],
   )
 
-  const isAlive = !!process
+  // Keep the terminal and its stop action available through login, startup, and shell prompts.
+  const isAlive = !!activeProcess
   const waitingForData = !process && !questions.some((q) => q.pane_id === paneId) && (!connected || !desktopOnline || !processesLoaded)
 
   if (waitingForData) {
@@ -346,7 +334,7 @@ export function ProcessDetailPane({ paneId, onClose, embedded = false }: Process
           onToggleAutoYes: handleToggleAutoYes,
           isPinned,
           onTogglePin: handleTogglePin,
-          onStop: isAlive ? handleStop : undefined,
+          onStop: handleStop,
           stopping,
           ...agentActionControls,
         }}
