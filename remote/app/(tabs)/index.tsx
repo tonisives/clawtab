@@ -695,7 +695,7 @@ export default function JobsScreen() {
     })
   }, [visibleDetectedProcesses, selectedProcess, processesLoaded, split.cleanStaleLeaves])
 
-  const jobListLoading = machines.machines.length ? jobListLoadingState({ connected: connected || machines.connected, desktopOnline: hostOnline, loaded }) : null
+  const jobListLoading = jobListLoadingState({ connected: connected || machines.connected, desktopOnline: hostOnline, loaded })
 
   const bannerContent = (
     <>
@@ -750,7 +750,7 @@ export default function JobsScreen() {
         onGroupTabViewChange={handleGroupTabViewChange}
         onSetAllGroupTabView={handleSetAllGroupTabView}
         headerContent={bannerContent}
-        showEmpty={loaded || machines.machines.length === 0}
+        showEmpty={loaded}
         emptyMessage={"Add a group or machine below to start your first agent."}
         searchQuery={searchQuery}
         onSearchQueryChange={setSearchQuery}
@@ -801,7 +801,7 @@ export default function JobsScreen() {
           {bannerContent}
         </>
       }
-      showEmpty={loaded || machines.machines.length === 0}
+      showEmpty={loaded}
       emptyMessage={"Add a group or machine below to start your first agent."}
       searchQuery={searchQuery}
       onSearchQueryChange={setSearchQuery}
@@ -1195,7 +1195,7 @@ export default function JobsScreen() {
                 {bannerContent}
               </>
             }
-            showEmpty={loaded || machines.machines.length === 0}
+            showEmpty={loaded}
             emptyMessage={
               "Add a group or machine below to start your first agent."
             }
