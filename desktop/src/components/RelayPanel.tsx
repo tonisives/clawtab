@@ -1,15 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { desktopMachineApi } from "../machines/connection";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ShareSection, retryMachines } from "@clawtab/shared";
 import type { ShareInfo, SharedWithMeInfo } from "@clawtab/shared";
-
-const GOOGLE_CLIENT_ID =
-  "186596496380-dp282va1mvdhrr2q7qrlbgmn3ak2mq07.apps.googleusercontent.com";
-
-const APPLE_WEB_CLIENT_ID = "cc.clawtab.web";
+import { pollRelayLogin, startRelayLogin } from "../relayLogin";
 
 interface RelaySettings {
   enabled: boolean;
@@ -59,6 +55,11 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
   const [serverUrl, setServerUrl] = useState("https://relay.clawtab.cc");
   const [deviceName, setDeviceName] = useState("");
   const [loginError, setLoginError] = useState<string | null>(null);
+  let [loginStatus, setLoginStatus] = useState("");
+  let [signingIn, setSigningIn] = useState(false);
+  let loginAttempt = useRef<AbortController | null>(null);
+  let restoringAccount = useRef(false);
+  let restoredToken = useRef<string | null>(null);
   const [editingServerUrl, setEditingServerUrl] = useState(false);
   const [tempServerUrl, setTempServerUrl] = useState("");
   const [accessToken, setAccessToken] = useState<string | null>(null);
@@ -90,24 +91,66 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
     });
   }, []);
 
-  // Restore access token from keychain if user signed in but didn't pair yet
+  let restoreAccount = useCallback(async () => {
+    if (restoringAccount.current || loginAttempt.current) return;
+    restoringAccount.current = true;
+    try {
+      let token = await invoke<string | null>("relay_restore_account");
+      if (loginAttempt.current) return;
+      if (token) {
+        setAccessToken(token);
+        setSigningIn(false);
+        setLoginError(null);
+        setLoginStatus("Signed in to your account.");
+        if (restoredToken.current !== token) retryMachines();
+        restoredToken.current = token;
+      } else {
+        restoredToken.current = null;
+        setAccessToken(null);
+        setLoginStatus("Sign in to load your account's machines and access settings.");
+      }
+    } catch {
+      if (!loginAttempt.current) setLoginError("Could not check your account session. Please try again.");
+    } finally {
+      restoringAccount.current = false;
+    }
+  }, []);
+
   useEffect(() => {
-    if (!loaded || settings?.device_token) return;
-    invoke<string | null>("relay_get_pending_token").then((token) => {
-      if (token) setAccessToken(token);
-    }).catch(() => {});
-  }, [loaded, settings]);
+    if (!loaded) return;
+    void restoreAccount();
+    let onVisible = () => { if (!document.hidden) void restoreAccount(); };
+    window.addEventListener("focus", restoreAccount);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener("focus", restoreAccount);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [loaded, restoreAccount]);
+
+  useEffect(() => () => loginAttempt.current?.abort(), []);
 
   // Accept access token from deep link callback
   useEffect(() => {
     if (externalAccessToken) {
-      setAccessToken(externalAccessToken);
-      setLoginError(null);
+      loginAttempt.current?.abort();
+      loginAttempt.current = null;
       if (externalRefreshToken) {
         invoke("relay_save_tokens", {
           accessToken: externalAccessToken,
           refreshToken: externalRefreshToken,
-        }).then(retryMachines).catch(() => setLoginError("Could not save your account session. Please try signing in again."));
+        }).then(() => {
+          setAccessToken(externalAccessToken);
+          setLoginError(null);
+          setSigningIn(false);
+          setLoginStatus("Signed in to your account.");
+          restoredToken.current = externalAccessToken;
+          retryMachines();
+        }).catch(() => {
+          setSigningIn(false);
+          setLoginStatus("");
+          setLoginError("Could not save your account session. Please try signing in again.");
+        });
       }
       onExternalTokenConsumed?.();
     }
@@ -143,73 +186,51 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
     }
   };
 
-  const pollForAuthResult = useCallback(async (sessionId: string) => {
-    for (let i = 0; i < 40; i++) {
-      await new Promise((r) => setTimeout(r, 3000));
-      try {
-        const resp = await fetch(`${serverUrl}/auth/session/${sessionId}`);
-        if (!resp.ok) continue;
-        const data = await resp.json();
-        if (data.status === "complete") {
-          setAccessToken(data.access_token);
-          setLoginError(null);
-          invoke("relay_save_tokens", {
-            accessToken: data.access_token,
-            refreshToken: data.refresh_token,
-          }).then(retryMachines).catch(() => setLoginError("Could not save your account session. Please try signing in again."));
+  let signIn = async (provider: "google" | "apple") => {
+    loginAttempt.current?.abort();
+    let attempt = new AbortController();
+    loginAttempt.current = attempt;
+    setSigningIn(true);
+    setLoginError(null);
+    setLoginStatus("Opening sign-in…");
+    let timedOut = false;
+    let timeout = window.setTimeout(() => { timedOut = true; attempt.abort(); }, 5 * 60_000);
+    try {
+      let url = await startRelayLogin(serverUrl, provider, attempt.signal, openUrl);
+      attempt.signal.throwIfAborted();
+      setLoginStatus("Finish signing in in your browser, then return here.");
+      while (!attempt.signal.aborted) {
+        let tokens = await pollRelayLogin(url, attempt.signal);
+        if (tokens) {
+          await invoke("relay_save_tokens", { accessToken: tokens.access_token, refreshToken: tokens.refresh_token });
+          attempt.signal.throwIfAborted();
+          setAccessToken(tokens.access_token);
+          restoredToken.current = tokens.access_token;
+          setLoginStatus("Signed in to your account.");
+          retryMachines();
           return;
         }
-      } catch {
-        // network error, keep polling
+        await new Promise((resolve) => window.setTimeout(resolve, 3000));
+      }
+    } catch (error) {
+      if (!attempt.signal.aborted) {
+        setLoginStatus("");
+        setLoginError(error instanceof Error ? error.message : "Could not complete sign-in. Please try again.");
+      }
+    } finally {
+      window.clearTimeout(timeout);
+      if (loginAttempt.current === attempt) {
+        loginAttempt.current = null;
+        setSigningIn(false);
+        if (timedOut) {
+          setLoginStatus("");
+          setLoginError("Sign-in timed out. Please start sign-in again.");
+        }
       }
     }
-  }, [serverUrl]);
-
-  const toBase64Url = (s: string) =>
-    btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-
-  const handleGoogleSignIn = async () => {
-    const sessionId = crypto.randomUUID();
-    const state = toBase64Url(`clawtab:${sessionId}`);
-    await fetch(`${serverUrl}/auth/session`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: sessionId }),
-    }).catch(() => {});
-    const redirectUri = `${serverUrl}/auth/google/callback`;
-    const params = new URLSearchParams({
-      client_id: GOOGLE_CLIENT_ID,
-      redirect_uri: redirectUri,
-      response_type: "code",
-      scope: "openid email profile",
-      state,
-      access_type: "offline",
-      prompt: "consent",
-    });
-    await openUrl(`https://accounts.google.com/o/oauth2/v2/auth?${params}`);
-    pollForAuthResult(sessionId);
   };
-
-  const handleAppleSignIn = async () => {
-    const sessionId = crypto.randomUUID();
-    const state = toBase64Url(`clawtab:${sessionId}`);
-    await fetch(`${serverUrl}/auth/session`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: sessionId }),
-    }).catch(() => {});
-    const redirectUri = `${serverUrl}/auth/apple/callback`;
-    const params = new URLSearchParams({
-      client_id: APPLE_WEB_CLIENT_ID,
-      redirect_uri: redirectUri,
-      response_type: "code id_token",
-      response_mode: "form_post",
-      scope: "name email",
-      state,
-    });
-    await openUrl(`https://appleid.apple.com/auth/authorize?${params}`);
-    pollForAuthResult(sessionId);
-  };
+  let handleGoogleSignIn = () => signIn("google");
+  let handleAppleSignIn = () => signIn("apple");
 
   const handlePairDevice = async () => {
     if (!accessToken || !deviceName) return;
@@ -241,6 +262,8 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
       if (msg.startsWith(UNAUTHORIZED_PREFIX)) {
         await invoke("relay_sign_out").catch(() => {});
         setAccessToken(null);
+        restoredToken.current = null;
+        setLoginStatus("");
         setPairError(null);
         setLoginError("Session expired — please sign in again.");
       } else {
@@ -252,12 +275,17 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
   };
 
   const handleSignOut = async () => {
+    loginAttempt.current?.abort();
+    loginAttempt.current = null;
     try {
       await invoke("relay_sign_out");
     } catch (e) {
       console.error("Sign out failed:", e);
     }
     setAccessToken(null);
+    restoredToken.current = null;
+    setLoginStatus("");
+    setSigningIn(false);
     setPairError(null);
     setLoginError(null);
     const st = await invoke<RelayStatus>("get_relay_status");
@@ -416,6 +444,8 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
               )}
             </div>
 
+            {loginStatus && <p role="status">{loginStatus}</p>}
+
             {!accessToken && (
               <>
                 {loginError && (
@@ -428,7 +458,7 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
                   <button
                     className="btn"
                     onClick={handleAppleSignIn}
-
+                    disabled={signingIn}
                     style={{ width: "100%", boxSizing: "border-box" }}
                   >
                     Sign in with Apple
@@ -437,7 +467,7 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
                   <button
                     className="btn"
                     onClick={handleGoogleSignIn}
-
+                    disabled={signingIn}
                     style={{ width: "100%", boxSizing: "border-box" }}
                   >
                     Sign in with Google
@@ -541,9 +571,11 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
               while this desktop stays connected.
             </p>
             <div className="btn-group">
-              <button className="btn" onClick={handleAppleSignIn}>Sign in with Apple</button>
-              <button className="btn" onClick={handleGoogleSignIn}>Sign in with Google</button>
+              <button className="btn" onClick={handleAppleSignIn} disabled={signingIn}>Sign in with Apple</button>
+              <button className="btn" onClick={handleGoogleSignIn} disabled={signingIn}>Sign in with Google</button>
+              <button className="btn" onClick={restoreAccount} disabled={signingIn}>Check sign-in</button>
             </div>
+            {loginStatus && <p role="status">{loginStatus}</p>}
             {loginError && <p role="alert">{loginError}</p>}
           </div>
           <div className="field-group">

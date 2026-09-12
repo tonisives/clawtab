@@ -265,6 +265,51 @@ pub fn relay_get_pending_token(state: State<AppState>) -> Result<Option<String>,
         .filter(|t| !t.is_empty()))
 }
 
+/// Recover an account sign-in handled by another installed desktop copy.
+/// Only reload the two account keys; an invalid session requires owner sign-in.
+#[tauri::command]
+pub async fn relay_restore_account(state: State<'_, AppState>) -> Result<Option<String>, String> {
+    let server = state
+        .settings
+        .lock()
+        .relay
+        .as_ref()
+        .map(|settings| settings.server_url.clone())
+        .filter(|url| !url.is_empty())
+        .unwrap_or_else(|| "https://relay.clawtab.cc".into());
+    let access = {
+        let mut secrets = state.secrets.lock();
+        secrets.reload_keys(&[KEYCHAIN_ACCESS_TOKEN_KEY, KEYCHAIN_REFRESH_TOKEN_KEY]);
+        secrets
+            .get(KEYCHAIN_ACCESS_TOKEN_KEY)
+            .cloned()
+            .unwrap_or_default()
+    };
+    if access.is_empty() {
+        return Ok(None);
+    }
+    let response = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|_| "Could not check your account session".to_string())?
+        .get(format!("{}/machines", server.trim_end_matches('/')))
+        .bearer_auth(&access)
+        .send()
+        .await
+        .map_err(|_| "Could not reach the relay to check your account session".to_string())?;
+    if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+        return Ok(None);
+    }
+    if !response.status().is_success() {
+        return Err(format!(
+            "Could not check your account session (HTTP {})",
+            response.status().as_u16()
+        ));
+    }
+    Ok(Some(access))
+}
+
 #[derive(Serialize)]
 pub struct SubscriptionCheckResult {
     pub subscribed: bool,

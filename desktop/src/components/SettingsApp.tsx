@@ -247,7 +247,6 @@ export function SettingsApp() {
     // Check for deep links that arrived before listener was registered
     getCurrent().then((urls) => {
       if (urls && urls.length > 0) {
-        console.log("getCurrent deep links:", urls);
         handleDeepLinks(urls);
       }
     }).catch((e) => console.error("getCurrent failed:", e));
@@ -255,7 +254,6 @@ export function SettingsApp() {
     let unlisten: ReturnType<typeof onOpenUrl> | null = null;
     try {
       unlisten = onOpenUrl((urls) => {
-        console.log("onOpenUrl fired:", urls);
         handleDeepLinks(urls);
       });
     } catch (e) {

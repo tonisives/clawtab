@@ -43,6 +43,10 @@ impl SecretsManager {
         self.keychain.reload();
     }
 
+    pub fn reload_keys(&mut self, keys: &[&str]) {
+        self.keychain.reload_keys(keys);
+    }
+
     /// List all secret keys with their source
     pub fn list_entries(&self) -> Vec<SecretEntry> {
         let mut entries: Vec<SecretEntry> = self
