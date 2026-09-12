@@ -1,5 +1,5 @@
 import { encodeTerminalInput } from "../util/terminalInput";
-import { useRef, useImperativeHandle, forwardRef, useCallback, useState } from "react";
+import { useRef, useImperativeHandle, forwardRef, useCallback } from "react";
 import { View, StyleSheet, TextInput, Platform, Pressable } from "react-native";
 import { TERMINAL_CUSTOM_GLYPHS, TERMINAL_FONT_FAMILY, TERMINAL_FONT_SIZE, TERMINAL_LINE_HEIGHT } from "../theme/terminal";
 
@@ -353,7 +353,6 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
     const readyRef = useRef(false);
     const pendingWritesRef = useRef<string[]>([]);
     const nativeInputValueRef = useRef("");
-    const [nativeInputValue, setNativeInputValue] = useState("");
 
     const sendNativeInput = useCallback(
       (text: string) => {
@@ -364,9 +363,7 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
     );
 
     const setNativeInputBuffer = useCallback((value: string) => {
-      const next = value.slice(-40);
-      nativeInputValueRef.current = next;
-      setNativeInputValue(next);
+      nativeInputValueRef.current = value;
     }, []);
 
     const focusNativeInput = useCallback(() => {
@@ -523,7 +520,9 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
           <TextInput
             ref={nativeInputRef}
             style={styles.nativeInput}
-            value={nativeInputValue}
+            // Keep the native edit buffer authoritative. Feeding a truncated value
+            // back into it races queued iOS edits and repeats characters.
+            defaultValue=""
             onChangeText={handleNativeInputChange}
             onKeyPress={handleNativeKeyPress}
             onSubmitEditing={() => sendNativeInput("\r")}
