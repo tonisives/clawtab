@@ -7,6 +7,7 @@ import { ShareSection } from "@clawtab/shared";
 import type { ShareInfo, SharedWithMeInfo } from "@clawtab/shared";
 import { pollRelayLogin, startRelayLogin } from "../relayLogin";
 import { acceptRemoteSignIn, beginRemoteSignIn, checkRemoteConnection, connectRemoteConnection, disconnectRemoteConnection, useRemoteConnection } from "../machines/remoteConnection";
+import { RemoteConnectionStatus } from "./RemoteConnectionStatus";
 
 interface RelaySettings {
   enabled: boolean;
@@ -343,9 +344,9 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
 
   let accountControls = (
     <>
-      <p role="status">
-        {signingIn && !accessToken ? loginStatus : remote.label}
-      </p>
+      {signingIn && !accessToken
+        ? <p role="status">{loginStatus}</p>
+        : <RemoteConnectionStatus label={remote.label} phase={remote.phase} />}
       {(loginError || remote.error) && <p role="alert">{loginError || remote.error}</p>}
       <div className="btn-group">
         {accessToken ? (

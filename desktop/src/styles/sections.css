@@ -105,6 +105,29 @@
   margin-bottom: 10px;
 }
 
+.remote-connection-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.remote-connection-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+}
+
+.remote-connection-dot-connected {
+  background: var(--success-color);
+}
+
+.remote-connection-dot-interrupted,
+.remote-connection-dot-subscription {
+  background: var(--danger-color);
+}
+
 .usage-pace {
   margin: 10px 0 12px;
 }
