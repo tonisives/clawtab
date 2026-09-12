@@ -1,5 +1,4 @@
 import { subscribeMachines, machineState } from "@clawtab/shared";
-import { useDesktopMachines } from "../../machines/connection";
 import { RepositoryProvider } from "../RepositoryPanel";
 import { useEffect, useCallback, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { RemoteJob } from "@clawtab/shared";
@@ -58,7 +57,6 @@ function findTopLeftLeafId(tree: SplitNode | null): string | null {
 }
 
 export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, importCwtKey, pendingPaneId, onPaneHandled, navBar, rightPanelOverlay, onJobSelected, onOpenSettings, onSelectView }: JobsTabProps) {
-  useDesktopMachines();
   const core = useJobsCore(transport, 10000);
   useEffect(() => {
     let previous = machineState();

@@ -157,7 +157,8 @@ pub async fn relay_pair_device(
     let url = format!("{}/devices/pair", server_url);
 
     let (access_token, refresh_token) = {
-        let secrets = state.secrets.lock();
+        let mut secrets = state.secrets.lock();
+        secrets.reload_keys(&[KEYCHAIN_ACCESS_TOKEN_KEY, KEYCHAIN_REFRESH_TOKEN_KEY]);
         (
             secrets
                 .get(KEYCHAIN_ACCESS_TOKEN_KEY)
@@ -355,7 +356,8 @@ pub async fn relay_check_subscription(
     }
 
     let (access_token, refresh_token_val) = {
-        let secrets = state.secrets.lock();
+        let mut secrets = state.secrets.lock();
+        secrets.reload_keys(&[KEYCHAIN_ACCESS_TOKEN_KEY, KEYCHAIN_REFRESH_TOKEN_KEY]);
         (
             secrets
                 .get(KEYCHAIN_ACCESS_TOKEN_KEY)
@@ -379,8 +381,14 @@ pub async fn relay_check_subscription(
             // Save refreshed tokens if we got new ones
             if let (Some(at), Some(rt)) = (new_access, new_refresh) {
                 let mut secrets = state.secrets.lock();
-                let _ = secrets.set(KEYCHAIN_ACCESS_TOKEN_KEY, &at);
-                let _ = secrets.set(KEYCHAIN_REFRESH_TOKEN_KEY, &rt);
+                secrets.reload_keys(&[KEYCHAIN_ACCESS_TOKEN_KEY, KEYCHAIN_REFRESH_TOKEN_KEY]);
+                if secrets.get(KEYCHAIN_ACCESS_TOKEN_KEY) != Some(&access_token)
+                    || secrets.get(KEYCHAIN_REFRESH_TOKEN_KEY) != Some(&refresh_token_val)
+                {
+                    return Err("Account session changed. Please retry.".into());
+                }
+                secrets.set(KEYCHAIN_ACCESS_TOKEN_KEY, &at)?;
+                secrets.set(KEYCHAIN_REFRESH_TOKEN_KEY, &rt)?;
             }
             *state.relay_sub_required.lock() = !subscribed;
             Ok(SubscriptionCheckResult { subscribed })
@@ -429,7 +437,8 @@ fn get_relay_auth(state: &AppState) -> Result<(String, String, String), String> 
         return Err("No relay server configured".to_string());
     }
     let (access_token, refresh_token) = {
-        let secrets = state.secrets.lock();
+        let mut secrets = state.secrets.lock();
+        secrets.reload_keys(&[KEYCHAIN_ACCESS_TOKEN_KEY, KEYCHAIN_REFRESH_TOKEN_KEY]);
         (
             secrets
                 .get(KEYCHAIN_ACCESS_TOKEN_KEY)
@@ -495,13 +504,14 @@ async fn relay_request(
         // Save refreshed tokens
         {
             let mut secrets = state.secrets.lock();
+            secrets.reload_keys(&[KEYCHAIN_ACCESS_TOKEN_KEY, KEYCHAIN_REFRESH_TOKEN_KEY]);
             if secrets.get(KEYCHAIN_ACCESS_TOKEN_KEY).map(String::as_str) != Some(access_token)
                 || secrets.get(KEYCHAIN_REFRESH_TOKEN_KEY).map(String::as_str) != Some(refresh_token)
             {
                 return Err("Account session changed. Please retry.".into());
             }
-            let _ = secrets.set(KEYCHAIN_ACCESS_TOKEN_KEY, &new_access);
-            let _ = secrets.set(KEYCHAIN_REFRESH_TOKEN_KEY, &new_refresh);
+            secrets.set(KEYCHAIN_ACCESS_TOKEN_KEY, &new_access)?;
+            secrets.set(KEYCHAIN_REFRESH_TOKEN_KEY, &new_refresh)?;
         }
 
         let mut retry = client

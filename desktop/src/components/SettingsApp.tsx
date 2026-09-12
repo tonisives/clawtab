@@ -1,3 +1,4 @@
+import { useDesktopMachines } from "../machines/connection";
 import { useEffect, useRef, useState, type UIEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -78,6 +79,7 @@ const tabIcons: Partial<Record<TabId, React.ReactNode>> = {
 };
 
 export function SettingsApp() {
+  useDesktopMachines();
   const [activeTab, setActiveTab] = useState<TabId>(readStoredTab);
   const [jobsResetKey, setJobsResetKey] = useState(0);
   const [showWizard, setShowWizard] = useState(false);

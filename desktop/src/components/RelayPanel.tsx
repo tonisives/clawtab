@@ -3,9 +3,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { desktopMachineApi, resetDesktopAccount } from "../machines/connection";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { ShareSection, retryMachines } from "@clawtab/shared";
+import { ShareSection } from "@clawtab/shared";
 import type { ShareInfo, SharedWithMeInfo } from "@clawtab/shared";
 import { pollRelayLogin, startRelayLogin } from "../relayLogin";
+import { acceptRemoteSignIn, beginRemoteSignIn, checkRemoteConnection, connectRemoteConnection, disconnectRemoteConnection, useRemoteConnection } from "../machines/remoteConnection";
 
 interface RelaySettings {
   enabled: boolean;
@@ -15,15 +16,6 @@ interface RelaySettings {
   device_name: string;
 }
 
-interface RelayStatus {
-  enabled: boolean;
-  connected: boolean;
-  subscription_required: boolean;
-  auth_expired: boolean;
-  configured: boolean;
-  server_url: string;
-  device_name: string;
-}
 
 const UNAUTHORIZED_PREFIX = "UNAUTHORIZED:";
 
@@ -45,7 +37,9 @@ interface RelayPanelProps {
 
 export function RelayPanel({ externalAccessToken, externalRefreshToken, onExternalTokenConsumed }: RelayPanelProps) {
   const [settings, setSettings] = useState<RelaySettings | null>(null);
-  const [status, setStatus] = useState<RelayStatus | null>(null);
+  let remote = useRemoteConnection();
+  let accessToken = remote.token;
+  let checkingAccount = remote.account === "checking";
   const [loaded, setLoaded] = useState(false);
   const [showConfirmRemove, setShowConfirmRemove] = useState(false);
   let [removingRelay, setRemovingRelay] = useState(false);
@@ -57,20 +51,15 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
   const [loginError, setLoginError] = useState<string | null>(null);
   let [loginStatus, setLoginStatus] = useState("");
   let [signingIn, setSigningIn] = useState(false);
-  let [checkingAccount, setCheckingAccount] = useState(true);
   let [signingOut, setSigningOut] = useState(false);
   let accountVersion = useRef(0);
   let signingOutRef = useRef(false);
   let ignoreCallbacks = useRef(false);
   let loginAttempt = useRef<AbortController | null>(null);
-  let restoringAccount = useRef(false);
-  let restoredToken = useRef<string | null>(null);
   const [editingServerUrl, setEditingServerUrl] = useState(false);
   const [tempServerUrl, setTempServerUrl] = useState("");
-  const [accessToken, setAccessToken] = useState<string | null>(null);
   const [pairing, setPairing] = useState(false);
   const [pairError, setPairError] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
 
   // Sharing state
   const [shares, setShares] = useState<SharesResponse>({ shared_by_me: [], shared_with_me: [] });
@@ -81,11 +70,9 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
   useEffect(() => {
     Promise.all([
       invoke<RelaySettings | null>("get_relay_settings"),
-      invoke<RelayStatus>("get_relay_status"),
       invoke<string>("get_hostname"),
-    ]).then(([s, st, hostname]) => {
+    ]).then(([s, hostname]) => {
       setSettings(s);
-      setStatus(st);
       if (s) {
         setServerUrl(s.server_url || "https://relay.clawtab.cc");
         setDeviceName(s.device_name || "");
@@ -95,47 +82,6 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
       setLoaded(true);
     });
   }, []);
-
-  let restoreAccount = useCallback(async () => {
-    if (restoringAccount.current || loginAttempt.current || signingOutRef.current || ignoreCallbacks.current) return;
-    let version = accountVersion.current;
-    restoringAccount.current = true;
-    try {
-      let token = await invoke<string | null>("relay_restore_account");
-      if (version !== accountVersion.current || loginAttempt.current) return;
-      if (token) {
-        setAccessToken(token);
-        setSigningIn(false);
-        setLoginError(null);
-        setLoginStatus("Signed in to your account.");
-        if (restoredToken.current !== token) retryMachines();
-        restoredToken.current = token;
-      } else {
-        if (restoredToken.current) resetDesktopAccount();
-        restoredToken.current = null;
-        setAccessToken(null);
-        setLoginStatus("");
-        setLoginError(null);
-      }
-    } catch {
-      if (version === accountVersion.current && !loginAttempt.current) setLoginError("Could not check your account session. It will be checked again when you return to this window.");
-    } finally {
-      restoringAccount.current = false;
-      if (version === accountVersion.current) setCheckingAccount(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!loaded) return;
-    void restoreAccount();
-    let onVisible = () => { if (!document.hidden) void restoreAccount(); };
-    window.addEventListener("focus", restoreAccount);
-    document.addEventListener("visibilitychange", onVisible);
-    return () => {
-      window.removeEventListener("focus", restoreAccount);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
-  }, [loaded, restoreAccount]);
 
   useEffect(() => () => loginAttempt.current?.abort(), []);
 
@@ -153,19 +99,15 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
         invoke("relay_save_tokens", {
           accessToken: externalAccessToken,
           refreshToken: externalRefreshToken,
-        }).then(() => {
+        }).then(async () => {
           if (version !== accountVersion.current) return;
-          setAccessToken(externalAccessToken);
+          await acceptRemoteSignIn(externalAccessToken);
           setLoginError(null);
           setSigningIn(false);
-          setCheckingAccount(false);
           setLoginStatus("Signed in to your account.");
-          restoredToken.current = externalAccessToken;
-          retryMachines();
         }).catch(() => {
           if (version !== accountVersion.current) return;
           setSigningIn(false);
-          setCheckingAccount(false);
           setLoginStatus("");
           setLoginError("Could not save your account session. Please try signing in again.");
         });
@@ -173,15 +115,6 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
       onExternalTokenConsumed?.();
     }
   }, [externalAccessToken]);
-
-  // Poll connection status
-  useEffect(() => {
-    if (!loaded) return;
-    const interval = setInterval(() => {
-      invoke<RelayStatus>("get_relay_status").then(setStatus);
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [loaded]);
 
   const isConfigured = settings && settings.device_token && settings.server_url;
 
@@ -210,8 +143,8 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
 
   let signIn = async (provider: "google" | "apple") => {
     accountVersion.current++;
+    beginRemoteSignIn();
     ignoreCallbacks.current = false;
-    setCheckingAccount(false);
     setEditingServerUrl(false);
     loginAttempt.current?.abort();
     let attempt = new AbortController();
@@ -230,10 +163,8 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
         if (tokens) {
           await invoke("relay_save_tokens", { accessToken: tokens.access_token, refreshToken: tokens.refresh_token });
           attempt.signal.throwIfAborted();
-          setAccessToken(tokens.access_token);
-          restoredToken.current = tokens.access_token;
+          await acceptRemoteSignIn(tokens.access_token);
           setLoginStatus("Signed in to your account.");
-          retryMachines();
           return;
         }
         await new Promise((resolve) => window.setTimeout(resolve, 3000));
@@ -259,6 +190,7 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
   let handleAppleSignIn = () => signIn("apple");
   let cancelSignIn = () => {
     accountVersion.current++;
+    beginRemoteSignIn();
     ignoreCallbacks.current = true;
     loginAttempt.current?.abort();
     loginAttempt.current = null;
@@ -284,19 +216,11 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
       };
       await invoke("set_relay_settings", { settings: newSettings });
       setSettings(newSettings);
-      try {
-        await invoke("relay_connect");
-      } catch {
-        // will retry on next app start
-      }
-      const st = await invoke<RelayStatus>("get_relay_status");
-      setStatus(st);
+      await connectRemoteConnection();
     } catch (e) {
       const msg = String(e);
       if (msg.startsWith(UNAUTHORIZED_PREFIX)) {
-        await invoke("relay_sign_out").catch(() => {});
-        setAccessToken(null);
-        restoredToken.current = null;
+        await disconnectRemoteConnection().catch(() => {});
         setLoginStatus("");
         setPairError(null);
         setLoginError("Session expired — please sign in again.");
@@ -317,12 +241,9 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
     loginAttempt.current?.abort();
     loginAttempt.current = null;
     try {
-      await invoke("relay_sign_out");
-      setAccessToken(null);
-      restoredToken.current = null;
+      await disconnectRemoteConnection();
       setLoginStatus("");
       setSigningIn(false);
-      setCheckingAccount(false);
       setPairError(null);
       setRemovingShare(null);
       setShowConfirmRemove(false);
@@ -353,30 +274,11 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
         settings: { enabled: false, server_url: "", device_token: "", device_id: "", device_name: "" },
       });
       setSettings(null);
-      const st = await invoke<RelayStatus>("get_relay_status");
-      setStatus(st);
+      await checkRemoteConnection();
     } catch (e) {
       setRemoveError(e instanceof Error ? e.message : "Could not remove this machine. Please retry.");
     } finally {
       setRemovingRelay(false);
-    }
-  };
-
-  const handleToggleEnabled = async (enabled: boolean) => {
-    if (!settings) return;
-    const updated = { ...settings, enabled };
-    try {
-      await invoke("set_relay_settings", { settings: updated });
-      setSettings(updated);
-      if (enabled) {
-        await invoke("relay_connect");
-      } else {
-        await invoke("relay_disconnect");
-      }
-      const st = await invoke<RelayStatus>("get_relay_status");
-      setStatus(st);
-    } catch (e) {
-      console.error("Failed to toggle relay:", e);
     }
   };
 
@@ -442,20 +344,31 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
   let accountControls = (
     <>
       <p role="status">
-        {checkingAccount ? "Checking your account…"
-          : signingOut ? "Signing out…"
-          : accessToken ? "Signed in to your account."
-          : loginStatus || "Sign in to manage your machines and sharing."}
+        {signingIn && !accessToken ? loginStatus : remote.label}
       </p>
-      {loginError && <p role="alert">{loginError}</p>}
+      {(loginError || remote.error) && <p role="alert">{loginError || remote.error}</p>}
       <div className="btn-group">
         {accessToken ? (
-          <button className="btn" onClick={handleSignOut} disabled={signingOut || pairing}>
-            {signingOut ? "Signing out…" : "Sign out"}
-          </button>
+          <>
+            {remote.phase === "subscription" && <button className="btn btn-primary" onClick={async () => {
+              try {
+                let response = await fetch("https://backend.clawtab.cc/subscription/payment-link");
+                let { url } = await response.json();
+                await openUrl(url);
+              } catch {
+                await openUrl("https://buy.stripe.com/14AdRaemTbqlaF2bUL0Jq01");
+              }
+            }}>Subscribe</button>}
+            {isConfigured && remote.phase !== "connected" && <button className="btn btn-primary" onClick={connectRemoteConnection} disabled={!!remote.operation}>
+              {remote.operation === "connect" ? "Connecting…" : "Connect"}
+            </button>}
+            <button className="btn" onClick={handleSignOut} disabled={signingOut || pairing || !!remote.operation}>
+              {signingOut ? "Disconnecting…" : "Sign out"}
+            </button>
+          </>
         ) : signingIn ? (
           <button className="btn" onClick={cancelSignIn}>Cancel sign-in</button>
-        ) : !checkingAccount && (
+        ) : (!checkingAccount || remote.error) && (
           <>
             <button className="btn" onClick={handleAppleSignIn}>Sign in with Apple</button>
             <button className="btn" onClick={handleGoogleSignIn}>Sign in with Google</button>
@@ -475,22 +388,6 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
       {!isConfigured ? (
         <div className="field-group">
           <span className="field-group-title">Setup</span>
-
-          {status?.auth_expired && !accessToken && !checkingAccount && (
-            <div
-              style={{
-                background: "var(--warning-bg, rgba(217, 119, 6, 0.12))",
-                border: "1px solid var(--warning-color, #d97706)",
-                borderRadius: 6,
-                padding: "10px 12px",
-                marginBottom: 16,
-                fontSize: 12,
-                color: "var(--warning-color, #d97706)",
-              }}
-            >
-              Your session expired. Sign in again to pair this device.
-            </div>
-          )}
 
           {/* Step 1: Login */}
           <div>
@@ -594,115 +491,12 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
       ) : (
         <>
           <div className="field-group">
-            <span className="field-group-title">Account</span>
+            <span className="field-group-title">Connection</span>
             {accountControls}
-            <p className="section-description">
-              Signing out of your account keeps this Mac paired for remote access.
-              To disconnect it, turn off remote access below.
-            </p>
+            <p className="section-description">Signing out disconnects ClawTab from remote access.</p>
           </div>
           <div className="field-group">
-            <span className="field-group-title">Connection</span>
-
-            <div className="form-group">
-              <label>This machine</label>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: "50%",
-                    background: status?.connected
-                      ? "var(--success-color)"
-                      : status?.subscription_required
-                        ? "#d97706"
-                        : "var(--text-secondary)",
-                    display: "inline-block",
-                  }}
-                />
-                <span style={{ fontSize: 13, color: status?.subscription_required ? "#d97706" : undefined }}>
-                  {status?.connected
-                    ? "Connected"
-                    : status?.subscription_required
-                      ? "No subscription"
-                      : "Disconnected"}
-                </span>
-              </div>
-              {settings.enabled && !status?.connected && !status?.subscription_required && (
-                <div
-                  style={{
-                    marginTop: 12,
-                    background: "var(--warning-bg, rgba(217, 119, 6, 0.12))",
-                    border: "1px solid var(--warning-color, #d97706)",
-                    borderRadius: 6,
-                    padding: "10px 12px",
-                    fontSize: 12,
-                    color: "var(--warning-color, #d97706)",
-                  }}
-                >
-                  <div style={{ marginBottom: 8 }}>
-                    Not connected to the relay. Your phone cannot reach this device.
-                  </div>
-                  <button
-                    className="btn"
-                    disabled={refreshing}
-                    onClick={async () => {
-                      setRefreshing(true);
-                      try {
-                        await invoke("relay_disconnect");
-                        await invoke("relay_connect");
-                        await new Promise((r) => setTimeout(r, 2000));
-                      } catch {}
-                      const st = await invoke<RelayStatus>("get_relay_status");
-                      setStatus(st);
-                      setRefreshing(false);
-                    }}
-                  >
-                    {refreshing ? "Reconnecting..." : "Reconnect"}
-                  </button>
-                </div>
-              )}
-              {status?.subscription_required && (
-                <div style={{ marginTop: 12 }}>
-                  <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "0 0 10px 0" }}>
-                    A subscription is required to use remote access.
-                  </p>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button
-                      className="btn btn-primary"
-                      onClick={async () => {
-                        try {
-                          const resp = await fetch("https://backend.clawtab.cc/subscription/payment-link");
-                          const { url } = await resp.json();
-                          await openUrl(url);
-                        } catch {
-                          await openUrl("https://buy.stripe.com/14AdRaemTbqlaF2bUL0Jq01");
-                        }
-                      }}
-                    >
-                      Subscribe
-                    </button>
-                    <button
-                      className="btn"
-                      disabled={refreshing}
-                      onClick={async () => {
-                        setRefreshing(true);
-                        try {
-                          await invoke("relay_disconnect");
-                          await invoke("relay_connect");
-                          await new Promise((r) => setTimeout(r, 2000));
-                        } catch {}
-                        const st = await invoke<RelayStatus>("get_relay_status");
-                        setStatus(st);
-                        setRefreshing(false);
-                      }}
-                    >
-                      {refreshing ? "Refreshing..." : "Refresh"}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
+            <span className="field-group-title">This Mac</span>
 
             <div className="form-group">
               <label>Server</label>
@@ -718,16 +512,7 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
               </span>
             </div>
 
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label className="checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={settings.enabled}
-                  onChange={(e) => handleToggleEnabled(e.target.checked)}
-                />
-                Enable remote access
-              </label>
-            </div>
+
           </div>
 
           <div className="field-group">

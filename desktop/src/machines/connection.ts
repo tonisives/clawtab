@@ -3,13 +3,16 @@ import { invoke } from "@tauri-apps/api/core"
 import { listen } from "@tauri-apps/api/event"
 import { connectMachines, machineErrorMessage, saveAccountPreferences } from "@clawtab/shared"
 import type { AppSettings } from "../types"
+import { checkRemoteConnection, useRemoteConnection, watchRemoteConnection } from "./remoteConnection"
 let machineInvoke = async <T,>(command: string, args?: Record<string, unknown>): Promise<T> => {
   try {
     return await invoke<T>(command, args)
   } catch (error) {
     let message = machineErrorMessage(error)
-    if (["Token refresh failed", "No access token stored"].includes(message))
-      message = "Your ClawTab account session could not be renewed. Sign in again in Settings → Remote to load machines."
+    if (["Token refresh failed", "No access token stored", "unauthorized"].includes(message)) {
+      void checkRemoteConnection()
+      message = "Your ClawTab session could not be renewed. Sign in again in Remote Access."
+    }
     throw new Error(message)
   }
 }
@@ -17,6 +20,9 @@ let localMachine: string | undefined
 export let localMachineId = () => localMachine
 export let resetDesktopAccount = () => window.dispatchEvent(new Event("desktop-account-changed"))
 export let useDesktopMachines = () => {
+  let remote = useRemoteConnection()
+  let enabled = remote.account === "ready" && !!remote.relay?.enabled && remote.relay.configured && remote.operation !== "disconnect" && !remote.signedOut
+  useEffect(watchRemoteConnection, [])
   let [accountVersion, setAccountVersion] = useState(0)
   useEffect(() => {
     let reset = () => { localMachine = undefined; setAccountVersion(version => version + 1) }
@@ -24,6 +30,7 @@ export let useDesktopMachines = () => {
     return () => window.removeEventListener("desktop-account-changed", reset)
   }, [])
   useEffect(() => {
+    if (!enabled) return;
     let active = true
     let lastModels = ""
     let queue = Promise.resolve()
@@ -57,7 +64,7 @@ export let useDesktopMachines = () => {
       return connection.url
     }, desktopMachineApi)
     return () => { active = false; clearInterval(retry); void unlisten.then((off) => off()); stop() }
-  }, [accountVersion])
+  }, [accountVersion, enabled, remote.accountVersion])
 }
 let modelPreferences = (settings: AppSettings) => ({
   enabled_models: settings.enabled_models ?? {},

@@ -277,6 +277,15 @@ pub async fn connect_loop(params: ConnectLoopParams) {
     let max_backoff = Duration::from_secs(60);
 
     loop {
+        if !ctx
+            .settings
+            .lock()
+            .relay
+            .as_ref()
+            .is_some_and(|relay| relay.enabled)
+        {
+            return;
+        }
         match precheck_subscription(&secrets, &server_url, &relay_sub_required).await {
             SubscriptionResult::Ok => {}
             SubscriptionResult::Unsubscribed => return,
@@ -317,7 +326,8 @@ async fn precheck_subscription(
     relay_sub_required: &Arc<Mutex<bool>>,
 ) -> SubscriptionResult {
     let (access_token, refresh_token_val) = {
-        let s = secrets.lock();
+        let mut s = secrets.lock();
+        s.reload_keys(&["relay_access_token", "relay_refresh_token"]);
         (
             s.get("relay_access_token").cloned().unwrap_or_default(),
             s.get("relay_refresh_token").cloned().unwrap_or_default(),
@@ -330,8 +340,13 @@ async fn precheck_subscription(
         Ok((subscribed, new_access, new_refresh)) => {
             if let (Some(at), Some(rt)) = (new_access, new_refresh) {
                 let mut s = secrets.lock();
-                let _ = s.set("relay_access_token", &at);
-                let _ = s.set("relay_refresh_token", &rt);
+                s.reload_keys(&["relay_access_token", "relay_refresh_token"]);
+                if s.get("relay_access_token") == Some(&access_token)
+                    && s.get("relay_refresh_token") == Some(&refresh_token_val)
+                {
+                    let _ = s.set("relay_access_token", &at);
+                    let _ = s.set("relay_refresh_token", &rt);
+                }
             }
             if !subscribed {
                 log::info!("Relay: subscription required, not connecting");
@@ -401,9 +416,8 @@ async fn attempt_session(
             });
             let pane_ids: Vec<String> = auto_yes_panes.lock().iter().cloned().collect();
             handle.send_message(&DesktopMessage::AutoYesPanes { pane_ids });
-            {
-                let mut guard = relay.lock();
-                *guard = Some(handle);
+            if !install_relay_handle(ctx, handle) {
+                return SessionOutcome::Done;
             }
 
             run_session(
@@ -451,6 +465,16 @@ async fn attempt_session(
             SessionOutcome::Retry
         }
     }
+}
+
+// A sign-out may arrive while the WebSocket handshake is pending.
+fn install_relay_handle(ctx: &crate::job_context::JobContext, handle: RelayHandle) -> bool {
+    let settings = ctx.settings.lock();
+    if !settings.relay.as_ref().is_some_and(|relay| relay.enabled) {
+        return false;
+    }
+    *ctx.relay.lock() = Some(handle);
+    true
 }
 
 struct SessionChannels<S, R> {

@@ -19,13 +19,14 @@ import {
 
 type Props = {
   presentation?: "compact" | "panel"
+  showConnectionStatus?: boolean
   onOpenAccount?: () => void
   localMachineId?: string
   api?: (method: string, path: string, body?: MachineMessage) => Promise<MachineMessage>
   approvePairing: (code: string) => Promise<unknown>
   localRequest?: (request: MachineMessage) => Promise<MachineMessage>
 }
-export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, localMachineId, presentation = "compact" }: Props) => {
+export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, localMachineId, presentation = "compact", showConnectionStatus = true }: Props) => {
   let styles = presentation === "panel" ? desktopStyles : compactStyles
   let state = useMachines()
   let [tab, setTab] = useState("agents")
@@ -336,12 +337,12 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
           </Pressable>
         ))}
       </View>}
-      {presentation === "panel" && state.connected && <View style={styles.statusRow}>
+      {showConnectionStatus && presentation === "panel" && state.connected && <View style={styles.statusRow}>
         <View style={[styles.statusDot, styles.onlineDot]} />
         <Text style={styles.detail}>Machine list connected · {machines.filter((m) => m.online).length} of {machines.length} online</Text>
       </View>}
-      {(error || state.error) && <Text style={styles.error}>{error ?? state.error}</Text>}
-      {!state.connected && (
+      {(error || ((showConnectionStatus || state.connected) && state.error)) && <Text style={styles.error}>{error ?? state.error}</Text>}
+      {showConnectionStatus && !state.connected && (
         <View style={styles.row}>
           <View style={[styles.statusDot, state.error ? styles.errorDot : styles.connectingDot]} />
           <Text style={styles.text}>{state.error ? "Machine list unavailable" : "Connecting to your account’s machines…"}</Text>
