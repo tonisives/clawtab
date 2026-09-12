@@ -86,17 +86,23 @@ pub async fn monitor_pane(params: MonitorParams) {
     };
 
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-    let process_exited = spawn_exit_poller(&params.tmux_session, &params.pane_id);
+    let poller = spawn_exit_poller(
+        &params.tmux_session,
+        &params.pane_id,
+        params.resource_lease.is_some(),
+    );
 
     run_poll_loop(
         &params,
         use_telegram,
         working_message_id,
         started_at,
-        &process_exited,
+        &poller.exited,
         &mut state,
     )
     .await;
+    poller.task.abort();
+    let exit_code = *poller.exit_code.lock();
 
     finalize_telegram(&params, use_telegram, working_message_id).await;
     let full_output = compute_full_output(&params, state.accumulated_log);
@@ -109,10 +115,20 @@ pub async fn monitor_pane(params: MonitorParams) {
         let h = params.history.lock();
         let _ = h.update_log_path(&params.run_id, &path.to_string_lossy());
     }
+    let trigger_result = params
+        .trigger_id
+        .as_ref()
+        .map(|_| collect_trigger_result(&params, exit_code));
+    let succeeded = exit_code == Some(0)
+        && trigger_result
+            .as_ref()
+            .is_none_or(|result| result.status == "succeeded");
     maybe_kill_pane(&params);
-    persist_finish(&params, &full_output);
-    notify_finish(&params, use_telegram, use_app).await;
-    push_trigger_result_if_any(&params);
+    persist_finish(&params, &full_output, exit_code, succeeded);
+    notify_finish(&params, use_telegram, use_app, exit_code, succeeded).await;
+    if let (Some(trigger_id), Some(result)) = (&params.trigger_id, trigger_result) {
+        crate::relay::push_trigger_result(&params.relay, trigger_id, result);
+    }
     if let Some(path) = params.agent_prompt_path.as_deref() {
         crate::agent::remove_agent_prompt(path);
     }
@@ -179,21 +195,52 @@ fn capture_trimmed(session: &str, pane_id: &str) -> String {
         .to_string()
 }
 
-fn spawn_exit_poller(session: &str, pane_id: &str) -> Arc<AtomicBool> {
+struct ExitPoller {
+    exited: Arc<AtomicBool>,
+    exit_code: Arc<Mutex<Option<i32>>>,
+    task: tokio::task::JoinHandle<()>,
+}
+
+fn guarded_completion(state: Result<tmux::PaneProcessState, String>) -> Option<Option<i32>> {
+    match state {
+        Ok(tmux::PaneProcessState::Exited(code)) => Some(code),
+        Ok(tmux::PaneProcessState::Missing) => Some(None),
+        Ok(tmux::PaneProcessState::Running) | Err(_) => None,
+    }
+}
+
+fn spawn_exit_poller(session: &str, pane_id: &str, guarded: bool) -> ExitPoller {
     let process_exited = Arc::new(AtomicBool::new(false));
     let exit_flag = Arc::clone(&process_exited);
+    let exit_code = Arc::new(Mutex::new(if guarded { None } else { Some(0) }));
+    let observed_code = Arc::clone(&exit_code);
     let exit_session = session.to_string();
     let exit_pane = pane_id.to_string();
-    tokio::spawn(async move {
+    let task = tokio::spawn(async move {
         loop {
-            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-            if !tmux::is_pane_busy(&exit_session, &exit_pane) {
+            tokio::time::sleep(std::time::Duration::from_millis(if guarded {
+                1000
+            } else {
+                200
+            }))
+            .await;
+            let completion = if guarded {
+                guarded_completion(tmux::pane_process_state(&exit_pane))
+            } else {
+                (!tmux::is_pane_busy(&exit_session, &exit_pane)).then_some(Some(0))
+            };
+            if let Some(code) = completion {
+                *observed_code.lock() = code;
                 exit_flag.store(true, Ordering::Release);
                 break;
             }
         }
     });
-    process_exited
+    ExitPoller {
+        exited: process_exited,
+        exit_code,
+        task,
+    }
 }
 
 async fn run_poll_loop(
@@ -209,7 +256,11 @@ async fn run_poll_loop(
         state.tick_counter += 1;
 
         let Some(trimmed) = capture_or_break(params) else {
-            break;
+            if params.resource_lease.is_none() || process_exited.load(Ordering::Acquire) {
+                break;
+            }
+            // A capture failure does not prove that a guarded process exited.
+            continue;
         };
 
         maybe_update_working_message(
@@ -430,16 +481,29 @@ fn maybe_kill_pane(params: &MonitorParams) {
     }
 }
 
-fn persist_finish(params: &MonitorParams, full_output: &str) {
+fn persist_finish(
+    params: &MonitorParams,
+    full_output: &str,
+    exit_code: Option<i32>,
+    succeeded: bool,
+) {
     let finished_at = Utc::now().to_rfc3339();
     {
         let h = params.history.lock();
-        if let Err(e) = h.update_finished(&params.run_id, &finished_at, Some(0), full_output, "") {
+        if let Err(e) = h.update_finished(&params.run_id, &finished_at, exit_code, full_output, "")
+        {
             log::error!("[{}] Failed to update history: {}", params.run_id, e);
         }
     }
-    let new_status = JobStatus::Success {
-        last_run: finished_at,
+    let new_status = if succeeded {
+        JobStatus::Success {
+            last_run: finished_at,
+        }
+    } else {
+        JobStatus::Failed {
+            last_run: finished_at,
+            exit_code: exit_code.unwrap_or(-1),
+        }
     };
     let mut status = params.job_status.lock();
     status.insert(params.slug.clone(), new_status.clone());
@@ -447,18 +511,25 @@ fn persist_finish(params: &MonitorParams, full_output: &str) {
     crate::relay::push_status_update(&params.relay, &params.slug, &new_status);
 }
 
-async fn notify_finish(params: &MonitorParams, use_telegram: bool, use_app: bool) {
+async fn notify_finish(
+    params: &MonitorParams,
+    use_telegram: bool,
+    use_app: bool,
+    exit_code: Option<i32>,
+    succeeded: bool,
+) {
     if !params.telegram_notify.finish {
         return;
     }
+    let status = if succeeded { "completed" } else { "failed" };
     if use_telegram {
         if let Some(ref tg) = params.telegram {
             if params.notify_on_success {
                 let text = crate::telegram::format_job_status_message(
                     &params.group_name,
                     &params.job_id,
-                    "finished",
-                    None,
+                    status,
+                    exit_code,
                 );
                 if let Err(e) =
                     crate::telegram::send_message(&tg.bot_token, tg.chat_id, &text).await
@@ -473,40 +544,41 @@ async fn notify_finish(params: &MonitorParams, use_telegram: bool, use_app: bool
         }
     }
     if use_app {
-        crate::relay::push_job_notification(
-            &params.relay,
-            &params.slug,
-            "completed",
-            &params.run_id,
-        );
+        crate::relay::push_job_notification(&params.relay, &params.slug, status, &params.run_id);
         if let Some(ref n) = params.notifier {
-            n.notify_job(&params.job_id, "completed");
+            n.notify_job(&params.job_id, status);
         }
     }
 }
 
-fn push_trigger_result_if_any(params: &MonitorParams) {
-    let Some(tid) = params.trigger_id.as_ref() else {
-        return;
-    };
+fn collect_trigger_result(
+    params: &MonitorParams,
+    exit_code: Option<i32>,
+) -> crate::relay::TriggerResultPayload {
     let collected = super::executor::collect_result_file(params.result_file.as_deref());
-    let structured_failure = matches!(collected.status, "invalid_json" | "unreadable");
-    crate::relay::push_trigger_result(
-        &params.relay,
-        tid,
-        crate::relay::TriggerResultPayload {
-            status: if structured_failure {
-                "failed".into()
-            } else {
-                "succeeded".into()
-            },
-            exit_code: Some(0),
-            result: collected.value,
-            error: collected.error,
-            result_status: Some(collected.status.into()),
-            retry_at: None,
+    let success = trigger_succeeded(params.resource_lease.is_some(), exit_code, collected.status);
+    crate::relay::TriggerResultPayload {
+        status: if success {
+            "succeeded".into()
+        } else {
+            "failed".into()
         },
-    );
+        exit_code,
+        result: collected.value,
+        error: collected.error,
+        result_status: Some(collected.status.into()),
+        retry_at: None,
+    }
+}
+
+#[cfg(test)]
+#[path = "monitor_lifecycle_tests.rs"]
+mod lifecycle_tests;
+
+fn trigger_succeeded(guarded: bool, exit_code: Option<i32>, result_status: &str) -> bool {
+    exit_code == Some(0)
+        && !matches!(result_status, "invalid_json" | "unreadable")
+        && (!guarded || result_status == "valid")
 }
 
 pub(crate) fn save_log_file(

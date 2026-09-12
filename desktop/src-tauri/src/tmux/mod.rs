@@ -7,6 +7,8 @@ mod window_name;
 pub use window_name::next_ct_window_name;
 mod group_session;
 pub use group_session::find_group_session;
+mod pane_lifecycle;
+pub use pane_lifecycle::{pane_process_state, retain_exited_pane, PaneProcessState};
 
 const AUTO_YES_MONITOR_BELL_ORIGINAL: &str = "@clawtab-auto-yes-monitor-bell-original";
 const AUTO_YES_PANE_OPTION: &str = "@clawtab-auto-yes";
