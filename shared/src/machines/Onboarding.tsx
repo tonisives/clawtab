@@ -4,10 +4,12 @@ import { colors } from "../theme/colors"
 
 export type MachineOnboardingContent = ReactNode | ((close: () => void) => ReactNode)
 export type MachineActionButtonProps = { label: string; onPress: () => void; accessibilityLabel?: string; disabled?: boolean; icon?: "back"; style?: StyleProp<ViewStyle> }
-export type MachineOnboardingChrome = { renderActionButton: (props: MachineActionButtonProps) => ReactNode }
+export type MachineModalProps = { title: string; children: ReactNode; onClose: () => void }
+export type MachineOnboardingChrome = { renderActionButton: (props: MachineActionButtonProps) => ReactNode; Modal?: import("react").ComponentType<MachineModalProps> }
 type Page = { id: number; title: string; content: MachineOnboardingContent }
 let OnboardingContext = createContext<{ content?: MachineOnboardingContent; management?: MachineOnboardingContent; chrome?: MachineOnboardingChrome }>({})
 let StackContext = createContext<{ push: (page: Omit<Page, "id">) => void } | null>(null)
+export let MachineNavigationProvider = StackContext.Provider
 
 export let MachineOnboardingProvider = ({ content, management, chrome, children }: { content?: MachineOnboardingContent; management?: MachineOnboardingContent; chrome?: MachineOnboardingChrome; children: ReactNode }) => {
   let parent = useContext(OnboardingContext)
@@ -23,7 +25,12 @@ export let MachineActionButton = (props: MachineActionButtonProps) => {
 }
 
 // Keep navigation within the presenting modal so native pickers stay in place.
-export let MachineModal = ({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) => {
+export let MachineModal = (props: MachineModalProps) => {
+  let NativeModal = useContext(OnboardingContext).chrome?.Modal
+  return NativeModal ? <NativeModal {...props} /> : <FallbackMachineModal {...props} />
+}
+
+let FallbackMachineModal = ({ title, children, onClose }: MachineModalProps) => {
   let [pages, setPages] = useState<Page[]>([])
   let nextPage = useRef(0)
   let push = (page: Omit<Page, "id">) => {

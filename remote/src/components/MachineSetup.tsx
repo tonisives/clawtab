@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { Linking, Platform, Pressable, StyleSheet, Text, View } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
+import { MachineNavigationModal } from "./MachineNavigationModal"
 import { GlassView, isGlassEffectAPIAvailable } from "expo-glass-effect"
 import { useRouter } from "expo-router"
 import { openBrowserAsync } from "expo-web-browser"
@@ -42,6 +43,7 @@ let LiquidMachineActionButton = ({ label, onPress, accessibilityLabel, disabled,
 }
 
 export let machineOnboardingChrome: MachineOnboardingChrome = {
+  Modal: Platform.OS === "web" ? undefined : MachineNavigationModal,
   renderActionButton: (props) => <LiquidMachineActionButton {...props} />,
 }
 
