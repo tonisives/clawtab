@@ -66,6 +66,20 @@ impl KeychainBackend {
             }
         }
     }
+    pub fn reload_keys(&mut self, keys: &[&str]) {
+        let mut stored = Self::read().unwrap_or_default();
+        for key in keys {
+            match stored.remove(*key) {
+                Some(value) => {
+                    self.cache.insert((*key).into(), value);
+                }
+                None => {
+                    self.cache.remove(*key);
+                }
+            }
+        }
+    }
+
     fn update(&mut self, key: &str, value: Option<&str>) -> Result<(), String> {
         let directory = Self::directory()?;
         let lock = OpenOptions::new()

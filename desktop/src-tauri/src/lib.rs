@@ -904,6 +904,7 @@ pub fn run() {
             commands::relay::relay_disconnect,
             commands::relay::relay_connect,
             commands::relay::relay_save_tokens,
+            commands::relay::relay_restore_account,
             commands::relay::machine_connection,
             commands::relay::machine_api,
             commands::relay::machine_pair_approve,

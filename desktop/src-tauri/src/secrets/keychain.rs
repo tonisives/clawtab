@@ -29,6 +29,19 @@ impl KeychainBackend {
         self.reload_all();
     }
 
+    pub fn reload_keys(&mut self, keys: &[&str]) {
+        for key in keys {
+            match read_keychain_value(key) {
+                Some(value) => {
+                    self.cache.insert((*key).into(), value);
+                }
+                None => {
+                    self.cache.remove(*key);
+                }
+            }
+        }
+    }
+
     pub fn set(&mut self, key: &str, value: &str) -> Result<(), String> {
         // Delete existing entry first (security CLI errors if it already exists)
         let _ = std::process::Command::new("security")
