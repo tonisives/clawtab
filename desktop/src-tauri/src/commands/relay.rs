@@ -267,7 +267,7 @@ pub fn relay_get_pending_token(state: State<AppState>) -> Result<Option<String>,
 }
 
 /// Recover an account sign-in handled by another installed desktop copy.
-/// Only reload the two account keys; an invalid session requires owner sign-in.
+/// Reload the account keys and use the normal refresh flow when access expires.
 #[tauri::command]
 pub async fn relay_restore_account(state: State<'_, AppState>) -> Result<Option<String>, String> {
     let server = state
@@ -278,37 +278,59 @@ pub async fn relay_restore_account(state: State<'_, AppState>) -> Result<Option<
         .map(|settings| settings.server_url.clone())
         .filter(|url| !url.is_empty())
         .unwrap_or_else(|| "https://relay.clawtab.cc".into());
-    let access = {
+    let (mut access, mut refresh) = {
         let mut secrets = state.secrets.lock();
         secrets.reload_keys(&[KEYCHAIN_ACCESS_TOKEN_KEY, KEYCHAIN_REFRESH_TOKEN_KEY]);
-        secrets
-            .get(KEYCHAIN_ACCESS_TOKEN_KEY)
-            .cloned()
-            .unwrap_or_default()
+        (
+            secrets
+                .get(KEYCHAIN_ACCESS_TOKEN_KEY)
+                .cloned()
+                .unwrap_or_default(),
+            secrets
+                .get(KEYCHAIN_REFRESH_TOKEN_KEY)
+                .cloned()
+                .unwrap_or_default(),
+        )
     };
-    if access.is_empty() {
-        return Ok(None);
-    }
-    let response = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .map_err(|_| "Could not check your account session".to_string())?
-        .get(format!("{}/machines", server.trim_end_matches('/')))
-        .bearer_auth(&access)
-        .send()
+    for attempt in 0..2 {
+        if access.is_empty() {
+            return Ok(None);
+        }
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(15),
+            relay_request(
+                reqwest::Method::GET,
+                &format!("{}/machines", server.trim_end_matches('/')),
+                &access,
+                &refresh,
+                &server,
+                None,
+                &state,
+            ),
+        )
         .await
         .map_err(|_| "Could not reach the relay to check your account session".to_string())?;
-    if response.status() == reqwest::StatusCode::UNAUTHORIZED {
-        return Ok(None);
+        match result {
+            Ok(_) => return Ok(state.secrets.lock().get(KEYCHAIN_ACCESS_TOKEN_KEY).cloned()),
+            Err(error) if error == "Account session changed. Please retry." && attempt == 0 => {
+                // Another account request may have completed renewal first.
+                let secrets = state.secrets.lock();
+                access = secrets
+                    .get(KEYCHAIN_ACCESS_TOKEN_KEY)
+                    .cloned()
+                    .unwrap_or_default();
+                refresh = secrets
+                    .get(KEYCHAIN_REFRESH_TOKEN_KEY)
+                    .cloned()
+                    .unwrap_or_default();
+            }
+            Err(error) if error == "Token refresh failed" || error == "unauthorized" => {
+                return Ok(None)
+            }
+            Err(error) => return Err(error),
+        }
     }
-    if !response.status().is_success() {
-        return Err(format!(
-            "Could not check your account session (HTTP {})",
-            response.status().as_u16()
-        ));
-    }
-    Ok(Some(access))
+    Ok(None)
 }
 
 #[derive(Serialize)]
