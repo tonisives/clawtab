@@ -209,13 +209,14 @@ pub async fn relay_pair_device(
     })
 }
 
-/// Clear all stored auth + device tokens. Used by the Sign Out button and by
-/// the frontend after an UNAUTHORIZED response from /devices/pair.
+/// Clear account credentials while retaining this desktop's device pairing.
 #[tauri::command]
 pub fn relay_sign_out(state: State<AppState>) -> Result<(), String> {
     let mut secrets = state.secrets.lock();
-    let _ = secrets.delete(KEYCHAIN_ACCESS_TOKEN_KEY);
-    let _ = secrets.delete(KEYCHAIN_REFRESH_TOKEN_KEY);
+    let refresh_result = secrets.delete(KEYCHAIN_REFRESH_TOKEN_KEY);
+    let access_result = secrets.delete(KEYCHAIN_ACCESS_TOKEN_KEY);
+    refresh_result?;
+    access_result?;
     drop(secrets);
     *state.relay_auth_expired.lock() = false;
     Ok(())
@@ -472,6 +473,11 @@ async fn relay_request(
         // Save refreshed tokens
         {
             let mut secrets = state.secrets.lock();
+            if secrets.get(KEYCHAIN_ACCESS_TOKEN_KEY).map(String::as_str) != Some(access_token)
+                || secrets.get(KEYCHAIN_REFRESH_TOKEN_KEY).map(String::as_str) != Some(refresh_token)
+            {
+                return Err("Account session changed. Please retry.".into());
+            }
             let _ = secrets.set(KEYCHAIN_ACCESS_TOKEN_KEY, &new_access);
             let _ = secrets.set(KEYCHAIN_REFRESH_TOKEN_KEY, &new_refresh);
         }

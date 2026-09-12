@@ -77,7 +77,8 @@ impl KeychainBackend {
             .output()
             .map_err(|e| format!("Failed to run security command: {}", e))?;
 
-        if !output.status.success() {
+        // security exits with 44 when an item is already absent.
+        if !output.status.success() && output.status.code() != Some(44) {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(format!("Keychain error: {}", stderr.trim()));
         }

@@ -1,4 +1,4 @@
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 import { invoke } from "@tauri-apps/api/core"
 import { listen } from "@tauri-apps/api/event"
 import { connectMachines, machineErrorMessage, saveAccountPreferences } from "@clawtab/shared"
@@ -15,7 +15,14 @@ let machineInvoke = async <T,>(command: string, args?: Record<string, unknown>):
 }
 let localMachine: string | undefined
 export let localMachineId = () => localMachine
+export let resetDesktopAccount = () => window.dispatchEvent(new Event("desktop-account-changed"))
 export let useDesktopMachines = () => {
+  let [accountVersion, setAccountVersion] = useState(0)
+  useEffect(() => {
+    let reset = () => { localMachine = undefined; setAccountVersion(version => version + 1) }
+    window.addEventListener("desktop-account-changed", reset)
+    return () => window.removeEventListener("desktop-account-changed", reset)
+  }, [])
   useEffect(() => {
     let active = true
     let lastModels = ""
@@ -50,7 +57,7 @@ export let useDesktopMachines = () => {
       return connection.url
     }, desktopMachineApi)
     return () => { active = false; clearInterval(retry); void unlisten.then((off) => off()); stop() }
-  }, [])
+  }, [accountVersion])
 }
 let modelPreferences = (settings: AppSettings) => ({
   enabled_models: settings.enabled_models ?? {},

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { desktopMachineApi } from "../machines/connection";
+import { desktopMachineApi, resetDesktopAccount } from "../machines/connection";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ShareSection, retryMachines } from "@clawtab/shared";
 import type { ShareInfo, SharedWithMeInfo } from "@clawtab/shared";
@@ -57,6 +57,11 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
   const [loginError, setLoginError] = useState<string | null>(null);
   let [loginStatus, setLoginStatus] = useState("");
   let [signingIn, setSigningIn] = useState(false);
+  let [checkingAccount, setCheckingAccount] = useState(true);
+  let [signingOut, setSigningOut] = useState(false);
+  let accountVersion = useRef(0);
+  let signingOutRef = useRef(false);
+  let ignoreCallbacks = useRef(false);
   let loginAttempt = useRef<AbortController | null>(null);
   let restoringAccount = useRef(false);
   let restoredToken = useRef<string | null>(null);
@@ -92,11 +97,12 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
   }, []);
 
   let restoreAccount = useCallback(async () => {
-    if (restoringAccount.current || loginAttempt.current) return;
+    if (restoringAccount.current || loginAttempt.current || signingOutRef.current || ignoreCallbacks.current) return;
+    let version = accountVersion.current;
     restoringAccount.current = true;
     try {
       let token = await invoke<string | null>("relay_restore_account");
-      if (loginAttempt.current) return;
+      if (version !== accountVersion.current || loginAttempt.current) return;
       if (token) {
         setAccessToken(token);
         setSigningIn(false);
@@ -105,14 +111,17 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
         if (restoredToken.current !== token) retryMachines();
         restoredToken.current = token;
       } else {
+        if (restoredToken.current) resetDesktopAccount();
         restoredToken.current = null;
         setAccessToken(null);
-        setLoginStatus("Sign in to load your account's machines and access settings.");
+        setLoginStatus("");
+        setLoginError(null);
       }
     } catch {
-      if (!loginAttempt.current) setLoginError("Could not check your account session. Please try again.");
+      if (version === accountVersion.current && !loginAttempt.current) setLoginError("Could not check your account session. It will be checked again when you return to this window.");
     } finally {
       restoringAccount.current = false;
+      if (version === accountVersion.current) setCheckingAccount(false);
     }
   }, []);
 
@@ -133,6 +142,11 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
   // Accept access token from deep link callback
   useEffect(() => {
     if (externalAccessToken) {
+      if (ignoreCallbacks.current || signingOutRef.current) {
+        onExternalTokenConsumed?.();
+        return;
+      }
+      let version = ++accountVersion.current;
       loginAttempt.current?.abort();
       loginAttempt.current = null;
       if (externalRefreshToken) {
@@ -140,14 +154,18 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
           accessToken: externalAccessToken,
           refreshToken: externalRefreshToken,
         }).then(() => {
+          if (version !== accountVersion.current) return;
           setAccessToken(externalAccessToken);
           setLoginError(null);
           setSigningIn(false);
+          setCheckingAccount(false);
           setLoginStatus("Signed in to your account.");
           restoredToken.current = externalAccessToken;
           retryMachines();
         }).catch(() => {
+          if (version !== accountVersion.current) return;
           setSigningIn(false);
+          setCheckingAccount(false);
           setLoginStatus("");
           setLoginError("Could not save your account session. Please try signing in again.");
         });
@@ -169,16 +187,20 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
 
   // Load shares and groups when configured
   useEffect(() => {
-    if (!isConfigured) return;
+    if (!isConfigured || !accessToken) {
+      setShares({ shared_by_me: [], shared_with_me: [] });
+      return;
+    }
     loadShares();
     invoke<string[]>("relay_get_groups").then(setGroups).catch(() => {});
-  }, [isConfigured]);
+  }, [isConfigured, accessToken]);
 
   const loadShares = async () => {
+    let version = accountVersion.current;
     setSharesLoading(true);
     try {
       const resp = await invoke<SharesResponse>("relay_get_shares");
-      setShares(resp);
+      if (version === accountVersion.current) setShares(resp);
     } catch (e) {
       console.error("Failed to load shares:", e);
     } finally {
@@ -187,6 +209,10 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
   };
 
   let signIn = async (provider: "google" | "apple") => {
+    accountVersion.current++;
+    ignoreCallbacks.current = false;
+    setCheckingAccount(false);
+    setEditingServerUrl(false);
     loginAttempt.current?.abort();
     let attempt = new AbortController();
     loginAttempt.current = attempt;
@@ -231,6 +257,15 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
   };
   let handleGoogleSignIn = () => signIn("google");
   let handleAppleSignIn = () => signIn("apple");
+  let cancelSignIn = () => {
+    accountVersion.current++;
+    ignoreCallbacks.current = true;
+    loginAttempt.current?.abort();
+    loginAttempt.current = null;
+    setSigningIn(false);
+    setLoginStatus("");
+    setLoginError(null);
+  };
 
   const handlePairDevice = async () => {
     if (!accessToken || !deviceName) return;
@@ -249,7 +284,6 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
       };
       await invoke("set_relay_settings", { settings: newSettings });
       setSettings(newSettings);
-      setAccessToken(null);
       try {
         await invoke("relay_connect");
       } catch {
@@ -275,21 +309,32 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
   };
 
   const handleSignOut = async () => {
+    accountVersion.current++;
+    ignoreCallbacks.current = true;
+    signingOutRef.current = true;
+    setSigningOut(true);
+    setLoginError(null);
     loginAttempt.current?.abort();
     loginAttempt.current = null;
     try {
       await invoke("relay_sign_out");
-    } catch (e) {
-      console.error("Sign out failed:", e);
+      setAccessToken(null);
+      restoredToken.current = null;
+      setLoginStatus("");
+      setSigningIn(false);
+      setCheckingAccount(false);
+      setPairError(null);
+      setRemovingShare(null);
+      setShowConfirmRemove(false);
+      setShares({ shared_by_me: [], shared_with_me: [] });
+      resetDesktopAccount();
+    } catch {
+      ignoreCallbacks.current = false;
+      setLoginError("Could not sign out. Please try again.");
+    } finally {
+      signingOutRef.current = false;
+      setSigningOut(false);
     }
-    setAccessToken(null);
-    restoredToken.current = null;
-    setLoginStatus("");
-    setSigningIn(false);
-    setPairError(null);
-    setLoginError(null);
-    const st = await invoke<RelayStatus>("get_relay_status");
-    setStatus(st);
   };
 
   const handleDisconnect = async () => {
@@ -308,7 +353,6 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
         settings: { enabled: false, server_url: "", device_token: "", device_id: "", device_name: "" },
       });
       setSettings(null);
-      setAccessToken(null);
       const st = await invoke<RelayStatus>("get_relay_status");
       setStatus(st);
     } catch (e) {
@@ -395,6 +439,32 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
     );
   }
 
+  let accountControls = (
+    <>
+      <p role="status">
+        {checkingAccount ? "Checking your account…"
+          : signingOut ? "Signing out…"
+          : accessToken ? "Signed in to your account."
+          : loginStatus || "Sign in to manage your machines and sharing."}
+      </p>
+      {loginError && <p role="alert">{loginError}</p>}
+      <div className="btn-group">
+        {accessToken ? (
+          <button className="btn" onClick={handleSignOut} disabled={signingOut || pairing}>
+            {signingOut ? "Signing out…" : "Sign out"}
+          </button>
+        ) : signingIn ? (
+          <button className="btn" onClick={cancelSignIn}>Cancel sign-in</button>
+        ) : !checkingAccount && (
+          <>
+            <button className="btn" onClick={handleAppleSignIn}>Sign in with Apple</button>
+            <button className="btn" onClick={handleGoogleSignIn}>Sign in with Google</button>
+          </>
+        )}
+      </div>
+    </>
+  );
+
   return (
     <div className="settings-section">
       <h2>Remote Access</h2>
@@ -406,7 +476,7 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
         <div className="field-group">
           <span className="field-group-title">Setup</span>
 
-          {status?.auth_expired && (
+          {status?.auth_expired && !accessToken && !checkingAccount && (
             <div
               style={{
                 background: "var(--warning-bg, rgba(217, 119, 6, 0.12))",
@@ -423,57 +493,16 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
           )}
 
           {/* Step 1: Login */}
-          <div style={{ opacity: accessToken ? 0.6 : 1 }}>
+          <div>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
               <strong style={{ fontSize: 13 }}>
-                {accessToken ? "1. Logged in" : "1. Log in to relay server"}
+                1. Account
               </strong>
-              {accessToken && (
-                <>
-                  <span style={{ color: "var(--success-color)", fontSize: 12 }}>
-                    authenticated
-                  </span>
-                  <button
-                    className="btn"
-                    style={{ fontSize: 11, padding: "2px 8px", minHeight: 0, marginLeft: "auto" }}
-                    onClick={handleSignOut}
-                  >
-                    Sign out
-                  </button>
-                </>
-              )}
             </div>
-
-            {loginStatus && <p role="status">{loginStatus}</p>}
+            {accountControls}
 
             {!accessToken && (
               <>
-                {loginError && (
-                  <div style={{ color: "var(--danger-color)", fontSize: 12, marginBottom: 12 }}>
-                    {loginError}
-                  </div>
-                )}
-
-                <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 400 }}>
-                  <button
-                    className="btn"
-                    onClick={handleAppleSignIn}
-                    disabled={signingIn}
-                    style={{ width: "100%", boxSizing: "border-box" }}
-                  >
-                    Sign in with Apple
-                  </button>
-
-                  <button
-                    className="btn"
-                    onClick={handleGoogleSignIn}
-                    disabled={signingIn}
-                    style={{ width: "100%", boxSizing: "border-box" }}
-                  >
-                    Sign in with Google
-                  </button>
-                </div>
-
                 <div style={{ marginTop: 12 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
@@ -481,6 +510,7 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
                     </span>
                     <button
                       className="btn"
+                      disabled={checkingAccount || signingIn}
                       style={{ fontSize: 11, padding: "2px 8px", minHeight: 0 }}
                       onClick={() => { setTempServerUrl(serverUrl); setEditingServerUrl(true); }}
                     >
@@ -542,7 +572,7 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
                 value={deviceName}
                 onChange={(e) => setDeviceName(e.target.value)}
                 placeholder="My MacBook Pro"
-                disabled={pairing}
+                disabled={pairing || !accessToken || signingOut}
               />
             </div>
 
@@ -555,7 +585,7 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
             <button
               className="btn btn-primary"
               onClick={handlePairDevice}
-              disabled={pairing || !deviceName}
+              disabled={pairing || !deviceName || !accessToken || signingOut}
             >
               {pairing ? "Pairing..." : "Pair Device"}
             </button>
@@ -564,19 +594,12 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
       ) : (
         <>
           <div className="field-group">
-            <span className="field-group-title">Account access</span>
+            <span className="field-group-title">Account</span>
+            {accountControls}
             <p className="section-description">
-              The connection below belongs to this desktop. Adding machines and managing
-              access also require a current account sign-in. You can sign in again here
-              while this desktop stays connected.
+              Signing out of your account keeps this Mac paired for remote access.
+              To disconnect it, turn off remote access below.
             </p>
-            <div className="btn-group">
-              <button className="btn" onClick={handleAppleSignIn} disabled={signingIn}>Sign in with Apple</button>
-              <button className="btn" onClick={handleGoogleSignIn} disabled={signingIn}>Sign in with Google</button>
-              <button className="btn" onClick={restoreAccount} disabled={signingIn}>Check sign-in</button>
-            </div>
-            {loginStatus && <p role="status">{loginStatus}</p>}
-            {loginError && <p role="alert">{loginError}</p>}
           </div>
           <div className="field-group">
             <span className="field-group-title">Connection</span>
@@ -712,7 +735,7 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
             <p className="section-description" style={{ marginTop: 0 }}>
               Share access to your jobs with other users.
             </p>
-            <ShareSection
+            {accessToken ? <ShareSection
               sharedByMe={shares.shared_by_me}
               sharedWithMe={shares.shared_with_me}
               availableGroups={groups}
@@ -720,7 +743,7 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
               onAdd={handleAddShare}
               onToggleGroup={handleToggleGroup}
               onRemove={(id, shareEmail) => setRemovingShare({ id, email: shareEmail })}
-            />
+            /> : <p>Sign in to manage sharing.</p>}
           </div>
 
           <div className="field-group" style={{ borderColor: "var(--danger-color)" }}>
@@ -729,7 +752,8 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
               This removes this Mac from your account and disconnects it. You will need to pair again.
             </p>
             {removeError && <p role="alert" className="relay-remove-error">{removeError}</p>}
-            <button className="btn btn-danger" disabled={removingRelay} onClick={() => setShowConfirmRemove(true)}>
+            {!accessToken && <p>Sign in to remove this Mac from your account.</p>}
+            <button className="btn btn-danger" disabled={removingRelay || !accessToken || signingOut} onClick={() => setShowConfirmRemove(true)}>
               Remove Relay Configuration
             </button>
 
