@@ -344,29 +344,21 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
 
   let accountControls = (
     <>
-      {signingIn && !accessToken
-        ? <p role="status">{loginStatus}</p>
-        : <RemoteConnectionStatus label={remote.label} phase={remote.phase} />}
-      {(loginError || remote.error) && <p role="alert">{loginError || remote.error}</p>}
+      <p role="status">
+        {signingIn && !accessToken
+          ? loginStatus
+          : checkingAccount
+            ? "Checking your account…"
+            : accessToken
+              ? "Signed in to your account."
+              : "Sign in to connect."}
+      </p>
+      {loginError && <p role="alert">{loginError}</p>}
       <div className="btn-group">
         {accessToken ? (
-          <>
-            {remote.phase === "subscription" && <button className="btn btn-primary" onClick={async () => {
-              try {
-                let response = await fetch("https://backend.clawtab.cc/subscription/payment-link");
-                let { url } = await response.json();
-                await openUrl(url);
-              } catch {
-                await openUrl("https://buy.stripe.com/14AdRaemTbqlaF2bUL0Jq01");
-              }
-            }}>Subscribe</button>}
-            {isConfigured && remote.phase !== "connected" && <button className="btn btn-primary" onClick={connectRemoteConnection} disabled={!!remote.operation}>
-              {remote.operation === "connect" ? "Connecting…" : "Connect"}
-            </button>}
-            <button className="btn" onClick={handleSignOut} disabled={signingOut || pairing || !!remote.operation}>
-              {signingOut ? "Disconnecting…" : "Sign out"}
-            </button>
-          </>
+          <button className="btn" onClick={handleSignOut} disabled={signingOut || pairing || !!remote.operation}>
+            {signingOut ? "Disconnecting…" : "Sign out"}
+          </button>
         ) : signingIn ? (
           <button className="btn" onClick={cancelSignIn}>Cancel sign-in</button>
         ) : (!checkingAccount || remote.error) && (
@@ -375,6 +367,27 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
             <button className="btn" onClick={handleGoogleSignIn}>Sign in with Google</button>
           </>
         )}
+      </div>
+    </>
+  );
+
+  let connectionControls = (
+    <>
+      <RemoteConnectionStatus label={remote.label} phase={remote.phase} />
+      {remote.error && <p role="alert">{remote.error}</p>}
+      <div className="btn-group">
+        {remote.phase === "subscription" && <button className="btn btn-primary" onClick={async () => {
+          try {
+            let response = await fetch("https://backend.clawtab.cc/subscription/payment-link");
+            let { url } = await response.json();
+            await openUrl(url);
+          } catch {
+            await openUrl("https://buy.stripe.com/14AdRaemTbqlaF2bUL0Jq01");
+          }
+        }}>Subscribe</button>}
+        {accessToken && remote.phase !== "connected" && <button className="btn btn-primary" onClick={connectRemoteConnection} disabled={!!remote.operation}>
+          {remote.operation === "connect" ? "Connecting…" : "Connect"}
+        </button>}
       </div>
     </>
   );
@@ -492,7 +505,7 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
       ) : (
         <>
           <div className="field-group">
-            <span className="field-group-title">Connection</span>
+            <span className="field-group-title">Account</span>
             {accountControls}
             <p className="section-description">Signing out disconnects ClawTab from remote access.</p>
           </div>
@@ -500,7 +513,12 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
             <span className="field-group-title">This Mac</span>
 
             <div className="form-group">
-              <label>Server</label>
+              <label>Relay</label>
+              {connectionControls}
+            </div>
+
+            <div className="form-group">
+              <label>Relay server</label>
               <span style={{ fontSize: 13, color: "var(--text-primary)" }}>
                 {settings.server_url}
               </span>
