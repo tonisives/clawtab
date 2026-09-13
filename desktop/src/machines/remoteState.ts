@@ -18,8 +18,8 @@ export let remoteConnectionState = (state: RemoteState, machines: { connected: b
   if (state.operation === "disconnect") return { phase: "disconnecting", label: "Disconnecting…" }
   if (state.signedOut) return { phase: "disconnected", label: "Disconnected" }
   if (state.error) return { phase: "interrupted", label: "Connection interrupted" }
-  if (state.account === "checking" || !state.relay) return { phase: "checking", label: "Checking connection…" }
   if (state.account === "required") return { phase: "sign_in", label: "Sign in to connect" }
+  if (state.account === "checking" || !state.relay) return { phase: "checking", label: "Checking connection…" }
   if (!state.relay.configured) return { phase: "setup", label: "Pair this Mac to connect" }
   if (!state.relay.enabled && state.operation !== "connect") return { phase: "disconnected", label: "Disconnected" }
   if (state.relay.subscription_required) return { phase: "subscription", label: "Subscription required" }

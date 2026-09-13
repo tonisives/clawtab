@@ -35,7 +35,7 @@ let load = (options = {}) => {
       if (command === 'relay_sign_out') fixture.token = null;
     } };
     throw Error(`Unexpected module ${name}`);
-  }, { window: host, document: { ...host, hidden: false }, setInterval: () => 1, clearInterval: () => {} });
+  }, { window: host, document: { ...host, hidden: false }, setTimeout: options.setTimeout ?? setTimeout, clearTimeout: options.clearTimeout ?? clearTimeout, setInterval: () => 1, clearInterval: () => {} });
   return { fixture, controller };
 };
 
@@ -141,4 +141,38 @@ test('mounting the watcher again while restoration is pending still completes in
   await controller.checkRemoteConnection();
   assert.equal(controller.useRemoteConnection().phase, 'connected');
   stopAgain();
+});
+
+
+test('a stalled account check times out, can retry, and ignores the late result', async () => {
+  let expire;
+  let restore;
+  let { fixture, controller } = load({
+    restore: () => new Promise(resolve => { restore = resolve; }),
+    setTimeout: callback => { expire = callback; return 1; },
+    clearTimeout: () => {},
+  });
+  let pending = controller.checkRemoteConnection();
+  expire();
+  await pending;
+  assert.equal(controller.useRemoteConnection().phase, 'interrupted');
+  fixture.restore = null;
+  await controller.retryRemoteConnection();
+  assert.equal(controller.useRemoteConnection().phase, 'connected');
+  restore('obsolete-account');
+  await Promise.resolve();
+  assert.equal(controller.useRemoteConnection().token, 'fixture-account');
+});
+
+test('sign-in during initialization cannot leave the status checking forever', async () => {
+  let resolve;
+  let { fixture, controller } = load({ restore: () => new Promise(done => { resolve = done; }) });
+  let pending = controller.checkRemoteConnection();
+  controller.beginRemoteSignIn();
+  resolve(null);
+  await pending;
+  assert.equal(controller.useRemoteConnection().phase, 'sign_in');
+  fixture.restore = null;
+  await controller.retryRemoteConnection();
+  assert.equal(controller.useRemoteConnection().phase, 'connected');
 });

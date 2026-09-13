@@ -1,8 +1,8 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { ConnectMachine, ManageMachinesButton, MachineOnboardingProvider, MachinesPanel, RentalsPanel } from "@clawtab/shared"
 import { openUrl } from "@tauri-apps/plugin-opener"
 import { approveDesktopMachine, localHostRequest, desktopMachineApi, localMachineId } from "../machines/connection"
-import { useRemoteConnection } from "../machines/remoteConnection"
+import { checkRemoteConnection, retryRemoteConnection, useRemoteConnection } from "../machines/remoteConnection"
 import { RemoteConnectionStatus } from "./RemoteConnectionStatus"
 
 export let DesktopMachinesPanel = ({ onOpenAccount, manage = true }: { onOpenAccount: () => void; manage?: boolean }) => {
@@ -10,10 +10,12 @@ export let DesktopMachinesPanel = ({ onOpenAccount, manage = true }: { onOpenAcc
   let showPersonal = () => setMachineType("personal")
   let showRented = () => setMachineType("rented")
   let remote = useRemoteConnection()
+  useEffect(() => { void checkRemoteConnection() }, [])
+  let retryConnection = () => { void retryRemoteConnection() }
   let available = remote.account === "ready" && remote.relay?.enabled && remote.relay.configured && remote.operation !== "disconnect"
   if (!available) return <div className="desktop-machines-panel">
     <RemoteConnectionStatus label={remote.label} phase={remote.phase} />
-    {remote.error && <p role="alert">{remote.error}</p>}
+    {remote.error && <><p role="alert">{remote.error}</p><button className="btn" onClick={retryConnection}>Retry connection</button></>}
     <button className="btn btn-primary" onClick={onOpenAccount}>Open Remote Access</button>
   </div>
   return <MachineOnboardingProvider
@@ -22,7 +24,7 @@ export let DesktopMachinesPanel = ({ onOpenAccount, manage = true }: { onOpenAcc
   >
     <div className="desktop-machines-panel">
       <RemoteConnectionStatus label={remote.label} phase={remote.phase} />
-      {remote.error && <p role="alert">{remote.error}</p>}
+      {remote.error && <><p role="alert">{remote.error}</p><button className="btn" onClick={retryConnection}>Retry connection</button></>}
       {remote.phase !== "connected" && <button className="btn" onClick={onOpenAccount}>Open Remote Access</button>}
       {manage && <div className="desktop-machines-tabs" role="group" aria-label="Machine type">
         <button className="desktop-machines-tab" aria-pressed={machineType === "personal"} onClick={showPersonal}>Personal machines</button>

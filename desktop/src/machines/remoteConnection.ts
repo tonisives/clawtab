@@ -28,15 +28,35 @@ let setEnabled = async (enabled: boolean) => {
   if (!enabled) await invoke("relay_disconnect")
 }
 
+let withConnectionTimeout = async <T,>(request: Promise<T>): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      request,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("Connection check timed out")), 20_000)
+      }),
+    ])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+export let retryRemoteConnection = () => {
+  suspended = false
+  return checkRemoteConnection()
+}
+
 export let checkRemoteConnection = async () => {
   if (checking || session.operation || suspended) return checking
   let current = version
+  update({ error: null })
   checking = (async () => {
     try {
-      let [relay, token] = await Promise.all([
+      let [relay, token] = await withConnectionTimeout(Promise.all([
         invoke<RelayConnection>("get_relay_status"),
         invoke<string | null>("relay_restore_account"),
-      ])
+      ]))
       if (current !== version) return
       update({ relay, token, account: token ? "ready" : "required", error: null,
         accountVersion: token !== session.token ? session.accountVersion + 1 : session.accountVersion })
@@ -80,6 +100,7 @@ export let connectRemoteConnection = async () => {
 export let beginRemoteSignIn = () => {
   version++
   suspended = true
+  if (session.account === "checking") update({ account: "required" })
 }
 
 export let acceptRemoteSignIn = async (token: string) => {
