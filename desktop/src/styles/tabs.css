@@ -361,3 +361,12 @@
   padding-left: 6px;
   border-left: 1px solid var(--border-color);
 }
+
+.desktop-machines-panel > .desktop-machines-tabs { display: flex; gap: 4px; padding: 4px; margin: 16px 0; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; }
+.desktop-machines-tab { flex: 1; padding: 10px 12px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: var(--text-secondary); font: inherit; font-weight: 600; cursor: pointer; }
+.desktop-machines-tab[aria-pressed="true"] { background: var(--bg-primary); border-color: var(--border-color); color: var(--text-primary); }
+.desktop-machines-tab:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+.desktop-machines-management { border: 1px solid var(--border-color); border-radius: 8px; padding: 16px; }
+.desktop-machines-heading { margin-bottom: 16px; }
+.desktop-machines-heading h3 { margin: 0 0 6px; font-size: 16px; }
+.desktop-machines-heading p { margin: 0; color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
