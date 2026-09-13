@@ -27,19 +27,18 @@ let LiquidMachineActionButton = ({ label, onPress, accessibilityLabel, disabled,
       return false
     }
   })()
-  let button = <Pressable
+  let content = <View pointerEvents="none" style={[styles.liquidPressable, icon === "back" && styles.liquidBackPressable]}>
+    {icon === "back" ? <Ionicons name="chevron-back" size={22} color={colors.text} /> : <Text style={styles.liquidAction}>{label}</Text>}
+  </View>
+  return <Pressable
     accessibilityRole="button"
     accessibilityLabel={accessibilityLabel ?? label}
     disabled={disabled}
     onPress={onPress}
-    style={({ pressed }) => [styles.liquidPressable, icon === "back" && styles.liquidBackPressable, pressed && styles.liquidPressed]}
+    style={({ pressed }) => [styles.liquidFrame, icon === "back" && styles.liquidBackFrame, !glassAvailable && styles.liquidFallback, disabled && styles.liquidDisabled, pressed && styles.liquidPressed, style]}
   >
-    {icon === "back" ? <Ionicons name="chevron-back" size={22} color={colors.text} /> : <Text style={styles.liquidAction}>{label}</Text>}
+    {glassAvailable ? <GlassView pointerEvents="none" glassEffectStyle="regular" colorScheme="dark" style={styles.liquidGlass}>{content}</GlassView> : content}
   </Pressable>
-
-  return <View style={[styles.liquidFrame, icon === "back" && styles.liquidBackFrame, !glassAvailable && styles.liquidFallback, disabled && styles.liquidDisabled, style]}>
-    {glassAvailable ? <GlassView glassEffectStyle="regular" isInteractive colorScheme="dark" style={styles.liquidGlass}>{button}</GlassView> : button}
-  </View>
 }
 
 export let machineOnboardingChrome: MachineOnboardingChrome = {
@@ -54,8 +53,9 @@ export let MachineSetup = ({ onNavigate, manage = false }: { onNavigate?: () => 
   let [attempt, setAttempt] = useState(0)
   let [loading, setLoading] = useState(true)
   let [checkout, setCheckout] = useState<RentalAvailability>({ purchases: false })
+  let allowNewRentals = !manage && Platform.OS === "web"
   useEffect(() => {
-    if (!authenticated) return
+    if (!authenticated || (!manage && !allowNewRentals)) return
     let active = true
     setLoading(true)
     let resolve = async () => {
@@ -65,7 +65,7 @@ export let MachineSetup = ({ onNavigate, manage = false }: { onNavigate?: () => 
     }
     void resolve().catch(() => { if (active) setCheckout({ purchases: false, reason: "connection" }) }).finally(() => { if (active) setLoading(false) })
     return () => { active = false }
-  }, [authenticated, attempt])
+  }, [authenticated, attempt, manage, allowNewRentals])
   let retry = () => setAttempt((value) => value + 1)
   let signIn = () => { onNavigate?.(); router.push({ pathname: "/login", params: { return_to: "machines" } }) }
   if (!authenticated) return <View style={styles.intro}>
@@ -74,8 +74,8 @@ export let MachineSetup = ({ onNavigate, manage = false }: { onNavigate?: () => 
   </View>
   return <MachineOnboardingProvider content={machineOnboardingContent} management={machineManagementContent} chrome={machineOnboardingChrome}>
     {manage && <View style={styles.navigation}><AddMachineButton /></View>}
-    <RentalsPanel showExistingRentals={manage} allowNewRentals={!manage} onOrderingChange={setOrdering} api={rentalApi} {...checkout} platform={Platform.OS === "ios" ? "ios" : Platform.OS === "android" ? "android" : "web"} openUrl={openCheckout} />
-    {!manage && !checkout.purchases && <View style={styles.unavailable}>
+    {(manage || allowNewRentals) && <RentalsPanel showExistingRentals={manage} allowNewRentals={allowNewRentals} onOrderingChange={setOrdering} api={rentalApi} {...checkout} platform={Platform.OS === "ios" ? "ios" : Platform.OS === "android" ? "android" : "web"} openUrl={openCheckout} />}
+    {allowNewRentals && !checkout.purchases && <View style={styles.unavailable}>
       <Text style={styles.unavailableTitle}>Rent a machine</Text>
       <Text style={styles.detail}>{loading ? "Checking availability…" : rentalAvailabilityMessage(checkout.reason)}</Text>
       {!loading && ["connection", "storefront"].includes(checkout.reason ?? "") && <Pressable accessibilityRole="button" onPress={retry} style={styles.button}><Text style={styles.action}>Try again</Text></Pressable>}
