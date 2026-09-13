@@ -1,0 +1,93 @@
+name: Android Google Play build
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_code:
+        description: 'Google Play version code (must exceed every previous upload)'
+        required: true
+        type: string
+  push:
+    tags: ['android-v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: remote
+    env:
+      CI: 'true'
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare upload key
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "Missing repository secret: $name" >&2
+              exit 1
+            fi
+          done
+          export ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/clawtab-upload.jks"
+          echo "ANDROID_KEYSTORE_PATH=$ANDROID_KEYSTORE_PATH" >> "$GITHUB_ENV"
+          umask 077
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$ANDROID_KEYSTORE_PATH"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: remote/package.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - run: pnpm install --frozen-lockfile
+      - name: Select version code
+        env:
+          INPUT_VERSION_CODE: ${{ inputs.version_code }}
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const config = require('./app.json').expo;
+          const code = process.env.INPUT_VERSION_CODE || String(config.android.versionCode);
+          if (!/^[1-9][0-9]*$/.test(code) || Number(code) > 2100000000) {
+            throw new Error('Version code must be an integer between 1 and 2100000000');
+          }
+          if (process.env.GITHUB_REF_TYPE === 'tag' && process.env.GITHUB_REF_NAME !== `android-v${config.version}`) {
+            throw new Error('Android tag must match the version in remote/app.json');
+          }
+          fs.appendFileSync(process.env.GITHUB_ENV, `ANDROID_VERSION_CODE=${code}\n`);
+          NODE
+      - name: Generate Android project
+        run: pnpm exec expo prebuild --platform android --no-install
+      - name: Build signed Play bundle
+        working-directory: remote/android
+        run: ./gradlew :app:bundleRelease --init-script ../scripts/android-release.gradle --max-workers=4 --no-daemon
+      - name: Verify bundle signature
+        run: |
+          bundle=android/app/build/outputs/bundle/release/app-release.aab
+          test -s "$bundle"
+          jarsigner -verify "$bundle"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: clawtab-google-play-${{ env.ANDROID_VERSION_CODE }}
+          path: remote/android/app/build/outputs/bundle/release/*.aab
+          if-no-files-found: error
+      - name: Remove upload key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/clawtab-upload.jks"
