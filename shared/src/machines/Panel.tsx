@@ -18,6 +18,7 @@ import {
 } from "./client"
 
 type Props = {
+  machineType?: "personal" | "rented"
   presentation?: "compact" | "panel"
   showConnectionStatus?: boolean
   onOpenAccount?: () => void
@@ -26,7 +27,7 @@ type Props = {
   approvePairing: (code: string) => Promise<unknown>
   localRequest?: (request: MachineMessage) => Promise<MachineMessage>
 }
-export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, localMachineId, presentation = "compact", showConnectionStatus = true }: Props) => {
+export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, localMachineId, presentation = "compact", showConnectionStatus = true, machineType }: Props) => {
   let styles = presentation === "panel" ? desktopStyles : compactStyles
   let state = useMachines()
   let [tab, setTab] = useState("agents")
@@ -59,7 +60,8 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
   } | null>(null)
   let [progress, setProgress] = useState("")
   let [operation, setOperation] = useState<{ id: string; machine: string } | null>(null)
-  let machine = state.machines.find((m) => m.id === state.selected)
+  let visibleMachines = state.machines.filter((machine) => !machineType || (machineType === "rented" ? !!machine.rental : !machine.rental))
+  let machine = visibleMachines.find((m) => m.id === state.selected)
   let models: Record<string, string[]> = state.agentModels?.enabled_models ?? (machine
     ? (state.snapshots[machine.id]?.settings_response?.enabled_models ?? {})
     : {})
@@ -279,7 +281,7 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
   let toggleRemove = () => setRemoveConfirm(!removeConfirm)
   let toggle = () => setExpanded(!expanded)
   let clearFilter = () => filterMachine(null)
-  let machines = [...state.machines].sort((a, b) =>
+  let machines = [...visibleMachines].sort((a, b) =>
     Number(b.id === localMachineId) - Number(a.id === localMachineId) ||
     Number(b.online) - Number(a.online) || a.name.localeCompare(b.name),
   )
@@ -366,7 +368,7 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
               ...(localRequest ? ["transfers"] : []),
               "models",
               "access",
-              "pair",
+              ...(machineType === "rented" ? [] : ["pair"]),
             ].map((value) => (
               <Pressable
                 accessibilityRole="button"
@@ -393,11 +395,11 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
               <Text style={styles.text}>
                 {!state.connected
                   ? "Connect your ClawTab account to load machines and use these controls."
-                  : state.machines.length
+                  : visibleMachines.length
                     ? (presentation === "panel" ? "Select a machine above" : "Select a machine below") + " to manage its " + tab + "."
-                    : "No machines are paired with this account yet. Add a machine to manage its " + tab + "."}
+                    : machineType === "rented" ? "Your rented boxes will appear here once connected." : "No machines are paired with this account yet. Add a machine to manage its " + tab + "."}
               </Text>
-              {state.connected && !state.machines.length && <Pressable accessibilityRole="button" onPress={openTab("pair")} style={styles.button}>
+              {state.connected && !visibleMachines.length && machineType !== "rented" && <Pressable accessibilityRole="button" onPress={openTab("pair")} style={styles.button}>
                 <Text style={styles.text}>Pair your first machine</Text>
               </Pressable>}
             </>
