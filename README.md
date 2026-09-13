@@ -18,6 +18,19 @@
 
 ---
 
+## Downloads
+
+| Platform | Availability |
+| --- | --- |
+| macOS | [Desktop app for Apple Silicon and Intel](https://github.com/tonisives/clawtab/releases/latest), or `brew install --cask tonisives/tap/clawtab` |
+| Linux | Headless agent host: [x86_64](https://github.com/tonisives/clawtab/releases/latest/download/clawtab-linux-x86_64.tar.gz) / [ARM64](https://github.com/tonisives/clawtab/releases/latest/download/clawtab-linux-aarch64.tar.gz) |
+| Windows | No native Windows build yet |
+| iPhone / iPad | [App Store](https://apps.apple.com/us/app/clawtab/id6759683841) |
+| Android | Google Play build workflow added; store release pending signing and submission |
+| Web | [Remote](https://remote.clawtab.cc) |
+
+See [platform installation and release builds](docs/platform-builds.md).
+
 ## Tmux Is the Workspace
 
 ClawTab keeps agents in real tmux panes instead of hiding them inside a desktop-only runtime. Your process, working directory, scrollback, and terminal state survive app restarts and remain available through normal tmux commands.

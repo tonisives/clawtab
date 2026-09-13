@@ -1,0 +1,22 @@
+// Applied after Expo prebuild; signing values stay in the process environment.
+gradle.beforeProject { project ->
+    if (project.path == ':app') {
+        project.plugins.withId('com.android.application') {
+            project.androidComponents.finalizeDsl { android ->
+                def required = ['ANDROID_KEYSTORE_PATH', 'ANDROID_KEYSTORE_PASSWORD', 'ANDROID_KEY_ALIAS', 'ANDROID_KEY_PASSWORD', 'ANDROID_VERSION_CODE']
+                required.each { name ->
+                    if (!System.getenv(name)) throw new GradleException("Missing required environment variable: ${name}")
+                }
+                def code = System.getenv('ANDROID_VERSION_CODE').toInteger()
+                if (code < 1 || code > 2100000000) throw new GradleException('Invalid ANDROID_VERSION_CODE')
+                android.defaultConfig.versionCode = code
+                def signing = android.signingConfigs.create('playUpload')
+                signing.storeFile = new File(System.getenv('ANDROID_KEYSTORE_PATH'))
+                signing.storePassword = System.getenv('ANDROID_KEYSTORE_PASSWORD')
+                signing.keyAlias = System.getenv('ANDROID_KEY_ALIAS')
+                signing.keyPassword = System.getenv('ANDROID_KEY_PASSWORD')
+                android.buildTypes.release.signingConfig = signing
+            }
+        }
+    }
+}
