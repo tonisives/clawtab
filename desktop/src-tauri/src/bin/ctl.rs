@@ -26,6 +26,7 @@ fn print_usage() {
     eprintln!(
         "  usage <provider>  Show local provider quota usage (claude, codex, antigravity, zai)"
     );
+    eprintln!("  journal approved [--days 1..30]  Export approved-only context for local jobs");
     eprintln!("  codex set-model <model> <effort> [pane_id]");
     eprintln!("  plugin list [pane_id] [--json]              List available agent plugins");
     eprintln!("  plugin <name> run [pane_id] [key=value ...]");
@@ -173,6 +174,48 @@ async fn handle_codex_command(args: &[String]) {
             eprintln!("Error: unexpected daemon response");
             std::process::exit(1);
         }
+    }
+}
+
+async fn handle_journal_command(args: &[String]) {
+    if args.get(2).map(String::as_str) != Some("approved") {
+        eprintln!("Usage: cwtctl journal approved [--days 1..30]");
+        std::process::exit(1);
+    }
+    let mut days = 7_u32;
+    let mut index = 3;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--days" if index + 1 < args.len() => {
+                days = args[index + 1].parse().unwrap_or_else(|_| {
+                    eprintln!("Error: --days must be an integer from 1 to 30");
+                    std::process::exit(1);
+                });
+                index += 2;
+            }
+            "-h" | "--help" => {
+                println!("Usage: cwtctl journal approved [--days 1..30]");
+                return;
+            }
+            value => {
+                eprintln!("Error: unknown journal argument: {value}");
+                std::process::exit(1);
+            }
+        }
+    }
+    if !(1..=30).contains(&days) {
+        eprintln!("Error: --days must be an integer from 1 to 30");
+        std::process::exit(1);
+    }
+    match ipc::send_command(IpcCommand::ApprovedJournalContext { days }).await {
+        Ok(IpcResponse::ApprovedJournalContext(context)) => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&context).unwrap_or_default()
+            );
+        }
+        Ok(IpcResponse::Error(error)) | Err(error) => exit_error(&error),
+        Ok(_) => exit_error("unexpected daemon response"),
     }
 }
 
@@ -713,6 +756,11 @@ async fn main() {
         return;
     }
 
+    if command == "journal" {
+        handle_journal_command(&args).await;
+        return;
+    }
+
     if command == "plugin" {
         handle_plugin_command(&args).await;
         return;
@@ -1092,6 +1140,10 @@ async fn main() {
                         println!("{}: {}", name, state);
                     }
                 }
+            }
+            IpcResponse::ApprovedJournalContext(_) => {
+                eprintln!("Error: unexpected approved journal response");
+                std::process::exit(1);
             }
             IpcResponse::SecretKeys(keys) => {
                 if keys.is_empty() {

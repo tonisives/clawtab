@@ -16,6 +16,19 @@ The updated Clawtab daemon advertises `journal_query_v1`. Deploy the updated rel
 connection. Older machines return an explicit unsupported-capability response.
 Closing either desktop window does not stop the background services.
 
+Local scheduled agents can read the broader approved-only writing export without
+opening the Work Journal socket to their repository sandbox:
+
+```sh
+cwtctl journal approved --days 7
+```
+
+The daemon performs the bounded timeline scan and returns only approved facts in
+the requested 1–30 day window plus at most six self-authored writing examples.
+Screen observations and fields outside the documented provenance/context set are
+removed. The command cannot read originals or pending/private items and cannot
+change reviews, sources, settings, or collection state.
+
 ## Credentials
 
 Owner-authenticated token management routes:

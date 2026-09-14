@@ -2,7 +2,7 @@ pub mod git;
 pub mod journal;
 mod operations;
 mod transfer;
-mod work_journal;
+pub mod work_journal;
 use clawtab_protocol::HostRequest;
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};

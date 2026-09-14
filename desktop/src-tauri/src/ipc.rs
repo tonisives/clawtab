@@ -51,6 +51,10 @@ pub enum IpcCommand {
         name: String,
     },
     GetStatus,
+    /// Export bounded, approved-only journal material for a local agent job.
+    ApprovedJournalContext {
+        days: u32,
+    },
     OpenSettings,
     GetAutoYesPanes,
     SetAutoYesPanes {
@@ -273,6 +277,7 @@ pub enum IpcResponse {
     Ok,
     Jobs(Vec<JobSummary>),
     Status(std::collections::HashMap<String, crate::config::jobs::JobStatus>),
+    ApprovedJournalContext(serde_json::Value),
     AutoYesPanes(Vec<String>),
     PinnedItems(Vec<String>),
     ActiveQuestions(Vec<clawtab_protocol::ClaudeQuestion>),

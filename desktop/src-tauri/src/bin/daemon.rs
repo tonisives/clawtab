@@ -494,6 +494,12 @@ async fn handle_ipc_command(
     let protected_panes = &ctx.protected_panes;
     match cmd {
         IpcCommand::Ping => IpcResponse::Pong,
+        IpcCommand::ApprovedJournalContext { days } => {
+            match clawtab_lib::host::work_journal::approved_context(days).await {
+                Ok(context) => IpcResponse::ApprovedJournalContext(context),
+                Err(error) => IpcResponse::Error(error),
+            }
+        }
         IpcCommand::ListJobs => {
             let jobs = jobs_config.lock();
             let mut summaries: Vec<clawtab_lib::ipc::JobSummary> = jobs
