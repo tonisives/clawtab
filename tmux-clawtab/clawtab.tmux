@@ -99,11 +99,13 @@ if [ "$border_cache_enabled" -eq 1 ]; then
     tmux set-hook -g 'pane-focus-in[100]' \
         "run-shell -b '$pane_border_cache_script \"#{pane_id}\" \"#{pane_width}\"'"
     tmux set-hook -g 'after-select-window[100]' \
-        "run-shell -b '$pane_border_cache_script'"
+        "run-shell -b '$pane_border_cache_script --window \"#{window_id}\"'"
     tmux set-hook -g 'after-new-window[100]' \
-        "run-shell -b '$pane_border_cache_script'"
+        "run-shell -b '$pane_border_cache_script --window \"#{window_id}\"'"
     tmux set-hook -g 'after-split-window[100]' \
-        "run-shell -b '$pane_border_cache_script'"
+        "run-shell -b '$pane_border_cache_script --window \"#{window_id}\"'"
+    tmux set-hook -g 'window-layout-changed[100]' \
+        "run-shell -b '$pane_border_cache_script --window \"#{window_id}\"'"
     tmux run-shell -b "$pane_border_cache_script"
 fi
 

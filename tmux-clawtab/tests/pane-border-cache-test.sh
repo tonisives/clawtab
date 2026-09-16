@@ -10,6 +10,20 @@ trap 'rm -rf "$TEST_DIR"' EXIT
 cat >"$TEST_DIR/tmux" <<'EOF'
 #!/usr/bin/env bash
 case "$1" in
+    display-message)
+        printf '@42\n'
+        ;;
+    list-clients)
+        printf '%s\n' "$@" >>"$TEST_TMUX_OPTIONS"
+        printf '/dev/test-client\n'
+        ;;
+    list-panes)
+        printf '%s\n' "$@" >>"$TEST_TMUX_OPTIONS"
+        printf '%%63|||120\n'
+        ;;
+    refresh-client)
+        printf '%s\n' "$@" >>"$TEST_TMUX_OPTIONS"
+        ;;
     show-option)
         if [ "${3:-}" = "pane-border-format" ]; then
             printf '%s\n' "$TEST_BORDER_FORMAT"
@@ -36,6 +50,17 @@ export CLAWTAB_PANE_INFO_HELPER="$TEST_DIR/helper"
 bash "$PLUGIN_DIR/scripts/pane-border-cache.sh" '%63' 427
 grep -Fxq '1h ago | holders perf' "$TEST_TMUX_OPTIONS"
 grep -Fxq '@clawtab-pane-has-info' "$TEST_TMUX_OPTIONS"
+grep -Fxq 'refresh-client' "$TEST_TMUX_OPTIONS"
+grep -Fxq '/dev/test-client' "$TEST_TMUX_OPTIONS"
+grep -Fq '#{==:#{window_id},@42}' "$TEST_TMUX_OPTIONS"
+grep -Fq '#{!:#{client_control_mode}}' "$TEST_TMUX_OPTIONS"
+
+# A background window refresh must enumerate the hook's explicit target.
+: >"$TEST_TMUX_OPTIONS"
+bash "$PLUGIN_DIR/scripts/pane-border-cache.sh" --window '@42'
+grep -Fxq '@42' "$TEST_TMUX_OPTIONS"
+grep -Fxq '1h ago | holders perf' "$TEST_TMUX_OPTIONS"
+grep -Fxq 'refresh-client' "$TEST_TMUX_OPTIONS"
 
 # All supported helper locations must become pane options, including the
 # relocated helper used by existing tmux configurations.
