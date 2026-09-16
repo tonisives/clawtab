@@ -86,11 +86,7 @@ pub async fn monitor_pane(params: MonitorParams) {
     };
 
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-    let poller = spawn_exit_poller(
-        &params.tmux_session,
-        &params.pane_id,
-        params.resource_lease.is_some(),
-    );
+    let poller = spawn_exit_poller(&params.pane_id);
 
     run_poll_loop(
         &params,
@@ -209,26 +205,16 @@ fn guarded_completion(state: Result<tmux::PaneProcessState, String>) -> Option<O
     }
 }
 
-fn spawn_exit_poller(session: &str, pane_id: &str, guarded: bool) -> ExitPoller {
+fn spawn_exit_poller(pane_id: &str) -> ExitPoller {
     let process_exited = Arc::new(AtomicBool::new(false));
     let exit_flag = Arc::clone(&process_exited);
-    let exit_code = Arc::new(Mutex::new(if guarded { None } else { Some(0) }));
+    let exit_code = Arc::new(Mutex::new(None));
     let observed_code = Arc::clone(&exit_code);
-    let exit_session = session.to_string();
     let exit_pane = pane_id.to_string();
     let task = tokio::spawn(async move {
         loop {
-            tokio::time::sleep(std::time::Duration::from_millis(if guarded {
-                1000
-            } else {
-                200
-            }))
-            .await;
-            let completion = if guarded {
-                guarded_completion(tmux::pane_process_state(&exit_pane))
-            } else {
-                (!tmux::is_pane_busy(&exit_session, &exit_pane)).then_some(Some(0))
-            };
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            let completion = guarded_completion(tmux::pane_process_state(&exit_pane));
             if let Some(code) = completion {
                 *observed_code.lock() = code;
                 exit_flag.store(true, Ordering::Release);
@@ -256,10 +242,10 @@ async fn run_poll_loop(
         state.tick_counter += 1;
 
         let Some(trimmed) = capture_or_break(params) else {
-            if params.resource_lease.is_none() || process_exited.load(Ordering::Acquire) {
+            if process_exited.load(Ordering::Acquire) {
                 break;
             }
-            // A capture failure does not prove that a guarded process exited.
+            // A capture failure does not prove that the pane process exited.
             continue;
         };
 

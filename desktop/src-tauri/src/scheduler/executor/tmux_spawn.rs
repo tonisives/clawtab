@@ -93,7 +93,7 @@ pub(super) async fn spawn_agent_pane(
         prompt_file.as_deref(),
         &prompt_content,
     );
-    if let Err(error) = prepare_guarded_pane(&pane_id, &env_vars) {
+    if let Err(error) = tmux::retain_exited_pane(&pane_id) {
         let _ = tmux::kill_pane(&pane_id);
         remove_prompt_file(prompt_file.as_deref());
         return Err(error);
@@ -114,16 +114,6 @@ pub(super) async fn spawn_agent_pane(
         pane_id,
     };
     Ok((Some(0), String::new(), String::new(), Some(handle)))
-}
-
-fn prepare_guarded_pane(pane_id: &str, env_vars: &[(String, String)]) -> Result<(), String> {
-    if env_vars
-        .iter()
-        .any(|(key, value)| key == "CLAWTAB_JOB_POLICY" && value == "crm_social_research")
-    {
-        tmux::retain_exited_pane(pane_id)?;
-    }
-    Ok(())
 }
 
 /// Compose the shell command sent to the pane: cd into the work dir, then

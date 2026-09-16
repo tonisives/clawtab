@@ -75,7 +75,7 @@ async fn real_guarded_poller_survives_shell_startup_and_preserves_failed_exit() 
     );
     assert!(pane.0.starts_with('%') && pane.0 != parent);
     tmux::retain_exited_pane(&pane.0).expect("retain exact test pane");
-    let poller = spawn_exit_poller("", &pane.0, true);
+    let poller = spawn_exit_poller(&pane.0);
     tokio::time::sleep(std::time::Duration::from_millis(2200)).await;
     assert!(
         !poller.exited.load(Ordering::Acquire),
