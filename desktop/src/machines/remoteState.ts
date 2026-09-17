@@ -7,7 +7,7 @@ export type RelayConnection = {
 }
 
 export type RemoteState = {
-  account: "checking" | "ready" | "required"
+  account: "checking" | "ready" | "required" | "unavailable"
   relay: RelayConnection | null
   operation: "connect" | "disconnect" | null
   signedOut: boolean

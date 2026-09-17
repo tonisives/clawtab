@@ -313,17 +313,34 @@ pub async fn relay_restore_account(state: State<'_, AppState>) -> Result<Option<
         .map_err(|_| "Could not reach the relay to check your account session".to_string())?;
         match result {
             Ok(_) => return Ok(state.secrets.lock().get(KEYCHAIN_ACCESS_TOKEN_KEY).cloned()),
-            Err(error) if error == "Account session changed. Please retry." && attempt == 0 => {
-                // Another account request may have completed renewal first.
-                let secrets = state.secrets.lock();
-                access = secrets
+            Err(error)
+                if attempt == 0
+                    && (error == "Account session changed. Please retry."
+                        || error == "Token refresh failed"
+                        || error == "unauthorized") =>
+            {
+                // Another process may have rotated and stored the token while
+                // this request was in flight. Give its Keychain write time to finish.
+                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                let mut secrets = state.secrets.lock();
+                secrets.reload_keys(&[KEYCHAIN_ACCESS_TOKEN_KEY, KEYCHAIN_REFRESH_TOKEN_KEY]);
+                let next_access = secrets
                     .get(KEYCHAIN_ACCESS_TOKEN_KEY)
                     .cloned()
                     .unwrap_or_default();
-                refresh = secrets
+                let next_refresh = secrets
                     .get(KEYCHAIN_REFRESH_TOKEN_KEY)
                     .cloned()
                     .unwrap_or_default();
+                if next_access == access && next_refresh == refresh {
+                    return if error == "Account session changed. Please retry." {
+                        Err(error)
+                    } else {
+                        Ok(None)
+                    };
+                }
+                access = next_access;
+                refresh = next_refresh;
             }
             Err(error) if error == "Token refresh failed" || error == "unauthorized" => {
                 return Ok(None)

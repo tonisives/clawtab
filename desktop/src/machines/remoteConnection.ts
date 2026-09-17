@@ -50,7 +50,7 @@ export let retryRemoteConnection = () => {
 export let checkRemoteConnection = async () => {
   if (checking || session.operation || suspended) return checking
   let current = version
-  update({ error: null })
+  update({ error: null, ...(session.account === "unavailable" ? { account: "checking" as const } : {}) })
   checking = (async () => {
     try {
       let [relay, token] = await withConnectionTimeout(Promise.all([
@@ -61,7 +61,10 @@ export let checkRemoteConnection = async () => {
       update({ relay, token, account: token ? "ready" : "required", error: null,
         accountVersion: token !== session.token ? session.accountVersion + 1 : session.accountVersion })
     } catch {
-      if (current === version) update({ error: "Could not connect. Check your network and try again." })
+      if (current === version) update({
+        account: session.token ? "ready" : "unavailable",
+        error: "Could not check your account. Please retry.",
+      })
     } finally {
       checking = null
     }

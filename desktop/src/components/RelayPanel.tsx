@@ -6,7 +6,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { ShareSection } from "@clawtab/shared";
 import type { ShareInfo, SharedWithMeInfo } from "@clawtab/shared";
 import { pollRelayLogin, startRelayLogin } from "../relayLogin";
-import { acceptRemoteSignIn, beginRemoteSignIn, checkRemoteConnection, connectRemoteConnection, disconnectRemoteConnection, useRemoteConnection } from "../machines/remoteConnection";
+import { acceptRemoteSignIn, beginRemoteSignIn, checkRemoteConnection, connectRemoteConnection, disconnectRemoteConnection, retryRemoteConnection, useRemoteConnection } from "../machines/remoteConnection";
 import { RemoteConnectionStatus } from "./RemoteConnectionStatus";
 
 interface RelaySettings {
@@ -40,7 +40,7 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
   const [settings, setSettings] = useState<RelaySettings | null>(null);
   let remote = useRemoteConnection();
   let accessToken = remote.token;
-  let checkingAccount = remote.account === "checking";
+  let checkingAccount = remote.account === "checking" && !remote.error;
   const [loaded, setLoaded] = useState(false);
   const [showConfirmRemove, setShowConfirmRemove] = useState(false);
   let [removingRelay, setRemovingRelay] = useState(false);
@@ -349,22 +349,26 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
           ? loginStatus
           : checkingAccount
             ? "Checking your account…"
-            : accessToken
+            : remote.account === "unavailable"
+              ? "Could not check your account."
+              : accessToken
               ? "Signed in to your account."
               : "Sign in to connect."}
       </p>
       {loginError && <p role="alert">{loginError}</p>}
+      {remote.error && <p role="alert">{remote.error}</p>}
       <div className="btn-group">
+        {remote.error && <button className="btn" onClick={() => void retryRemoteConnection()}>Retry account check</button>}
         {accessToken ? (
           <button className="btn" onClick={handleSignOut} disabled={signingOut || pairing || !!remote.operation}>
             {signingOut ? "Disconnecting…" : "Sign out"}
           </button>
         ) : signingIn ? (
           <button className="btn" onClick={cancelSignIn}>Cancel sign-in</button>
-        ) : (!checkingAccount || remote.error) && (
+        ) : (
           <>
-            <button className="btn" onClick={handleAppleSignIn}>Sign in with Apple</button>
-            <button className="btn" onClick={handleGoogleSignIn}>Sign in with Google</button>
+            <button className="btn" onClick={handleAppleSignIn} disabled={checkingAccount}>Sign in with Apple</button>
+            <button className="btn" onClick={handleGoogleSignIn} disabled={checkingAccount}>Sign in with Google</button>
           </>
         )}
       </div>
@@ -374,7 +378,6 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
   let connectionControls = (
     <>
       <RemoteConnectionStatus label={remote.label} phase={remote.phase} />
-      {remote.error && <p role="alert">{remote.error}</p>}
       <div className="btn-group">
         {remote.phase === "subscription" && <button className="btn btn-primary" onClick={async () => {
           try {
