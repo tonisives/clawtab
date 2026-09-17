@@ -491,7 +491,14 @@ async fn relay_request(
             .map_err(|e| format!("Refresh failed: {}", e))?;
 
         if !refresh_resp.status().is_success() {
-            return Err("Token refresh failed".to_string());
+            return Err(if matches!(refresh_resp.status().as_u16(), 400 | 401) {
+                "Token refresh failed".to_string()
+            } else {
+                format!(
+                    "Token refresh temporarily unavailable (HTTP {})",
+                    refresh_resp.status()
+                )
+            });
         }
 
         let rb: serde_json::Value = refresh_resp

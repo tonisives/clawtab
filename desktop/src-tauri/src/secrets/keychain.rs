@@ -43,11 +43,8 @@ impl KeychainBackend {
     }
 
     pub fn set(&mut self, key: &str, value: &str) -> Result<(), String> {
-        // Delete existing entry first (security CLI errors if it already exists)
-        let _ = std::process::Command::new("security")
-            .args(["delete-generic-password", "-s", SERVICE_NAME, "-a", key])
-            .output();
-
+        // -U replaces an existing item without leaving the credential absent
+        // between deletion and insertion, which can race with another process.
         let output = std::process::Command::new("security")
             .args([
                 "add-generic-password",
