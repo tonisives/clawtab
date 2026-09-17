@@ -17,6 +17,7 @@ export type RemoteState = {
 export let remoteConnectionState = (state: RemoteState, machines: { connected: boolean; error: string | null }) => {
   if (state.operation === "disconnect") return { phase: "disconnecting", label: "Disconnecting…" }
   if (state.signedOut) return { phase: "disconnected", label: "Disconnected" }
+  if (state.account === "unavailable") return { phase: "interrupted", label: "Account check failed" }
   if (state.error) return { phase: "interrupted", label: "Connection interrupted" }
   if (state.account === "required") return { phase: "sign_in", label: "Sign in to connect" }
   if (state.account === "checking" || !state.relay) return { phase: "checking", label: "Checking connection…" }
