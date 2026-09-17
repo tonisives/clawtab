@@ -60,11 +60,6 @@ export let checkRemoteConnection = async () => {
       if (current !== version) return
       update({ relay, token, account: token ? "ready" : "required", error: null,
         accountVersion: token !== session.token ? session.accountVersion + 1 : session.accountVersion })
-      if (!token && relay.enabled) {
-        await setEnabled(false)
-        let latest = await invoke<RelayConnection>("get_relay_status")
-        if (current === version) update({ relay: latest })
-      }
     } catch {
       if (current === version) update({ error: "Could not connect. Check your network and try again." })
     } finally {
