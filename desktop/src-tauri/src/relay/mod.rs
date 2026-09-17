@@ -288,7 +288,11 @@ pub async fn connect_loop(params: ConnectLoopParams) {
         }
         match precheck_subscription(&secrets, &server_url, &relay_sub_required).await {
             SubscriptionResult::Ok => {}
-            SubscriptionResult::Unsubscribed => return,
+            SubscriptionResult::Unsubscribed => {
+                tokio::time::sleep(backoff).await;
+                backoff = (backoff * 2).min(max_backoff);
+                continue;
+            }
         }
 
         log::info!("Relay: connecting to {}", ws_url);
@@ -453,7 +457,7 @@ async fn attempt_session(
             if err_str.contains("403") {
                 log::info!("Relay: subscription required (403 from server)");
                 *relay_sub_required.lock() = true;
-                return SessionOutcome::Done;
+                return SessionOutcome::Retry;
             }
             SessionOutcome::Retry
         }
