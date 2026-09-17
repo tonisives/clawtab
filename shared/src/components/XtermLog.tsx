@@ -1,5 +1,5 @@
 import { encodeTerminalInput } from "../util/terminalInput";
-import { useRef, useImperativeHandle, forwardRef, useCallback } from "react";
+import { useRef, useImperativeHandle, forwardRef, useCallback, useMemo } from "react";
 import { View, StyleSheet, TextInput, Platform, Pressable } from "react-native";
 import { TERMINAL_CUSTOM_GLYPHS, TERMINAL_FONT_FAMILY, TERMINAL_FONT_SIZE, TERMINAL_LINE_HEIGHT } from "../theme/terminal";
 
@@ -30,6 +30,8 @@ interface XtermLogProps {
   /** Whether terminal accepts input (default true) */
   interactive?: boolean;
   forceDarkTheme?: boolean;
+  /** Keep a taller native terminal grid for quick touch scrolling. */
+  extendedViewport?: boolean;
 }
 
 
@@ -50,12 +52,13 @@ const XTERM_HTML = `<!DOCTYPE html>
 <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.11.0/lib/addon-fit.min.js"></script>
 <style>
 html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#1c1c1e}
-#terminal{height:100%;width:100%}
+#terminal{height:__VIEWPORT_HEIGHT__%;width:100%}
 </style>
 </head>
 <body>
 <div id="terminal"></div>
 <script>
+var extendedViewport = __EXTENDED_VIEWPORT__;
 var term = new Terminal({
   fontSize: ${TERMINAL_FONT_SIZE},
   fontFamily: ${JSON.stringify(TERMINAL_FONT_FAMILY)},
@@ -75,8 +78,8 @@ var term = new Terminal({
     brightMagenta:'#e599f7',brightCyan:'#99e9f2',brightWhite:'#ffffff'
   },
   allowProposedApi: true,
-  // Native history controls use tmux copy mode. Disable local scrollback so
-  // FitAddon does not reserve an unused scrollbar gutter along the right edge.
+  // Tmux copy mode handles older history. The optional taller grid below gives
+  // touch scrolling room within the live pane without a scrollbar gutter.
   scrollback: 0,
   disableStdin: false
 });
@@ -244,25 +247,39 @@ window.showPasteMenu = function() {
 };
 
 var longPressTimer = null;
+var touchLastY = null;
+var touchMoved = false;
 document.getElementById('terminal').addEventListener('touchstart', function(e) {
-  if (nativeKeyboardMode) {
-    e.preventDefault();
-    window.ReactNativeWebView.postMessage(JSON.stringify({type:'focus'}));
-    return;
-  }
+  touchLastY = e.touches && e.touches[0] ? e.touches[0].clientY : null;
+  touchMoved = false;
+  if (nativeKeyboardMode) return;
   if (longPressTimer) clearTimeout(longPressTimer);
   var touch = e.touches && e.touches[0];
   longPressTimer = setTimeout(function() {
     if (touch) showPasteTarget(touch.clientX, touch.clientY);
   }, 450);
 }, { passive: true });
-document.getElementById('terminal').addEventListener('touchmove', function() {
+document.getElementById('terminal').addEventListener('touchmove', function(e) {
   if (longPressTimer) clearTimeout(longPressTimer);
   longPressTimer = null;
-}, { passive: true });
+  var y = e.touches && e.touches[0] ? e.touches[0].clientY : null;
+  if (y !== null && touchLastY !== null) {
+    var delta = touchLastY - y;
+    if (Math.abs(delta) > 2) touchMoved = true;
+    if (extendedViewport && touchMoved) {
+      window.scrollTerminalViewport(delta);
+      e.preventDefault();
+    }
+  }
+  touchLastY = y;
+}, { passive: false });
 document.getElementById('terminal').addEventListener('touchend', function() {
   if (longPressTimer) clearTimeout(longPressTimer);
   longPressTimer = null;
+  if (nativeKeyboardMode && !touchMoved) {
+    window.ReactNativeWebView.postMessage(JSON.stringify({type:'focus'}));
+  }
+  touchLastY = null;
 }, { passive: true });
 document.getElementById('terminal').addEventListener('dblclick', function(e) {
   if (nativeKeyboardMode) return;
@@ -281,12 +298,15 @@ function reportResize() {
 var ro = new ResizeObserver(function() {
   fit.fit();
   reportResize();
+  if (window.applyVisualOffset) window.applyVisualOffset();
 });
 ro.observe(document.getElementById('terminal'));
 
 reportResize();
 window.ReactNativeWebView.postMessage(JSON.stringify({type:'ready'}));
 var visualOffsetMax = 0;
+var viewportScroll = 0;
+var followingOutput = true;
 window.applyVisualOffset = function() {
   term.options.cursorStyle = 'bar';
   term.options.cursorInactiveStyle = 'bar';
@@ -310,13 +330,33 @@ window.applyVisualOffset = function() {
   } catch (e) {}
   if (lastContentY < 0) lastContentY = 0;
   var contentBottom = (lastContentY + 1) * rowHeight;
-  var visibleHeight = Math.max(0, el.clientHeight - maxPx);
-  var offset = Math.max(0, Math.min(maxPx, Math.ceil(contentBottom - visibleHeight)));
-  el.style.transform = offset ? 'translate3d(0,' + (-offset) + 'px,0)' : '';
-  el.style.transition = 'transform 180ms ease-out';
+  var visibleHeight = Math.max(0, window.innerHeight - maxPx);
+  var bottomScroll = Math.max(0, Math.ceil(contentBottom - visibleHeight));
+  var limit = Math.max(0, el.clientHeight - visibleHeight);
+  if (followingOutput) viewportScroll = bottomScroll;
+  viewportScroll = Math.max(0, Math.min(limit, viewportScroll));
+  el.style.transform = viewportScroll ? 'translate3d(0,' + (-viewportScroll) + 'px,0)' : '';
+  el.style.transition = 'none';
 };
 window.setVisualOffset = function(px) {
   visualOffsetMax = px || 0;
+  window.applyVisualOffset();
+};
+window.scrollTerminalViewport = function(delta) {
+  var el = document.getElementById('terminal');
+  if (!el || !extendedViewport) return;
+  var visibleHeight = Math.max(0, window.innerHeight - visualOffsetMax);
+  var lastContentY = 0;
+  var buffer = term.buffer && term.buffer.active;
+  if (buffer) {
+    for (var y = term.rows - 1; y >= 0; y--) {
+      var line = buffer.getLine(buffer.viewportY + y);
+      if (line && line.translateToString(true).trim().length) { lastContentY = y; break; }
+    }
+  }
+  var limit = Math.max(0, Math.min(el.clientHeight - visibleHeight, Math.ceil((lastContentY + 1) * el.clientHeight / Math.max(1, term.rows) - visibleHeight)));
+  viewportScroll = Math.max(0, Math.min(limit, viewportScroll + delta));
+  followingOutput = viewportScroll >= limit - 12;
   window.applyVisualOffset();
 };
 window.blurTerminal = function() {
@@ -344,7 +384,11 @@ window.focusTerminal = function() {
  * Requires react-native-webview in the consuming app.
  */
 export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
-  function XtermLog({ onData, onResize, interactive = true }, ref) {
+  function XtermLog({ onData, onResize, interactive = true, extendedViewport = false }, ref) {
+    const terminalSource = useMemo(() => ({
+      html: XTERM_HTML.replace("__VIEWPORT_HEIGHT__", extendedViewport ? "250" : "100")
+        .replace("__EXTENDED_VIEWPORT__", extendedViewport ? "true" : "false"),
+    }), [extendedViewport]);
     const useNativeKeyboard = Platform.OS === "ios";
     const webViewRef = useRef<any>(null);
     const nativeInputRef = useRef<TextInput | null>(null);
@@ -353,6 +397,9 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
     const readyRef = useRef(false);
     const pendingWritesRef = useRef<string[]>([]);
     const nativeInputValueRef = useRef("");
+    const lastTouchYRef = useRef<number | null>(null);
+    const touchOriginYRef = useRef<number | null>(null);
+    const touchMovedRef = useRef(false);
 
     const sendNativeInput = useCallback(
       (text: string) => {
@@ -500,7 +547,7 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
       <View style={styles.container}>
         <WebView
           ref={webViewRef}
-          source={{ html: XTERM_HTML }}
+          source={terminalSource}
           style={styles.webview}
           onMessage={handleMessage}
           javaScriptEnabled
@@ -512,7 +559,23 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
         {useNativeKeyboard ? (
           <Pressable
             style={styles.nativeKeyboardTapLayer}
-            onPressIn={focusNativeInput}
+            onPress={() => { if (!touchMovedRef.current) focusNativeInput(); }}
+            onTouchStart={(event) => {
+              lastTouchYRef.current = event.nativeEvent.touches[0]?.pageY ?? null;
+              touchOriginYRef.current = lastTouchYRef.current;
+              touchMovedRef.current = false;
+            }}
+            onTouchMove={(event) => {
+              const y = event.nativeEvent.touches[0]?.pageY;
+              const previous = lastTouchYRef.current;
+              if (y === undefined || previous === null) return;
+              lastTouchYRef.current = y;
+              if (touchOriginYRef.current !== null && Math.abs(touchOriginYRef.current - y) > 8) touchMovedRef.current = true;
+              if (!extendedViewport) return;
+              const delta = Math.round(previous - y);
+              if (delta) webViewRef.current?.injectJavaScript(`window.scrollTerminalViewport && window.scrollTerminalViewport(${delta});true;`);
+            }}
+            onTouchEnd={() => { lastTouchYRef.current = null; touchOriginYRef.current = null; }}
             accessible={false}
           />
         ) : null}

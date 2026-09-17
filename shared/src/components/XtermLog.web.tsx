@@ -41,6 +41,7 @@ interface XtermLogProps {
   interactive?: boolean;
   /** Use the dark app terminal even when the browser prefers a light color scheme. */
   forceDarkTheme?: boolean;
+  extendedViewport?: boolean;
 }
 
 export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(

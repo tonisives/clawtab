@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Platform, View, Text, TouchableOpacity, StyleSheet, Keyboard, TextInput } from "react-native";
 import { useLocalSearchParams, Stack, useRouter } from "expo-router";
 import { TerminalPasteButton } from "../../src/components/TerminalPasteButton";
+import { TerminalWriteDialog } from "../../src/components/TerminalWriteDialog";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useJobsStore } from "../../src/store/jobs";
@@ -113,6 +114,9 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
   const [stopping, setStopping] = useState(false);
   const [copyModeActive, setCopyModeActive] = useState(false);
   const [terminalMenuOpen, setTerminalMenuOpen] = useState(false);
+  const [writeOpen, setWriteOpen] = useState(false);
+  const [writeDraft, setWriteDraft] = useState("");
+  const [optionOverlayHeight, setOptionOverlayHeight] = useState(0);
   const pinnedItems = usePinsStore((s) => s.pinnedItems);
   const hydratePins = usePinsStore((s) => s.hydrate);
   const togglePin = usePinsStore((s) => s.togglePin);
@@ -155,6 +159,7 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
     menuOpen: terminalMenuOpen,
     toolbarHeight: KEYBOARD_TOOLBAR_HEIGHT,
     extraClearance: KEYBOARD_EXTRA_CLEARANCE,
+    overlayHeight: optionOverlayHeight,
   });
   const {
     sendInput: ptySendInput,
@@ -168,6 +173,9 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
   }, [hydratePins]);
 
   const options = paneQuestion?.options ?? [];
+  useEffect(() => {
+    if (!options.length) setOptionOverlayHeight(0);
+  }, [options.length]);
 
   const answerQuestion = useNotificationStore((s) => s.answerQuestion);
   const autoYesPaneIds = useNotificationStore((s) => s.autoYesPaneIds);
@@ -373,6 +381,7 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
             onResize={sendResize}
             interactive
             forceDarkTheme
+            extendedViewport
           />
         </View>
         <TerminalScrollButtons
@@ -402,10 +411,22 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
           onArrowRight={() => sendTerminalText("\x1b[C")}
           onCtrlC={() => sendTerminalText("\x03")}
           onPaste={sendTerminalText}
+          onWrite={() => { setTerminalMenuOpen(false); setWriteOpen(true); }}
           menuOpen={terminalMenuOpen}
           onMenuOpenChange={handleTerminalMenuOpenChange}
         />
       ) : null}
+      <TerminalWriteDialog
+        visible={writeOpen}
+        draft={writeDraft}
+        onDraftChange={setWriteDraft}
+        onClose={() => setWriteOpen(false)}
+        onDone={() => {
+          const text = writeDraft.replace(/\r\n|\n/g, "\r");
+          sendTerminalText(text.endsWith("\r") ? text : text + "\r");
+          setWriteOpen(false);
+        }}
+      />
       <TextInput
         ref={keyboardDismissRef}
         style={styles.keyboardDismissSink}
@@ -420,6 +441,8 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
           options={options}
           onSend={handleSend}
           bottomInset={insets.bottom}
+          overlay
+          onHeightChange={setOptionOverlayHeight}
         />
       )}
       {preserveTerminal && (
@@ -477,6 +500,7 @@ function TerminalKeyboardToolbar({
   onArrowRight,
   onCtrlC,
   onPaste,
+  onWrite,
   menuOpen,
   onMenuOpenChange,
 }: {
@@ -489,6 +513,7 @@ function TerminalKeyboardToolbar({
   onArrowRight: () => void;
   onCtrlC: () => void;
   onPaste: (text: string) => void;
+  onWrite: () => void;
   menuOpen: boolean;
   onMenuOpenChange: (open: boolean) => void;
 }) {
@@ -526,6 +551,9 @@ function TerminalKeyboardToolbar({
         {menuOpen ? (
           <View style={styles.keyboardPastePopover}>
             <TerminalPasteButton onPaste={onPaste} onDone={handlePasteDone} />
+            <TouchableOpacity style={styles.keyboardWriteButton} onPress={onWrite} activeOpacity={0.7}>
+              <Text style={styles.keyboardPasteTitle}>Write</Text>
+            </TouchableOpacity>
           </View>
         ) : null}
       </View>
@@ -654,8 +682,10 @@ const styles = StyleSheet.create({
     position: "absolute",
     right: 0,
     bottom: 42,
-    minWidth: 150,
-    paddingVertical: 4,
+    width: 164,
+    padding: 12,
+    alignItems: "center",
+    gap: 8,
     borderRadius: radius.sm,
     borderWidth: 1,
     borderColor: colors.border,
@@ -671,6 +701,16 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 15,
     fontWeight: "600",
+  },
+  keyboardWriteButton: {
+    width: 120,
+    minHeight: 38,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radius.sm,
+    backgroundColor: colors.bg,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   keyboardDismissSink: {
     position: "absolute",

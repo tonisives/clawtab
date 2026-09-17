@@ -119,6 +119,7 @@ export interface JobDetailViewProps {
   hideMessageInput?: boolean;
   // Extra bottom breathing room for bottom-mounted answer buttons on mobile
   optionBarBottomInset?: number;
+  onTerminalOverlayHeightChange?: (height: number) => void;
   // Runtime query info (from detected processes)
   firstQuery?: string;
   lastQuery?: string;
@@ -204,6 +205,7 @@ export function JobDetailView({
   renderTerminal,
   hideMessageInput,
   optionBarBottomInset,
+  onTerminalOverlayHeightChange,
   firstQuery,
   lastQuery,
   tokenCount,
@@ -921,7 +923,7 @@ export function JobDetailView({
           )}
         </View>
 
-        <OptionButtons options={optionsProp ?? []} onSend={handleSendInput} onFreetextOption={setFreetextOptionNumber} autoYesActive={autoYesActive} onToggleAutoYes={onToggleAutoYes} autoYesShortcut={autoYesShortcut} bottomInset={optionBarBottomInset} />
+        <OptionButtons options={optionsProp ?? []} onSend={handleSendInput} onFreetextOption={setFreetextOptionNumber} autoYesActive={autoYesActive} onToggleAutoYes={onToggleAutoYes} autoYesShortcut={autoYesShortcut} bottomInset={optionBarBottomInset} overlay={!!renderTerminal} onHeightChange={onTerminalOverlayHeightChange} />
         {!hideMessageInput && <MessageInput onSend={handleSendInput} placeholder={freetextOptionNumber ? "Type your answer..." : "Send input to job..."} />}
 
         {liveZoom && (

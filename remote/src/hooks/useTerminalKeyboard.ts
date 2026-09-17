@@ -8,6 +8,7 @@ type UseTerminalKeyboardOptions = {
   menuOpen: boolean;
   toolbarHeight: number;
   extraClearance: number;
+  overlayHeight?: number;
 };
 
 export let useTerminalKeyboard = ({
@@ -15,6 +16,7 @@ export let useTerminalKeyboard = ({
   menuOpen,
   toolbarHeight,
   extraClearance,
+  overlayHeight = 0,
 }: UseTerminalKeyboardOptions) => {
   let [keyboardVisible, setKeyboardVisible] = useState(false);
   let [keyboardHeight, setKeyboardHeight] = useState(0);
@@ -29,7 +31,7 @@ export let useTerminalKeyboard = ({
   let applyKeyboardOffset = useCallback(() => {
     let keyboardTop = keyboardTopRef.current;
     if (keyboardTop === null) {
-      termRef.current?.setVisualOffset(0);
+      termRef.current?.setVisualOffset(overlayHeight);
       return;
     }
 
@@ -37,16 +39,20 @@ export let useTerminalKeyboard = ({
       if (keyboardTopRef.current !== keyboardTop) return;
       let surfaceBottom = surfaceTop + surfaceHeight;
       let visibleBottom = keyboardTop - toolbarHeight - extraClearance;
-      termRef.current?.setVisualOffset(Math.max(0, surfaceBottom - visibleBottom));
+      termRef.current?.setVisualOffset(Math.max(overlayHeight, surfaceBottom - visibleBottom));
     });
-  }, [extraClearance, termRef, toolbarHeight]);
+  }, [extraClearance, overlayHeight, termRef, toolbarHeight]);
 
   let resetKeyboard = useCallback(() => {
     keyboardTopRef.current = null;
     setKeyboardVisible(false);
     setKeyboardHeight(0);
-    termRef.current?.setVisualOffset(0);
-  }, [termRef]);
+    termRef.current?.setVisualOffset(overlayHeight);
+  }, [overlayHeight, termRef]);
+
+  useEffect(() => {
+    requestAnimationFrame(applyKeyboardOffset);
+  }, [applyKeyboardOffset]);
 
   let handleKeyboardFrame = useCallback((event: KeyboardEvent) => {
     let nextKeyboardHeight = event.endCoordinates?.height ?? 0;

@@ -16,7 +16,7 @@ export function QuestionContextBlock({ context }: { context?: string }) {
   );
 }
 
-export function OptionButtons({ options, onSend, onFreetextOption, autoYesActive, onToggleAutoYes, autoYesShortcut, bottomInset = 0 }: {
+export function OptionButtons({ options, onSend, onFreetextOption, autoYesActive, onToggleAutoYes, autoYesShortcut, bottomInset = 0, overlay = false, onHeightChange }: {
   options: { number: string; label: string }[];
   onSend: (text: string) => void;
   onFreetextOption?: (optionNumber: string) => void;
@@ -24,6 +24,8 @@ export function OptionButtons({ options, onSend, onFreetextOption, autoYesActive
   onToggleAutoYes?: () => void;
   autoYesShortcut?: string;
   bottomInset?: number;
+  overlay?: boolean;
+  onHeightChange?: (height: number) => void;
 }) {
   const { width } = useWindowDimensions();
   if (options.length === 0) return null;
@@ -34,7 +36,10 @@ export function OptionButtons({ options, onSend, onFreetextOption, autoYesActive
   const maxButtonWidth = Math.min(520, Math.max(240, Math.floor(width * 0.66)));
 
   return (
-    <View style={[styles.optionBar, { height: barHeight, maxHeight: barHeight }]}>
+    <View
+      onLayout={() => onHeightChange?.(barHeight)}
+      style={[styles.optionBar, { height: barHeight, maxHeight: barHeight }, overlay && { position: "absolute", left: 0, right: 0, bottom: 0, zIndex: 120 }]}
+    >
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
