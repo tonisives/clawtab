@@ -1,6 +1,6 @@
 import { MachineActionButton, MachineModal, ManageMachinesButton } from "../../machines/Onboarding";
 import { useRef, useState } from "react";
-import { StyleSheet, Text, TextInput, View } from "react-native";
+import { Platform, StyleSheet, Text, TextInput, View } from "react-native";
 import { machineHostRequest, newOperationId, saveAccountPreferences, useMachines } from "../../machines/client";
 import { MachineTargetPicker } from "../../machines/TargetPicker";
 import { colors } from "../../theme/colors";
@@ -83,7 +83,7 @@ export let AddGroup = ({ hook }: { hook: JobListViewHook }) => {
 };
 
 let styles = StyleSheet.create({
-  add: { alignSelf: "stretch", marginTop: spacing.md, marginBottom: spacing.sm },
+  add: { alignSelf: "stretch", marginHorizontal: Platform.OS === "web" ? spacing.xs : spacing.md, marginTop: spacing.md, marginBottom: spacing.sm },
   form: { padding: spacing.md, gap: spacing.md },
   input: { color: colors.text, borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: spacing.sm, fontSize: 14 },
   hint: { color: colors.textSecondary, fontSize: 12 },
