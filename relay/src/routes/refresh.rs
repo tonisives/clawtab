@@ -96,11 +96,9 @@ async fn consume_refresh_token(
         return Ok(Some(user_id));
     }
 
-    tracing::warn!("reused refresh token detected for user={user_id}, revoking all tokens");
-    sqlx::query("DELETE FROM refresh_tokens WHERE user_id = $1")
-        .bind(user_id)
-        .execute(&mut **transaction)
-        .await?;
+    // A second desktop process can retry an old token after another process
+    // rotated it. Reject that token without ending the user's other sessions.
+    tracing::warn!("reused refresh token detected for user={user_id}, rejecting token");
     Ok(None)
 }
 
