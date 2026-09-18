@@ -1,5 +1,5 @@
 import { encodeTerminalInput } from "../util/terminalInput";
-import { useRef, useImperativeHandle, forwardRef, useCallback, useMemo } from "react";
+import { useRef, useImperativeHandle, forwardRef, useCallback, useEffect, useMemo } from "react";
 import { View, StyleSheet, TextInput, Platform, Pressable } from "react-native";
 import { TERMINAL_CUSTOM_GLYPHS, TERMINAL_FONT_FAMILY, TERMINAL_FONT_SIZE, TERMINAL_LINE_HEIGHT } from "../theme/terminal";
 
@@ -34,6 +34,10 @@ interface XtermLogProps {
   extendedViewport?: boolean;
   /** Called with the currently visible terminal text after a native long press. */
   onLongPressCopyText?: (text: string) => void;
+  /** Font size in terminal pixels. */
+  fontSize?: number;
+  /** Called when the user scrolls toward older or newer terminal content. */
+  onScrollGesture?: (direction: "up" | "down") => void;
 }
 
 
@@ -297,6 +301,14 @@ function reportResize() {
   lastReportedRows = term.rows;
   window.ReactNativeWebView.postMessage(JSON.stringify({type:'resize',cols:term.cols,rows:term.rows}));
 }
+window.setTerminalFontSize = function(size) {
+  var next = Math.max(9, Math.min(22, Math.round(size)));
+  if (term.options.fontSize === next) return;
+  term.options.fontSize = next;
+  fit.fit();
+  reportResize();
+  if (window.applyVisualOffset) window.applyVisualOffset();
+};
 var ro = new ResizeObserver(function() {
   fit.fit();
   reportResize();
@@ -421,7 +433,7 @@ window.focusTerminal = function() {
  * Requires react-native-webview in the consuming app.
  */
 export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
-  function XtermLog({ onData, onResize, interactive = true, extendedViewport = false, onLongPressCopyText }, ref) {
+  function XtermLog({ onData, onResize, interactive = true, extendedViewport = false, onLongPressCopyText, fontSize = TERMINAL_FONT_SIZE, onScrollGesture }, ref) {
     const terminalSource = useMemo(() => ({
       html: XTERM_HTML.replace("__VIEWPORT_HEIGHT__", extendedViewport ? "250" : "100")
         .replace("__EXTENDED_VIEWPORT__", extendedViewport ? "true" : "false"),
@@ -503,6 +515,10 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
       }
       webViewRef.current?.injectJavaScript(script);
     }, []);
+
+    useEffect(() => {
+      injectOperation(`window.setTerminalFontSize && window.setTerminalFontSize(${Math.max(9, Math.min(22, fontSize))});true;`);
+    }, [fontSize, injectOperation]);
 
     const flushPendingWrites = useCallback(() => {
       if (!readyRef.current) return;
@@ -625,6 +641,7 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
               if (touchOriginYRef.current !== null && Math.abs(touchOriginYRef.current - y) > 8) touchMovedRef.current = true;
               if (!extendedViewport) return;
               const delta = previous - y;
+              if (touchMovedRef.current && Math.abs(delta) > 2) onScrollGesture?.(delta > 0 ? "down" : "up");
               const now = Date.now();
               const elapsed = now - lastTouchTimeRef.current;
               if (elapsed > 0 && elapsed < 100) touchVelocityRef.current = Math.max(-2.5, Math.min(2.5, delta / elapsed));

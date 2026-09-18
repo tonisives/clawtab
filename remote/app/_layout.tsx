@@ -167,6 +167,7 @@ export default function RootLayout() {
             name="(tabs)"
             options={{
               animation: "none",
+              orientation: Platform.OS === "ios" && !Platform.isPad ? "default" : undefined,
               headerShown: !isWide && !isSplitView && !isIosPadPortrait,
               title: isSplitView ? "" : isSettingsTab ? "Settings" : "ClawTab",
               headerLargeTitle: !isMobileWeb,

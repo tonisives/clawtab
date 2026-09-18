@@ -15,7 +15,7 @@ import { useJob, useJobStatus, useJobsStore } from "../../src/store/jobs";
 import { useRunsStore } from "../../src/store/runs";
 import { useNotificationStore } from "../../src/store/notifications";
 import { useWsStore } from "../../src/store/ws";
-import { JobKindIcon, XtermLog, kindForJob, statusColor } from "@clawtab/shared";
+import { JobKindIcon, XtermLog, TERMINAL_FONT_SIZE, kindForJob, statusColor } from "@clawtab/shared";
 import type { XtermLogHandle } from "@clawtab/shared";
 import { JobDetailView, findYesOption } from "@clawtab/shared";
 import type { AgentModelOption, JobUpdate, ProcessProvider } from "@clawtab/shared";
@@ -31,6 +31,8 @@ import { useResponsive } from "../../src/hooks/useResponsive";
 import { useTerminalKeyboard } from "../../src/hooks/useTerminalKeyboard";
 import { TerminalCopySheet } from "../../src/components/TerminalCopySheet";
 import { colors } from "@clawtab/shared";
+import { useLandscapeTerminalHeader } from "../../src/hooks/useLandscapeTerminalHeader";
+import { TerminalZoomControls } from "../../src/components/TerminalZoomControls";
 import type { RemoteJob, RunRecord } from "@clawtab/shared";
 import { buildModelOptions } from "../../src/lib/agentModels";
 
@@ -171,6 +173,11 @@ export default function JobDetailScreen() {
     error: ptyError,
   } = usePty(statusPaneId, statusTmuxSession, termRef);
   const isRunningWithPty = !!statusPaneId && !!statusTmuxSession;
+  const landscapeHeader = useLandscapeTerminalHeader(isRunningWithPty);
+  const [terminalFontSize, setTerminalFontSize] = useState(TERMINAL_FONT_SIZE);
+  const containerStyle = landscapeHeader.isLandscape && isRunningWithPty
+    ? [styles.container, { paddingLeft: insets.left, paddingRight: insets.right }]
+    : styles.container;
   const [copyModeActive, setCopyModeActive] = useState(false);
   const [terminalMenuOpen, setTerminalMenuOpen] = useState(false);
   const [writeOpen, setWriteOpen] = useState(false);
@@ -265,6 +272,8 @@ export default function JobDetailScreen() {
               interactive
               forceDarkTheme
               extendedViewport
+              fontSize={terminalFontSize}
+              onScrollGesture={landscapeHeader.onScrollGesture}
               onLongPressCopyText={setCopyText}
             />
           </View>
@@ -279,24 +288,24 @@ export default function JobDetailScreen() {
         </View>
       </View>
     ),
-    [sendInput, sendResize, ptyConnecting, ptyError, scrollTerminal, exitCopyMode, copyModeActive, insets.bottom, handleTerminalLayout],
+    [sendInput, sendResize, ptyConnecting, ptyError, scrollTerminal, exitCopyMode, copyModeActive, insets.bottom, handleTerminalLayout, terminalFontSize, landscapeHeader.onScrollGesture],
   );
   const loadingHeaderOptions = useMemo(() => ({
-    headerShown: !isWide,
+    headerShown: !isWide && landscapeHeader.headerShown,
     title: name,
     headerStyle: { backgroundColor: colors.bg },
     headerTintColor: colors.text,
     headerTitleStyle: { fontWeight: "600" as const },
     headerBackTitle: "",
     headerBackButtonDisplayMode: "minimal" as const,
-  }), [isWide, name]);
+  }), [isWide, landscapeHeader.headerShown, name]);
   const jobHeaderName = job?.name ?? name;
   const jobHeaderKind = job ? kindForJob(job) : "claude";
   const jobHeaderOptions = useMemo(() => ({
     orientation: Platform.OS === "ios" && !Platform.isPad
       ? isRunningWithPty ? "default" as const : "portrait_up" as const
       : undefined,
-    headerShown: !isWide,
+    headerShown: !isWide && landscapeHeader.headerShown,
     headerStyle: { backgroundColor: colors.bg },
     headerTintColor: colors.text,
     headerTitleStyle: { fontWeight: "600" as const },
@@ -309,18 +318,21 @@ export default function JobDetailScreen() {
       />
     ),
     headerRight: () => (
-      <HeaderStatusDot
-        color={autoYesActive ? colors.warning : statusColor(status)}
-        onPress={!autoYesPaneId ? undefined : handleToggleAutoYes}
-        accessibilityLabel={!autoYesPaneId ? "Status" : autoYesActive ? "Disable auto-yes" : "Enable auto-yes"}
-      />
+      <View style={styles.headerActions}>
+        {Platform.OS === "ios" && isRunningWithPty ? <TerminalZoomControls fontSize={terminalFontSize} onChange={setTerminalFontSize} /> : null}
+        <HeaderStatusDot
+          color={autoYesActive ? colors.warning : statusColor(status)}
+          onPress={!autoYesPaneId ? undefined : handleToggleAutoYes}
+          accessibilityLabel={!autoYesPaneId ? "Status" : autoYesActive ? "Disable auto-yes" : "Enable auto-yes"}
+        />
+      </View>
     ),
-  }), [autoYesActive, autoYesPaneId, handleToggleAutoYes, isWide, jobHeaderKind, jobHeaderName, status, isRunningWithPty]);
+  }), [autoYesActive, autoYesPaneId, handleToggleAutoYes, isWide, landscapeHeader.headerShown, jobHeaderKind, jobHeaderName, status, isRunningWithPty, terminalFontSize]);
   if (!job) {
     // If jobs haven't loaded yet (cold start from notification), show loading state
     const waiting = !loaded || !connected;
     return (
-      <View style={styles.container}>
+      <View style={containerStyle}>
         <Stack.Screen options={loadingHeaderOptions} />
         <View style={styles.center}>
           {waiting ? (
@@ -339,7 +351,7 @@ export default function JobDetailScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={containerStyle}>
       <Stack.Screen options={jobHeaderOptions} />
 
       <ContentContainer wide fill>
@@ -524,6 +536,7 @@ function TerminalScrollButtons({
 }
 
 const styles = StyleSheet.create({
+  headerActions: { flexDirection: "row", alignItems: "center" },
   container: {
     flex: 1,
     backgroundColor: colors.bg,

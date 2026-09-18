@@ -6,7 +6,7 @@ import { useJobsStore } from "../store/jobs"
 import { useNotificationStore } from "../store/notifications"
 import { usePinsStore } from "../store/pins"
 import { useWsStore } from "../store/ws"
-import { JobDetailView, StatusBadge, findYesOption, XtermLog, colors, spacing } from "@clawtab/shared"
+import { JobDetailView, StatusBadge, findYesOption, XtermLog, TERMINAL_FONT_SIZE, colors, spacing } from "@clawtab/shared"
 import type { XtermLogHandle } from "@clawtab/shared"
 import { getWsSend, nextId } from "../lib/wsRuntime"
 import { usePty } from "../hooks/usePty"
@@ -15,6 +15,8 @@ import { alertError, confirm } from "../lib/platform"
 import { stopSession } from "../lib/stopSession"
 import type { Transport, RemoteJob, JobStatus } from "@clawtab/shared"
 import { useAgentActions } from "../hooks/useAgentActions"
+import { useLandscapeTerminalHeader } from "../hooks/useLandscapeTerminalHeader"
+import { TerminalZoomControls } from "./TerminalZoomControls"
 
 function createProcessTransport(paneId: string, onStopped?: () => void): Transport {
   const noop = async () => {}
@@ -229,6 +231,8 @@ export function ProcessDetailPane({ paneId, onClose, embedded = false }: Process
   const termRef = useRef<XtermLogHandle | null>(null)
   const tmuxSession = activeProcess?.tmux_session ?? ""
   const { sendInput, sendResize, connecting: ptyConnecting, error: ptyError } = usePty(paneId, tmuxSession, termRef)
+  const landscapeHeader = useLandscapeTerminalHeader(!!activeProcess)
+  const [terminalFontSize, setTerminalFontSize] = useState(TERMINAL_FONT_SIZE)
 
   const renderTerminal = useCallback(
     () => (
@@ -248,10 +252,13 @@ export function ProcessDetailPane({ paneId, onClose, embedded = false }: Process
           onResize={sendResize}
           interactive
           forceDarkTheme
+          extendedViewport={Platform.OS === "ios"}
+          fontSize={terminalFontSize}
+          onScrollGesture={landscapeHeader.onScrollGesture}
         />
       </View>
     ),
-    [sendInput, sendResize, ptyConnecting, ptyError],
+    [sendInput, sendResize, ptyConnecting, ptyError, terminalFontSize, landscapeHeader.onScrollGesture],
   )
 
   // Keep the terminal and its stop action available through login, startup, and shell prompts.
@@ -293,7 +300,7 @@ export function ProcessDetailPane({ paneId, onClose, embedded = false }: Process
     : { state: "idle" }
   return (
     <View style={styles.container}>
-      <View style={[styles.header, { paddingTop: embedded ? spacing.md : insets.top + spacing.md }]}>
+      {landscapeHeader.headerShown ? <View style={[styles.header, { paddingTop: embedded ? spacing.md : insets.top + spacing.md }]}>
         <TouchableOpacity
           style={styles.titleButton}
           onPress={handleTitlePress}
@@ -303,8 +310,9 @@ export function ProcessDetailPane({ paneId, onClose, embedded = false }: Process
         >
           <Text style={styles.title} numberOfLines={1}>{displayName}</Text>
         </TouchableOpacity>
+        {Platform.OS === "ios" ? <TerminalZoomControls fontSize={terminalFontSize} onChange={setTerminalFontSize} /> : null}
         <StatusBadge status={syntheticStatus} />
-      </View>
+      </View> : null}
       <JobDetailView
         transport={transport}
         job={syntheticJob}

@@ -248,7 +248,7 @@ export default function JobsScreen() {
   )
   const [sidebarSection, setSidebarSection] = useState<SidebarSection>("jobs")
   const [stoppingJobSlugs, setStoppingJobSlugs] = useState<Set<string>>(() => new Set())
-  const { isIosPad, isIosPadPortrait, isSplitView, isWide } = useResponsive()
+  const { width, isIosPad, isIosPadPortrait, isIosPhoneLandscape, isSplitView, isWide } = useResponsive()
   const router = useRouter()
   const insets = useSafeAreaInsets()
   const searchQuery = useJobFilterStore((s) => s.query)
@@ -1139,9 +1139,13 @@ export default function JobsScreen() {
     </View>
   )
 
+  const splitListWidth = isIosPhoneLandscape
+    ? Math.max(260, Math.min(320, (width - insets.left - insets.right) * 0.4))
+    : listWidth
+
   const splitContent = (
     <View style={styles.splitContainer}>
-      <View style={[styles.listPane, { width: listWidth }]}>
+      <View style={[styles.listPane, { width: splitListWidth }]}>
         {!isIosPad ? sidebarHeader : null}
         <View style={styles.listPaneScrollArea}>
           <JobListView
@@ -1241,7 +1245,11 @@ export default function JobsScreen() {
 
   if (Platform.OS !== "web") {
     return (
-      <View style={styles.screenRoot}>
+      <View style={[styles.screenRoot, isIosPhoneLandscape && {
+        paddingLeft: insets.left,
+        paddingRight: insets.right,
+        paddingBottom: insets.bottom,
+      }]}>
         {splitContent}
         {searchModal}
 

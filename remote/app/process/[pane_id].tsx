@@ -13,7 +13,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useJobsStore } from "../../src/store/jobs";
 import { usePinsStore } from "../../src/store/pins";
 import { useNotificationStore } from "../../src/store/notifications";
-import { JobKindIcon, OptionButtons, PaneOverviewModal, XtermLog, compactPath, findYesOption, kindForProcess, colors, radius, spacing } from "@clawtab/shared";
+import { JobKindIcon, OptionButtons, PaneOverviewModal, XtermLog, TERMINAL_FONT_SIZE, compactPath, findYesOption, kindForProcess, colors, radius, spacing } from "@clawtab/shared";
 import type { XtermLogHandle } from "@clawtab/shared";
 import { useWsStore } from "../../src/store/ws";
 import { getWsSend, nextId } from "../../src/lib/wsRuntime";
@@ -27,6 +27,8 @@ import { useTerminalKeyboard } from "../../src/hooks/useTerminalKeyboard";
 import { TerminalCopySheet } from "../../src/components/TerminalCopySheet";
 import { alertError, confirm } from "../../src/lib/platform";
 import { jobRoute } from "../../src/lib/notificationRoutes";
+import { useLandscapeTerminalHeader } from "../../src/hooks/useLandscapeTerminalHeader";
+import { TerminalZoomControls } from "../../src/components/TerminalZoomControls";
 
 const KEYBOARD_TOOLBAR_HEIGHT = 48;
 const KEYBOARD_EXTRA_CLEARANCE = 10;
@@ -63,6 +65,11 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
   const goBack = useDetailBack("/(tabs)");
   const insets = useSafeAreaInsets();
   const { isWide } = useResponsive();
+  const landscapeHeader = useLandscapeTerminalHeader(true);
+  const [terminalFontSize, setTerminalFontSize] = useState(TERMINAL_FONT_SIZE);
+  const containerStyle = landscapeHeader.isLandscape
+    ? [styles.container, { paddingLeft: insets.left, paddingRight: insets.right }]
+    : styles.container;
 
   const storeProcess = useJobsStore((s) =>
     s.detectedProcesses.find((p) => p.pane_id === pane_id),
@@ -308,17 +315,18 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
 
   const openPaneOverview = useCallback(() => setShowPaneOverview(true), []);
   const waitingHeaderOptions = useMemo(() => ({
-    headerShown: !isWide,
+    orientation: Platform.OS === "ios" && !Platform.isPad ? "default" as const : undefined,
+    headerShown: !isWide && landscapeHeader.headerShown,
     title: pane_id,
     headerStyle: { backgroundColor: colors.bg },
     headerTintColor: colors.text,
     headerTitleStyle: { fontWeight: "600" as const },
     headerBackTitle: "",
     headerBackButtonDisplayMode: "minimal" as const,
-  }), [isWide, pane_id]);
+  }), [isWide, landscapeHeader.headerShown, pane_id]);
   const terminalHeaderOptions = useMemo(() => ({
     orientation: Platform.OS === "ios" && !Platform.isPad ? "default" as const : undefined,
-    headerShown: !isWide,
+    headerShown: !isWide && landscapeHeader.headerShown,
     headerStyle: { backgroundColor: colors.bg },
     headerTintColor: colors.text,
     headerTitleStyle: { fontWeight: "600" as const },
@@ -333,7 +341,8 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
       />
     ),
     headerRight: () => (
-      <View style={styles.headerRightSlot}>
+      <View style={styles.headerActions}>
+        {Platform.OS === "ios" ? <TerminalZoomControls fontSize={terminalFontSize} onChange={setTerminalFontSize} /> : null}
         <TouchableOpacity
           style={styles.contextBtn}
           onPress={openPaneOverview}
@@ -346,13 +355,13 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
         </TouchableOpacity>
       </View>
     ),
-  }), [headerKind, headerTitle, isWide, openPaneOverview]);
+  }), [headerKind, headerTitle, isWide, landscapeHeader.headerShown, openPaneOverview, terminalFontSize]);
 
   const isAlive = !!process || !!paneQuestion;
   if (waitingForData) {
     const loading = processLoadingState({ connected, desktopOnline, hasTmuxSession: !!tmuxSession });
     return (
-      <View style={styles.container}>
+      <View style={containerStyle}>
         <Stack.Screen options={waitingHeaderOptions} />
         <View style={styles.center}>
           <LoadingBar label={loading.label} progress={loading.progress} />
@@ -369,7 +378,7 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
     waitingForAgent: terminalLoading,
   });
   return (
-    <View style={styles.container}>
+    <View style={containerStyle}>
       <Stack.Screen options={terminalHeaderOptions} />
       {Platform.OS !== "ios" && <MachineTerminalControls paneId={pane_id} />}
       <View style={[styles.terminalContainer, { paddingBottom: Math.max(12, insets.bottom + 8) }]}>
@@ -385,6 +394,8 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
             interactive
             forceDarkTheme
             extendedViewport
+            fontSize={terminalFontSize}
+            onScrollGesture={landscapeHeader.onScrollGesture}
             onLongPressCopyText={setCopyText}
           />
         </View>
@@ -604,14 +615,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
   notFound: { color: colors.textMuted, fontSize: 16 },
-  headerRightSlot: {
-    position: "relative",
-    zIndex: 9999,
-    width: 36,
-    height: 36,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  headerActions: { flexDirection: "row", alignItems: "center" },
   contextBtn: {
     width: 36,
     height: 36,

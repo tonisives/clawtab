@@ -11,17 +11,19 @@ export function useResponsive() {
   const height = windowDimensions.height || fallbackHeight;
   const isIosPad = Platform.OS === "ios" && Platform.isPad === true;
   const isIosPadLandscape = isIosPad && width > height && width >= 700;
+  const isIosPhoneLandscape = Platform.OS === "ios" && !Platform.isPad && width > height;
 
   return {
     width,
     isIosPad,
+    isIosPhoneLandscape,
     isIosPadPortrait: isIosPad && !isIosPadLandscape,
     // Keep the wide desktop shell off iOS; iPad portrait and landscape use
     // the liquid section control with different content arrangements.
     isWide: Platform.OS !== "ios" && width >= BREAKPOINT_MD,
     // Content can still take advantage of an iPad's horizontal space without
     // forcing the portrait layout into a split pane.
-    isSplitView: Platform.OS === "ios" ? isIosPadLandscape : width >= BREAKPOINT_MD,
+    isSplitView: Platform.OS === "ios" ? isIosPadLandscape || isIosPhoneLandscape : width >= BREAKPOINT_MD,
     isDesktop: width >= BREAKPOINT_LG,
   };
 }

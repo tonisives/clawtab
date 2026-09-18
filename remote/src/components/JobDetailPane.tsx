@@ -6,7 +6,7 @@ import { useJobsStore, useJob, useJobStatus } from "../store/jobs"
 import { useRunsStore } from "../store/runs"
 import { useNotificationStore } from "../store/notifications"
 import { useWsStore } from "../store/ws"
-import { JobDetailView, findYesOption, StatusBadge, XtermLog } from "@clawtab/shared"
+import { JobDetailView, findYesOption, StatusBadge, XtermLog, TERMINAL_FONT_SIZE } from "@clawtab/shared"
 import type { XtermLogHandle } from "@clawtab/shared"
 import { useLogs } from "../hooks/useLogs"
 import { usePty } from "../hooks/usePty"
@@ -16,6 +16,8 @@ import { registerRequest } from "../lib/useRequestMap"
 import { colors, spacing } from "@clawtab/shared"
 import type { AgentModelOption, JobUpdate, ProcessProvider, RemoteJob, RunRecord } from "@clawtab/shared"
 import { buildModelOptions } from "../lib/agentModels"
+import { useLandscapeTerminalHeader } from "../hooks/useLandscapeTerminalHeader"
+import { TerminalZoomControls } from "./TerminalZoomControls"
 
 const wsTransport = createWsTransport()
 const AGENT_PROVIDERS: ProcessProvider[] = ["claude", "codex", "opencode", "antigravity"]
@@ -141,6 +143,8 @@ export function JobDetailPane({ jobName, onClose, embedded = false }: JobDetailP
   const termRef = useRef<XtermLogHandle | null>(null)
   const { sendInput, sendResize, connecting: ptyConnecting, error: ptyError } = usePty(statusPaneId, statusTmuxSession, termRef)
   const isRunningWithPty = !!statusPaneId && !!statusTmuxSession
+  const landscapeHeader = useLandscapeTerminalHeader(isRunningWithPty)
+  const [terminalFontSize, setTerminalFontSize] = useState(TERMINAL_FONT_SIZE)
 
   const renderTerminal = useCallback(
     () => (
@@ -162,10 +166,13 @@ export function JobDetailPane({ jobName, onClose, embedded = false }: JobDetailP
           onResize={sendResize}
           interactive
           forceDarkTheme
+          extendedViewport={Platform.OS === "ios"}
+          fontSize={terminalFontSize}
+          onScrollGesture={landscapeHeader.onScrollGesture}
         />
       </View>
     ),
-    [sendInput, sendResize, ptyConnecting, ptyError],
+    [sendInput, sendResize, ptyConnecting, ptyError, terminalFontSize, landscapeHeader.onScrollGesture],
   )
 
   if (!job) {
@@ -188,8 +195,9 @@ export function JobDetailPane({ jobName, onClose, embedded = false }: JobDetailP
 
   return (
     <View style={styles.container}>
-      <View style={[styles.header, { paddingTop: embedded ? spacing.md : insets.top + spacing.md }]}>
+      {landscapeHeader.headerShown ? <View style={[styles.header, { paddingTop: embedded ? spacing.md : insets.top + spacing.md }]}>
         <Text style={styles.title} numberOfLines={1}>{job.name}</Text>
+        {Platform.OS === "ios" && isRunningWithPty ? <TerminalZoomControls fontSize={terminalFontSize} onChange={setTerminalFontSize} /> : null}
         <TouchableOpacity
           onPress={canToggleAutoYes ? handleToggleAutoYes : undefined}
           disabled={!canToggleAutoYes}
@@ -199,7 +207,7 @@ export function JobDetailPane({ jobName, onClose, embedded = false }: JobDetailP
         >
           <StatusBadge status={status} colorOverride={autoYesActive ? colors.warning : undefined} />
         </TouchableOpacity>
-      </View>
+      </View> : null}
       <JobDetailView
         transport={wsTransport}
         job={job}
