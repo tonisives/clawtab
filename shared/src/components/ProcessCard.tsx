@@ -211,7 +211,7 @@ export function ProcessCard({
     <View style={[styles.paneIcon, compactPhoneLandscape && styles.paneIconCompact]}>
       <View style={[styles.agentIcon, compactPhoneLandscape && styles.agentIconCompact]}>
         <JobKindIcon kind={kind} size={compactPhoneLandscape ? 16 : 32} />
-        {machineId && !compactPhoneLandscape ? <View style={styles.machineOverlay}>
+        {machineId ? <View style={[styles.machineOverlay, compactPhoneLandscape && styles.machineOverlayCompact]}>
           <MachineMark machineId={machineId} />
         </View> : null}
       </View>
@@ -407,6 +407,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: colors.surface,
   },
+  machineOverlayCompact: { width: 10, height: 10, right: -6 },
   paneId: {
     fontSize: 10,
     color: colors.textMuted,
