@@ -2,6 +2,7 @@ import { MachineTerminalControls } from "@clawtab/shared";
 import { useCallback, useEffect, useRef, useState, useMemo } from "react"
 import { Platform, View, Text, TextInput, StyleSheet, ActivityIndicator, TouchableOpacity, Keyboard } from "react-native"
 import { useRouter } from "expo-router"
+import { useLandscapeShellStore } from "../store/landscapeShell"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { useJobsStore } from "../store/jobs"
 import { useNotificationStore } from "../store/notifications"
@@ -269,7 +270,8 @@ export function ProcessDetailPane({ paneId, onClose, embedded = false }: Process
   const zoomToFullScreen = useCallback(() => {
     termRef.current?.blur()
     Keyboard.dismiss()
-    router.push({ pathname: "/process/[pane_id]", params: { pane_id: paneId.replace(/%/g, "_pct_") } })
+    useLandscapeShellStore.getState().showFullScreen({ kind: "process", paneId })
+    router.push({ pathname: "/process/[pane_id]", params: { pane_id: paneId.replace(/%/g, "_pct_"), fromSplit: "1" } })
   }, [paneId, router])
 
   const renderTerminal = useCallback(

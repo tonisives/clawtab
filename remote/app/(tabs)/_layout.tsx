@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, type ComponentType, type PropsWithChildren } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentType, type PropsWithChildren } from "react";
 import { Platform, View, Text } from "react-native";
 import { Tabs, usePathname, useRouter } from "expo-router";
 import { NativeTabs } from "expo-router/unstable-native-tabs";
@@ -267,20 +267,23 @@ const styles = {
 export default function TabLayout() {
   const { isIosPadPortrait, isIosPhoneLandscape, isSplitView, isWide } = useResponsive();
   const previousPhoneLandscape = useRef(isIosPhoneLandscape);
+  const [portraitHandoffPending, setPortraitHandoffPending] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const rotatedToPortrait = previousPhoneLandscape.current && !isIosPhoneLandscape;
     previousPhoneLandscape.current = isIosPhoneLandscape;
+    if (pathname !== "/" && pathname !== "/(tabs)" && !pathname.endsWith("/index")) {
+      setPortraitHandoffPending(false);
+    }
     if (!rotatedToPortrait || !(pathname === "/" || pathname === "/(tabs)" || pathname.endsWith("/index"))) return;
     const shell = useLandscapeShellStore.getState().focusedShell;
     if (!shell) return;
-    setTimeout(() => {
-      if (previousPhoneLandscape.current) return;
-      if (shell.kind === "job") router.push({ pathname: "/job/[name]", params: { name: shell.slug } });
-      else router.push({ pathname: "/process/[pane_id]", params: { pane_id: shell.paneId.replace(/%/g, "_pct_") } });
-    }, 80);
+    setPortraitHandoffPending(true);
+    useLandscapeShellStore.getState().showSidebar(shell);
+    if (shell.kind === "job") router.push({ pathname: "/job/[name]", params: { name: shell.slug, landscapeHandoff: "1" } });
+    else router.push({ pathname: "/process/[pane_id]", params: { pane_id: shell.paneId.replace(/%/g, "_pct_"), landscapeHandoff: "1" } });
   }, [isIosPhoneLandscape, pathname, router]);
 
   useEffect(() => {
@@ -288,10 +291,15 @@ export default function TabLayout() {
   }, []);
 
   return (
-    <TabsContent
-      isIosPadPortrait={isIosPadPortrait}
-      isSplitView={isSplitView}
-      isWide={isWide}
-    />
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+      <TabsContent
+        isIosPadPortrait={isIosPadPortrait}
+        isSplitView={isSplitView}
+        isWide={isWide}
+      />
+      {portraitHandoffPending && !isIosPhoneLandscape ? (
+        <View pointerEvents="none" style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0, backgroundColor: colors.bg }} />
+      ) : null}
+    </View>
   );
 }

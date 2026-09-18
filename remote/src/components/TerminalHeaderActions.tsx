@@ -11,7 +11,7 @@ type Props = {
 export function TerminalHeaderActions({ onZoom, zoomed = false, onOpenDetails }: Props) {
   return (
     <View style={styles.row}>
-      <Pressable style={styles.button} onPress={onZoom} accessibilityRole="button" accessibilityLabel={zoomed ? "Fit shell to safe area" : "Zoom shell"}>
+      <Pressable style={styles.button} onPress={onZoom} accessibilityRole="button" accessibilityLabel={zoomed ? "Show sidebar" : "Hide sidebar"}>
         <Ionicons name={zoomed ? "contract-outline" : "expand-outline"} size={20} color={colors.text} />
       </Pressable>
       <Pressable style={styles.button} onPress={onOpenDetails} accessibilityRole="button" accessibilityLabel="Shell details">

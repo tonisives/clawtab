@@ -32,10 +32,9 @@ import { useTerminalKeyboard } from "../../src/hooks/useTerminalKeyboard";
 import { TerminalCopySheet } from "../../src/components/TerminalCopySheet";
 import { colors, spacing } from "@clawtab/shared";
 import { useLandscapeTerminalHeader } from "../../src/hooks/useLandscapeTerminalHeader";
-import { TerminalViewportControl } from "../../src/components/TerminalViewportControl";
 import { TerminalHeaderActions } from "../../src/components/TerminalHeaderActions";
 import { LandscapeTerminalBar } from "../../src/components/LandscapeTerminalBar";
-import { useTerminalViewportStore } from "../../src/store/terminalViewport";
+import { useLandscapeShellNavigation } from "../../src/hooks/useLandscapeShellNavigation";
 import type { RemoteJob, RunRecord } from "@clawtab/shared";
 import { buildModelOptions } from "../../src/lib/agentModels";
 
@@ -62,7 +61,7 @@ function agentJobFromSlug(slug: string): RemoteJob {
 }
 
 export default function JobDetailScreen() {
-  const { name, run_id, source } = useLocalSearchParams<{ name: string; run_id?: string; source?: string }>();
+  const { name, run_id, source, fromSplit, landscapeHandoff } = useLocalSearchParams<{ name: string; run_id?: string; source?: string; fromSplit?: string; landscapeHandoff?: string }>();
   let router = useRouter();
   let handleSelectNotification = (question: ClaudeQuestion) => {
     Keyboard.dismiss();
@@ -77,6 +76,7 @@ export default function JobDetailScreen() {
   const isAgent = !storeJob && name.startsWith("agent-");
   const job = storeJob ?? (isAgent ? agentJobFromSlug(name) : undefined);
   const slug = job?.slug ?? name;
+  const showLandscapeSidebar = useLandscapeShellNavigation({ kind: "job", slug }, fromSplit === "1" || landscapeHandoff === "1");
   const modelOptions: AgentModelOption[] = buildModelOptions(AGENT_PROVIDERS, enabledModels ?? {});
   const onUpdateJob = useCallback(async (patch: JobUpdate) => {
     if (wsTransport.updateJob) await wsTransport.updateJob(slug, patch);
@@ -177,9 +177,7 @@ export default function JobDetailScreen() {
   } = usePty(statusPaneId, statusTmuxSession, termRef);
   const isRunningWithPty = !!statusPaneId && !!statusTmuxSession;
   const landscapeHeader = useLandscapeTerminalHeader(isRunningWithPty);
-  const fitSafeArea = useTerminalViewportStore((s) => s.fitSafeArea);
-  const setFitSafeArea = useTerminalViewportStore((s) => s.setFitSafeArea);
-  const containerStyle = landscapeHeader.isLandscape && isRunningWithPty && fitSafeArea
+  const containerStyle = landscapeHeader.isLandscape && isRunningWithPty
     ? [styles.container, { paddingLeft: insets.left, paddingRight: insets.right }]
     : styles.container;
   const [copyModeActive, setCopyModeActive] = useState(false);
@@ -283,7 +281,7 @@ export default function JobDetailScreen() {
           </View>
           {!ptyConnecting && !ptyError ? (
             <TerminalScrollButtons
-              rightInset={landscapeHeader.isLandscape && !fitSafeArea ? insets.right : 0}
+              rightInset={0}
               onScrollUp={() => scrollTerminal("up")}
               onScrollDown={() => scrollTerminal("down")}
               onExitCopyMode={exitCopyMode}
@@ -293,9 +291,10 @@ export default function JobDetailScreen() {
         </View>
       </View>
     ),
-    [sendInput, sendResize, ptyConnecting, ptyError, scrollTerminal, exitCopyMode, copyModeActive, insets.right, fitSafeArea, handleTerminalLayout, landscapeHeader.isLandscape, landscapeHeader.onScrollGesture],
+    [sendInput, sendResize, ptyConnecting, ptyError, scrollTerminal, exitCopyMode, copyModeActive, handleTerminalLayout, landscapeHeader.onScrollGesture],
   );
   const loadingHeaderOptions = useMemo(() => ({
+    animation: landscapeHandoff === "1" ? "none" as const : "slide_from_right" as const,
     headerShown: !isWide && landscapeHeader.headerShown,
     title: name,
     headerStyle: { backgroundColor: colors.bg },
@@ -303,7 +302,7 @@ export default function JobDetailScreen() {
     headerTitleStyle: { fontWeight: "600" as const },
     headerBackTitle: "",
     headerBackButtonDisplayMode: "minimal" as const,
-  }), [isWide, landscapeHeader.headerShown, name]);
+  }), [isWide, landscapeHeader.headerShown, name, landscapeHandoff]);
   const jobHeaderName = job?.name ?? name;
   const jobHeaderKind = job ? kindForJob(job) : "claude";
   const jobHeaderOptions = useMemo(() => ({
@@ -324,7 +323,6 @@ export default function JobDetailScreen() {
     ),
     headerRight: () => (
       <View style={styles.headerActions}>
-        {Platform.OS === "ios" && isRunningWithPty && landscapeHeader.isLandscape ? <TerminalViewportControl fitSafeArea={fitSafeArea} onChange={setFitSafeArea} /> : null}
         <HeaderStatusDot
           color={autoYesActive ? colors.warning : statusColor(status)}
           onPress={!autoYesPaneId ? undefined : handleToggleAutoYes}
@@ -332,7 +330,8 @@ export default function JobDetailScreen() {
         />
       </View>
     ),
-  }), [autoYesActive, autoYesPaneId, handleToggleAutoYes, isWide, landscapeHeader.headerShown, landscapeHeader.isLandscape, jobHeaderKind, jobHeaderName, status, isRunningWithPty, fitSafeArea, setFitSafeArea]);
+    animation: landscapeHandoff === "1" ? "none" as const : "slide_from_right" as const,
+  }), [autoYesActive, autoYesPaneId, handleToggleAutoYes, isWide, landscapeHeader.headerShown, jobHeaderKind, jobHeaderName, status, isRunningWithPty, landscapeHandoff]);
   if (!job) {
     // If jobs haven't loaded yet (cold start from notification), show loading state
     const waiting = !loaded || !connected;
@@ -399,9 +398,9 @@ export default function JobDetailScreen() {
           topInset={insets.top}
           leftInset={insets.left}
           rightInset={insets.right}
-          onBack={goBack}
+          onBack={showLandscapeSidebar}
           title={<HeaderTitleWithIcon title={jobHeaderName} icon={<JobKindIcon kind={jobHeaderKind} size={26} bare />} />}
-          actions={<TerminalHeaderActions onZoom={() => setFitSafeArea(!fitSafeArea)} zoomed={!fitSafeArea} onOpenDetails={() => setShowPaneOverview(true)} />}
+          actions={<TerminalHeaderActions onZoom={showLandscapeSidebar} zoomed onOpenDetails={() => setShowPaneOverview(true)} />}
         />
       ) : null}
       {source === "notifications" && (

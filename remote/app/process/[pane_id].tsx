@@ -28,10 +28,9 @@ import { TerminalCopySheet } from "../../src/components/TerminalCopySheet";
 import { alertError, confirm } from "../../src/lib/platform";
 import { jobRoute } from "../../src/lib/notificationRoutes";
 import { useLandscapeTerminalHeader } from "../../src/hooks/useLandscapeTerminalHeader";
-import { TerminalViewportControl } from "../../src/components/TerminalViewportControl";
 import { TerminalHeaderActions } from "../../src/components/TerminalHeaderActions";
 import { LandscapeTerminalBar } from "../../src/components/LandscapeTerminalBar";
-import { useTerminalViewportStore } from "../../src/store/terminalViewport";
+import { useLandscapeShellNavigation } from "../../src/hooks/useLandscapeShellNavigation";
 
 const KEYBOARD_TOOLBAR_HEIGHT = 48;
 const KEYBOARD_EXTRA_CLEARANCE = 10;
@@ -39,7 +38,7 @@ const TERMINAL_BG = "#1c1c1e";
 
 
 export default function ProcessDetailScreen() {
-  const { pane_id: rawPaneId, source } = useLocalSearchParams<{ pane_id: string; source?: string }>();
+  const { pane_id: rawPaneId, source, fromSplit, landscapeHandoff } = useLocalSearchParams<{ pane_id: string; source?: string; fromSplit?: string; landscapeHandoff?: string }>();
   let routePaneId = (rawPaneId ?? "").replace(/_pct_/g, "%");
   let [selection, setSelection] = useState<{ routePaneId: string; paneId: string } | null>(null);
   let paneId = selection?.routePaneId === routePaneId ? selection.paneId : routePaneId;
@@ -53,6 +52,8 @@ export default function ProcessDetailScreen() {
       pane_id={paneId}
       preserveTerminal={source === "notifications"}
       onSelectNotification={handleSelectNotification}
+      fromSplit={fromSplit === "1" || landscapeHandoff === "1"}
+      landscapeHandoff={landscapeHandoff === "1"}
     />
   );
 }
@@ -61,17 +62,18 @@ type ProcessDetailContentProps = {
   pane_id: string;
   preserveTerminal: boolean;
   onSelectNotification: (question: ClaudeQuestion) => void;
+  fromSplit: boolean;
+  landscapeHandoff: boolean;
 };
 
-let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }: ProcessDetailContentProps) => {
+let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification, fromSplit, landscapeHandoff }: ProcessDetailContentProps) => {
   const router = useRouter();
   const goBack = useDetailBack("/(tabs)");
   const insets = useSafeAreaInsets();
   const { isWide } = useResponsive();
   const landscapeHeader = useLandscapeTerminalHeader(true);
-  const fitSafeArea = useTerminalViewportStore((s) => s.fitSafeArea);
-  const setFitSafeArea = useTerminalViewportStore((s) => s.setFitSafeArea);
-  const containerStyle = landscapeHeader.isLandscape && fitSafeArea
+  const showLandscapeSidebar = useLandscapeShellNavigation({ kind: "process", paneId: pane_id }, fromSplit);
+  const containerStyle = landscapeHeader.isLandscape
     ? [styles.container, { paddingLeft: insets.left, paddingRight: insets.right }]
     : styles.container;
 
@@ -319,6 +321,7 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
 
   const openPaneOverview = useCallback(() => setShowPaneOverview(true), []);
   const waitingHeaderOptions = useMemo(() => ({
+    animation: landscapeHandoff ? "none" as const : "slide_from_right" as const,
     orientation: Platform.OS === "ios" && !Platform.isPad ? "default" as const : undefined,
     headerShown: !isWide && landscapeHeader.headerShown,
     title: pane_id,
@@ -327,8 +330,9 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
     headerTitleStyle: { fontWeight: "600" as const },
     headerBackTitle: "",
     headerBackButtonDisplayMode: "minimal" as const,
-  }), [isWide, landscapeHeader.headerShown, pane_id]);
+  }), [isWide, landscapeHeader.headerShown, pane_id, landscapeHandoff]);
   const terminalHeaderOptions = useMemo(() => ({
+    animation: landscapeHandoff ? "none" as const : "slide_from_right" as const,
     orientation: Platform.OS === "ios" && !Platform.isPad ? "default" as const : undefined,
     headerShown: !isWide && landscapeHeader.headerShown,
     headerStyle: { backgroundColor: colors.bg },
@@ -346,7 +350,6 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
     ),
     headerRight: () => (
       <View style={styles.headerActions}>
-        {Platform.OS === "ios" && landscapeHeader.isLandscape ? <TerminalViewportControl fitSafeArea={fitSafeArea} onChange={setFitSafeArea} /> : null}
         <TouchableOpacity
           style={styles.contextBtn}
           onPress={openPaneOverview}
@@ -359,7 +362,7 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
         </TouchableOpacity>
       </View>
     ),
-  }), [headerKind, headerTitle, isWide, landscapeHeader.headerShown, landscapeHeader.isLandscape, openPaneOverview, fitSafeArea, setFitSafeArea]);
+  }), [headerKind, headerTitle, isWide, landscapeHeader.headerShown, openPaneOverview, landscapeHandoff]);
 
   const isAlive = !!process || !!paneQuestion;
   if (waitingForData) {
@@ -404,7 +407,7 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
           />
         </View>
         <TerminalScrollButtons
-          rightInset={landscapeHeader.isLandscape && !fitSafeArea ? insets.right : 0}
+          rightInset={0}
           onScrollUp={() => scrollTerminal("up")}
           onScrollDown={() => scrollTerminal("down")}
           onExitCopyMode={exitCopyMode}
@@ -425,9 +428,9 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
           topInset={insets.top}
           leftInset={insets.left}
           rightInset={insets.right}
-          onBack={goBack}
+          onBack={showLandscapeSidebar}
           title={<HeaderTitleWithIcon title={headerTitle} icon={<JobKindIcon kind={headerKind} size={26} bare />} onPress={openPaneOverview} accessibilityLabel="Open pane overview" />}
-          actions={<TerminalHeaderActions onZoom={() => setFitSafeArea(!fitSafeArea)} zoomed={!fitSafeArea} onOpenDetails={openPaneOverview} />}
+          actions={<TerminalHeaderActions onZoom={showLandscapeSidebar} zoomed onOpenDetails={openPaneOverview} />}
         />
       ) : null}
       {keyboardVisible || terminalMenuOpen ? (

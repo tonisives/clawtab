@@ -2,6 +2,7 @@ import { MachineTerminalControls } from "@clawtab/shared";
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Platform, View, Text, TextInput, StyleSheet, ActivityIndicator, Alert, TouchableOpacity, Keyboard } from "react-native"
 import { useRouter } from "expo-router"
+import { useLandscapeShellStore } from "../store/landscapeShell"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { useJobsStore, useJob, useJobStatus } from "../store/jobs"
 import { useRunsStore } from "../store/runs"
@@ -182,7 +183,8 @@ export function JobDetailPane({ jobName, onClose, embedded = false }: JobDetailP
   const zoomToFullScreen = useCallback(() => {
     termRef.current?.blur()
     Keyboard.dismiss()
-    router.push({ pathname: "/job/[name]", params: { name: slug } })
+    useLandscapeShellStore.getState().showFullScreen({ kind: "job", slug })
+    router.push({ pathname: "/job/[name]", params: { name: slug, fromSplit: "1" } })
   }, [router, slug])
 
   const renderTerminal = useCallback(

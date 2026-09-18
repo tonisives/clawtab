@@ -261,6 +261,9 @@ export default function JobsScreen() {
   const insets = useSafeAreaInsets()
   const setListHeaderShown = useMobileHeaderStore((s) => s.setListHeaderShown)
   const setFocusedShell = useLandscapeShellStore((s) => s.setFocusedShell)
+  const showSidebar = useLandscapeShellStore((s) => s.showSidebar)
+  const pendingSidebarShell = useLandscapeShellStore((s) => s.pendingSidebarShell)
+  const clearPendingSidebarShell = useLandscapeShellStore((s) => s.clearPendingSidebarShell)
   const lastListOffset = useRef(0)
   const lastChromeChange = useRef(0)
   const handleListScroll = useCallback((offset: number) => {
@@ -454,10 +457,13 @@ export default function JobsScreen() {
         setSelectedProcess(null)
         setSelection("job", job.slug)
       } else {
+        setSelectedJob(job.slug)
+        setSelectedProcess(null)
+        showSidebar({ kind: "job", slug: job.slug })
         router.push(jobRoute(job))
       }
     },
-    [router, isSplitView],
+    [router, isSplitView, showSidebar],
   )
 
   const handleSelectProcess = useCallback(
@@ -468,10 +474,13 @@ export default function JobsScreen() {
         setSelectedJob(null)
         setSelection("process", process.pane_id)
       } else {
+        setSelectedProcess(process.pane_id)
+        setSelectedJob(null)
+        showSidebar({ kind: "process", paneId: process.pane_id })
         router.push(processRoute(process.pane_id))
       }
     },
-    [router, isSplitView],
+    [router, isSplitView, showSidebar],
   )
 
   // Restore URL ?params after expo-router finishes its initial URL rewrite
@@ -521,10 +530,21 @@ export default function JobsScreen() {
   })
   useEffect(() => {
     if (!isIosPhoneLandscape || sidebarSection !== "jobs") return
+    if (pendingSidebarShell) {
+      if (pendingSidebarShell.kind === "job") {
+        setSelectedJob(pendingSidebarShell.slug)
+        setSelectedProcess(null)
+      } else {
+        setSelectedProcess(pendingSidebarShell.paneId)
+        setSelectedJob(null)
+      }
+      clearPendingSidebarShell()
+      return
+    }
     const content = focusedPaneContent(split.tree, split.focusedLeafId) ?? currentContent
     if (content?.kind === "job") setFocusedShell({ kind: "job", slug: content.slug })
     else if (content?.kind === "process" || content?.kind === "terminal") setFocusedShell({ kind: "process", paneId: content.paneId })
-  }, [isIosPhoneLandscape, sidebarSection, split.tree, split.focusedLeafId, currentContent, setFocusedShell])
+  }, [isIosPhoneLandscape, sidebarSection, split.tree, split.focusedLeafId, currentContent, pendingSidebarShell, clearPendingSidebarShell, setFocusedShell])
   const initialUrlSelectionPendingRef = useRef(
     Platform.OS === "web" && !!(_initParams?.get("job") || _initParams?.get("process")),
   )
@@ -541,7 +561,7 @@ export default function JobsScreen() {
   const handleSelectJobWithTree = useCallback(
     (job: RemoteJob) => {
       if (!isSplitView) {
-        router.push(jobRoute(job))
+        handleSelectJob(job)
         return
       }
       const content: PaneContent = { kind: "job", slug: job.slug }
@@ -551,13 +571,13 @@ export default function JobsScreen() {
       }
       handleSelectJob(job)
     },
-    [isSplitView, router, split.tree, split.handleSelectInTree, handleSelectJob],
+    [isSplitView, split.tree, split.handleSelectInTree, handleSelectJob],
   )
 
   const handleSelectProcessWithTree = useCallback(
     (process: DetectedProcess) => {
       if (!isSplitView) {
-        router.push(processRoute(process.pane_id))
+        handleSelectProcess(process)
         return
       }
       const content: PaneContent = { kind: "process", paneId: process.pane_id }
@@ -567,7 +587,7 @@ export default function JobsScreen() {
       }
       handleSelectProcess(process)
     },
-    [isSplitView, router, split.tree, split.handleSelectInTree, handleSelectProcess],
+    [isSplitView, split.tree, split.handleSelectInTree, handleSelectProcess],
   )
 
   const handleRunAgent = useCallback(
