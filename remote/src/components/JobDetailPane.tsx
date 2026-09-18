@@ -18,6 +18,7 @@ import type { AgentModelOption, JobUpdate, ProcessProvider, RemoteJob, RunRecord
 import { buildModelOptions } from "../lib/agentModels"
 import { useLandscapeTerminalHeader } from "../hooks/useLandscapeTerminalHeader"
 import { TerminalViewportControl } from "./TerminalViewportControl"
+import { TerminalCopySheet } from "./TerminalCopySheet"
 import { useTerminalViewportStore } from "../store/terminalViewport"
 
 const wsTransport = createWsTransport()
@@ -147,6 +148,7 @@ export function JobDetailPane({ jobName, onClose, embedded = false }: JobDetailP
   const landscapeHeader = useLandscapeTerminalHeader(isRunningWithPty)
   const fitSafeArea = useTerminalViewportStore((s) => s.fitSafeArea)
   const setFitSafeArea = useTerminalViewportStore((s) => s.setFitSafeArea)
+  const [copyText, setCopyText] = useState<string | null>(null)
 
   const renderTerminal = useCallback(
     () => (
@@ -169,8 +171,9 @@ export function JobDetailPane({ jobName, onClose, embedded = false }: JobDetailP
           interactive
           forceDarkTheme
           extendedViewport={Platform.OS === "ios"}
-          extendedViewportHeight={landscapeHeader.isLandscape ? 350 : 250}
+          extendedViewportHeight={350}
           onScrollGesture={landscapeHeader.onScrollGesture}
+          onLongPressCopyText={setCopyText}
         />
       </View>
     ),
@@ -236,6 +239,7 @@ export function JobDetailPane({ jobName, onClose, embedded = false }: JobDetailP
         agentModelOptions={modelOptions}
         onUpdateJob={!isAgent ? onUpdateJob : undefined}
       />
+      <TerminalCopySheet text={copyText} onClose={() => setCopyText(null)} />
     </View>
   )
 }

@@ -15,7 +15,7 @@ import {
   Image,
   Linking,
 } from "react-native"
-import { useFocusEffect, useRouter } from "expo-router"
+import { useRouter } from "expo-router"
 import { Ionicons } from "@expo/vector-icons"
 import { GlassView, isGlassEffectAPIAvailable } from "expo-glass-effect"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
@@ -59,6 +59,7 @@ import { registerRequest } from "../../src/lib/useRequestMap"
 import { useResponsive } from "../../src/hooks/useResponsive"
 import { useMobileHeaderStore } from "../../src/store/mobileHeader"
 import { useTerminalViewportStore } from "../../src/store/terminalViewport"
+import { useLandscapeShellStore } from "../../src/store/landscapeShell"
 import { NotificationsMenuButton } from "../../src/components/NotificationsMenuButton"
 import { colors } from "@clawtab/shared"
 import { spacing } from "@clawtab/shared"
@@ -258,14 +259,10 @@ export default function JobsScreen() {
   const [stoppingJobSlugs, setStoppingJobSlugs] = useState<Set<string>>(() => new Set())
   const { width, isIosPad, isIosPadPortrait, isIosPhoneLandscape, isSplitView, isWide } = useResponsive()
   const router = useRouter()
-  const screenFocused = useRef(false)
-  useFocusEffect(useCallback(() => {
-    screenFocused.current = true
-    return () => { screenFocused.current = false }
-  }, []))
   const insets = useSafeAreaInsets()
   const setListHeaderShown = useMobileHeaderStore((s) => s.setListHeaderShown)
   const fitSafeArea = useTerminalViewportStore((s) => s.fitSafeArea)
+  const setFocusedShell = useLandscapeShellStore((s) => s.setFocusedShell)
   const lastListOffset = useRef(0)
   const lastChromeChange = useRef(0)
   const handleListScroll = useCallback((offset: number) => {
@@ -524,15 +521,12 @@ export default function JobsScreen() {
     ),
     currentContent,
   })
-  const previousPhoneLandscape = useRef(isIosPhoneLandscape)
   useEffect(() => {
-    const rotatedToPortrait = previousPhoneLandscape.current && !isIosPhoneLandscape
-    previousPhoneLandscape.current = isIosPhoneLandscape
-    if (!rotatedToPortrait || !screenFocused.current || sidebarSection !== "jobs") return
+    if (!isIosPhoneLandscape || sidebarSection !== "jobs") return
     const content = focusedPaneContent(split.tree, split.focusedLeafId) ?? currentContent
-    if (content?.kind === "job") router.push(jobIdRoute(content.slug))
-    else if (content?.kind === "process" || content?.kind === "terminal") router.push(processRoute(content.paneId))
-  }, [isIosPhoneLandscape, sidebarSection, split.tree, split.focusedLeafId, currentContent, router])
+    if (content?.kind === "job") setFocusedShell({ kind: "job", slug: content.slug })
+    else if (content?.kind === "process" || content?.kind === "terminal") setFocusedShell({ kind: "process", paneId: content.paneId })
+  }, [isIosPhoneLandscape, sidebarSection, split.tree, split.focusedLeafId, currentContent, setFocusedShell])
   const initialUrlSelectionPendingRef = useRef(
     Platform.OS === "web" && !!(_initParams?.get("job") || _initParams?.get("process")),
   )
@@ -1137,7 +1131,7 @@ export default function JobsScreen() {
           <Image source={require("../../assets/icon.png")} style={styles.listPaneBrandIcon} />
           <Text style={styles.listPaneBrandText}>ClawTab</Text>
         </Pressable>
-        {!isIosPad && <NotificationsMenuButton variant={isWide ? "compact" : "fluid"} />}
+        {!isIosPad && !isIosPhoneLandscape && <NotificationsMenuButton variant={isWide ? "compact" : "fluid"} />}
       </View>
 
       {!isIosPad && (
@@ -1258,6 +1252,11 @@ export default function JobsScreen() {
             renderProcessCard={renderDraggableProcessCard}
           />
         </View>
+        {isIosPhoneLandscape ? (
+          <View style={[styles.sidebarNotificationOverlay, { top: insets.top + 8 }]}>
+            <NotificationsMenuButton variant="compact" />
+          </View>
+        ) : null}
         {isIosPad && (
           <View style={[styles.ipadBottomBarWrap, { paddingBottom: insets.bottom + 8 }]}>
             <IpadBottomBar activeSection={ipadActiveSection} onSelect={handleIpadNavigation} />
@@ -1275,7 +1274,12 @@ export default function JobsScreen() {
             tree={split.tree}
             renderLeaf={renderLeaf}
             onRatioChange={split.handleSplitRatioChange}
-            onFocusLeaf={split.setFocusedLeafId}
+            onFocusLeaf={(leafId) => {
+              split.setFocusedLeafId(leafId)
+              const content = focusedPaneContent(split.tree, leafId)
+              if (content?.kind === "job") setFocusedShell({ kind: "job", slug: content.slug })
+              else if (content?.kind === "process" || content?.kind === "terminal") setFocusedShell({ kind: "process", paneId: content.paneId })
+            }}
             focusedLeafId={split.focusedLeafId}
             paneColors={split.paneColors}
             emptyContent={primaryContent}
@@ -1355,6 +1359,11 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
     zIndex: 20,
+  },
+  sidebarNotificationOverlay: {
+    position: "absolute",
+    right: 12,
+    zIndex: 40,
   },
   sidebarTitleRow: {
     minHeight: 38,

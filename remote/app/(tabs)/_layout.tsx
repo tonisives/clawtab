@@ -1,4 +1,4 @@
-import { useCallback, useEffect, type ComponentType, type PropsWithChildren } from "react";
+import { useCallback, useEffect, useRef, type ComponentType, type PropsWithChildren } from "react";
 import { Platform, View, Text } from "react-native";
 import { Tabs, usePathname, useRouter } from "expo-router";
 import { NativeTabs } from "expo-router/unstable-native-tabs";
@@ -11,6 +11,7 @@ import { registerNotificationCategories } from "../../src/lib/notifications";
 import { NotificationsMenuButton } from "../../src/components/NotificationsMenuButton";
 import { useJobFilterStore } from "../../src/store/jobFilter";
 import { useMobileHeaderStore } from "../../src/store/mobileHeader";
+import { useLandscapeShellStore } from "../../src/store/landscapeShell";
 import {
   IpadBottomBar,
   type IpadNavigationItem,
@@ -264,7 +265,23 @@ const styles = {
 } as const;
 
 export default function TabLayout() {
-  const { isIosPadPortrait, isSplitView, isWide } = useResponsive();
+  const { isIosPadPortrait, isIosPhoneLandscape, isSplitView, isWide } = useResponsive();
+  const previousPhoneLandscape = useRef(isIosPhoneLandscape);
+  const pathname = usePathname();
+  const router = useRouter();
+
+  useEffect(() => {
+    const rotatedToPortrait = previousPhoneLandscape.current && !isIosPhoneLandscape;
+    previousPhoneLandscape.current = isIosPhoneLandscape;
+    if (!rotatedToPortrait || !(pathname === "/" || pathname === "/(tabs)" || pathname.endsWith("/index"))) return;
+    const shell = useLandscapeShellStore.getState().focusedShell;
+    if (!shell) return;
+    setTimeout(() => {
+      if (previousPhoneLandscape.current) return;
+      if (shell.kind === "job") router.push({ pathname: "/job/[name]", params: { name: shell.slug } });
+      else router.push({ pathname: "/process/[pane_id]", params: { pane_id: shell.paneId.replace(/%/g, "_pct_") } });
+    }, 80);
+  }, [isIosPhoneLandscape, pathname, router]);
 
   useEffect(() => {
     registerNotificationCategories();

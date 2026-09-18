@@ -17,6 +17,7 @@ import type { Transport, RemoteJob, JobStatus } from "@clawtab/shared"
 import { useAgentActions } from "../hooks/useAgentActions"
 import { useLandscapeTerminalHeader } from "../hooks/useLandscapeTerminalHeader"
 import { TerminalViewportControl } from "./TerminalViewportControl"
+import { TerminalCopySheet } from "./TerminalCopySheet"
 import { useTerminalViewportStore } from "../store/terminalViewport"
 
 function createProcessTransport(paneId: string, onStopped?: () => void): Transport {
@@ -235,6 +236,7 @@ export function ProcessDetailPane({ paneId, onClose, embedded = false }: Process
   const landscapeHeader = useLandscapeTerminalHeader(!!activeProcess)
   const fitSafeArea = useTerminalViewportStore((s) => s.fitSafeArea)
   const setFitSafeArea = useTerminalViewportStore((s) => s.setFitSafeArea)
+  const [copyText, setCopyText] = useState<string | null>(null)
 
   const renderTerminal = useCallback(
     () => (
@@ -255,8 +257,9 @@ export function ProcessDetailPane({ paneId, onClose, embedded = false }: Process
           interactive
           forceDarkTheme
           extendedViewport={Platform.OS === "ios"}
-          extendedViewportHeight={landscapeHeader.isLandscape ? 350 : 250}
+          extendedViewportHeight={350}
           onScrollGesture={landscapeHeader.onScrollGesture}
+          onLongPressCopyText={setCopyText}
         />
       </View>
     ),
@@ -325,6 +328,7 @@ export function ProcessDetailPane({ paneId, onClose, embedded = false }: Process
         onBack={onClose}
         showBackButton={false}
         hideRuns
+        hidePath
         expandOutput
         hideInfoPanels={landscapeHeader.isLandscape}
         options={paneQuestion?.options}
@@ -352,6 +356,7 @@ export function ProcessDetailPane({ paneId, onClose, embedded = false }: Process
         paneOverviewVisible={showPaneOverview}
         onPaneOverviewVisibleChange={setShowPaneOverview}
       />
+      <TerminalCopySheet text={copyText} onClose={() => setCopyText(null)} />
     </View>
   )
 }
