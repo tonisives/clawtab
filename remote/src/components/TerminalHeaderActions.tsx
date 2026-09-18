@@ -1,18 +1,19 @@
 import { Pressable, StyleSheet, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { colors } from "@clawtab/shared";
-import { TerminalViewportControl } from "./TerminalViewportControl";
 
 type Props = {
-  fitSafeArea: boolean;
-  onChangeViewport: (fitSafeArea: boolean) => void;
+  onZoom: () => void;
+  zoomed?: boolean;
   onOpenDetails: () => void;
 };
 
-export function TerminalHeaderActions({ fitSafeArea, onChangeViewport, onOpenDetails }: Props) {
+export function TerminalHeaderActions({ onZoom, zoomed = false, onOpenDetails }: Props) {
   return (
     <View style={styles.row}>
-      <TerminalViewportControl fitSafeArea={fitSafeArea} onChange={onChangeViewport} />
+      <Pressable style={styles.button} onPress={onZoom} accessibilityRole="button" accessibilityLabel={zoomed ? "Fit shell to safe area" : "Zoom shell"}>
+        <Ionicons name={zoomed ? "contract-outline" : "expand-outline"} size={20} color={colors.text} />
+      </Pressable>
       <Pressable style={styles.button} onPress={onOpenDetails} accessibilityRole="button" accessibilityLabel="Shell details">
         <Ionicons name="ellipsis-horizontal" size={20} color={colors.text} />
       </Pressable>

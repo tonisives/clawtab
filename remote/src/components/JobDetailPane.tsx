@@ -1,12 +1,13 @@
 import { MachineTerminalControls } from "@clawtab/shared";
 import { useCallback, useEffect, useRef, useState } from "react"
-import { Platform, View, Text, StyleSheet, ActivityIndicator, Alert, TouchableOpacity } from "react-native"
+import { Platform, View, Text, TextInput, StyleSheet, ActivityIndicator, Alert, TouchableOpacity, Keyboard } from "react-native"
+import { useRouter } from "expo-router"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { useJobsStore, useJob, useJobStatus } from "../store/jobs"
 import { useRunsStore } from "../store/runs"
 import { useNotificationStore } from "../store/notifications"
 import { useWsStore } from "../store/ws"
-import { JobDetailView, compactPath, findYesOption, StatusBadge, XtermLog } from "@clawtab/shared"
+import { JobDetailView, compactPath, encodeTerminalInput, findYesOption, StatusBadge, XtermLog } from "@clawtab/shared"
 import type { XtermLogHandle } from "@clawtab/shared"
 import { useLogs } from "../hooks/useLogs"
 import { usePty } from "../hooks/usePty"
@@ -19,7 +20,9 @@ import { buildModelOptions } from "../lib/agentModels"
 import { useLandscapeTerminalHeader } from "../hooks/useLandscapeTerminalHeader"
 import { TerminalHeaderActions } from "./TerminalHeaderActions"
 import { TerminalCopySheet } from "./TerminalCopySheet"
-import { useTerminalViewportStore } from "../store/terminalViewport"
+import { TerminalKeyboardToolbar, TERMINAL_KEYBOARD_TOOLBAR_HEIGHT } from "./TerminalKeyboardToolbar"
+import { TerminalWriteDialog } from "./TerminalWriteDialog"
+import { useTerminalKeyboard } from "../hooks/useTerminalKeyboard"
 
 const wsTransport = createWsTransport()
 const AGENT_PROVIDERS: ProcessProvider[] = ["claude", "codex", "opencode", "antigravity"]
@@ -45,6 +48,7 @@ interface JobDetailPaneProps {
 }
 
 export function JobDetailPane({ jobName, onClose, embedded = false }: JobDetailPaneProps) {
+  const router = useRouter()
   const insets = useSafeAreaInsets()
   const storeJob = useJob(jobName)
   const defaultAgentProvider = useJobsStore((s) => s.defaultProvider)
@@ -143,13 +147,43 @@ export function JobDetailPane({ jobName, onClose, embedded = false }: JobDetailP
   // PTY streaming for running jobs
   const statusTmuxSession = status?.state === "running" ? (status as any).tmux_session ?? "" : ""
   const termRef = useRef<XtermLogHandle | null>(null)
+  const keyboardDismissRef = useRef<TextInput | null>(null)
   const { sendInput, sendResize, connecting: ptyConnecting, error: ptyError } = usePty(statusPaneId, statusTmuxSession, termRef)
   const isRunningWithPty = !!statusPaneId && !!statusTmuxSession
   const landscapeHeader = useLandscapeTerminalHeader(isRunningWithPty)
-  const fitSafeArea = useTerminalViewportStore((s) => s.fitSafeArea)
-  const setFitSafeArea = useTerminalViewportStore((s) => s.setFitSafeArea)
   const [copyText, setCopyText] = useState<string | null>(null)
   const [showPaneOverview, setShowPaneOverview] = useState(false)
+  const [terminalMenuOpen, setTerminalMenuOpen] = useState(false)
+  const [writeOpen, setWriteOpen] = useState(false)
+  const [writeDraft, setWriteDraft] = useState("")
+  const [optionOverlayHeight, setOptionOverlayHeight] = useState(0)
+  const { keyboardVisible, keyboardHeight, terminalSurfaceRef, handleTerminalLayout } = useTerminalKeyboard({
+    termRef,
+    menuOpen: terminalMenuOpen,
+    toolbarHeight: TERMINAL_KEYBOARD_TOOLBAR_HEIGHT,
+    extraClearance: 10,
+    overlayHeight: optionOverlayHeight,
+  })
+  const sendTerminalText = useCallback((text: string) => {
+    if (text) sendInput(encodeTerminalInput(text))
+  }, [sendInput])
+  const dismissTerminalKeyboard = useCallback(() => {
+    termRef.current?.blur()
+    keyboardDismissRef.current?.focus()
+    setTimeout(() => {
+      keyboardDismissRef.current?.blur()
+      Keyboard.dismiss()
+    }, 30)
+  }, [])
+  const handleTerminalMenuOpenChange = useCallback((open: boolean) => {
+    setTerminalMenuOpen(open)
+    if (open) setTimeout(() => termRef.current?.focus(), 0)
+  }, [])
+  const zoomToFullScreen = useCallback(() => {
+    termRef.current?.blur()
+    Keyboard.dismiss()
+    router.push({ pathname: "/job/[name]", params: { name: slug } })
+  }, [router, slug])
 
   const renderTerminal = useCallback(
     () => (
@@ -165,19 +199,22 @@ export function JobDetailPane({ jobName, onClose, embedded = false }: JobDetailP
           ) : null}
         </View>
         {Platform.OS !== "ios" && <MachineTerminalControls paneId={statusPaneId ?? ""} />}
-        <XtermLog
-          ref={termRef}
-          onData={sendInput}
-          onResize={sendResize}
-          interactive
-          forceDarkTheme
-          extendedViewport={Platform.OS === "ios"}
-          extendedViewportHeight={350}
-          onLongPressCopyText={setCopyText}
-        />
+        <View ref={terminalSurfaceRef} style={styles.terminalSurface} onLayout={handleTerminalLayout}>
+          <XtermLog
+            ref={termRef}
+            onData={sendInput}
+            onResize={sendResize}
+            interactive
+            forceDarkTheme
+            extendedViewport={Platform.OS === "ios"}
+            extendedViewportHeight={350}
+            onScrollGesture={landscapeHeader.onScrollGesture}
+            onLongPressCopyText={setCopyText}
+          />
+        </View>
       </View>
     ),
-    [sendInput, sendResize, ptyConnecting, ptyError],
+    [sendInput, sendResize, ptyConnecting, ptyError, landscapeHeader.onScrollGesture, handleTerminalLayout, terminalSurfaceRef],
   )
 
   if (!job) {
@@ -200,10 +237,10 @@ export function JobDetailPane({ jobName, onClose, embedded = false }: JobDetailP
 
   return (
     <View style={styles.container}>
-      <View style={[styles.header, { paddingTop: embedded ? spacing.md : insets.top + spacing.md }]}>
+      {landscapeHeader.headerShown || landscapeHeader.overlayShown ? <View style={[styles.header, landscapeHeader.isLandscape && styles.landscapeHeaderOverlay, { paddingTop: embedded ? spacing.md : insets.top + spacing.md }]}>
         <Text style={styles.title} numberOfLines={1}>{landscapeHeader.isLandscape ? compactPath(job.work_dir) : job.name}</Text>
         {landscapeHeader.isLandscape && isRunningWithPty ? (
-          <TerminalHeaderActions fitSafeArea={fitSafeArea} onChangeViewport={setFitSafeArea} onOpenDetails={() => setShowPaneOverview(true)} />
+          <TerminalHeaderActions onZoom={zoomToFullScreen} onOpenDetails={() => setShowPaneOverview(true)} />
         ) : <TouchableOpacity
           onPress={canToggleAutoYes ? handleToggleAutoYes : undefined}
           disabled={!canToggleAutoYes}
@@ -213,7 +250,7 @@ export function JobDetailPane({ jobName, onClose, embedded = false }: JobDetailP
         >
           <StatusBadge status={status} colorOverride={autoYesActive ? colors.warning : undefined} />
         </TouchableOpacity>}
-      </View>
+      </View> : null}
       <JobDetailView
         transport={wsTransport}
         job={job}
@@ -243,8 +280,32 @@ export function JobDetailPane({ jobName, onClose, embedded = false }: JobDetailP
         defaultAgentModel={defaultAgentModel}
         agentModelOptions={modelOptions}
         onUpdateJob={!isAgent ? onUpdateJob : undefined}
+        optionBarBottomInset={insets.bottom}
+        onTerminalOverlayHeightChange={setOptionOverlayHeight}
+      />
+      {isRunningWithPty && (keyboardVisible || terminalMenuOpen) ? (
+        <TerminalKeyboardToolbar
+          bottom={keyboardVisible ? keyboardHeight : insets.bottom}
+          onDismiss={dismissTerminalKeyboard}
+          onSend={sendTerminalText}
+          onWrite={() => { setTerminalMenuOpen(false); setWriteOpen(true) }}
+          menuOpen={terminalMenuOpen}
+          onMenuOpenChange={handleTerminalMenuOpenChange}
+        />
+      ) : null}
+      <TerminalWriteDialog
+        visible={writeOpen}
+        draft={writeDraft}
+        onDraftChange={setWriteDraft}
+        onClose={() => setWriteOpen(false)}
+        onDone={() => {
+          const value = writeDraft.replace(/\r\n|\n/g, "\r")
+          sendTerminalText(value.endsWith("\r") ? value : value + "\r")
+          setWriteOpen(false)
+        }}
       />
       <TerminalCopySheet text={copyText} onClose={() => setCopyText(null)} />
+      <TextInput ref={keyboardDismissRef} style={styles.keyboardDismissSink} showSoftInputOnFocus={false} caretHidden autoCorrect={false} autoCapitalize="none" />
     </View>
   )
 }
@@ -262,6 +323,13 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+  },
+  landscapeHeaderOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
   },
   title: {
     color: colors.text,
@@ -304,4 +372,6 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 12,
   },
+  terminalSurface: { flex: 1, minHeight: 0 },
+  keyboardDismissSink: { position: "absolute", width: 1, height: 1, opacity: 0, bottom: 0, left: 0 },
 })

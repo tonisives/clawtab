@@ -58,7 +58,6 @@ import { getWsSend, nextId } from "../../src/lib/wsRuntime"
 import { registerRequest } from "../../src/lib/useRequestMap"
 import { useResponsive } from "../../src/hooks/useResponsive"
 import { useMobileHeaderStore } from "../../src/store/mobileHeader"
-import { useTerminalViewportStore } from "../../src/store/terminalViewport"
 import { useLandscapeShellStore } from "../../src/store/landscapeShell"
 import { NotificationsMenuButton } from "../../src/components/NotificationsMenuButton"
 import { colors } from "@clawtab/shared"
@@ -261,7 +260,6 @@ export default function JobsScreen() {
   const router = useRouter()
   const insets = useSafeAreaInsets()
   const setListHeaderShown = useMobileHeaderStore((s) => s.setListHeaderShown)
-  const fitSafeArea = useTerminalViewportStore((s) => s.fitSafeArea)
   const setFocusedShell = useLandscapeShellStore((s) => s.setFocusedShell)
   const lastListOffset = useRef(0)
   const lastChromeChange = useRef(0)
@@ -1290,7 +1288,7 @@ export default function JobsScreen() {
     return (
       <View style={[styles.screenRoot, isIosPhoneLandscape && {
         paddingLeft: insets.left,
-        paddingRight: fitSafeArea ? insets.right : 0,
+        paddingRight: insets.right,
       }]}>
         {splitContent}
         {searchModal}

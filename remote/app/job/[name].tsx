@@ -33,6 +33,7 @@ import { TerminalCopySheet } from "../../src/components/TerminalCopySheet";
 import { colors, spacing } from "@clawtab/shared";
 import { useLandscapeTerminalHeader } from "../../src/hooks/useLandscapeTerminalHeader";
 import { TerminalViewportControl } from "../../src/components/TerminalViewportControl";
+import { TerminalHeaderActions } from "../../src/components/TerminalHeaderActions";
 import { LandscapeTerminalBar } from "../../src/components/LandscapeTerminalBar";
 import { useTerminalViewportStore } from "../../src/store/terminalViewport";
 import type { RemoteJob, RunRecord } from "@clawtab/shared";
@@ -400,16 +401,7 @@ export default function JobDetailScreen() {
           rightInset={fitSafeArea ? 0 : insets.right}
           onBack={goBack}
           title={<HeaderTitleWithIcon title={jobHeaderName} icon={<JobKindIcon kind={jobHeaderKind} size={26} bare />} />}
-          actions={
-            <View style={styles.headerActions}>
-              <TerminalViewportControl fitSafeArea={fitSafeArea} onChange={setFitSafeArea} />
-              <HeaderStatusDot
-                color={autoYesActive ? colors.warning : statusColor(status)}
-                onPress={!autoYesPaneId ? undefined : handleToggleAutoYes}
-                accessibilityLabel={!autoYesPaneId ? "Status" : autoYesActive ? "Disable auto-yes" : "Enable auto-yes"}
-              />
-            </View>
-          }
+          actions={<TerminalHeaderActions onZoom={() => setFitSafeArea(!fitSafeArea)} zoomed={!fitSafeArea} onOpenDetails={() => setShowPaneOverview(true)} />}
         />
       ) : null}
       {source === "notifications" && (

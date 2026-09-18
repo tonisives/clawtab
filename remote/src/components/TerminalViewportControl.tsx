@@ -1,4 +1,5 @@
-import { StyleSheet, Text, TouchableOpacity } from "react-native";
+import { StyleSheet, TouchableOpacity } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { colors } from "@clawtab/shared";
 
 type TerminalViewportControlProps = {
@@ -13,7 +14,7 @@ export let TerminalViewportControl = ({ fitSafeArea, onChange }: TerminalViewpor
     accessibilityRole="button"
     accessibilityLabel={fitSafeArea ? "Fill screen with shell" : "Fit shell inside safe area"}
   >
-    <Text style={styles.label}>{fitSafeArea ? "Fill" : "Fit"}</Text>
+    <Ionicons name={fitSafeArea ? "expand-outline" : "contract-outline"} size={20} color={colors.text} />
   </TouchableOpacity>
 );
 
@@ -29,5 +30,4 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: 8,
   },
-  label: { color: colors.text, fontSize: 14, fontWeight: "600" },
 });

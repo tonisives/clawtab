@@ -1,12 +1,13 @@
 import { MachineTerminalControls } from "@clawtab/shared";
 import { useCallback, useEffect, useRef, useState, useMemo } from "react"
-import { Platform, View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from "react-native"
+import { Platform, View, Text, TextInput, StyleSheet, ActivityIndicator, TouchableOpacity, Keyboard } from "react-native"
+import { useRouter } from "expo-router"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { useJobsStore } from "../store/jobs"
 import { useNotificationStore } from "../store/notifications"
 import { usePinsStore } from "../store/pins"
 import { useWsStore } from "../store/ws"
-import { JobDetailView, StatusBadge, findYesOption, XtermLog, colors, spacing } from "@clawtab/shared"
+import { JobDetailView, StatusBadge, encodeTerminalInput, findYesOption, XtermLog, colors, spacing } from "@clawtab/shared"
 import type { XtermLogHandle } from "@clawtab/shared"
 import { getWsSend, nextId } from "../lib/wsRuntime"
 import { usePty } from "../hooks/usePty"
@@ -18,7 +19,9 @@ import { useAgentActions } from "../hooks/useAgentActions"
 import { useLandscapeTerminalHeader } from "../hooks/useLandscapeTerminalHeader"
 import { TerminalHeaderActions } from "./TerminalHeaderActions"
 import { TerminalCopySheet } from "./TerminalCopySheet"
-import { useTerminalViewportStore } from "../store/terminalViewport"
+import { TerminalKeyboardToolbar, TERMINAL_KEYBOARD_TOOLBAR_HEIGHT } from "./TerminalKeyboardToolbar"
+import { TerminalWriteDialog } from "./TerminalWriteDialog"
+import { useTerminalKeyboard } from "../hooks/useTerminalKeyboard"
 
 function createProcessTransport(paneId: string, onStopped?: () => void): Transport {
   const noop = async () => {}
@@ -82,6 +85,7 @@ interface ProcessDetailPaneProps {
 }
 
 export function ProcessDetailPane({ paneId, onClose, embedded = false }: ProcessDetailPaneProps) {
+  const router = useRouter()
   const insets = useSafeAreaInsets()
   const storeProcess = useJobsStore((s) =>
     s.detectedProcesses.find((p) => p.pane_id === paneId),
@@ -231,12 +235,42 @@ export function ProcessDetailPane({ paneId, onClose, embedded = false }: Process
 
   // PTY streaming terminal
   const termRef = useRef<XtermLogHandle | null>(null)
+  const keyboardDismissRef = useRef<TextInput | null>(null)
   const tmuxSession = activeProcess?.tmux_session ?? ""
   const { sendInput, sendResize, connecting: ptyConnecting, error: ptyError } = usePty(paneId, tmuxSession, termRef)
   const landscapeHeader = useLandscapeTerminalHeader(!!activeProcess)
-  const fitSafeArea = useTerminalViewportStore((s) => s.fitSafeArea)
-  const setFitSafeArea = useTerminalViewportStore((s) => s.setFitSafeArea)
   const [copyText, setCopyText] = useState<string | null>(null)
+  const [terminalMenuOpen, setTerminalMenuOpen] = useState(false)
+  const [writeOpen, setWriteOpen] = useState(false)
+  const [writeDraft, setWriteDraft] = useState("")
+  const [optionOverlayHeight, setOptionOverlayHeight] = useState(0)
+  const { keyboardVisible, keyboardHeight, terminalSurfaceRef, handleTerminalLayout } = useTerminalKeyboard({
+    termRef,
+    menuOpen: terminalMenuOpen,
+    toolbarHeight: TERMINAL_KEYBOARD_TOOLBAR_HEIGHT,
+    extraClearance: 10,
+    overlayHeight: optionOverlayHeight,
+  })
+  const sendTerminalText = useCallback((text: string) => {
+    if (text) sendInput(encodeTerminalInput(text))
+  }, [sendInput])
+  const dismissTerminalKeyboard = useCallback(() => {
+    termRef.current?.blur()
+    keyboardDismissRef.current?.focus()
+    setTimeout(() => {
+      keyboardDismissRef.current?.blur()
+      Keyboard.dismiss()
+    }, 30)
+  }, [])
+  const handleTerminalMenuOpenChange = useCallback((open: boolean) => {
+    setTerminalMenuOpen(open)
+    if (open) setTimeout(() => termRef.current?.focus(), 0)
+  }, [])
+  const zoomToFullScreen = useCallback(() => {
+    termRef.current?.blur()
+    Keyboard.dismiss()
+    router.push({ pathname: "/process/[pane_id]", params: { pane_id: paneId.replace(/%/g, "_pct_") } })
+  }, [paneId, router])
 
   const renderTerminal = useCallback(
     () => (
@@ -250,19 +284,22 @@ export function ProcessDetailPane({ paneId, onClose, embedded = false }: Process
           </View>
         ) : null}
         {Platform.OS !== "ios" && <MachineTerminalControls paneId={paneId} />}
-        <XtermLog
-          ref={termRef}
-          onData={sendInput}
-          onResize={sendResize}
-          interactive
-          forceDarkTheme
-          extendedViewport={Platform.OS === "ios"}
-          extendedViewportHeight={350}
-          onLongPressCopyText={setCopyText}
-        />
+        <View ref={terminalSurfaceRef} style={styles.terminalSurface} onLayout={handleTerminalLayout}>
+          <XtermLog
+            ref={termRef}
+            onData={sendInput}
+            onResize={sendResize}
+            interactive
+            forceDarkTheme
+            extendedViewport={Platform.OS === "ios"}
+            extendedViewportHeight={350}
+            onScrollGesture={landscapeHeader.onScrollGesture}
+            onLongPressCopyText={setCopyText}
+          />
+        </View>
       </View>
     ),
-    [sendInput, sendResize, ptyConnecting, ptyError],
+    [sendInput, sendResize, ptyConnecting, ptyError, landscapeHeader.onScrollGesture, handleTerminalLayout, terminalSurfaceRef],
   )
 
   // Keep the terminal and its stop action available through login, startup, and shell prompts.
@@ -304,7 +341,7 @@ export function ProcessDetailPane({ paneId, onClose, embedded = false }: Process
     : { state: "idle" }
   return (
     <View style={styles.container}>
-      <View style={[styles.header, { paddingTop: embedded ? spacing.md : insets.top + spacing.md }]}>
+      {landscapeHeader.headerShown || landscapeHeader.overlayShown ? <View style={[styles.header, landscapeHeader.isLandscape && styles.landscapeHeaderOverlay, { paddingTop: embedded ? spacing.md : insets.top + spacing.md }]}>
         <TouchableOpacity
           style={styles.titleButton}
           onPress={handleTitlePress}
@@ -315,9 +352,9 @@ export function ProcessDetailPane({ paneId, onClose, embedded = false }: Process
           <Text style={styles.title} numberOfLines={1}>{displayName}</Text>
         </TouchableOpacity>
         {landscapeHeader.isLandscape ? (
-          <TerminalHeaderActions fitSafeArea={fitSafeArea} onChangeViewport={setFitSafeArea} onOpenDetails={handleTitlePress} />
+          <TerminalHeaderActions onZoom={zoomToFullScreen} onOpenDetails={handleTitlePress} />
         ) : <StatusBadge status={syntheticStatus} />}
-      </View>
+      </View> : null}
       <JobDetailView
         transport={transport}
         job={syntheticJob}
@@ -355,8 +392,32 @@ export function ProcessDetailPane({ paneId, onClose, embedded = false }: Process
         }}
         paneOverviewVisible={showPaneOverview}
         onPaneOverviewVisibleChange={setShowPaneOverview}
+        optionBarBottomInset={insets.bottom}
+        onTerminalOverlayHeightChange={setOptionOverlayHeight}
+      />
+      {isAlive && (keyboardVisible || terminalMenuOpen) ? (
+        <TerminalKeyboardToolbar
+          bottom={keyboardVisible ? keyboardHeight : insets.bottom}
+          onDismiss={dismissTerminalKeyboard}
+          onSend={sendTerminalText}
+          onWrite={() => { setTerminalMenuOpen(false); setWriteOpen(true) }}
+          menuOpen={terminalMenuOpen}
+          onMenuOpenChange={handleTerminalMenuOpenChange}
+        />
+      ) : null}
+      <TerminalWriteDialog
+        visible={writeOpen}
+        draft={writeDraft}
+        onDraftChange={setWriteDraft}
+        onClose={() => setWriteOpen(false)}
+        onDone={() => {
+          const value = writeDraft.replace(/\r\n|\n/g, "\r")
+          sendTerminalText(value.endsWith("\r") ? value : value + "\r")
+          setWriteOpen(false)
+        }}
       />
       <TerminalCopySheet text={copyText} onClose={() => setCopyText(null)} />
+      <TextInput ref={keyboardDismissRef} style={styles.keyboardDismissSink} showSoftInputOnFocus={false} caretHidden autoCorrect={false} autoCapitalize="none" />
     </View>
   )
 }
@@ -374,6 +435,13 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+  },
+  landscapeHeaderOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
   },
   title: {
     color: colors.text,
@@ -421,4 +489,6 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 12,
   },
+  terminalSurface: { flex: 1, minHeight: 0 },
+  keyboardDismissSink: { position: "absolute", width: 1, height: 1, opacity: 0, bottom: 0, left: 0 },
 })

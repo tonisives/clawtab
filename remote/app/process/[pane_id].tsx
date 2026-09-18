@@ -29,6 +29,7 @@ import { alertError, confirm } from "../../src/lib/platform";
 import { jobRoute } from "../../src/lib/notificationRoutes";
 import { useLandscapeTerminalHeader } from "../../src/hooks/useLandscapeTerminalHeader";
 import { TerminalViewportControl } from "../../src/components/TerminalViewportControl";
+import { TerminalHeaderActions } from "../../src/components/TerminalHeaderActions";
 import { LandscapeTerminalBar } from "../../src/components/LandscapeTerminalBar";
 import { useTerminalViewportStore } from "../../src/store/terminalViewport";
 
@@ -426,14 +427,7 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
           rightInset={fitSafeArea ? 0 : insets.right}
           onBack={goBack}
           title={<HeaderTitleWithIcon title={headerTitle} icon={<JobKindIcon kind={headerKind} size={26} bare />} onPress={openPaneOverview} accessibilityLabel="Open pane overview" />}
-          actions={
-            <View style={styles.headerActions}>
-              <TerminalViewportControl fitSafeArea={fitSafeArea} onChange={setFitSafeArea} />
-              <TouchableOpacity style={styles.contextBtn} onPress={openPaneOverview} activeOpacity={0.6} hitSlop={8} accessibilityRole="button" accessibilityLabel="Open pane overview">
-                <Ionicons name="ellipsis-horizontal" size={22} color={colors.text} />
-              </TouchableOpacity>
-            </View>
-          }
+          actions={<TerminalHeaderActions onZoom={() => setFitSafeArea(!fitSafeArea)} zoomed={!fitSafeArea} onOpenDetails={openPaneOverview} />}
         />
       ) : null}
       {keyboardVisible || terminalMenuOpen ? (
