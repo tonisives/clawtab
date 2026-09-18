@@ -119,7 +119,7 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
   const [writeOpen, setWriteOpen] = useState(false);
   const [writeDraft, setWriteDraft] = useState("");
   const [copyText, setCopyText] = useState<string | null>(null);
-  const orientation = useTerminalOrientation();
+  useTerminalOrientation();
   const [optionOverlayHeight, setOptionOverlayHeight] = useState(0);
   const pinnedItems = usePinsStore((s) => s.pinnedItems);
   const hydratePins = usePinsStore((s) => s.hydrate);
@@ -334,18 +334,7 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
       />
     ),
     headerRight: () => (
-      <View style={[styles.headerRightSlot, !orientation.available && styles.headerRightSingle]}>
-        {orientation.available && (
-          <TouchableOpacity
-            style={styles.contextBtn}
-            onPress={() => { void orientation.toggle(); }}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel={orientation.landscape ? "Portrait terminal" : "Landscape terminal"}
-          >
-            <Ionicons name={orientation.landscape ? "contract-outline" : "expand-outline"} size={22} color={colors.text} />
-          </TouchableOpacity>
-        )}
+      <View style={styles.headerRightSlot}>
         <TouchableOpacity
           style={styles.contextBtn}
           onPress={openPaneOverview}
@@ -358,7 +347,7 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
         </TouchableOpacity>
       </View>
     ),
-  }), [headerKind, headerTitle, isWide, openPaneOverview, orientation.available, orientation.landscape, orientation.toggle]);
+  }), [headerKind, headerTitle, isWide, openPaneOverview]);
 
   const isAlive = !!process || !!paneQuestion;
   if (waitingForData) {
@@ -619,13 +608,11 @@ const styles = StyleSheet.create({
   headerRightSlot: {
     position: "relative",
     zIndex: 9999,
-    width: 72,
+    width: 36,
     height: 36,
-    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
   },
-  headerRightSingle: { width: 36 },
   contextBtn: {
     width: 36,
     height: 36,

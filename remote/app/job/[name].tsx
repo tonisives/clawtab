@@ -177,7 +177,7 @@ export default function JobDetailScreen() {
   const [writeOpen, setWriteOpen] = useState(false);
   const [writeDraft, setWriteDraft] = useState("");
   const [copyText, setCopyText] = useState<string | null>(null);
-  const orientation = useTerminalOrientation();
+  useTerminalOrientation(isRunningWithPty);
   const [optionOverlayHeight, setOptionOverlayHeight] = useState(0);
   useEffect(() => {
     if (!jobQuestion?.options?.length) setOptionOverlayHeight(0);
@@ -308,25 +308,13 @@ export default function JobDetailScreen() {
       />
     ),
     headerRight: () => (
-      <View style={styles.headerActions}>
-        {isRunningWithPty && orientation.available && (
-          <TouchableOpacity
-            style={styles.orientationButton}
-            onPress={() => { void orientation.toggle(); }}
-            accessibilityRole="button"
-            accessibilityLabel={orientation.landscape ? "Portrait terminal" : "Landscape terminal"}
-          >
-            <Ionicons name={orientation.landscape ? "contract-outline" : "expand-outline"} size={22} color={colors.text} />
-          </TouchableOpacity>
-        )}
-        <HeaderStatusDot
-          color={autoYesActive ? colors.warning : statusColor(status)}
-          onPress={!autoYesPaneId ? undefined : handleToggleAutoYes}
-          accessibilityLabel={!autoYesPaneId ? "Status" : autoYesActive ? "Disable auto-yes" : "Enable auto-yes"}
-        />
-      </View>
+      <HeaderStatusDot
+        color={autoYesActive ? colors.warning : statusColor(status)}
+        onPress={!autoYesPaneId ? undefined : handleToggleAutoYes}
+        accessibilityLabel={!autoYesPaneId ? "Status" : autoYesActive ? "Disable auto-yes" : "Enable auto-yes"}
+      />
     ),
-  }), [autoYesActive, autoYesPaneId, handleToggleAutoYes, isWide, jobHeaderKind, jobHeaderName, status, isRunningWithPty, orientation.available, orientation.landscape, orientation.toggle]);
+  }), [autoYesActive, autoYesPaneId, handleToggleAutoYes, isWide, jobHeaderKind, jobHeaderName, status]);
   if (!job) {
     // If jobs haven't loaded yet (cold start from notification), show loading state
     const waiting = !loaded || !connected;
@@ -535,8 +523,6 @@ function TerminalScrollButtons({
 }
 
 const styles = StyleSheet.create({
-  headerActions: { flexDirection: "row", alignItems: "center" },
-  orientationButton: { width: 40, height: 36, alignItems: "center", justifyContent: "center" },
   container: {
     flex: 1,
     backgroundColor: colors.bg,
