@@ -268,7 +268,6 @@ export default function JobsScreen() {
   const fitSafeArea = useTerminalViewportStore((s) => s.fitSafeArea)
   const lastListOffset = useRef(0)
   const lastChromeChange = useRef(0)
-  const [splitListHeaderShown, setSplitListHeaderShown] = useState(true)
   const handleListScroll = useCallback((offset: number) => {
     if (Platform.OS !== "ios") return
     const delta = offset - lastListOffset.current
@@ -277,11 +276,9 @@ export default function JobsScreen() {
     if (offset <= 8 || delta < -2) {
       lastChromeChange.current = Date.now()
       setListHeaderShown(true)
-      setSplitListHeaderShown(true)
     } else if (offset > 48 && delta > 2) {
       lastChromeChange.current = Date.now()
       setListHeaderShown(false)
-      setSplitListHeaderShown(false)
     }
   }, [setListHeaderShown])
   const searchQuery = useJobFilterStore((s) => s.query)
@@ -1189,8 +1186,8 @@ export default function JobsScreen() {
   const splitContent = (
     <View style={styles.splitContainer}>
       <View style={[styles.listPane, { width: splitListWidth }]}>
-        {!isIosPad && (!isIosPhoneLandscape || splitListHeaderShown) ? sidebarHeader : null}
-        <View style={[styles.listPaneScrollArea, isIosPhoneLandscape && !splitListHeaderShown && { paddingTop: insets.top }]}>
+        {!isIosPad && !isIosPhoneLandscape ? sidebarHeader : null}
+        <View style={styles.listPaneScrollArea}>
           <JobListView
             machineOnboarding={machineOnboardingContent}
             machineManagement={machineManagementContent}
@@ -1229,6 +1226,7 @@ export default function JobsScreen() {
             onSetAllGroupTabView={handleSetAllGroupTabView}
             headerContent={
               <>
+                {isIosPhoneLandscape ? sidebarHeader : null}
                 {isIosPad ? (
                   <View style={[styles.scrollableSidebarTitle, { marginTop: insets.top }]}>
                     <Pressable
@@ -1293,7 +1291,6 @@ export default function JobsScreen() {
       <View style={[styles.screenRoot, isIosPhoneLandscape && {
         paddingLeft: insets.left,
         paddingRight: fitSafeArea ? insets.right : 0,
-        paddingBottom: insets.bottom,
       }]}>
         {splitContent}
         {searchModal}

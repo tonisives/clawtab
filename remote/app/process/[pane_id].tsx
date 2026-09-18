@@ -29,6 +29,7 @@ import { alertError, confirm } from "../../src/lib/platform";
 import { jobRoute } from "../../src/lib/notificationRoutes";
 import { useLandscapeTerminalHeader } from "../../src/hooks/useLandscapeTerminalHeader";
 import { TerminalViewportControl } from "../../src/components/TerminalViewportControl";
+import { LandscapeTerminalBar } from "../../src/components/LandscapeTerminalBar";
 import { useTerminalViewportStore } from "../../src/store/terminalViewport";
 
 const KEYBOARD_TOOLBAR_HEIGHT = 48;
@@ -383,7 +384,7 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
     <View style={containerStyle}>
       <Stack.Screen options={terminalHeaderOptions} />
       {Platform.OS !== "ios" && <MachineTerminalControls paneId={pane_id} />}
-      <View style={[styles.terminalContainer, { paddingBottom: Math.max(12, insets.bottom + 8) }]}>
+      <View style={styles.terminalContainer}>
         <View
           ref={terminalSurfaceRef}
           style={[styles.terminalSurface, terminalLoading && ptyHasOutput && styles.terminalSurfaceDimmed]}
@@ -396,6 +397,7 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
             interactive
             forceDarkTheme
             extendedViewport
+            extendedViewportHeight={landscapeHeader.isLandscape ? 350 : 250}
             onScrollGesture={landscapeHeader.onScrollGesture}
             onLongPressCopyText={setCopyText}
           />
@@ -416,6 +418,21 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
           </View>
         ) : null}
       </View>
+      {landscapeHeader.overlayShown ? (
+        <LandscapeTerminalBar
+          topInset={insets.top}
+          onBack={goBack}
+          title={<HeaderTitleWithIcon title={headerTitle} icon={<JobKindIcon kind={headerKind} size={26} bare />} onPress={openPaneOverview} accessibilityLabel="Open pane overview" />}
+          actions={
+            <View style={styles.headerActions}>
+              <TerminalViewportControl fitSafeArea={fitSafeArea} onChange={setFitSafeArea} />
+              <TouchableOpacity style={styles.contextBtn} onPress={openPaneOverview} activeOpacity={0.6} hitSlop={8} accessibilityRole="button" accessibilityLabel="Open pane overview">
+                <Ionicons name="ellipsis-horizontal" size={22} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+          }
+        />
+      ) : null}
       {keyboardVisible || terminalMenuOpen ? (
         <TerminalKeyboardToolbar
           bottom={keyboardVisible ? keyboardHeight : insets.bottom}

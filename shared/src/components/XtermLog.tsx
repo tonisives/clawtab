@@ -32,6 +32,8 @@ interface XtermLogProps {
   forceDarkTheme?: boolean;
   /** Keep a taller native terminal grid for quick touch scrolling. */
   extendedViewport?: boolean;
+  /** Height of the scrollable terminal grid as a percent of the visible viewport. */
+  extendedViewportHeight?: number;
   /** Called with the currently visible terminal text after a native long press. */
   onLongPressCopyText?: (text: string) => void;
   /** Font size in terminal pixels. */
@@ -322,8 +324,6 @@ var visualOffsetMax = 0;
 var viewportScroll = 0;
 var followingOutput = true;
 window.applyVisualOffset = function() {
-  term.options.cursorStyle = 'bar';
-  term.options.cursorInactiveStyle = 'bar';
   var el = document.getElementById('terminal');
   if (!el) return;
   var maxPx = Math.max(0, Math.round(visualOffsetMax || 0));
@@ -433,11 +433,11 @@ window.focusTerminal = function() {
  * Requires react-native-webview in the consuming app.
  */
 export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
-  function XtermLog({ onData, onResize, interactive = true, extendedViewport = false, onLongPressCopyText, fontSize = TERMINAL_FONT_SIZE, onScrollGesture }, ref) {
+  function XtermLog({ onData, onResize, interactive = true, extendedViewport = false, extendedViewportHeight = 250, onLongPressCopyText, fontSize = TERMINAL_FONT_SIZE, onScrollGesture }, ref) {
     const terminalSource = useMemo(() => ({
-      html: XTERM_HTML.replace("__VIEWPORT_HEIGHT__", extendedViewport ? "250" : "100")
+      html: XTERM_HTML.replace("__VIEWPORT_HEIGHT__", extendedViewport ? String(extendedViewportHeight) : "100")
         .replace("__EXTENDED_VIEWPORT__", extendedViewport ? "true" : "false"),
-    }), [extendedViewport]);
+    }), [extendedViewport, extendedViewportHeight]);
     const useNativeKeyboard = Platform.OS === "ios";
     const webViewRef = useRef<any>(null);
     const nativeInputRef = useRef<TextInput | null>(null);
@@ -644,7 +644,7 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
               if (touchMovedRef.current && Math.abs(delta) > 2) onScrollGesture?.(delta > 0 ? "down" : "up");
               const now = Date.now();
               const elapsed = now - lastTouchTimeRef.current;
-              if (elapsed > 0 && elapsed < 100) touchVelocityRef.current = Math.max(-2.5, Math.min(2.5, delta / elapsed));
+              if (elapsed > 0 && elapsed < 100) touchVelocityRef.current = Math.max(-4, Math.min(4, delta / elapsed));
               lastTouchTimeRef.current = now;
               if (delta) webViewRef.current?.injectJavaScript(`window.scrollTerminalViewport && window.scrollTerminalViewport(${delta});true;`);
             }}

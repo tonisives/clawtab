@@ -255,6 +255,7 @@ export function ProcessDetailPane({ paneId, onClose, embedded = false }: Process
           interactive
           forceDarkTheme
           extendedViewport={Platform.OS === "ios"}
+          extendedViewportHeight={landscapeHeader.isLandscape ? 350 : 250}
           onScrollGesture={landscapeHeader.onScrollGesture}
         />
       </View>
@@ -301,7 +302,7 @@ export function ProcessDetailPane({ paneId, onClose, embedded = false }: Process
     : { state: "idle" }
   return (
     <View style={styles.container}>
-      {landscapeHeader.headerShown ? <View style={[styles.header, { paddingTop: embedded ? spacing.md : insets.top + spacing.md }]}>
+      {landscapeHeader.headerShown || landscapeHeader.overlayShown ? <View style={[styles.header, landscapeHeader.isLandscape && styles.landscapeHeaderOverlay, { paddingTop: embedded ? spacing.md : insets.top + spacing.md }]}>
         <TouchableOpacity
           style={styles.titleButton}
           onPress={handleTitlePress}
@@ -368,6 +369,13 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+  },
+  landscapeHeaderOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
   },
   title: {
     color: colors.text,

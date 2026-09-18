@@ -16,7 +16,8 @@ export function useLandscapeTerminalHeader(active: boolean) {
 
   return {
     isLandscape,
-    headerShown: !isLandscape || !active || revealed,
+    headerShown: !isLandscape || !active,
+    overlayShown: isLandscape && active && revealed,
     onScrollGesture,
   };
 }

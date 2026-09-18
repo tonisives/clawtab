@@ -169,6 +169,7 @@ export function JobDetailPane({ jobName, onClose, embedded = false }: JobDetailP
           interactive
           forceDarkTheme
           extendedViewport={Platform.OS === "ios"}
+          extendedViewportHeight={landscapeHeader.isLandscape ? 350 : 250}
           onScrollGesture={landscapeHeader.onScrollGesture}
         />
       </View>
@@ -196,7 +197,7 @@ export function JobDetailPane({ jobName, onClose, embedded = false }: JobDetailP
 
   return (
     <View style={styles.container}>
-      {landscapeHeader.headerShown ? <View style={[styles.header, { paddingTop: embedded ? spacing.md : insets.top + spacing.md }]}>
+      {landscapeHeader.headerShown || landscapeHeader.overlayShown ? <View style={[styles.header, landscapeHeader.isLandscape && styles.landscapeHeaderOverlay, { paddingTop: embedded ? spacing.md : insets.top + spacing.md }]}>
         <Text style={styles.title} numberOfLines={1}>{job.name}</Text>
         {Platform.OS === "ios" && isRunningWithPty && landscapeHeader.isLandscape ? <TerminalViewportControl fitSafeArea={fitSafeArea} onChange={setFitSafeArea} /> : null}
         <TouchableOpacity
@@ -252,6 +253,13 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+  },
+  landscapeHeaderOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
   },
   title: {
     color: colors.text,

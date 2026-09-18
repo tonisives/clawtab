@@ -33,6 +33,7 @@ import { TerminalCopySheet } from "../../src/components/TerminalCopySheet";
 import { colors, spacing } from "@clawtab/shared";
 import { useLandscapeTerminalHeader } from "../../src/hooks/useLandscapeTerminalHeader";
 import { TerminalViewportControl } from "../../src/components/TerminalViewportControl";
+import { LandscapeTerminalBar } from "../../src/components/LandscapeTerminalBar";
 import { useTerminalViewportStore } from "../../src/store/terminalViewport";
 import type { RemoteJob, RunRecord } from "@clawtab/shared";
 import { buildModelOptions } from "../../src/lib/agentModels";
@@ -264,7 +265,7 @@ export default function JobDetailScreen() {
             </>
           ) : null}
         </View>
-        <View style={[styles.terminalFrame, { paddingBottom: Math.max(12, insets.bottom + 8) }]}>
+        <View style={styles.terminalFrame}>
           <View ref={terminalSurfaceRef} style={styles.terminalSurface} onLayout={handleTerminalLayout}>
             {Platform.OS !== "ios" && <MachineTerminalControls paneId={statusPaneId ?? ""} />}
             <XtermLog
@@ -274,6 +275,7 @@ export default function JobDetailScreen() {
               interactive
               forceDarkTheme
               extendedViewport
+              extendedViewportHeight={landscapeHeader.isLandscape ? 350 : 250}
               onScrollGesture={landscapeHeader.onScrollGesture}
               onLongPressCopyText={setCopyText}
             />
@@ -365,6 +367,8 @@ export default function JobDetailScreen() {
           runsLoading={runsLoading}
           onBack={goBack}
           showBackButton={false}
+          hidePath={isRunningWithPty}
+          hideInfoPanels={landscapeHeader.isLandscape && isRunningWithPty}
           onReloadRuns={loadRuns}
           expandRunId={run_id}
           options={jobQuestion?.options}
@@ -388,6 +392,23 @@ export default function JobDetailScreen() {
           onTerminalOverlayHeightChange={setOptionOverlayHeight}
         />
       </ContentContainer>
+      {landscapeHeader.overlayShown ? (
+        <LandscapeTerminalBar
+          topInset={insets.top}
+          onBack={goBack}
+          title={<HeaderTitleWithIcon title={jobHeaderName} icon={<JobKindIcon kind={jobHeaderKind} size={26} bare />} />}
+          actions={
+            <View style={styles.headerActions}>
+              <TerminalViewportControl fitSafeArea={fitSafeArea} onChange={setFitSafeArea} />
+              <HeaderStatusDot
+                color={autoYesActive ? colors.warning : statusColor(status)}
+                onPress={!autoYesPaneId ? undefined : handleToggleAutoYes}
+                accessibilityLabel={!autoYesPaneId ? "Status" : autoYesActive ? "Disable auto-yes" : "Enable auto-yes"}
+              />
+            </View>
+          }
+        />
+      ) : null}
       {source === "notifications" && (
         <NextNotification paneId={autoYesPaneId} jobName={slug} onSelect={handleSelectNotification} />
       )}
