@@ -162,7 +162,7 @@ export default function RootLayout() {
   const content = (
     <ThemeProvider value={navTheme}>
       <View style={styles.root}>
-        <Stack screenOptions={{ headerShown: false, animation: "none" }}>
+        <Stack screenOptions={{ headerShown: false, animation: "none", orientation: Platform.OS === "ios" && !Platform.isPad ? "portrait_up" : undefined }}>
           <Stack.Screen
             name="(tabs)"
             options={{

@@ -24,7 +24,6 @@ import { LoadingBar } from "../../src/components/LoadingBar";
 import { useDetailBack } from "../../src/hooks/useDetailBack";
 import { useResponsive } from "../../src/hooks/useResponsive";
 import { useTerminalKeyboard } from "../../src/hooks/useTerminalKeyboard";
-import { useTerminalOrientation } from "../../src/hooks/useTerminalOrientation";
 import { TerminalCopySheet } from "../../src/components/TerminalCopySheet";
 import { alertError, confirm } from "../../src/lib/platform";
 import { jobRoute } from "../../src/lib/notificationRoutes";
@@ -119,7 +118,6 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
   const [writeOpen, setWriteOpen] = useState(false);
   const [writeDraft, setWriteDraft] = useState("");
   const [copyText, setCopyText] = useState<string | null>(null);
-  useTerminalOrientation();
   const [optionOverlayHeight, setOptionOverlayHeight] = useState(0);
   const pinnedItems = usePinsStore((s) => s.pinnedItems);
   const hydratePins = usePinsStore((s) => s.hydrate);
@@ -319,6 +317,7 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
     headerBackButtonDisplayMode: "minimal" as const,
   }), [isWide, pane_id]);
   const terminalHeaderOptions = useMemo(() => ({
+    orientation: Platform.OS === "ios" && !Platform.isPad ? "default" as const : undefined,
     headerShown: !isWide,
     headerStyle: { backgroundColor: colors.bg },
     headerTintColor: colors.text,

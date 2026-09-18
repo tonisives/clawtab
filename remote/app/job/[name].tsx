@@ -29,7 +29,6 @@ import { HeaderStatusDot, HeaderTitleWithIcon } from "../../src/components/Heade
 import { useDetailBack } from "../../src/hooks/useDetailBack";
 import { useResponsive } from "../../src/hooks/useResponsive";
 import { useTerminalKeyboard } from "../../src/hooks/useTerminalKeyboard";
-import { useTerminalOrientation } from "../../src/hooks/useTerminalOrientation";
 import { TerminalCopySheet } from "../../src/components/TerminalCopySheet";
 import { colors } from "@clawtab/shared";
 import type { RemoteJob, RunRecord } from "@clawtab/shared";
@@ -177,7 +176,6 @@ export default function JobDetailScreen() {
   const [writeOpen, setWriteOpen] = useState(false);
   const [writeDraft, setWriteDraft] = useState("");
   const [copyText, setCopyText] = useState<string | null>(null);
-  useTerminalOrientation(isRunningWithPty);
   const [optionOverlayHeight, setOptionOverlayHeight] = useState(0);
   useEffect(() => {
     if (!jobQuestion?.options?.length) setOptionOverlayHeight(0);
@@ -295,6 +293,9 @@ export default function JobDetailScreen() {
   const jobHeaderName = job?.name ?? name;
   const jobHeaderKind = job ? kindForJob(job) : "claude";
   const jobHeaderOptions = useMemo(() => ({
+    orientation: Platform.OS === "ios" && !Platform.isPad
+      ? isRunningWithPty ? "default" as const : "portrait_up" as const
+      : undefined,
     headerShown: !isWide,
     headerStyle: { backgroundColor: colors.bg },
     headerTintColor: colors.text,
@@ -314,7 +315,7 @@ export default function JobDetailScreen() {
         accessibilityLabel={!autoYesPaneId ? "Status" : autoYesActive ? "Disable auto-yes" : "Enable auto-yes"}
       />
     ),
-  }), [autoYesActive, autoYesPaneId, handleToggleAutoYes, isWide, jobHeaderKind, jobHeaderName, status]);
+  }), [autoYesActive, autoYesPaneId, handleToggleAutoYes, isWide, jobHeaderKind, jobHeaderName, status, isRunningWithPty]);
   if (!job) {
     // If jobs haven't loaded yet (cold start from notification), show loading state
     const waiting = !loaded || !connected;

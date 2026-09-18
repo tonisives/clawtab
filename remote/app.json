@@ -63,12 +63,6 @@
       ],
       "expo-secure-store",
       "expo-web-browser",
-      [
-        "expo-screen-orientation",
-        {
-          "initialOrientation": "PORTRAIT_UP"
-        }
-      ],
       "expo-apple-authentication",
       [
         "expo-notifications",
