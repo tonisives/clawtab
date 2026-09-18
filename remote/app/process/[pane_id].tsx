@@ -24,6 +24,8 @@ import { LoadingBar } from "../../src/components/LoadingBar";
 import { useDetailBack } from "../../src/hooks/useDetailBack";
 import { useResponsive } from "../../src/hooks/useResponsive";
 import { useTerminalKeyboard } from "../../src/hooks/useTerminalKeyboard";
+import { useTerminalOrientation } from "../../src/hooks/useTerminalOrientation";
+import { TerminalCopySheet } from "../../src/components/TerminalCopySheet";
 import { alertError, confirm } from "../../src/lib/platform";
 import { jobRoute } from "../../src/lib/notificationRoutes";
 
@@ -116,6 +118,8 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
   const [terminalMenuOpen, setTerminalMenuOpen] = useState(false);
   const [writeOpen, setWriteOpen] = useState(false);
   const [writeDraft, setWriteDraft] = useState("");
+  const [copyText, setCopyText] = useState<string | null>(null);
+  const orientation = useTerminalOrientation();
   const [optionOverlayHeight, setOptionOverlayHeight] = useState(0);
   const pinnedItems = usePinsStore((s) => s.pinnedItems);
   const hydratePins = usePinsStore((s) => s.hydrate);
@@ -330,7 +334,18 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
       />
     ),
     headerRight: () => (
-      <View style={styles.headerRightSlot}>
+      <View style={[styles.headerRightSlot, !orientation.available && styles.headerRightSingle]}>
+        {orientation.available && (
+          <TouchableOpacity
+            style={styles.contextBtn}
+            onPress={() => { void orientation.toggle(); }}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={orientation.landscape ? "Portrait terminal" : "Landscape terminal"}
+          >
+            <Ionicons name={orientation.landscape ? "contract-outline" : "expand-outline"} size={22} color={colors.text} />
+          </TouchableOpacity>
+        )}
         <TouchableOpacity
           style={styles.contextBtn}
           onPress={openPaneOverview}
@@ -343,7 +358,7 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
         </TouchableOpacity>
       </View>
     ),
-  }), [headerKind, headerTitle, isWide, openPaneOverview]);
+  }), [headerKind, headerTitle, isWide, openPaneOverview, orientation.available, orientation.landscape, orientation.toggle]);
 
   const isAlive = !!process || !!paneQuestion;
   if (waitingForData) {
@@ -382,6 +397,7 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
             interactive
             forceDarkTheme
             extendedViewport
+            onLongPressCopyText={setCopyText}
           />
         </View>
         <TerminalScrollButtons
@@ -427,6 +443,7 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
           setWriteOpen(false);
         }}
       />
+      <TerminalCopySheet text={copyText} onClose={() => setCopyText(null)} />
       <TextInput
         ref={keyboardDismissRef}
         style={styles.keyboardDismissSink}
@@ -602,11 +619,13 @@ const styles = StyleSheet.create({
   headerRightSlot: {
     position: "relative",
     zIndex: 9999,
-    width: 36,
+    width: 72,
     height: 36,
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
   },
+  headerRightSingle: { width: 36 },
   contextBtn: {
     width: 36,
     height: 36,

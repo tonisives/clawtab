@@ -32,6 +32,8 @@ interface XtermLogProps {
   forceDarkTheme?: boolean;
   /** Keep a taller native terminal grid for quick touch scrolling. */
   extendedViewport?: boolean;
+  /** Called with the currently visible terminal text after a native long press. */
+  onLongPressCopyText?: (text: string) => void;
 }
 
 
@@ -356,8 +358,43 @@ window.scrollTerminalViewport = function(delta) {
   }
   var limit = Math.max(0, Math.min(el.clientHeight - visibleHeight, Math.ceil((lastContentY + 1) * el.clientHeight / Math.max(1, term.rows) - visibleHeight)));
   viewportScroll = Math.max(0, Math.min(limit, viewportScroll + delta));
-  followingOutput = viewportScroll >= limit - 12;
+  followingOutput = delta > 0 && viewportScroll >= limit - 12;
   window.applyVisualOffset();
+};
+var flingFrame = 0;
+window.stopTerminalFling = function() {
+  if (flingFrame) cancelAnimationFrame(flingFrame);
+  flingFrame = 0;
+};
+window.flingTerminalViewport = function(velocity) {
+  window.stopTerminalFling();
+  if (!extendedViewport || Math.abs(velocity) < 0.12) return;
+  var lastTime = performance.now();
+  function step(now) {
+    var elapsed = Math.min(32, now - lastTime);
+    lastTime = now;
+    window.scrollTerminalViewport(velocity * elapsed);
+    velocity *= Math.pow(0.92, elapsed / 16);
+    if (Math.abs(velocity) >= 0.02) flingFrame = requestAnimationFrame(step);
+    else flingFrame = 0;
+  }
+  flingFrame = requestAnimationFrame(step);
+};
+window.copyVisibleTerminalText = function() {
+  var buffer = term.buffer && term.buffer.active;
+  if (!buffer) return;
+  var el = document.getElementById('terminal');
+  var rowHeight = el.clientHeight / Math.max(1, term.rows);
+  var first = Math.max(0, Math.floor(viewportScroll / rowHeight));
+  var count = Math.min(term.rows - first, Math.ceil((window.innerHeight - visualOffsetMax) / rowHeight) + 1);
+  var lines = [];
+  for (var y = first; y < first + count; y++) {
+    var line = buffer.getLine(buffer.viewportY + y);
+    var value = line ? line.translateToString(true) : '';
+    if (line && line.isWrapped && lines.length) lines[lines.length - 1] += value;
+    else lines.push(value);
+  }
+  window.ReactNativeWebView.postMessage(JSON.stringify({type:'copy-text',text:lines.join('\\n').trimEnd()}));
 };
 window.blurTerminal = function() {
   try { term.blur(); } catch (e) {}
@@ -384,7 +421,7 @@ window.focusTerminal = function() {
  * Requires react-native-webview in the consuming app.
  */
 export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
-  function XtermLog({ onData, onResize, interactive = true, extendedViewport = false }, ref) {
+  function XtermLog({ onData, onResize, interactive = true, extendedViewport = false, onLongPressCopyText }, ref) {
     const terminalSource = useMemo(() => ({
       html: XTERM_HTML.replace("__VIEWPORT_HEIGHT__", extendedViewport ? "250" : "100")
         .replace("__EXTENDED_VIEWPORT__", extendedViewport ? "true" : "false"),
@@ -400,6 +437,9 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
     const lastTouchYRef = useRef<number | null>(null);
     const touchOriginYRef = useRef<number | null>(null);
     const touchMovedRef = useRef(false);
+    const longPressedRef = useRef(false);
+    const lastTouchTimeRef = useRef(0);
+    const touchVelocityRef = useRef(0);
 
     const sendNativeInput = useCallback(
       (text: string) => {
@@ -526,12 +566,14 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
             flushPendingWrites();
           } else if (msg.type === "focus") {
             focusNativeInput();
+          } else if (msg.type === "copy-text" && typeof msg.text === "string") {
+            onLongPressCopyText?.(msg.text);
           }
         } catch {
           // ignore parse errors
         }
       },
-      [onData, onResize, interactive, useNativeKeyboard, flushPendingWrites, focusNativeInput],
+      [onData, onResize, interactive, useNativeKeyboard, flushPendingWrites, focusNativeInput, onLongPressCopyText],
     );
 
     // Dynamic import of WebView - it's a peer dependency
@@ -559,11 +601,21 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
         {useNativeKeyboard ? (
           <Pressable
             style={styles.nativeKeyboardTapLayer}
-            onPress={() => { if (!touchMovedRef.current) focusNativeInput(); }}
+            onPress={() => { if (!touchMovedRef.current && !longPressedRef.current) focusNativeInput(); }}
+            onLongPress={() => {
+              longPressedRef.current = true;
+              touchMovedRef.current = true;
+              nativeInputRef.current?.blur();
+              webViewRef.current?.injectJavaScript("window.copyVisibleTerminalText && window.copyVisibleTerminalText();true;");
+            }}
             onTouchStart={(event) => {
               lastTouchYRef.current = event.nativeEvent.touches[0]?.pageY ?? null;
               touchOriginYRef.current = lastTouchYRef.current;
               touchMovedRef.current = false;
+              longPressedRef.current = false;
+              lastTouchTimeRef.current = Date.now();
+              touchVelocityRef.current = 0;
+              webViewRef.current?.injectJavaScript("window.stopTerminalFling && window.stopTerminalFling();true;");
             }}
             onTouchMove={(event) => {
               const y = event.nativeEvent.touches[0]?.pageY;
@@ -572,10 +624,20 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
               lastTouchYRef.current = y;
               if (touchOriginYRef.current !== null && Math.abs(touchOriginYRef.current - y) > 8) touchMovedRef.current = true;
               if (!extendedViewport) return;
-              const delta = Math.round(previous - y);
+              const delta = previous - y;
+              const now = Date.now();
+              const elapsed = now - lastTouchTimeRef.current;
+              if (elapsed > 0 && elapsed < 100) touchVelocityRef.current = Math.max(-2.5, Math.min(2.5, delta / elapsed));
+              lastTouchTimeRef.current = now;
               if (delta) webViewRef.current?.injectJavaScript(`window.scrollTerminalViewport && window.scrollTerminalViewport(${delta});true;`);
             }}
-            onTouchEnd={() => { lastTouchYRef.current = null; touchOriginYRef.current = null; }}
+            onTouchEnd={() => {
+              if (touchMovedRef.current && Date.now() - lastTouchTimeRef.current < 100) {
+                webViewRef.current?.injectJavaScript(`window.flingTerminalViewport && window.flingTerminalViewport(${touchVelocityRef.current});true;`);
+              }
+              lastTouchYRef.current = null;
+              touchOriginYRef.current = null;
+            }}
             accessible={false}
           />
         ) : null}

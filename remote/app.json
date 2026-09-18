@@ -25,6 +25,13 @@
       "bundleIdentifier": "cc.clawtab",
       "buildNumber": "2",
       "usesAppleSignIn": true,
+      "infoPlist": {
+        "UISupportedInterfaceOrientations": [
+          "UIInterfaceOrientationPortrait",
+          "UIInterfaceOrientationLandscapeLeft",
+          "UIInterfaceOrientationLandscapeRight"
+        ]
+      },
       "entitlements": {
         "keychain-access-groups": ["$(AppIdentifierPrefix)cc.clawtab"],
         "aps-environment": "production"
@@ -56,6 +63,12 @@
       ],
       "expo-secure-store",
       "expo-web-browser",
+      [
+        "expo-screen-orientation",
+        {
+          "initialOrientation": "PORTRAIT_UP"
+        }
+      ],
       "expo-apple-authentication",
       [
         "expo-notifications",

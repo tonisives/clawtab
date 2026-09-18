@@ -26,6 +26,7 @@ let react = {
   useRef: (current) => ({ current }),
   useState: (value) => [value, () => {}],
   useCallback: (callback) => callback,
+  useMemo: (create) => create(),
   forwardRef: (render) => render,
   useImperativeHandle: (ref, create) => { ref.current = create(); },
 };
@@ -44,6 +45,9 @@ test('native startup preserves writes, resets, and text in order', () => {
   let resize;
   let tree = XtermLog({ onResize: (cols, rows) => { resize = [cols, rows]; } }, ref);
   let webview = tree.props.children[0].props;
+  let inlineScript = webview.source.html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
+  assert.ok(inlineScript);
+  assert.doesNotThrow(() => new Function(inlineScript));
   let operations = [];
   let page = { window: {
     enqueueTerminalWrite: (data) => operations.push(['write', data]),

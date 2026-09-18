@@ -31,6 +31,7 @@
     "expo-notifications": "~56.0.18",
     "expo-nse-plugin": "^2.2.1",
     "expo-router": "^56.2.11",
+    "expo-screen-orientation": "~56.0.5",
     "expo-secure-store": "^56.0.4",
     "expo-splash-screen": "~56.0.10",
     "expo-status-bar": "~56.0.4",

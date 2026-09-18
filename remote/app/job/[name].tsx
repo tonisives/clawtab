@@ -29,6 +29,8 @@ import { HeaderStatusDot, HeaderTitleWithIcon } from "../../src/components/Heade
 import { useDetailBack } from "../../src/hooks/useDetailBack";
 import { useResponsive } from "../../src/hooks/useResponsive";
 import { useTerminalKeyboard } from "../../src/hooks/useTerminalKeyboard";
+import { useTerminalOrientation } from "../../src/hooks/useTerminalOrientation";
+import { TerminalCopySheet } from "../../src/components/TerminalCopySheet";
 import { colors } from "@clawtab/shared";
 import type { RemoteJob, RunRecord } from "@clawtab/shared";
 import { buildModelOptions } from "../../src/lib/agentModels";
@@ -174,6 +176,8 @@ export default function JobDetailScreen() {
   const [terminalMenuOpen, setTerminalMenuOpen] = useState(false);
   const [writeOpen, setWriteOpen] = useState(false);
   const [writeDraft, setWriteDraft] = useState("");
+  const [copyText, setCopyText] = useState<string | null>(null);
+  const orientation = useTerminalOrientation();
   const [optionOverlayHeight, setOptionOverlayHeight] = useState(0);
   useEffect(() => {
     if (!jobQuestion?.options?.length) setOptionOverlayHeight(0);
@@ -263,6 +267,7 @@ export default function JobDetailScreen() {
               interactive
               forceDarkTheme
               extendedViewport
+              onLongPressCopyText={setCopyText}
             />
           </View>
           {!ptyConnecting && !ptyError ? (
@@ -303,13 +308,25 @@ export default function JobDetailScreen() {
       />
     ),
     headerRight: () => (
-      <HeaderStatusDot
-        color={autoYesActive ? colors.warning : statusColor(status)}
-        onPress={!autoYesPaneId ? undefined : handleToggleAutoYes}
-        accessibilityLabel={!autoYesPaneId ? "Status" : autoYesActive ? "Disable auto-yes" : "Enable auto-yes"}
-      />
+      <View style={styles.headerActions}>
+        {isRunningWithPty && orientation.available && (
+          <TouchableOpacity
+            style={styles.orientationButton}
+            onPress={() => { void orientation.toggle(); }}
+            accessibilityRole="button"
+            accessibilityLabel={orientation.landscape ? "Portrait terminal" : "Landscape terminal"}
+          >
+            <Ionicons name={orientation.landscape ? "contract-outline" : "expand-outline"} size={22} color={colors.text} />
+          </TouchableOpacity>
+        )}
+        <HeaderStatusDot
+          color={autoYesActive ? colors.warning : statusColor(status)}
+          onPress={!autoYesPaneId ? undefined : handleToggleAutoYes}
+          accessibilityLabel={!autoYesPaneId ? "Status" : autoYesActive ? "Disable auto-yes" : "Enable auto-yes"}
+        />
+      </View>
     ),
-  }), [autoYesActive, autoYesPaneId, handleToggleAutoYes, isWide, jobHeaderKind, jobHeaderName, status]);
+  }), [autoYesActive, autoYesPaneId, handleToggleAutoYes, isWide, jobHeaderKind, jobHeaderName, status, isRunningWithPty, orientation.available, orientation.landscape, orientation.toggle]);
   if (!job) {
     // If jobs haven't loaded yet (cold start from notification), show loading state
     const waiting = !loaded || !connected;
@@ -399,6 +416,7 @@ export default function JobDetailScreen() {
           setWriteOpen(false);
         }}
       />
+      <TerminalCopySheet text={copyText} onClose={() => setCopyText(null)} />
       <TextInput
         ref={keyboardDismissRef}
         style={styles.keyboardDismissSink}
@@ -517,6 +535,8 @@ function TerminalScrollButtons({
 }
 
 const styles = StyleSheet.create({
+  headerActions: { flexDirection: "row", alignItems: "center" },
+  orientationButton: { width: 40, height: 36, alignItems: "center", justifyContent: "center" },
   container: {
     flex: 1,
     backgroundColor: colors.bg,
