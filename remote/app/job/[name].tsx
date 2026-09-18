@@ -282,6 +282,7 @@ export default function JobDetailScreen() {
           </View>
           {!ptyConnecting && !ptyError ? (
             <TerminalScrollButtons
+              rightInset={landscapeHeader.isLandscape && !fitSafeArea ? insets.right : 0}
               onScrollUp={() => scrollTerminal("up")}
               onScrollDown={() => scrollTerminal("down")}
               onExitCopyMode={exitCopyMode}
@@ -291,7 +292,7 @@ export default function JobDetailScreen() {
         </View>
       </View>
     ),
-    [sendInput, sendResize, ptyConnecting, ptyError, scrollTerminal, exitCopyMode, copyModeActive, insets.bottom, handleTerminalLayout, landscapeHeader.onScrollGesture],
+    [sendInput, sendResize, ptyConnecting, ptyError, scrollTerminal, exitCopyMode, copyModeActive, insets.right, fitSafeArea, handleTerminalLayout, landscapeHeader.isLandscape, landscapeHeader.onScrollGesture],
   );
   const loadingHeaderOptions = useMemo(() => ({
     headerShown: !isWide && landscapeHeader.headerShown,
@@ -395,6 +396,8 @@ export default function JobDetailScreen() {
       {landscapeHeader.overlayShown ? (
         <LandscapeTerminalBar
           topInset={insets.top}
+          leftInset={fitSafeArea ? 0 : insets.left}
+          rightInset={fitSafeArea ? 0 : insets.right}
           onBack={goBack}
           title={<HeaderTitleWithIcon title={jobHeaderName} icon={<JobKindIcon kind={jobHeaderKind} size={26} bare />} />}
           actions={
@@ -530,18 +533,20 @@ function TerminalKeyboardToolbar({
 }
 
 function TerminalScrollButtons({
+  rightInset,
   onScrollUp,
   onScrollDown,
   onExitCopyMode,
   copyModeActive,
 }: {
+  rightInset: number;
   onScrollUp: () => void;
   onScrollDown: () => void;
   onExitCopyMode: () => void;
   copyModeActive: boolean;
 }) {
   return (
-    <View style={styles.scrollControls} pointerEvents="box-none">
+    <View style={[styles.scrollControls, { right: 8 + rightInset }]} pointerEvents="box-none">
       <TouchableOpacity style={styles.scrollBtn} onPress={onScrollUp} activeOpacity={0.7}>
         <View style={styles.scrollBtnVisible}>
           <Ionicons name="chevron-up" size={24} color={colors.text} />

@@ -19,6 +19,7 @@ export function JobListHiddenHeader({ hook, item, itemKey }: JobListHiddenHeader
       style={[
         { marginTop: spacing.xs },
         Platform.OS !== "web" ? styles.nativeGroupHeaderWrap : null,
+        hook.edgeToEdge && { marginHorizontal: 0 },
       ]}
     >
       <View style={styles.groupHeaderRow}>

@@ -18,7 +18,7 @@ export function JobListHiddenSection({ hook, itemKey }: JobListHiddenSectionProp
       activeOpacity={0.7}
       style={styles.hiddenSection}
     >
-      <View style={Platform.OS !== "web" ? styles.nativeGroupHeaderWrap : null}>
+      <View style={[Platform.OS !== "web" ? styles.nativeGroupHeaderWrap : null, hook.edgeToEdge && { marginHorizontal: 0 }]}>
         <View style={styles.groupHeaderRow}>
           <View style={styles.groupHeaderTitleArea}>
             <View style={styles.groupHeaderArrowBtn}>

@@ -2,7 +2,7 @@ import { compactAgentSelectionLabel } from "../util/agent";
 import { resourceLabel, splitResource } from "../machines/client";
 import { MachineMark } from "../machines/Badge";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform, useWindowDimensions } from "react-native";
 import type { DetectedProcess } from "../types/process";
 import { PopupMenu } from "./PopupMenu";
 import { compactProcessQuery, processDisplayTitle, shortenPath } from "../util/format";
@@ -62,6 +62,8 @@ export function ProcessCard({
   agentLabel?: string | null;
   groupedPosition?: GroupedRowPosition;
 }) {
+  const { width, height } = useWindowDimensions();
+  const compactPhoneLandscape = Platform.OS === "ios" && !Platform.isPad && width > height;
   let modelLabel = agentLabel ?? (process.model_id ? compactAgentSelectionLabel(null, process.model_id, process.agent_effort) : null);
   const displayName = processDisplayTitle(process);
   let subtitle = compactProcessQuery(process.last_query) ?? compactProcessQuery(process.first_query);
@@ -205,23 +207,48 @@ export function ProcessCard({
     setMenuOpen(true);
   }, [editing, showMenu]);
 
+  const paneMark = (
+    <View style={[styles.paneIcon, compactPhoneLandscape && styles.paneIconCompact]}>
+      <View style={styles.agentIcon}>
+        <JobKindIcon kind={kind} />
+        {machineId ? <View style={styles.machineOverlay}>
+          <MachineMark machineId={machineId} />
+        </View> : null}
+      </View>
+      <Text style={styles.paneId} numberOfLines={1} adjustsFontSizeToFit>{resourceLabel(process.pane_id)}</Text>
+    </View>
+  );
+  const titleControls = (
+    <View style={styles.titleControls}>
+      {showMenu && !editing ? (
+        <TouchableOpacity
+          ref={menuBtnRef}
+          onPress={(e: any) => {
+            e.stopPropagation();
+            if (menuOpen) setMenuOpen(false);
+            else openMenu(e);
+          }}
+          style={styles.moreBtn}
+          activeOpacity={0.6}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Text style={styles.moreBtnText}>{"\u2026"}</Text>
+        </TouchableOpacity>
+      ) : null}
+      {statusIndicator}
+      {autoYesActive && !transient ? <View style={styles.autoYesDot} /> : null}
+    </View>
+  );
+
   return (
     <View style={[styles.processCard, selected ? styles.processCardSelected : null, softBorder && !selected ? styles.processCardSoftBorder : null, groupedCardStyle(groupedPosition)]}>
       <TouchableOpacity
-        style={styles.processRow}
+        style={[styles.processRow, compactPhoneLandscape && styles.processRowCompact]}
         onPress={editing ? undefined : onPress}
         onLongPress={openMenu}
         activeOpacity={0.7}
       >
-        <View style={styles.paneIcon}>
-          <View style={styles.agentIcon}>
-            <JobKindIcon kind={kind} />
-            {machineId ? <View style={styles.machineOverlay}>
-              <MachineMark machineId={machineId} />
-            </View> : null}
-          </View>
-          <Text style={styles.paneId} numberOfLines={1} adjustsFontSizeToFit>{resourceLabel(process.pane_id)}</Text>
-        </View>
+        {compactPhoneLandscape ? <View style={styles.compactTopRow}>{paneMark}{titleControls}</View> : paneMark}
         <View style={styles.processInfo}>
           <View style={styles.titleRow}>
             {editing ? (
@@ -247,25 +274,7 @@ export function ProcessCard({
                 {displayName}
               </Text>
             )}
-            <View style={styles.titleControls}>
-              {showMenu && !editing ? (
-                <TouchableOpacity
-                  ref={menuBtnRef}
-                  onPress={(e: any) => {
-                    e.stopPropagation();
-                    if (menuOpen) setMenuOpen(false);
-                    else openMenu(e);
-                  }}
-                  style={styles.moreBtn}
-                  activeOpacity={0.6}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <Text style={styles.moreBtnText}>{"\u2026"}</Text>
-                </TouchableOpacity>
-              ) : null}
-              {statusIndicator}
-              {autoYesActive && !transient ? <View style={styles.autoYesDot} /> : null}
-            </View>
+            {!compactPhoneLandscape ? titleControls : null}
           </View>
           {!editing ? (
             <View style={styles.processMeta}>
@@ -328,6 +337,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   processRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  processRowCompact: { flexDirection: "column", alignItems: "stretch", gap: 4 },
+  compactTopRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", minWidth: 0 },
   processInfo: { flex: 1, gap: 2, minWidth: 0 },
   processName: { color: colors.text, fontSize: 16, fontWeight: "500", flex: 1 },
   titleRow: {
@@ -378,6 +389,7 @@ const styles = StyleSheet.create({
     gap: 3,
     flexShrink: 0,
   },
+  paneIconCompact: { width: "auto", flexDirection: "row", alignItems: "center", gap: 6, minWidth: 0 },
   agentIcon: {
     width: 32,
     height: 32,

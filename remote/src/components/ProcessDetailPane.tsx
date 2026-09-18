@@ -16,7 +16,7 @@ import { stopSession } from "../lib/stopSession"
 import type { Transport, RemoteJob, JobStatus } from "@clawtab/shared"
 import { useAgentActions } from "../hooks/useAgentActions"
 import { useLandscapeTerminalHeader } from "../hooks/useLandscapeTerminalHeader"
-import { TerminalViewportControl } from "./TerminalViewportControl"
+import { TerminalHeaderActions } from "./TerminalHeaderActions"
 import { TerminalCopySheet } from "./TerminalCopySheet"
 import { useTerminalViewportStore } from "../store/terminalViewport"
 
@@ -258,12 +258,11 @@ export function ProcessDetailPane({ paneId, onClose, embedded = false }: Process
           forceDarkTheme
           extendedViewport={Platform.OS === "ios"}
           extendedViewportHeight={350}
-          onScrollGesture={landscapeHeader.onScrollGesture}
           onLongPressCopyText={setCopyText}
         />
       </View>
     ),
-    [sendInput, sendResize, ptyConnecting, ptyError, landscapeHeader.onScrollGesture],
+    [sendInput, sendResize, ptyConnecting, ptyError],
   )
 
   // Keep the terminal and its stop action available through login, startup, and shell prompts.
@@ -305,7 +304,7 @@ export function ProcessDetailPane({ paneId, onClose, embedded = false }: Process
     : { state: "idle" }
   return (
     <View style={styles.container}>
-      {landscapeHeader.headerShown || landscapeHeader.overlayShown ? <View style={[styles.header, landscapeHeader.isLandscape && styles.landscapeHeaderOverlay, { paddingTop: embedded ? spacing.md : insets.top + spacing.md }]}>
+      <View style={[styles.header, { paddingTop: embedded ? spacing.md : insets.top + spacing.md }]}>
         <TouchableOpacity
           style={styles.titleButton}
           onPress={handleTitlePress}
@@ -315,9 +314,10 @@ export function ProcessDetailPane({ paneId, onClose, embedded = false }: Process
         >
           <Text style={styles.title} numberOfLines={1}>{displayName}</Text>
         </TouchableOpacity>
-        {Platform.OS === "ios" && landscapeHeader.isLandscape ? <TerminalViewportControl fitSafeArea={fitSafeArea} onChange={setFitSafeArea} /> : null}
-        <StatusBadge status={syntheticStatus} />
-      </View> : null}
+        {landscapeHeader.isLandscape ? (
+          <TerminalHeaderActions fitSafeArea={fitSafeArea} onChangeViewport={setFitSafeArea} onOpenDetails={handleTitlePress} />
+        ) : <StatusBadge status={syntheticStatus} />}
+      </View>
       <JobDetailView
         transport={transport}
         job={syntheticJob}
@@ -374,13 +374,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
-  },
-  landscapeHeaderOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 100,
   },
   title: {
     color: colors.text,

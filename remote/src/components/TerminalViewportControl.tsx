@@ -18,6 +18,16 @@ export let TerminalViewportControl = ({ fitSafeArea, onChange }: TerminalViewpor
 );
 
 const styles = StyleSheet.create({
-  button: { minWidth: 42, height: 36, alignItems: "center", justifyContent: "center" },
+  button: {
+    minWidth: 52,
+    height: 36,
+    paddingHorizontal: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+  },
   label: { color: colors.text, fontSize: 14, fontWeight: "600" },
 });

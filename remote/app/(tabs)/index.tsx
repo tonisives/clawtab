@@ -1131,7 +1131,7 @@ export default function JobsScreen() {
           <Image source={require("../../assets/icon.png")} style={styles.listPaneBrandIcon} />
           <Text style={styles.listPaneBrandText}>ClawTab</Text>
         </Pressable>
-        {!isIosPad && !isIosPhoneLandscape && <NotificationsMenuButton variant={isWide ? "compact" : "fluid"} />}
+        {!isIosPad && <NotificationsMenuButton variant={isWide ? "compact" : "fluid"} />}
       </View>
 
       {!isIosPad && (
@@ -1174,7 +1174,7 @@ export default function JobsScreen() {
   )
 
   const splitListWidth = isIosPhoneLandscape
-    ? Math.max(260, Math.min(320, (width - insets.left - insets.right) * 0.4))
+    ? Math.max(240, Math.min(300, (width - insets.left - insets.right) * 0.37))
     : listWidth
 
   const splitContent = (
@@ -1244,7 +1244,8 @@ export default function JobsScreen() {
             searchQuery={searchQuery}
             onSearchQueryChange={setSearchQuery}
             hideSearchBar
-            contentContainerStyle={isIosPad ? { paddingBottom: insets.bottom + 96 } : undefined}
+            contentContainerStyle={isIosPad ? { paddingBottom: insets.bottom + 96 } : isIosPhoneLandscape ? { paddingHorizontal: 0 } : undefined}
+            edgeToEdge={isIosPhoneLandscape}
             scrollEnabled={Platform.OS !== "web" || !split.isDragging}
             onScrollOffsetChange={handleListScroll}
             scrollEventThrottle={16}
@@ -1252,11 +1253,6 @@ export default function JobsScreen() {
             renderProcessCard={renderDraggableProcessCard}
           />
         </View>
-        {isIosPhoneLandscape ? (
-          <View style={[styles.sidebarNotificationOverlay, { top: insets.top + 8 }]}>
-            <NotificationsMenuButton variant="compact" />
-          </View>
-        ) : null}
         {isIosPad && (
           <View style={[styles.ipadBottomBarWrap, { paddingBottom: insets.bottom + 8 }]}>
             <IpadBottomBar activeSection={ipadActiveSection} onSelect={handleIpadNavigation} />
@@ -1359,11 +1355,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
     zIndex: 20,
-  },
-  sidebarNotificationOverlay: {
-    position: "absolute",
-    right: 12,
-    zIndex: 40,
   },
   sidebarTitleRow: {
     minHeight: 38,

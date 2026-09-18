@@ -125,6 +125,7 @@ export function useJobListView(props: JobListViewProps) {
     containerStyle: refs.containerStyle,
     containerWebProps: refs.containerWebProps,
     contentContainerStyle: props.contentContainerStyle,
+    edgeToEdge: props.edgeToEdge ?? false,
     contentInsetAdjustmentBehavior: props.contentInsetAdjustmentBehavior,
     customRenderJobCard: props.renderJobCard,
     customRenderProcessCard: props.renderProcessCard,

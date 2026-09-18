@@ -59,6 +59,7 @@ export function JobListItems({ hook }: JobListItemsProps) {
           key={`wsgroup_${groupKey}`}
           style={[
             styles.activeWorkspaceGroup,
+            hook.edgeToEdge && { marginHorizontal: 0, paddingHorizontal: 0, borderRadius: 0 },
             { marginTop: isFirst ? 18 : 18 + spacing.sm / 2 },
             isCollapsed ? null : { paddingBottom: spacing.sm / 2 + 5 },
           ]}
@@ -94,7 +95,7 @@ export function JobListItems({ hook }: JobListItemsProps) {
   const wrapRows = (key: string, children: ReactNode) => (
     Platform.OS === "web"
       ? <View key={key} style={styles.webGroupedRows}>{children}</View>
-      : <View key={key} style={styles.nativeGroupedRows}>{children}</View>
+      : <View key={key} style={[styles.nativeGroupedRows, hook.edgeToEdge && { marginHorizontal: 0, borderRadius: 0 }]}>{children}</View>
   );
 
   if (hook.listMode === "latest") {

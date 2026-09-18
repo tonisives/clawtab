@@ -6,7 +6,7 @@ import { useJobsStore, useJob, useJobStatus } from "../store/jobs"
 import { useRunsStore } from "../store/runs"
 import { useNotificationStore } from "../store/notifications"
 import { useWsStore } from "../store/ws"
-import { JobDetailView, findYesOption, StatusBadge, XtermLog } from "@clawtab/shared"
+import { JobDetailView, compactPath, findYesOption, StatusBadge, XtermLog } from "@clawtab/shared"
 import type { XtermLogHandle } from "@clawtab/shared"
 import { useLogs } from "../hooks/useLogs"
 import { usePty } from "../hooks/usePty"
@@ -17,7 +17,7 @@ import { colors, spacing } from "@clawtab/shared"
 import type { AgentModelOption, JobUpdate, ProcessProvider, RemoteJob, RunRecord } from "@clawtab/shared"
 import { buildModelOptions } from "../lib/agentModels"
 import { useLandscapeTerminalHeader } from "../hooks/useLandscapeTerminalHeader"
-import { TerminalViewportControl } from "./TerminalViewportControl"
+import { TerminalHeaderActions } from "./TerminalHeaderActions"
 import { TerminalCopySheet } from "./TerminalCopySheet"
 import { useTerminalViewportStore } from "../store/terminalViewport"
 
@@ -149,6 +149,7 @@ export function JobDetailPane({ jobName, onClose, embedded = false }: JobDetailP
   const fitSafeArea = useTerminalViewportStore((s) => s.fitSafeArea)
   const setFitSafeArea = useTerminalViewportStore((s) => s.setFitSafeArea)
   const [copyText, setCopyText] = useState<string | null>(null)
+  const [showPaneOverview, setShowPaneOverview] = useState(false)
 
   const renderTerminal = useCallback(
     () => (
@@ -172,12 +173,11 @@ export function JobDetailPane({ jobName, onClose, embedded = false }: JobDetailP
           forceDarkTheme
           extendedViewport={Platform.OS === "ios"}
           extendedViewportHeight={350}
-          onScrollGesture={landscapeHeader.onScrollGesture}
           onLongPressCopyText={setCopyText}
         />
       </View>
     ),
-    [sendInput, sendResize, ptyConnecting, ptyError, landscapeHeader.onScrollGesture],
+    [sendInput, sendResize, ptyConnecting, ptyError],
   )
 
   if (!job) {
@@ -200,10 +200,11 @@ export function JobDetailPane({ jobName, onClose, embedded = false }: JobDetailP
 
   return (
     <View style={styles.container}>
-      {landscapeHeader.headerShown || landscapeHeader.overlayShown ? <View style={[styles.header, landscapeHeader.isLandscape && styles.landscapeHeaderOverlay, { paddingTop: embedded ? spacing.md : insets.top + spacing.md }]}>
-        <Text style={styles.title} numberOfLines={1}>{job.name}</Text>
-        {Platform.OS === "ios" && isRunningWithPty && landscapeHeader.isLandscape ? <TerminalViewportControl fitSafeArea={fitSafeArea} onChange={setFitSafeArea} /> : null}
-        <TouchableOpacity
+      <View style={[styles.header, { paddingTop: embedded ? spacing.md : insets.top + spacing.md }]}>
+        <Text style={styles.title} numberOfLines={1}>{landscapeHeader.isLandscape ? compactPath(job.work_dir) : job.name}</Text>
+        {landscapeHeader.isLandscape && isRunningWithPty ? (
+          <TerminalHeaderActions fitSafeArea={fitSafeArea} onChangeViewport={setFitSafeArea} onOpenDetails={() => setShowPaneOverview(true)} />
+        ) : <TouchableOpacity
           onPress={canToggleAutoYes ? handleToggleAutoYes : undefined}
           disabled={!canToggleAutoYes}
           activeOpacity={0.6}
@@ -211,8 +212,8 @@ export function JobDetailPane({ jobName, onClose, embedded = false }: JobDetailP
           accessibilityLabel={canToggleAutoYes ? (autoYesActive ? "Disable auto-yes" : "Enable auto-yes") : "Status"}
         >
           <StatusBadge status={status} colorOverride={autoYesActive ? colors.warning : undefined} />
-        </TouchableOpacity>
-      </View> : null}
+        </TouchableOpacity>}
+      </View>
       <JobDetailView
         transport={wsTransport}
         job={job}
@@ -224,6 +225,10 @@ export function JobDetailPane({ jobName, onClose, embedded = false }: JobDetailP
         showBackButton={false}
         hidePath
         hideInfoPanels={landscapeHeader.isLandscape && isRunningWithPty}
+        paneOverview={statusPaneId ? { paneId: statusPaneId, tmuxSession: statusTmuxSession, cwd: job.work_dir } : undefined}
+        paneOverviewActions={{ autoYesActive, onToggleAutoYes: handleToggleAutoYes }}
+        paneOverviewVisible={showPaneOverview}
+        onPaneOverviewVisibleChange={setShowPaneOverview}
         onReloadRuns={loadRuns}
         options={jobQuestion?.options}
         questionContext={jobQuestion?.context_lines}
@@ -257,13 +262,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
-  },
-  landscapeHeaderOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 100,
   },
   title: {
     color: colors.text,

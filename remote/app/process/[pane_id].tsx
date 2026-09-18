@@ -403,6 +403,7 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
           />
         </View>
         <TerminalScrollButtons
+          rightInset={landscapeHeader.isLandscape && !fitSafeArea ? insets.right : 0}
           onScrollUp={() => scrollTerminal("up")}
           onScrollDown={() => scrollTerminal("down")}
           onExitCopyMode={exitCopyMode}
@@ -421,6 +422,8 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
       {landscapeHeader.overlayShown ? (
         <LandscapeTerminalBar
           topInset={insets.top}
+          leftInset={fitSafeArea ? 0 : insets.left}
+          rightInset={fitSafeArea ? 0 : insets.right}
           onBack={goBack}
           title={<HeaderTitleWithIcon title={headerTitle} icon={<JobKindIcon kind={headerKind} size={26} bare />} onPress={openPaneOverview} accessibilityLabel="Open pane overview" />}
           actions={
@@ -602,18 +605,20 @@ function TerminalKeyboardToolbar({
 }
 
 function TerminalScrollButtons({
+  rightInset,
   onScrollUp,
   onScrollDown,
   onExitCopyMode,
   copyModeActive,
 }: {
+  rightInset: number;
   onScrollUp: () => void;
   onScrollDown: () => void;
   onExitCopyMode: () => void;
   copyModeActive: boolean;
 }) {
   return (
-    <View style={styles.scrollControls} pointerEvents="box-none">
+    <View style={[styles.scrollControls, { right: spacing.sm + rightInset }]} pointerEvents="box-none">
       <TouchableOpacity style={styles.scrollBtn} onPress={onScrollUp} activeOpacity={0.7}>
         <View style={styles.scrollBtnVisible}>
           <Ionicons name="chevron-up" size={24} color={colors.text} />

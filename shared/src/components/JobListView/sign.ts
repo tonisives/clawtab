@@ -85,6 +85,7 @@ export interface JobListViewProps {
   emptyMessage?: string;
   // Extra style for scroll content container
   contentContainerStyle?: StyleProp<ViewStyle>;
+  edgeToEdge?: boolean;
   contentInsetAdjustmentBehavior?: ScrollViewProps["contentInsetAdjustmentBehavior"];
   // Restore scroll position (web only)
   initialScrollOffset?: number;

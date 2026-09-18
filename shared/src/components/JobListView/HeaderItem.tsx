@@ -96,6 +96,7 @@ export function JobListHeaderItem({ hook, item, itemKey, index, prevWasActive }:
       style={[
         headerMarginTop ? { marginTop: headerMarginTop } : null,
         Platform.OS !== "web" ? styles.nativeGroupHeaderWrap : null,
+        hook.edgeToEdge && { marginHorizontal: 0 },
       ]}
       {...(hoverSwitchHandlers ?? {})}
     >

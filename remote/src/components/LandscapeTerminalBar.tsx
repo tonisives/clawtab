@@ -5,14 +5,16 @@ import { colors } from "@clawtab/shared";
 
 type Props = {
   topInset: number;
+  leftInset?: number;
+  rightInset?: number;
   onBack: () => void;
   title: ReactNode;
   actions?: ReactNode;
 };
 
-export function LandscapeTerminalBar({ topInset, onBack, title, actions }: Props) {
+export function LandscapeTerminalBar({ topInset, leftInset = 0, rightInset = 0, onBack, title, actions }: Props) {
   return (
-    <View style={[styles.bar, { paddingTop: topInset + 4 }]}>
+    <View style={[styles.bar, { paddingTop: topInset + 4, paddingLeft: leftInset + 8, paddingRight: rightInset + 8 }]}>
       <Pressable onPress={onBack} style={styles.back} accessibilityRole="button" accessibilityLabel="Back">
         <Ionicons name="chevron-back" size={24} color={colors.text} />
       </Pressable>
