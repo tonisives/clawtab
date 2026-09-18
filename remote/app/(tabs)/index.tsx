@@ -263,6 +263,7 @@ export default function JobsScreen() {
   const setFocusedShell = useLandscapeShellStore((s) => s.setFocusedShell)
   const showSidebar = useLandscapeShellStore((s) => s.showSidebar)
   const pendingSidebarShell = useLandscapeShellStore((s) => s.pendingSidebarShell)
+  const focusedLandscapeShell = useLandscapeShellStore((s) => s.focusedShell)
   const clearPendingSidebarShell = useLandscapeShellStore((s) => s.clearPendingSidebarShell)
   const lastListOffset = useRef(0)
   const lastChromeChange = useRef(0)
@@ -541,10 +542,15 @@ export default function JobsScreen() {
       clearPendingSidebarShell()
       return
     }
+    if (!currentContent && focusedLandscapeShell) {
+      if (focusedLandscapeShell.kind === "job") setSelectedJob(focusedLandscapeShell.slug)
+      else setSelectedProcess(focusedLandscapeShell.paneId)
+      return
+    }
     const content = focusedPaneContent(split.tree, split.focusedLeafId) ?? currentContent
     if (content?.kind === "job") setFocusedShell({ kind: "job", slug: content.slug })
     else if (content?.kind === "process" || content?.kind === "terminal") setFocusedShell({ kind: "process", paneId: content.paneId })
-  }, [isIosPhoneLandscape, sidebarSection, split.tree, split.focusedLeafId, currentContent, pendingSidebarShell, clearPendingSidebarShell, setFocusedShell])
+  }, [isIosPhoneLandscape, sidebarSection, split.tree, split.focusedLeafId, currentContent, pendingSidebarShell, focusedLandscapeShell, clearPendingSidebarShell, setFocusedShell])
   const initialUrlSelectionPendingRef = useRef(
     Platform.OS === "web" && !!(_initParams?.get("job") || _initParams?.get("process")),
   )

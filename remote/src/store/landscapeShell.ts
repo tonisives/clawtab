@@ -18,7 +18,13 @@ export const useLandscapeShellStore = create<LandscapeShellState>((set) => ({
   focusedShell: null,
   fullScreenShell: null,
   pendingSidebarShell: null,
-  setFocusedShell: (focusedShell) => set({ focusedShell, pendingSidebarShell: null }),
+  setFocusedShell: (focusedShell) => set((state) => {
+    if (state.pendingSidebarShell === null && (
+      (state.focusedShell === null && focusedShell === null)
+      || (focusedShell !== null && sameLandscapeShell(state.focusedShell, focusedShell))
+    )) return state;
+    return { focusedShell, pendingSidebarShell: null };
+  }),
   clearPendingSidebarShell: () => set({ pendingSidebarShell: null }),
   showSidebar: (focusedShell) => set({ focusedShell, fullScreenShell: null, pendingSidebarShell: focusedShell }),
   showFullScreen: (focusedShell) => set({ focusedShell, fullScreenShell: focusedShell, pendingSidebarShell: null }),
