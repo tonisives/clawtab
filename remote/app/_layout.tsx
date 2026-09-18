@@ -139,6 +139,7 @@ export default function RootLayout() {
   useWebDarkScrollbars();
   const { isIosPadPortrait, isSplitView, isWide } = useResponsive();
   const mobileHeaderTab = useMobileHeaderStore((s) => s.tab);
+  const listHeaderShown = useMobileHeaderStore((s) => s.listHeaderShown);
   const loading = useAuthStore((s) => s.loading);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const init = useAuthStore((s) => s.init);
@@ -168,7 +169,7 @@ export default function RootLayout() {
             options={{
               animation: "none",
               orientation: Platform.OS === "ios" && !Platform.isPad ? "default" : undefined,
-              headerShown: !isWide && !isSplitView && !isIosPadPortrait,
+              headerShown: !isWide && !isSplitView && !isIosPadPortrait && (isSettingsTab || listHeaderShown),
               title: isSplitView ? "" : isSettingsTab ? "Settings" : "ClawTab",
               headerLargeTitle: !isMobileWeb,
               headerTransparent: !isMobileWeb,

@@ -15,7 +15,7 @@ import {
   Image,
   Linking,
 } from "react-native"
-import { useRouter } from "expo-router"
+import { useFocusEffect, useRouter } from "expo-router"
 import { Ionicons } from "@expo/vector-icons"
 import { GlassView, isGlassEffectAPIAvailable } from "expo-glass-effect"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
@@ -57,6 +57,8 @@ import {
 import { getWsSend, nextId } from "../../src/lib/wsRuntime"
 import { registerRequest } from "../../src/lib/useRequestMap"
 import { useResponsive } from "../../src/hooks/useResponsive"
+import { useMobileHeaderStore } from "../../src/store/mobileHeader"
+import { useTerminalViewportStore } from "../../src/store/terminalViewport"
 import { NotificationsMenuButton } from "../../src/components/NotificationsMenuButton"
 import { colors } from "@clawtab/shared"
 import { spacing } from "@clawtab/shared"
@@ -142,6 +144,12 @@ function processRoute(paneId: string) {
     pathname: "/process/[pane_id]",
     params: { pane_id: paneId.replace(/%/g, "_pct_") },
   } as const
+}
+
+function focusedPaneContent(tree: import("@clawtab/shared").SplitNode | null, leafId: string | null): PaneContent | null {
+  if (!tree) return null
+  if (tree.type === "leaf") return !leafId || tree.id === leafId ? tree.content : null
+  return focusedPaneContent(tree.first, leafId) ?? focusedPaneContent(tree.second, leafId)
 }
 
 function parseStringSet(raw: string | null): Set<string> {
@@ -250,7 +258,32 @@ export default function JobsScreen() {
   const [stoppingJobSlugs, setStoppingJobSlugs] = useState<Set<string>>(() => new Set())
   const { width, isIosPad, isIosPadPortrait, isIosPhoneLandscape, isSplitView, isWide } = useResponsive()
   const router = useRouter()
+  const screenFocused = useRef(false)
+  useFocusEffect(useCallback(() => {
+    screenFocused.current = true
+    return () => { screenFocused.current = false }
+  }, []))
   const insets = useSafeAreaInsets()
+  const setListHeaderShown = useMobileHeaderStore((s) => s.setListHeaderShown)
+  const fitSafeArea = useTerminalViewportStore((s) => s.fitSafeArea)
+  const lastListOffset = useRef(0)
+  const lastChromeChange = useRef(0)
+  const [splitListHeaderShown, setSplitListHeaderShown] = useState(true)
+  const handleListScroll = useCallback((offset: number) => {
+    if (Platform.OS !== "ios") return
+    const delta = offset - lastListOffset.current
+    lastListOffset.current = offset
+    if (Date.now() - lastChromeChange.current < 250) return
+    if (offset <= 8 || delta < -2) {
+      lastChromeChange.current = Date.now()
+      setListHeaderShown(true)
+      setSplitListHeaderShown(true)
+    } else if (offset > 48 && delta > 2) {
+      lastChromeChange.current = Date.now()
+      setListHeaderShown(false)
+      setSplitListHeaderShown(false)
+    }
+  }, [setListHeaderShown])
   const searchQuery = useJobFilterStore((s) => s.query)
   const openSearch = useJobFilterStore((s) => s.openSearch)
   const setSearchQuery = useJobFilterStore((s) => s.setQuery)
@@ -494,6 +527,15 @@ export default function JobsScreen() {
     ),
     currentContent,
   })
+  const previousPhoneLandscape = useRef(isIosPhoneLandscape)
+  useEffect(() => {
+    const rotatedToPortrait = previousPhoneLandscape.current && !isIosPhoneLandscape
+    previousPhoneLandscape.current = isIosPhoneLandscape
+    if (!rotatedToPortrait || !screenFocused.current || sidebarSection !== "jobs") return
+    const content = focusedPaneContent(split.tree, split.focusedLeafId) ?? currentContent
+    if (content?.kind === "job") router.push(jobIdRoute(content.slug))
+    else if (content?.kind === "process" || content?.kind === "terminal") router.push(processRoute(content.paneId))
+  }, [isIosPhoneLandscape, sidebarSection, split.tree, split.focusedLeafId, currentContent, router])
   const initialUrlSelectionPendingRef = useRef(
     Platform.OS === "web" && !!(_initParams?.get("job") || _initParams?.get("process")),
   )
@@ -815,6 +857,7 @@ export default function JobsScreen() {
       ]}
       contentInsetAdjustmentBehavior={Platform.OS === "web" ? "never" : "automatic"}
       scrollEventThrottle={16}
+      onScrollOffsetChange={handleListScroll}
       renderAsScrollRoot
     />
   )
@@ -1146,8 +1189,8 @@ export default function JobsScreen() {
   const splitContent = (
     <View style={styles.splitContainer}>
       <View style={[styles.listPane, { width: splitListWidth }]}>
-        {!isIosPad ? sidebarHeader : null}
-        <View style={styles.listPaneScrollArea}>
+        {!isIosPad && (!isIosPhoneLandscape || splitListHeaderShown) ? sidebarHeader : null}
+        <View style={[styles.listPaneScrollArea, isIosPhoneLandscape && !splitListHeaderShown && { paddingTop: insets.top }]}>
           <JobListView
             machineOnboarding={machineOnboardingContent}
             machineManagement={machineManagementContent}
@@ -1211,6 +1254,8 @@ export default function JobsScreen() {
             hideSearchBar
             contentContainerStyle={isIosPad ? { paddingBottom: insets.bottom + 96 } : undefined}
             scrollEnabled={Platform.OS !== "web" || !split.isDragging}
+            onScrollOffsetChange={handleListScroll}
+            scrollEventThrottle={16}
             renderJobCard={renderDraggableJobCard}
             renderProcessCard={renderDraggableProcessCard}
           />
@@ -1247,7 +1292,7 @@ export default function JobsScreen() {
     return (
       <View style={[styles.screenRoot, isIosPhoneLandscape && {
         paddingLeft: insets.left,
-        paddingRight: insets.right,
+        paddingRight: fitSafeArea ? insets.right : 0,
         paddingBottom: insets.bottom,
       }]}>
         {splitContent}

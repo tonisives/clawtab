@@ -6,7 +6,7 @@ import { useJobsStore, useJob, useJobStatus } from "../store/jobs"
 import { useRunsStore } from "../store/runs"
 import { useNotificationStore } from "../store/notifications"
 import { useWsStore } from "../store/ws"
-import { JobDetailView, findYesOption, StatusBadge, XtermLog, TERMINAL_FONT_SIZE } from "@clawtab/shared"
+import { JobDetailView, findYesOption, StatusBadge, XtermLog } from "@clawtab/shared"
 import type { XtermLogHandle } from "@clawtab/shared"
 import { useLogs } from "../hooks/useLogs"
 import { usePty } from "../hooks/usePty"
@@ -17,7 +17,8 @@ import { colors, spacing } from "@clawtab/shared"
 import type { AgentModelOption, JobUpdate, ProcessProvider, RemoteJob, RunRecord } from "@clawtab/shared"
 import { buildModelOptions } from "../lib/agentModels"
 import { useLandscapeTerminalHeader } from "../hooks/useLandscapeTerminalHeader"
-import { TerminalZoomControls } from "./TerminalZoomControls"
+import { TerminalViewportControl } from "./TerminalViewportControl"
+import { useTerminalViewportStore } from "../store/terminalViewport"
 
 const wsTransport = createWsTransport()
 const AGENT_PROVIDERS: ProcessProvider[] = ["claude", "codex", "opencode", "antigravity"]
@@ -144,7 +145,8 @@ export function JobDetailPane({ jobName, onClose, embedded = false }: JobDetailP
   const { sendInput, sendResize, connecting: ptyConnecting, error: ptyError } = usePty(statusPaneId, statusTmuxSession, termRef)
   const isRunningWithPty = !!statusPaneId && !!statusTmuxSession
   const landscapeHeader = useLandscapeTerminalHeader(isRunningWithPty)
-  const [terminalFontSize, setTerminalFontSize] = useState(TERMINAL_FONT_SIZE)
+  const fitSafeArea = useTerminalViewportStore((s) => s.fitSafeArea)
+  const setFitSafeArea = useTerminalViewportStore((s) => s.setFitSafeArea)
 
   const renderTerminal = useCallback(
     () => (
@@ -167,12 +169,11 @@ export function JobDetailPane({ jobName, onClose, embedded = false }: JobDetailP
           interactive
           forceDarkTheme
           extendedViewport={Platform.OS === "ios"}
-          fontSize={terminalFontSize}
           onScrollGesture={landscapeHeader.onScrollGesture}
         />
       </View>
     ),
-    [sendInput, sendResize, ptyConnecting, ptyError, terminalFontSize, landscapeHeader.onScrollGesture],
+    [sendInput, sendResize, ptyConnecting, ptyError, landscapeHeader.onScrollGesture],
   )
 
   if (!job) {
@@ -197,7 +198,7 @@ export function JobDetailPane({ jobName, onClose, embedded = false }: JobDetailP
     <View style={styles.container}>
       {landscapeHeader.headerShown ? <View style={[styles.header, { paddingTop: embedded ? spacing.md : insets.top + spacing.md }]}>
         <Text style={styles.title} numberOfLines={1}>{job.name}</Text>
-        {Platform.OS === "ios" && isRunningWithPty ? <TerminalZoomControls fontSize={terminalFontSize} onChange={setTerminalFontSize} /> : null}
+        {Platform.OS === "ios" && isRunningWithPty && landscapeHeader.isLandscape ? <TerminalViewportControl fitSafeArea={fitSafeArea} onChange={setFitSafeArea} /> : null}
         <TouchableOpacity
           onPress={canToggleAutoYes ? handleToggleAutoYes : undefined}
           disabled={!canToggleAutoYes}
@@ -218,6 +219,7 @@ export function JobDetailPane({ jobName, onClose, embedded = false }: JobDetailP
         onBack={onClose}
         showBackButton={false}
         hidePath
+        hideInfoPanels={landscapeHeader.isLandscape && isRunningWithPty}
         onReloadRuns={loadRuns}
         options={jobQuestion?.options}
         questionContext={jobQuestion?.context_lines}

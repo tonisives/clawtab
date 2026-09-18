@@ -15,7 +15,7 @@ import { useJob, useJobStatus, useJobsStore } from "../../src/store/jobs";
 import { useRunsStore } from "../../src/store/runs";
 import { useNotificationStore } from "../../src/store/notifications";
 import { useWsStore } from "../../src/store/ws";
-import { JobKindIcon, XtermLog, TERMINAL_FONT_SIZE, kindForJob, statusColor } from "@clawtab/shared";
+import { JobKindIcon, XtermLog, kindForJob, statusColor } from "@clawtab/shared";
 import type { XtermLogHandle } from "@clawtab/shared";
 import { JobDetailView, findYesOption } from "@clawtab/shared";
 import type { AgentModelOption, JobUpdate, ProcessProvider } from "@clawtab/shared";
@@ -30,9 +30,10 @@ import { useDetailBack } from "../../src/hooks/useDetailBack";
 import { useResponsive } from "../../src/hooks/useResponsive";
 import { useTerminalKeyboard } from "../../src/hooks/useTerminalKeyboard";
 import { TerminalCopySheet } from "../../src/components/TerminalCopySheet";
-import { colors } from "@clawtab/shared";
+import { colors, spacing } from "@clawtab/shared";
 import { useLandscapeTerminalHeader } from "../../src/hooks/useLandscapeTerminalHeader";
-import { TerminalZoomControls } from "../../src/components/TerminalZoomControls";
+import { TerminalViewportControl } from "../../src/components/TerminalViewportControl";
+import { useTerminalViewportStore } from "../../src/store/terminalViewport";
 import type { RemoteJob, RunRecord } from "@clawtab/shared";
 import { buildModelOptions } from "../../src/lib/agentModels";
 
@@ -174,8 +175,9 @@ export default function JobDetailScreen() {
   } = usePty(statusPaneId, statusTmuxSession, termRef);
   const isRunningWithPty = !!statusPaneId && !!statusTmuxSession;
   const landscapeHeader = useLandscapeTerminalHeader(isRunningWithPty);
-  const [terminalFontSize, setTerminalFontSize] = useState(TERMINAL_FONT_SIZE);
-  const containerStyle = landscapeHeader.isLandscape && isRunningWithPty
+  const fitSafeArea = useTerminalViewportStore((s) => s.fitSafeArea);
+  const setFitSafeArea = useTerminalViewportStore((s) => s.setFitSafeArea);
+  const containerStyle = landscapeHeader.isLandscape && isRunningWithPty && fitSafeArea
     ? [styles.container, { paddingLeft: insets.left, paddingRight: insets.right }]
     : styles.container;
   const [copyModeActive, setCopyModeActive] = useState(false);
@@ -272,7 +274,6 @@ export default function JobDetailScreen() {
               interactive
               forceDarkTheme
               extendedViewport
-              fontSize={terminalFontSize}
               onScrollGesture={landscapeHeader.onScrollGesture}
               onLongPressCopyText={setCopyText}
             />
@@ -288,7 +289,7 @@ export default function JobDetailScreen() {
         </View>
       </View>
     ),
-    [sendInput, sendResize, ptyConnecting, ptyError, scrollTerminal, exitCopyMode, copyModeActive, insets.bottom, handleTerminalLayout, terminalFontSize, landscapeHeader.onScrollGesture],
+    [sendInput, sendResize, ptyConnecting, ptyError, scrollTerminal, exitCopyMode, copyModeActive, insets.bottom, handleTerminalLayout, landscapeHeader.onScrollGesture],
   );
   const loadingHeaderOptions = useMemo(() => ({
     headerShown: !isWide && landscapeHeader.headerShown,
@@ -319,7 +320,7 @@ export default function JobDetailScreen() {
     ),
     headerRight: () => (
       <View style={styles.headerActions}>
-        {Platform.OS === "ios" && isRunningWithPty ? <TerminalZoomControls fontSize={terminalFontSize} onChange={setTerminalFontSize} /> : null}
+        {Platform.OS === "ios" && isRunningWithPty && landscapeHeader.isLandscape ? <TerminalViewportControl fitSafeArea={fitSafeArea} onChange={setFitSafeArea} /> : null}
         <HeaderStatusDot
           color={autoYesActive ? colors.warning : statusColor(status)}
           onPress={!autoYesPaneId ? undefined : handleToggleAutoYes}
@@ -327,7 +328,7 @@ export default function JobDetailScreen() {
         />
       </View>
     ),
-  }), [autoYesActive, autoYesPaneId, handleToggleAutoYes, isWide, landscapeHeader.headerShown, jobHeaderKind, jobHeaderName, status, isRunningWithPty, terminalFontSize]);
+  }), [autoYesActive, autoYesPaneId, handleToggleAutoYes, isWide, landscapeHeader.headerShown, landscapeHeader.isLandscape, jobHeaderKind, jobHeaderName, status, isRunningWithPty, fitSafeArea, setFitSafeArea]);
   if (!job) {
     // If jobs haven't loaded yet (cold start from notification), show loading state
     const waiting = !loaded || !connected;
@@ -393,6 +394,8 @@ export default function JobDetailScreen() {
       {(keyboardVisible || terminalMenuOpen) && isRunningWithPty ? (
         <TerminalKeyboardToolbar
           bottom={keyboardVisible ? keyboardHeight : insets.bottom}
+          safeAreaLeft={insets.left}
+          safeAreaRight={insets.right}
           onDismiss={dismissTerminalKeyboard}
           onEscape={() => sendTerminalText("\x1b")}
           onArrowUp={() => sendTerminalText("\x1b[A")}
@@ -432,6 +435,8 @@ export default function JobDetailScreen() {
 
 function TerminalKeyboardToolbar({
   bottom,
+  safeAreaLeft,
+  safeAreaRight,
   onDismiss,
   onEscape,
   onArrowUp,
@@ -445,6 +450,8 @@ function TerminalKeyboardToolbar({
   onMenuOpenChange,
 }: {
   bottom: number;
+  safeAreaLeft: number;
+  safeAreaRight: number;
   onDismiss: () => void;
   onEscape: () => void;
   onArrowUp: () => void;
@@ -460,7 +467,7 @@ function TerminalKeyboardToolbar({
   let handlePasteDone = useCallback(() => onMenuOpenChange(false), [onMenuOpenChange]);
 
   return (
-    <View style={[styles.keyboardToolbar, { bottom }]}>
+    <View style={[styles.keyboardToolbar, { bottom, paddingLeft: safeAreaLeft + spacing.sm, paddingRight: safeAreaRight + spacing.sm }]}>
       <TouchableOpacity style={styles.keyboardToolBtn} onPress={onDismiss} activeOpacity={0.7}>
         <Ionicons name="chevron-down" size={20} color={colors.text} />
       </TouchableOpacity>

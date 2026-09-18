@@ -298,7 +298,7 @@ export const PaneOverviewModal = ({ visible, onClose, actions, ...pane }: PaneOv
 
   if (isIOS) {
     return (
-      <Modal visible={visible} presentationStyle="fullScreen" animationType="slide" onRequestClose={handleClose}>
+      <Modal visible={visible} presentationStyle="fullScreen" supportedOrientations={["portrait", "portrait-upside-down", "landscape-left", "landscape-right"]} animationType="slide" onRequestClose={handleClose}>
         <SafeAreaView style={styles.fullScreenRoot}>{content}</SafeAreaView>
       </Modal>
     );

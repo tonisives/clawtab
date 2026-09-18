@@ -88,7 +88,7 @@ export interface JobListViewProps {
   contentInsetAdjustmentBehavior?: ScrollViewProps["contentInsetAdjustmentBehavior"];
   // Restore scroll position (web only)
   initialScrollOffset?: number;
-  // Report scroll position changes (web only)
+  // Report scroll position changes
   onScrollOffsetChange?: (offset: number) => void;
   // Scroll a specific slug into view (seq increments to re-trigger on same slug)
   scrollToSlug?: { slug: string; seq: number } | null;

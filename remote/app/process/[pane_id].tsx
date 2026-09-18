@@ -13,7 +13,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useJobsStore } from "../../src/store/jobs";
 import { usePinsStore } from "../../src/store/pins";
 import { useNotificationStore } from "../../src/store/notifications";
-import { JobKindIcon, OptionButtons, PaneOverviewModal, XtermLog, TERMINAL_FONT_SIZE, compactPath, findYesOption, kindForProcess, colors, radius, spacing } from "@clawtab/shared";
+import { JobKindIcon, OptionButtons, PaneOverviewModal, XtermLog, compactPath, findYesOption, kindForProcess, colors, radius, spacing } from "@clawtab/shared";
 import type { XtermLogHandle } from "@clawtab/shared";
 import { useWsStore } from "../../src/store/ws";
 import { getWsSend, nextId } from "../../src/lib/wsRuntime";
@@ -28,7 +28,8 @@ import { TerminalCopySheet } from "../../src/components/TerminalCopySheet";
 import { alertError, confirm } from "../../src/lib/platform";
 import { jobRoute } from "../../src/lib/notificationRoutes";
 import { useLandscapeTerminalHeader } from "../../src/hooks/useLandscapeTerminalHeader";
-import { TerminalZoomControls } from "../../src/components/TerminalZoomControls";
+import { TerminalViewportControl } from "../../src/components/TerminalViewportControl";
+import { useTerminalViewportStore } from "../../src/store/terminalViewport";
 
 const KEYBOARD_TOOLBAR_HEIGHT = 48;
 const KEYBOARD_EXTRA_CLEARANCE = 10;
@@ -66,8 +67,9 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
   const insets = useSafeAreaInsets();
   const { isWide } = useResponsive();
   const landscapeHeader = useLandscapeTerminalHeader(true);
-  const [terminalFontSize, setTerminalFontSize] = useState(TERMINAL_FONT_SIZE);
-  const containerStyle = landscapeHeader.isLandscape
+  const fitSafeArea = useTerminalViewportStore((s) => s.fitSafeArea);
+  const setFitSafeArea = useTerminalViewportStore((s) => s.setFitSafeArea);
+  const containerStyle = landscapeHeader.isLandscape && fitSafeArea
     ? [styles.container, { paddingLeft: insets.left, paddingRight: insets.right }]
     : styles.container;
 
@@ -342,7 +344,7 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
     ),
     headerRight: () => (
       <View style={styles.headerActions}>
-        {Platform.OS === "ios" ? <TerminalZoomControls fontSize={terminalFontSize} onChange={setTerminalFontSize} /> : null}
+        {Platform.OS === "ios" && landscapeHeader.isLandscape ? <TerminalViewportControl fitSafeArea={fitSafeArea} onChange={setFitSafeArea} /> : null}
         <TouchableOpacity
           style={styles.contextBtn}
           onPress={openPaneOverview}
@@ -355,7 +357,7 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
         </TouchableOpacity>
       </View>
     ),
-  }), [headerKind, headerTitle, isWide, landscapeHeader.headerShown, openPaneOverview, terminalFontSize]);
+  }), [headerKind, headerTitle, isWide, landscapeHeader.headerShown, landscapeHeader.isLandscape, openPaneOverview, fitSafeArea, setFitSafeArea]);
 
   const isAlive = !!process || !!paneQuestion;
   if (waitingForData) {
@@ -394,7 +396,6 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
             interactive
             forceDarkTheme
             extendedViewport
-            fontSize={terminalFontSize}
             onScrollGesture={landscapeHeader.onScrollGesture}
             onLongPressCopyText={setCopyText}
           />
@@ -418,6 +419,8 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
       {keyboardVisible || terminalMenuOpen ? (
         <TerminalKeyboardToolbar
           bottom={keyboardVisible ? keyboardHeight : insets.bottom}
+          safeAreaLeft={insets.left}
+          safeAreaRight={insets.right}
           onDismiss={dismissTerminalKeyboard}
           onEscape={() => sendTerminalText("\x1b")}
           onArrowUp={() => sendTerminalText("\x1b[A")}
@@ -508,6 +511,8 @@ function processLoadingState({
 
 function TerminalKeyboardToolbar({
   bottom,
+  safeAreaLeft,
+  safeAreaRight,
   onDismiss,
   onEscape,
   onArrowUp,
@@ -521,6 +526,8 @@ function TerminalKeyboardToolbar({
   onMenuOpenChange,
 }: {
   bottom: number;
+  safeAreaLeft: number;
+  safeAreaRight: number;
   onDismiss: () => void;
   onEscape: () => void;
   onArrowUp: () => void;
@@ -536,7 +543,7 @@ function TerminalKeyboardToolbar({
   let handlePasteDone = useCallback(() => onMenuOpenChange(false), [onMenuOpenChange]);
 
   return (
-    <View style={[styles.keyboardToolbar, { bottom }]}>
+    <View style={[styles.keyboardToolbar, { bottom, paddingLeft: safeAreaLeft + spacing.sm, paddingRight: safeAreaRight + spacing.sm }]}>
       <TouchableOpacity style={styles.keyboardToolBtn} onPress={onDismiss} activeOpacity={0.7}>
         <Ionicons name="chevron-down" size={20} color={colors.text} />
       </TouchableOpacity>

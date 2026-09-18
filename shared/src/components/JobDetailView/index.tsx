@@ -99,6 +99,7 @@ export interface JobDetailViewProps {
   hideRuns?: boolean;
   // Expand live output to fill available space (no fixed height)
   expandOutput?: boolean;
+  hideInfoPanels?: boolean;
   // Start the collapsible live output section closed
   defaultOutputCollapsed?: boolean;
   // Start run history closed unless a specific run must be expanded
@@ -195,6 +196,7 @@ export function JobDetailView({
   sectionStyle,
   hideRuns,
   expandOutput,
+  hideInfoPanels = false,
   defaultOutputCollapsed = false,
   defaultRunsCollapsed = false,
   containerStyle,
@@ -903,9 +905,11 @@ export function JobDetailView({
           </View>
         ) : null}
 
-        <View style={[styles.content, renderTerminal && { padding: spacing.sm, gap: spacing.sm }, contentStyle]}>
-          {detailInner}
-        </View>
+        {!hideInfoPanels ? (
+          <View style={[styles.content, renderTerminal && { padding: spacing.sm, gap: spacing.sm }, contentStyle]}>
+            {detailInner}
+          </View>
+        ) : null}
 
         <View style={{ flex: 1, minHeight: 0, position: "relative" as const, overflow: "hidden" as const }}>
           {renderTerminal ? renderTerminal() : (
