@@ -69,6 +69,10 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
   const [removingShare, setRemovingShare] = useState<{ id: string; email: string } | null>(null);
 
   useEffect(() => {
+    if (remote.account === "checking") void checkRemoteConnection();
+  }, [remote.account]);
+
+  useEffect(() => {
     Promise.all([
       invoke<RelaySettings | null>("get_relay_settings"),
       invoke<string>("get_hostname"),
