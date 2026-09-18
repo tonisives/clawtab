@@ -209,9 +209,9 @@ export function ProcessCard({
 
   const paneMark = (
     <View style={[styles.paneIcon, compactPhoneLandscape && styles.paneIconCompact]}>
-      <View style={styles.agentIcon}>
-        <JobKindIcon kind={kind} />
-        {machineId ? <View style={styles.machineOverlay}>
+      <View style={[styles.agentIcon, compactPhoneLandscape && styles.agentIconCompact]}>
+        <JobKindIcon kind={kind} size={compactPhoneLandscape ? 16 : 32} />
+        {machineId && !compactPhoneLandscape ? <View style={styles.machineOverlay}>
           <MachineMark machineId={machineId} />
         </View> : null}
       </View>
@@ -395,6 +395,7 @@ const styles = StyleSheet.create({
     height: 32,
     position: "relative",
   },
+  agentIconCompact: { width: 16, height: 16 },
   machineOverlay: {
     position: "absolute",
     top: -3,

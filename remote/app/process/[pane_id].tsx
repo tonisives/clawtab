@@ -423,8 +423,8 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification }:
       {landscapeHeader.overlayShown ? (
         <LandscapeTerminalBar
           topInset={insets.top}
-          leftInset={fitSafeArea ? 0 : insets.left}
-          rightInset={fitSafeArea ? 0 : insets.right}
+          leftInset={insets.left}
+          rightInset={insets.right}
           onBack={goBack}
           title={<HeaderTitleWithIcon title={headerTitle} icon={<JobKindIcon kind={headerKind} size={26} bare />} onPress={openPaneOverview} accessibilityLabel="Open pane overview" />}
           actions={<TerminalHeaderActions onZoom={() => setFitSafeArea(!fitSafeArea)} zoomed={!fitSafeArea} onOpenDetails={openPaneOverview} />}

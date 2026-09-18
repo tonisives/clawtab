@@ -397,8 +397,8 @@ export default function JobDetailScreen() {
       {landscapeHeader.overlayShown ? (
         <LandscapeTerminalBar
           topInset={insets.top}
-          leftInset={fitSafeArea ? 0 : insets.left}
-          rightInset={fitSafeArea ? 0 : insets.right}
+          leftInset={insets.left}
+          rightInset={insets.right}
           onBack={goBack}
           title={<HeaderTitleWithIcon title={jobHeaderName} icon={<JobKindIcon kind={jobHeaderKind} size={26} bare />} />}
           actions={<TerminalHeaderActions onZoom={() => setFitSafeArea(!fitSafeArea)} zoomed={!fitSafeArea} onOpenDetails={() => setShowPaneOverview(true)} />}
