@@ -348,19 +348,18 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
 
   let accountControls = (
     <>
-      <p role="status">
-        {signingIn && !accessToken
+      <p role={remote.error ? "alert" : "status"}>
+        {remote.error
+          ? remote.error
+          : signingIn && !accessToken
           ? loginStatus
           : checkingAccount
             ? "Checking your account…"
-            : remote.account === "unavailable"
-              ? "Could not check your account."
-              : accessToken
+            : accessToken
               ? "Signed in to your account."
               : "Sign in to connect."}
       </p>
       {loginError && <p role="alert">{loginError}</p>}
-      {remote.error && <p role="alert">{remote.error}</p>}
       <div className="btn-group">
         {remote.error && <button className="btn" onClick={() => void retryRemoteConnection()}>Retry account check</button>}
         {accessToken ? (

@@ -4,6 +4,8 @@ import { retryMachines, useMachines } from "@clawtab/shared"
 import { remoteConnectionState, type RelayConnection, type RemoteState } from "./remoteState"
 
 type Session = RemoteState & { token: string | null; accountVersion: number }
+const CONNECTION_CHECK_RETRY_DELAYS_MS = [300, 900]
+const CONNECTION_CHECK_RETRY_MAX_FAILURE_MS = 5_000
 let session: Session = { account: "checking", relay: null, operation: null, signedOut: false, error: null, token: null, accountVersion: 0 }
 let listeners = new Set<() => void>()
 let version = 0
@@ -42,6 +44,30 @@ let withConnectionTimeout = async <T,>(request: Promise<T>): Promise<T> => {
   }
 }
 
+let wait = (delay: number) => new Promise(resolve => setTimeout(resolve, delay))
+
+let retryConnectionRequest = async <T,>(request: () => Promise<T>, attempt = 0): Promise<T> => {
+  let startedAt = Date.now()
+  try {
+    return await withConnectionTimeout(request())
+  } catch (error) {
+    let retryDelay = CONNECTION_CHECK_RETRY_DELAYS_MS[attempt]
+    if (retryDelay === undefined || Date.now() - startedAt >= CONNECTION_CHECK_RETRY_MAX_FAILURE_MS) throw error
+    await wait(retryDelay)
+    return retryConnectionRequest(request, attempt + 1)
+  }
+}
+
+let loadRemoteConnection = async (): Promise<{ relay: RelayConnection; token: string | null }> => {
+  let [relayResult, tokenResult] = await Promise.allSettled([
+    retryConnectionRequest(() => invoke<RelayConnection>("get_relay_status")),
+    retryConnectionRequest(() => invoke<string | null>("relay_restore_account")),
+  ])
+  if (relayResult.status === "rejected") throw relayResult.reason
+  if (tokenResult.status === "rejected") throw tokenResult.reason
+  return { relay: relayResult.value, token: tokenResult.value }
+}
+
 export let retryRemoteConnection = () => {
   suspended = false
   return checkRemoteConnection()
@@ -53,10 +79,7 @@ export let checkRemoteConnection = async () => {
   update({ error: null, ...(session.account === "unavailable" ? { account: "checking" as const } : {}) })
   checking = (async () => {
     try {
-      let [relay, token] = await withConnectionTimeout(Promise.all([
-        invoke<RelayConnection>("get_relay_status"),
-        invoke<string | null>("relay_restore_account"),
-      ]))
+      let { relay, token } = await loadRemoteConnection()
       if (current !== version) return
       update({ relay, token, account: token ? "ready" : "required", error: null,
         accountVersion: token !== session.token ? session.accountVersion + 1 : session.accountVersion })
