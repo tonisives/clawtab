@@ -4,7 +4,7 @@ import { retryMachines, useMachines } from "@clawtab/shared"
 import { remoteConnectionState, type RelayConnection, type RemoteState } from "./remoteState"
 
 type Session = RemoteState & { token: string | null; accountVersion: number }
-const CONNECTION_CHECK_RETRY_DELAYS_MS = [300, 900]
+const CONNECTION_CHECK_RETRY_DELAYS_MS = [300, 900, 1_800]
 const CONNECTION_CHECK_RETRY_MAX_FAILURE_MS = 5_000
 let session: Session = { account: "checking", relay: null, operation: null, signedOut: false, error: null, token: null, accountVersion: 0 }
 let listeners = new Set<() => void>()
@@ -157,6 +157,10 @@ export let watchRemoteConnection = () => {
   document.addEventListener("visibilitychange", focus)
   let timer = setInterval(() => {
     if (session.operation) return
+    if (session.error || session.account === "unavailable") {
+      void checkRemoteConnection()
+      return
+    }
     let requestVersion = version
     void invoke<RelayConnection>("get_relay_status").then(relay => {
       if (active && requestVersion === version) update({ relay })
