@@ -1952,17 +1952,36 @@ fn codex_composer_line(line: &str) -> bool {
 }
 
 fn codex_composer_draft(screen: &str) -> Option<String> {
-    screen.lines().rev().find_map(|line| {
-        if !codex_composer_line(line) {
-            return None;
+    let lines: Vec<_> = screen.lines().collect();
+    let composer = lines.iter().rposition(|line| codex_composer_line(line))?;
+    let first_line = lines[composer].trim_start().strip_prefix('›')?.trim();
+    let mut value = first_line.to_string();
+
+    // Codex renders a long composer value as indented physical rows rather
+    // than terminal soft wraps, so tmux's capture-pane -J cannot join them.
+    // The blank row before the footer delimits the composer block.
+    for line in &lines[composer + 1..] {
+        if line.trim().is_empty() {
+            break;
         }
-        let value = line.trim_start().strip_prefix('›')?.trim();
-        let value = strip_codex_composer_animation(value);
-        Some(if value == "Ask Codex to do anything" {
-            String::new()
-        } else {
-            value.to_string()
-        })
+        let Some(continuation) = line.strip_prefix("  ") else {
+            break;
+        };
+        let continuation = continuation.trim();
+        if continuation.is_empty() {
+            break;
+        }
+        if !value.is_empty() {
+            value.push(' ');
+        }
+        value.push_str(continuation);
+    }
+
+    let value = strip_codex_composer_animation(&value);
+    Some(if value == "Ask Codex to do anything" {
+        String::new()
+    } else {
+        value.to_string()
     })
 }
 
@@ -2547,6 +2566,20 @@ actions:
         assert_eq!(
             codex_composer_draft(screen).as_deref(),
             Some("Ask Codex to do anything involving plugins")
+        );
+    }
+
+    #[test]
+    fn codex_composer_draft_reassembles_wrapped_rows() {
+        let screen = "› PRESERVE_START alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega second-section one two three four five six seven eight nine ten eleven\n  twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty PRESERVE_END\n\n  gpt-5.6-sol medium · Context 100% left · Vim: Insert";
+
+        assert_eq!(
+            codex_composer_draft(screen).as_deref(),
+            Some("PRESERVE_START alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega second-section one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty PRESERVE_END")
+        );
+        assert_eq!(
+            codex_draft_to_stash(screen, false),
+            Ok(Some("PRESERVE_START alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega second-section one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty PRESERVE_END".into()))
         );
     }
 
