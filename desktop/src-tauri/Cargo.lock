@@ -556,7 +556,7 @@ dependencies = [
 
 [[package]]
 name = "clawtab"
-version = "0.5.13"
+version = "0.5.14"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
