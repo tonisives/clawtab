@@ -109,6 +109,12 @@ struct BaselineState {
     effort: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CodexVimMode {
+    Insert,
+    Normal,
+}
+
 #[derive(Debug, Clone)]
 struct HostRun {
     token: String,
@@ -123,6 +129,7 @@ struct HostRun {
     capabilities: HashSet<String>,
     baseline: BaselineState,
     stashed_draft: Option<String>,
+    stashed_vim_mode: Option<CodexVimMode>,
     model_changed: bool,
 }
 
@@ -391,6 +398,7 @@ impl AgentPluginRuntime {
             capabilities: spec.action.capabilities.iter().cloned().collect(),
             baseline,
             stashed_draft: None,
+            stashed_vim_mode: None,
             model_changed: false,
         };
         let run = AgentActionRun {
@@ -493,15 +501,17 @@ impl AgentPluginRuntime {
             capabilities: HashSet::new(),
             baseline,
             stashed_draft: None,
+            stashed_vim_mode: None,
             model_changed: false,
         };
         let result = async {
-            host.stashed_draft = draft_to_stash(&host, tracked_working)?;
+            (host.stashed_draft, host.stashed_vim_mode) = draft_to_stash(&host, tracked_working)?;
             clear_stashed_draft(&host, &cancel).await?;
             host.model_changed = true;
             select_model(&host, &model, Some(&effort), &cancel).await?;
             restore_stashed_draft(&host, &cancel).await?;
             host.stashed_draft = None;
+            host.stashed_vim_mode = None;
             host.model_changed = false;
             Ok(())
         }
@@ -645,13 +655,15 @@ impl AgentPluginRuntime {
             PluginHostRequest::ComposerStash => {
                 require_capability(&stored.host, "composer.draft")?;
                 validate_bound_pane(&stored.host)?;
-                let draft = draft_to_stash(&stored.host, false)?;
+                let (draft, vim_mode) = draft_to_stash(&stored.host, false)?;
                 let had_draft = draft.is_some();
                 if let Some(run) = self.runs.lock().get_mut(&run_id) {
                     run.host.stashed_draft.clone_from(&draft);
+                    run.host.stashed_vim_mode = vim_mode;
                 }
                 let mut host_with_draft = stored.host;
                 host_with_draft.stashed_draft = draft;
+                host_with_draft.stashed_vim_mode = vim_mode;
                 clear_stashed_draft(&host_with_draft, &stored.cancel).await?;
                 Ok(PluginHostResponse::Composer { had_draft })
             }
@@ -661,6 +673,7 @@ impl AgentPluginRuntime {
                 restore_stashed_draft(&stored.host, &stored.cancel).await?;
                 if let Some(run) = self.runs.lock().get_mut(&run_id) {
                     run.host.stashed_draft = None;
+                    run.host.stashed_vim_mode = None;
                 }
                 Ok(PluginHostResponse::Ok)
             }
@@ -2165,12 +2178,17 @@ async fn restore_baseline(host: &HostRun, cancel: &CancellationToken) -> Result<
     select_model(host, model, host.baseline.effort.as_deref(), cancel).await
 }
 
-fn draft_to_stash(host: &HostRun, tracked_working: bool) -> Result<Option<String>, String> {
+fn draft_to_stash(
+    host: &HostRun,
+    tracked_working: bool,
+) -> Result<(Option<String>, Option<CodexVimMode>), String> {
     if host.provider != ProcessProvider::Codex {
-        return Ok(None);
+        return Ok((None, None));
     }
     let screen = capture_plain(&host.pane_id)?;
-    codex_draft_to_stash(&screen, tracked_working)
+    let draft = codex_draft_to_stash(&screen, tracked_working)?;
+    let vim_mode = draft.as_ref().and_then(|_| codex_vim_mode(&screen));
+    Ok((draft, vim_mode))
 }
 
 fn codex_draft_to_stash(screen: &str, tracked_working: bool) -> Result<Option<String>, String> {
@@ -2198,14 +2216,16 @@ async fn clear_stashed_draft(host: &HostRun, cancel: &CancellationToken) -> Resu
         return Ok(());
     };
     let screen = capture_plain(&host.pane_id)?;
-    if codex_vim_normal_mode(&screen) {
-        crate::tmux::send_key_to_pane(&host.pane_id, "d")?;
-        crate::tmux::send_key_to_pane(&host.pane_id, "d")?;
-    } else if codex_vim_insert_mode(&screen) {
-        crate::tmux::send_key_to_pane(&host.pane_id, "Escape")?;
-        wait_for_codex_vim_normal(&host.pane_id, cancel).await?;
-        crate::tmux::send_key_to_pane(&host.pane_id, "d")?;
-        crate::tmux::send_key_to_pane(&host.pane_id, "d")?;
+    if host.stashed_vim_mode.is_some() {
+        if codex_vim_insert_mode(&screen) {
+            crate::tmux::send_key_to_pane(&host.pane_id, "Escape")?;
+            wait_for_codex_vim_normal(&host.pane_id, cancel).await?;
+        } else if !codex_vim_normal_mode(&screen) {
+            return Err("Codex Vim mode changed before clearing its draft".into());
+        }
+        for key in ["g", "g", "d", "G"] {
+            crate::tmux::send_key_to_pane(&host.pane_id, key)?;
+        }
     } else {
         // Codex's non-Vim multiline editor does not consistently handle
         // Ctrl-U, so clear it with one atomic tmux key batch.
@@ -2223,18 +2243,35 @@ async fn restore_stashed_draft(host: &HostRun, cancel: &CancellationToken) -> Re
     if state.draft.as_deref().is_none_or(|value| !value.is_empty()) {
         return Err("Codex composer is not empty; draft was not restored".into());
     }
-    let screen = capture_plain(&host.pane_id)?;
-    let was_vim_normal = codex_vim_normal_mode(&screen);
-    if was_vim_normal {
-        crate::tmux::send_key_to_pane(&host.pane_id, "i")?;
-        wait_for_codex_vim_insert(&host.pane_id, cancel).await?;
-    }
-    crate::tmux::send_literal_to_pane(&host.pane_id, draft)?;
-    wait_for_codex_draft(&host.pane_id, draft, cancel, "restore its draft").await?;
-    if was_vim_normal && !state.busy {
-        crate::tmux::send_key_to_pane(&host.pane_id, "Escape")?;
+    if let Some(original_mode) = host.stashed_vim_mode {
+        let screen = capture_plain(&host.pane_id)?;
+        if codex_vim_insert_mode(&screen) {
+            crate::tmux::send_key_to_pane(&host.pane_id, "Escape")?;
+            wait_for_codex_vim_normal(&host.pane_id, cancel).await?;
+        } else if !codex_vim_normal_mode(&screen) {
+            return Err("Codex Vim mode changed before restoring its draft".into());
+        }
+        crate::tmux::send_key_to_pane(&host.pane_id, "p")?;
+        wait_for_codex_draft(&host.pane_id, draft, cancel, "restore its draft").await?;
+        if original_mode == CodexVimMode::Insert {
+            crate::tmux::send_key_to_pane(&host.pane_id, "a")?;
+            wait_for_codex_vim_insert(&host.pane_id, cancel).await?;
+        }
+    } else {
+        crate::tmux::send_literal_to_pane(&host.pane_id, draft)?;
+        wait_for_codex_draft(&host.pane_id, draft, cancel, "restore its draft").await?;
     }
     Ok(())
+}
+
+fn codex_vim_mode(screen: &str) -> Option<CodexVimMode> {
+    if codex_vim_insert_mode(screen) {
+        Some(CodexVimMode::Insert)
+    } else if codex_vim_normal_mode(screen) {
+        Some(CodexVimMode::Normal)
+    } else {
+        None
+    }
 }
 
 async fn wait_for_codex_draft(
@@ -2392,9 +2429,9 @@ mod tests {
 
     use super::{
         baseline_from_session, codex_active_model_dialog, codex_composer_draft,
-        codex_draft_to_stash, codex_option_shortcut, live_model_selection, load_plugin,
-        redact_internal_values, selected_option_matches, strip_ansi, valid_plugin_id,
-        valid_version_pattern, version_matches, BaselineState, LiveModelSelection,
+        codex_draft_to_stash, codex_option_shortcut, codex_vim_mode, live_model_selection,
+        load_plugin, redact_internal_values, selected_option_matches, strip_ansi, valid_plugin_id,
+        valid_version_pattern, version_matches, BaselineState, CodexVimMode, LiveModelSelection,
     };
 
     #[test]
@@ -2580,6 +2617,17 @@ actions:
         assert_eq!(
             codex_draft_to_stash(screen, false),
             Ok(Some("PRESERVE_START alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega second-section one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty PRESERVE_END".into()))
+        );
+    }
+
+    #[test]
+    fn multiline_vim_draft_uses_editor_register_restoration() {
+        let screen = "› first logical line\n  second logical line\n\nVim: Insert";
+
+        assert_eq!(codex_vim_mode(screen), Some(CodexVimMode::Insert));
+        assert_eq!(
+            codex_draft_to_stash(screen, false),
+            Ok(Some("first logical line second logical line".into()))
         );
     }
 
