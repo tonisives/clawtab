@@ -2253,6 +2253,13 @@ async fn restore_stashed_draft(host: &HostRun, cancel: &CancellationToken) -> Re
         }
         crate::tmux::send_key_to_pane(&host.pane_id, "p")?;
         wait_for_codex_draft(&host.pane_id, draft, cancel, "restore its draft").await?;
+        // `dG` fills Vim's register linewise. Pasting it into Codex's empty
+        // one-line buffer creates a synthetic blank line before the draft;
+        // remove only that editor-created line after the register is restored.
+        for key in ["g", "g", "d", "d"] {
+            crate::tmux::send_key_to_pane(&host.pane_id, key)?;
+        }
+        wait_for_codex_draft(&host.pane_id, draft, cancel, "normalize its restored draft").await?;
         if original_mode == CodexVimMode::Insert {
             crate::tmux::send_key_to_pane(&host.pane_id, "a")?;
             wait_for_codex_vim_insert(&host.pane_id, cancel).await?;
