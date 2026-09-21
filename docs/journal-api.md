@@ -23,9 +23,10 @@ opening the Work Journal socket to their repository sandbox:
 cwtctl journal approved --days 7
 ```
 
-The daemon asks Work Journal for its bounded writing context and returns at most
-20 approved facts in the requested 1–30 day window plus at most six self-authored
-writing examples. Older Work Journal versions retain the previous timeline-scan
+The daemon asks Work Journal for its bounded writing context and returns up to
+80 approved facts in the requested 1–30 day window, selected in rounds across
+projects, plus at most six self-authored writing examples. Work Journal also
+applies a 384 KiB item budget. Older versions retain the previous timeline-scan
 fallback during upgrades.
 Screen observations and fields outside the documented provenance/context set are
 removed. The command cannot read originals or pending/private items and cannot
