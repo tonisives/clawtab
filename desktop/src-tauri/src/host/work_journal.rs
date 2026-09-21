@@ -80,7 +80,7 @@ pub async fn approved_context(days: u32) -> Result<Value, String> {
         return Err("Journal context days must be between 1 and 30".into());
     }
     tokio::time::timeout(
-        std::time::Duration::from_secs(6),
+        std::time::Duration::from_secs(90),
         approved_context_inner(days),
     )
     .await
@@ -88,6 +88,41 @@ pub async fn approved_context(days: u32) -> Result<Value, String> {
 }
 
 async fn approved_context_inner(days: u32) -> Result<Value, String> {
+    if let Ok(value) = request_value(json!({
+        "action":"approved_context",
+        "query":{"days":days,"project":null},
+    }))
+    .await
+    {
+        return normalize_approved_context(value, days);
+    }
+
+    approved_context_from_timeline(days).await
+}
+
+fn normalize_approved_context(value: Value, days: u32) -> Result<Value, String> {
+    if value["version"] != 1 {
+        return Err("Journal unavailable or unsupported protocol version".into());
+    }
+    let facts = value["facts"]
+        .as_array()
+        .ok_or("Malformed approved journal context")?;
+    let writing = value["writing_examples"]
+        .as_array()
+        .ok_or("Malformed approved journal context")?;
+    let checked_at = value["checked_at"]
+        .as_str()
+        .ok_or("Malformed approved journal context")?
+        .parse::<chrono::DateTime<chrono::Utc>>()
+        .map_err(|_| "Malformed approved journal context")?;
+    select_approved_context(
+        facts.iter().chain(writing).cloned().collect(),
+        days,
+        checked_at,
+    )
+}
+
+async fn approved_context_from_timeline(days: u32) -> Result<Value, String> {
     let mut rows = HashMap::<String, Value>::new();
     for page in 0..MAX_PAGES {
         let data = request_value(json!({
@@ -220,5 +255,19 @@ mod tests {
         assert!(context["facts"][0].get("private_field").is_none());
         assert_eq!(context["writing_examples"][0]["id"], "writing");
         assert_eq!(context["window_days"], 7);
+    }
+
+    #[test]
+    fn approved_export_accepts_the_bounded_work_journal_response() {
+        let value = json!({
+            "version":1,
+            "checked_at":"2026-09-14T12:00:00Z",
+            "facts":[item("recent", "fact", "approved", "2026-09-13T10:00:00Z")],
+            "writing_examples":[item("writing", "writing", "approved", "2026-01-01T10:00:00Z")],
+        });
+        let context = normalize_approved_context(value, 7).unwrap();
+        assert_eq!(context["facts"].as_array().unwrap().len(), 1);
+        assert_eq!(context["writing_examples"].as_array().unwrap().len(), 1);
+        assert!(context["facts"][0].get("private_field").is_none());
     }
 }
