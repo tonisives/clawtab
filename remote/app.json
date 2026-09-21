@@ -51,6 +51,7 @@
     },
     "plugins": [
       "./plugins/with-native-answer",
+      "./plugins/with-ios-simulator-keychain",
       "expo-router",
       [
         "expo-splash-screen",
