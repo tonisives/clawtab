@@ -171,7 +171,7 @@ fn drive_antigravity_usage(
     while Instant::now() < deadline {
         match rx.recv_timeout(Duration::from_millis(150)) {
             Ok(bytes) => {
-                output.extend(bytes);
+                append_bounded_probe_output(&mut output, &bytes);
                 let text = String::from_utf8_lossy(&output);
                 if !command_sent
                     && (text.contains("shortcuts") || Instant::now() >= command_deadline)
@@ -993,7 +993,7 @@ fn run_codex_status_pty(timeout: Duration) -> Result<String, String> {
 }
 
 fn spawn_pty_reader(mut reader: Box<dyn Read + Send>) -> mpsc::Receiver<Vec<u8>> {
-    let (tx, rx) = mpsc::channel::<Vec<u8>>();
+    let (tx, rx) = mpsc::sync_channel::<Vec<u8>>(64);
     thread::spawn(move || {
         let mut buf = [0_u8; 4096];
         loop {
@@ -1025,7 +1025,7 @@ fn drive_codex_status(
     while Instant::now() < deadline {
         match rx.recv_timeout(Duration::from_millis(150)) {
             Ok(bytes) => {
-                output.extend(bytes);
+                append_bounded_probe_output(&mut output, &bytes);
                 let text = String::from_utf8_lossy(&output);
                 if !command_sent && (Instant::now() >= command_deadline || codex_tui_ready(&text)) {
                     send_codex_status(writer)?;
@@ -1054,6 +1054,16 @@ fn drive_codex_status(
         }
     }
     Ok(output)
+}
+
+fn append_bounded_probe_output(output: &mut Vec<u8>, bytes: &[u8]) {
+    const MAX_PROBE_OUTPUT_BYTES: usize = 1024 * 1024;
+
+    output.extend_from_slice(bytes);
+    if output.len() > MAX_PROBE_OUTPUT_BYTES {
+        let remove = output.len() - MAX_PROBE_OUTPUT_BYTES;
+        output.drain(..remove);
+    }
 }
 
 fn codex_tui_ready(text: &str) -> bool {

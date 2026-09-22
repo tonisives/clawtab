@@ -38,7 +38,7 @@ pub enum OutputSink {
     #[cfg(feature = "desktop")]
     Tauri(AppHandle),
     /// Send via channel (relay forwarding to remote clients)
-    Channel(std::sync::mpsc::Sender<(String, Vec<u8>)>),
+    Channel(std::sync::mpsc::SyncSender<(String, Vec<u8>)>),
 }
 
 /// Returned from spawn so the frontend knows the pane's native size at capture time.

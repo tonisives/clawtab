@@ -58,6 +58,8 @@ fn format_elapsed(secs: u64) -> String {
 
 const IDLE_SEND_THRESHOLD: u32 = 5; // 5 ticks * 2s = 10 seconds
 const MAX_LOG_LINES: usize = 40;
+const MAX_ACCUMULATED_LOG_BYTES: usize = 2 * 1024 * 1024;
+const MAX_PENDING_LOG_BYTES: usize = 256 * 1024;
 
 struct PollState {
     last_content: String,
@@ -355,6 +357,7 @@ fn accumulate_and_push_log(
         state.accumulated_log.push('\n');
     }
     state.accumulated_log.push_str(new_content);
+    truncate_to_tail(&mut state.accumulated_log, MAX_ACCUMULATED_LOG_BYTES);
     crate::relay::push_log_chunk(&params.relay, &params.slug, new_content);
     if params.telegram_notify.logs && use_telegram {
         if state.pending_diff.is_empty() {
@@ -363,7 +366,19 @@ fn accumulate_and_push_log(
             state.pending_diff.push('\n');
             state.pending_diff.push_str(new_content);
         }
+        truncate_to_tail(&mut state.pending_diff, MAX_PENDING_LOG_BYTES);
     }
+}
+
+fn truncate_to_tail(value: &mut String, max_bytes: usize) {
+    if value.len() <= max_bytes {
+        return;
+    }
+    let mut remove = value.len() - max_bytes;
+    while !value.is_char_boundary(remove) {
+        remove += 1;
+    }
+    value.drain(..remove);
 }
 
 async fn maybe_flush_stale_pending(params: &MonitorParams, state: &mut PollState) {

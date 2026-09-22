@@ -1,4 +1,4 @@
-use super::common::find_child_process;
+use super::common::{find_child_process, insert_bounded, SESSION_CACHE_MAX_ENTRIES};
 use super::{ProcessSnapshot, SessionInfo};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
@@ -162,7 +162,8 @@ fn read_session_messages(
 
     {
         let mut cache = jsonl_cache().lock();
-        cache.insert(
+        insert_bounded(
+            &mut cache,
             path.clone(),
             CachedMessages {
                 modified,
@@ -172,6 +173,7 @@ fn read_session_messages(
                 token_count,
                 model_id: model_id.clone(),
             },
+            SESSION_CACHE_MAX_ENTRIES,
         );
     }
 

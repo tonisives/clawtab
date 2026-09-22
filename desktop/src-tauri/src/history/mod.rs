@@ -19,6 +19,13 @@ pub struct RunRecord {
     pub log_path: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct PaneHistoryRecord {
+    pub job_id: String,
+    pub started_at: String,
+    pub pane_id: Option<String>,
+}
+
 pub struct HistoryStore {
     conn: Connection,
 }
@@ -233,7 +240,7 @@ impl HistoryStore {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT id, job_name, started_at, finished_at, exit_code, trigger_type, stdout, stderr, pane_id, log_path
+                "SELECT id, job_name, started_at, finished_at, exit_code, trigger_type, '', '', pane_id, log_path
                  FROM runs ORDER BY started_at DESC LIMIT ?1",
             )
             .map_err(|e| format!("Failed to prepare query: {}", e))?;
@@ -260,6 +267,31 @@ impl HistoryStore {
             records.push(row.map_err(|e| format!("Failed to read row: {}", e))?);
         }
         Ok(records)
+    }
+
+    /// Fetch only the fields needed to associate live panes with recent jobs.
+    /// This runs on every process refresh, so loading stdout/stderr here can
+    /// repeatedly allocate the complete output of hundreds of runs.
+    pub fn get_recent_pane_history(&self, limit: usize) -> Result<Vec<PaneHistoryRecord>, String> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT job_name, started_at, pane_id
+                 FROM runs ORDER BY started_at DESC LIMIT ?1",
+            )
+            .map_err(|e| format!("Failed to prepare pane history query: {}", e))?;
+        let rows = stmt
+            .query_map(params![limit as i64], |row| {
+                Ok(PaneHistoryRecord {
+                    job_id: row.get(0)?,
+                    started_at: row.get(1)?,
+                    pane_id: row.get(2)?,
+                })
+            })
+            .map_err(|e| format!("Failed to query pane history: {}", e))?;
+
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Failed to read pane history row: {}", e))
     }
 
     pub fn get_by_id(&self, id: &str) -> Result<Option<RunRecord>, String> {
@@ -295,6 +327,60 @@ impl HistoryStore {
         }
     }
 
+    pub fn get_log_path(&self, id: &str) -> Result<Option<String>, String> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT log_path FROM runs WHERE id = ?1")
+            .map_err(|e| format!("Failed to prepare log path query: {}", e))?;
+        let mut rows = stmt
+            .query_map(params![id], |row| row.get::<_, Option<String>>(0))
+            .map_err(|e| format!("Failed to query log path: {}", e))?;
+        match rows.next() {
+            Some(Ok(path)) => Ok(path),
+            Some(Err(e)) => Err(format!("Failed to read log path row: {}", e)),
+            None => Ok(None),
+        }
+    }
+
+    /// Load one run while limiting each inline output field. Full output is
+    /// retained in the run's log file when one is available.
+    pub fn get_by_id_bounded(
+        &self,
+        id: &str,
+        max_output_chars: usize,
+    ) -> Result<Option<RunRecord>, String> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, job_name, started_at, finished_at, exit_code, trigger_type,
+                        substr(stdout, -?2), substr(stderr, -?2), pane_id, log_path
+                 FROM runs WHERE id = ?1",
+            )
+            .map_err(|e| format!("Failed to prepare bounded run query: {}", e))?;
+        let mut rows = stmt
+            .query_map(params![id, max_output_chars as i64], |row| {
+                Ok(RunRecord {
+                    id: row.get(0)?,
+                    job_id: row.get(1)?,
+                    started_at: row.get(2)?,
+                    finished_at: row.get(3)?,
+                    exit_code: row.get(4)?,
+                    trigger: row.get(5)?,
+                    stdout: row.get(6)?,
+                    stderr: row.get(7)?,
+                    pane_id: row.get(8)?,
+                    log_path: row.get(9)?,
+                })
+            })
+            .map_err(|e| format!("Failed to query bounded run: {}", e))?;
+
+        match rows.next() {
+            Some(Ok(record)) => Ok(Some(record)),
+            Some(Err(e)) => Err(format!("Failed to read bounded run row: {}", e)),
+            None => Ok(None),
+        }
+    }
+
     pub fn get_by_job_id(&self, job_id: &str, limit: usize) -> Result<Vec<RunRecord>, String> {
         let mut stmt = self
             .conn
@@ -326,6 +412,42 @@ impl HistoryStore {
             records.push(row.map_err(|e| format!("Failed to read row: {}", e))?);
         }
         Ok(records)
+    }
+
+    /// Return history rows without their output bodies. Consumers fetch a
+    /// bounded body only when the user expands an individual run.
+    pub fn get_by_job_id_summaries(
+        &self,
+        job_id: &str,
+        limit: usize,
+    ) -> Result<Vec<RunRecord>, String> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, job_name, started_at, finished_at, exit_code, trigger_type,
+                        '', '', pane_id, log_path
+                 FROM runs WHERE job_name = ?1 ORDER BY started_at DESC LIMIT ?2",
+            )
+            .map_err(|e| format!("Failed to prepare run summary query: {}", e))?;
+        let rows = stmt
+            .query_map(params![job_id, limit as i64], |row| {
+                Ok(RunRecord {
+                    id: row.get(0)?,
+                    job_id: row.get(1)?,
+                    started_at: row.get(2)?,
+                    finished_at: row.get(3)?,
+                    exit_code: row.get(4)?,
+                    trigger: row.get(5)?,
+                    stdout: row.get(6)?,
+                    stderr: row.get(7)?,
+                    pane_id: row.get(8)?,
+                    log_path: row.get(9)?,
+                })
+            })
+            .map_err(|e| format!("Failed to query run summaries: {}", e))?;
+
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Failed to read run summary row: {}", e))
     }
 
     pub fn get_unfinished_by_job(&self, job_id: &str) -> Result<Option<RunRecord>, String> {

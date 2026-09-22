@@ -13,6 +13,7 @@ import { ActionButton } from "./ActionButton";
 import { styles } from "./styles";
 
 const isWeb = Platform.OS === "web";
+const MAX_LIVE_LOG_CHARS = 2 * 1024 * 1024;
 
 export const RunRow = memo(function RunRow({
   run,
@@ -100,18 +101,22 @@ export const RunRow = memo(function RunRow({
   useEffect(() => {
     if (!tailEligible || !transport.tailRunLog) return;
     let cancelled = false;
+    let polling = false;
     let offset = 0;
     setLiveLog("");
     const poll = async () => {
-      if (cancelled) return;
+      if (cancelled || polling) return;
+      polling = true;
       try {
         const chunk = await transport.tailRunLog!(run.id, offset);
         if (!cancelled && chunk.content) {
-          setLiveLog((prev) => prev + chunk.content);
+          setLiveLog((prev) => (prev + chunk.content).slice(-MAX_LIVE_LOG_CHARS));
         }
         if (!cancelled) offset = chunk.offset;
       } catch (e) {
         console.warn("tail_run_log failed:", e);
+      } finally {
+        polling = false;
       }
     };
     poll();

@@ -62,7 +62,7 @@ mod tests {
         crate::tmux::new_session_with_placeholder(base).unwrap();
         let pane = crate::tmux::create_window_with_cwd(base, "agent", None, &[]).unwrap();
         let window = crate::tmux::display_pane_window_id(&pane).unwrap();
-        let (tx, _rx) = std::sync::mpsc::channel();
+        let (tx, _rx) = std::sync::mpsc::sync_channel(64);
         manager
             .spawn(
                 &pane,

@@ -3,6 +3,10 @@ use tauri::State;
 use crate::history::RunRecord;
 use crate::AppState;
 
+pub(crate) const MAX_DETAIL_OUTPUT_CHARS: usize = 2 * 1024 * 1024;
+const MAX_LOG_CHUNK_BYTES: u64 = 256 * 1024;
+const MAX_INITIAL_LOG_BYTES: u64 = 2 * 1024 * 1024;
+
 #[tauri::command]
 pub fn get_history(state: State<AppState>) -> Result<Vec<RunRecord>, String> {
     let history = state.history.lock();
@@ -12,7 +16,7 @@ pub fn get_history(state: State<AppState>) -> Result<Vec<RunRecord>, String> {
 #[tauri::command]
 pub fn get_run_detail(state: State<AppState>, id: String) -> Result<Option<RunRecord>, String> {
     let history = state.history.lock();
-    let mut record = match history.get_by_id(&id)? {
+    let mut record = match history.get_by_id_bounded(&id, MAX_DETAIL_OUTPUT_CHARS)? {
         Some(r) => r,
         None => return Ok(None),
     };
@@ -22,7 +26,7 @@ pub fn get_run_detail(state: State<AppState>, id: String) -> Result<Option<RunRe
     // streaming logs), pull the content from the on-disk log file if present.
     if record.stdout.is_empty() && record.stderr.is_empty() {
         if let Some(ref path) = record.log_path {
-            if let Ok(content) = std::fs::read_to_string(path) {
+            if let Ok(content) = read_file_tail(path, MAX_INITIAL_LOG_BYTES) {
                 record.stdout = content;
             }
         }
@@ -41,10 +45,7 @@ pub fn tail_run_log(
 ) -> Result<TailChunk, String> {
     let log_path = {
         let h = state.history.lock();
-        let rec = h
-            .get_by_id(&run_id)?
-            .ok_or_else(|| format!("Run '{}' not found", run_id))?;
-        rec.log_path
+        h.get_log_path(&run_id)?
     };
     let Some(path) = log_path else {
         return Ok(TailChunk {
@@ -59,8 +60,14 @@ pub fn tail_run_log(
         });
     };
     let size = metadata.len();
-    // File rotated/truncated: start over from 0.
-    let start = if offset > size { 0 } else { offset };
+    // Start a new viewer near the end of a large file. If the file rotated,
+    // use the same bounded initial window instead of rereading it in full.
+    let initial_start = size.saturating_sub(MAX_INITIAL_LOG_BYTES);
+    let start = if offset == 0 || offset > size {
+        initial_start
+    } else {
+        offset
+    };
     if start >= size {
         return Ok(TailChunk {
             content: String::new(),
@@ -72,12 +79,14 @@ pub fn tail_run_log(
         std::fs::File::open(&path).map_err(|e| format!("Failed to open log file: {}", e))?;
     file.seek(SeekFrom::Start(start))
         .map_err(|e| format!("Failed to seek log file: {}", e))?;
-    let mut buf = Vec::with_capacity((size - start) as usize);
-    file.read_to_end(&mut buf)
+    let bytes_to_read = (size - start).min(MAX_LOG_CHUNK_BYTES);
+    let mut buf = Vec::with_capacity(bytes_to_read as usize);
+    file.take(bytes_to_read)
+        .read_to_end(&mut buf)
         .map_err(|e| format!("Failed to read log file: {}", e))?;
     Ok(TailChunk {
         content: String::from_utf8_lossy(&buf).into_owned(),
-        offset: size,
+        offset: start + buf.len() as u64,
     })
 }
 
@@ -87,10 +96,22 @@ pub struct TailChunk {
     pub offset: u64,
 }
 
+pub(crate) fn read_file_tail(path: &str, max_bytes: u64) -> Result<String, std::io::Error> {
+    use std::io::{Read, Seek, SeekFrom};
+
+    let mut file = std::fs::File::open(path)?;
+    let size = file.metadata()?.len();
+    let start = size.saturating_sub(max_bytes);
+    file.seek(SeekFrom::Start(start))?;
+    let mut buf = Vec::with_capacity((size - start) as usize);
+    file.read_to_end(&mut buf)?;
+    Ok(String::from_utf8_lossy(&buf).into_owned())
+}
+
 #[tauri::command]
 pub fn get_job_runs(state: State<AppState>, job_id: String) -> Result<Vec<RunRecord>, String> {
     let history = state.history.lock();
-    history.get_by_job_id(&job_id, 10)
+    history.get_by_job_id_summaries(&job_id, 10)
 }
 
 #[tauri::command]
@@ -98,7 +119,7 @@ pub fn open_run_log(state: State<AppState>, run_id: String) -> Result<(), String
     let record = {
         let history = state.history.lock();
         history
-            .get_by_id(&run_id)?
+            .get_by_id_bounded(&run_id, MAX_DETAIL_OUTPUT_CHARS)?
             .ok_or_else(|| format!("Run '{}' not found", run_id))?
     };
 

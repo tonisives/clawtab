@@ -46,12 +46,16 @@ pub async fn get_running_job_logs(
         JobStatus::Running { run_id, .. } => {
             let log_path = {
                 let h = state.history.lock();
-                h.get_by_id(&run_id)?.and_then(|r| r.log_path)
+                h.get_log_path(&run_id)?
             };
             let Some(path) = log_path else {
                 return Ok(String::new());
             };
-            Ok(std::fs::read_to_string(&path).unwrap_or_default())
+            Ok(super::history::read_file_tail(
+                &path,
+                super::history::MAX_DETAIL_OUTPUT_CHARS as u64,
+            )
+            .unwrap_or_default())
         }
         _ => Err("Job is not running".to_string()),
     }

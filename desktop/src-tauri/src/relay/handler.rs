@@ -722,7 +722,7 @@ fn handle_subscribe_pty(
     relay: &Arc<Mutex<Option<RelayHandle>>>,
 ) -> DesktopMessage {
     let relay_for_pty = Arc::clone(relay);
-    let (tx, rx) = std::sync::mpsc::channel::<(String, Vec<u8>)>();
+    let (tx, rx) = std::sync::mpsc::sync_channel::<(String, Vec<u8>)>(64);
     let (cols, rows) = sanitize_pty_size(cols, rows).unwrap_or((80, 24));
     let result = pty_manager.lock().spawn(
         &pane_id,
@@ -1058,7 +1058,7 @@ fn get_run_history(
     history: &Arc<Mutex<HistoryStore>>,
 ) -> Vec<clawtab_protocol::RunRecord> {
     let h = history.lock();
-    match h.get_by_job_id(name, limit as usize) {
+    match h.get_by_job_id_summaries(name, limit as usize) {
         Ok(runs) => runs
             .into_iter()
             .map(|r| clawtab_protocol::RunRecord {
@@ -1376,7 +1376,7 @@ fn get_run_detail_full(
     history: &Arc<Mutex<HistoryStore>>,
 ) -> Option<clawtab_protocol::RunDetail> {
     let h = history.lock();
-    match h.get_by_id(run_id) {
+    match h.get_by_id_bounded(run_id, 2 * 1024 * 1024) {
         Ok(Some(r)) => Some(clawtab_protocol::RunDetail {
             id: r.id,
             job_id: r.job_id,

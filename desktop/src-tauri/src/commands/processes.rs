@@ -230,7 +230,11 @@ fn collect_history_panes(state: &State<'_, AppState>) -> HashMap<String, PaneJob
             })
             .collect()
     };
-    let recent = state.history.lock().get_recent(500).unwrap_or_default();
+    let recent = state
+        .history
+        .lock()
+        .get_recent_pane_history(500)
+        .unwrap_or_default();
     let mut panes = HashMap::new();
     for run in recent {
         let Some(pane_id) = run.pane_id else {

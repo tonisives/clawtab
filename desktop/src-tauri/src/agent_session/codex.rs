@@ -1,6 +1,6 @@
 use super::common::{
-    find_child_process, format_local_timestamp, normalize_optional_owned, normalize_optional_str,
-    normalize_unix_timestamp_secs,
+    find_child_process, format_local_timestamp, insert_bounded, normalize_optional_owned,
+    normalize_optional_str, normalize_unix_timestamp_secs, SESSION_CACHE_MAX_ENTRIES,
 };
 use super::{ProcessSnapshot, SessionInfo};
 use parking_lot::Mutex;
@@ -196,12 +196,14 @@ fn latest_codex_sqlite(prefix: &str) -> Option<PathBuf> {
 
     {
         let mut cache = sqlite_path_cache().lock();
-        cache.insert(
+        insert_bounded(
+            &mut cache,
             prefix.to_string(),
             CachedSqlitePath {
                 checked_at: Instant::now(),
                 path: path.clone(),
             },
+            SESSION_CACHE_MAX_ENTRIES,
         );
     }
     path
@@ -256,13 +258,15 @@ fn cached_codex_thread_id_by_pid(pid: &str, process_start_epoch: Option<i64>) ->
     }
 
     let thread_id = find_codex_thread_id_by_pid(pid, process_start_epoch);
-    cache.insert(
+    insert_bounded(
+        &mut cache,
         pid.to_string(),
         CachedThreadId {
             checked_at: Instant::now(),
             process_start_epoch,
             thread_id: thread_id.clone(),
         },
+        SESSION_CACHE_MAX_ENTRIES,
     );
     thread_id
 }
@@ -325,19 +329,26 @@ fn read_codex_last_query(thread_id: &str) -> Option<String> {
             .get("text")
             .and_then(|v| v.as_str())
             .and_then(normalize_optional_str);
-        last_by_thread_id.insert(session_id.to_string(), text);
+        insert_bounded(
+            &mut last_by_thread_id,
+            session_id.to_string(),
+            text,
+            SESSION_CACHE_MAX_ENTRIES,
+        );
     }
 
     let result = last_by_thread_id.get(thread_id).cloned().flatten();
     {
         let mut cache = history_cache().lock();
-        cache.insert(
+        insert_bounded(
+            &mut cache,
             codex_dir().join("history.jsonl"),
             CachedHistory {
                 modified,
                 len,
                 last_by_thread_id,
             },
+            SESSION_CACHE_MAX_ENTRIES,
         );
     }
     result
@@ -511,7 +522,12 @@ fn read_codex_rollout(path: &PathBuf, include_messages: bool) -> CachedRollout {
     };
     {
         let mut cache = rollout_cache().lock();
-        cache.insert(path.clone(), cached.clone());
+        insert_bounded(
+            &mut cache,
+            path.clone(),
+            cached.clone(),
+            SESSION_CACHE_MAX_ENTRIES,
+        );
     }
     cached
 }

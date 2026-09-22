@@ -12,6 +12,8 @@ use super::super::cache::RecentPaneCache;
 use super::super::emit::{PTY_EMIT_BATCH_MS, PTY_EMIT_MAX_BYTES};
 use super::super::viewer::OutputSink;
 
+const PTY_READ_QUEUE_CHUNKS: usize = 64;
+
 /// Spawn the two-thread batched read+emit loop that drains the PTY reader and
 /// forwards output to the sink in batched chunks. `alive_flag` flips to false
 /// when the reader exits so callers can detect a dead viewer.
@@ -28,7 +30,10 @@ pub(super) fn spawn_reader_thread(
     let stop_clone = Arc::clone(&stop);
 
     thread::spawn(move || {
-        let (output_tx, output_rx) = mpsc::channel::<Vec<u8>>();
+        // Bound unread PTY data to roughly 512 KiB. If event emission or relay
+        // forwarding falls behind, the read pump applies backpressure instead
+        // of retaining an unlimited output queue.
+        let (output_tx, output_rx) = mpsc::sync_channel::<Vec<u8>>(PTY_READ_QUEUE_CHUNKS);
         spawn_read_pump(reader, Arc::clone(&stop_clone), output_tx);
         run_emit_loop(EmitLoop {
             output_rx,
@@ -57,7 +62,7 @@ struct EmitLoop {
 fn spawn_read_pump(
     mut reader: Box<dyn Read + Send>,
     stop: Arc<AtomicBool>,
-    output_tx: mpsc::Sender<Vec<u8>>,
+    output_tx: mpsc::SyncSender<Vec<u8>>,
 ) {
     thread::spawn(move || {
         let mut buf = [0u8; 8192];

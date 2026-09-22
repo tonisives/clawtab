@@ -1,4 +1,20 @@
 use super::ProcessSnapshot;
+use std::collections::HashMap;
+use std::hash::Hash;
+
+pub(super) const SESSION_CACHE_MAX_ENTRIES: usize = 256;
+
+pub(super) fn insert_bounded<K, V>(cache: &mut HashMap<K, V>, key: K, value: V, max: usize)
+where
+    K: Clone + Eq + Hash,
+{
+    if cache.len() >= max && !cache.contains_key(&key) {
+        if let Some(entry) = cache.keys().next().cloned() {
+            cache.remove(&entry);
+        }
+    }
+    cache.insert(key, value);
+}
 
 pub(super) fn normalize_optional_owned(value: String) -> Option<String> {
     normalize_optional_str(value.as_str())

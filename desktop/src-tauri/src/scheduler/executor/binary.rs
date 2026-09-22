@@ -2,13 +2,15 @@ use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use tokio::io::{AsyncBufReadExt, AsyncRead};
+use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::Command;
 use tokio::task::JoinHandle;
 
 use crate::config::jobs::Job;
 use crate::config::settings::AppSettings;
 use crate::secrets::SecretsManager;
+
+const MAX_CAPTURED_OUTPUT_BYTES: usize = 1024 * 1024;
 
 pub(super) async fn execute_binary_job(
     job: &Job,
@@ -160,8 +162,8 @@ fn build_command(
 
 /// Open the streaming log file in truncate+write mode. Returns None and logs
 /// a warning on failure so a missing log doesn't fail the whole run.
-/// Writers from the two reader tasks share an Arc<Mutex<File>> so interleaving
-/// stays line-coherent.
+/// Writers from the two reader tasks share an Arc<Mutex<File>> so chunks do not
+/// interleave while they are written.
 fn open_stream_log(path: Option<&std::path::Path>) -> Option<Arc<Mutex<std::fs::File>>> {
     let p = path?;
     match std::fs::OpenOptions::new()
@@ -178,10 +180,10 @@ fn open_stream_log(path: Option<&std::path::Path>) -> Option<Arc<Mutex<std::fs::
     }
 }
 
-/// Read `pipe` line-by-line; append each line to `buf` (and to `file` if open)
-/// until EOF. Shared by the stdout and stderr readers.
+/// Stream `pipe` in fixed chunks. The complete stream goes to disk while only
+/// a bounded tail remains in memory for the history record.
 fn stream_to_buf<R>(
-    pipe: R,
+    mut pipe: R,
     buf: Arc<Mutex<String>>,
     file: Option<Arc<Mutex<std::fs::File>>>,
 ) -> JoinHandle<()>
@@ -189,26 +191,50 @@ where
     R: AsyncRead + Unpin + Send + 'static,
 {
     tokio::spawn(async move {
-        let mut reader = tokio::io::BufReader::new(pipe).lines();
-        while let Ok(Some(line)) = reader.next_line().await {
-            append_line(&buf, file.as_deref(), &line);
+        let mut chunk = [0_u8; 8192];
+        loop {
+            match pipe.read(&mut chunk).await {
+                Ok(0) | Err(_) => break,
+                Ok(read) => append_chunk(&buf, file.as_deref(), &chunk[..read]),
+            }
         }
     })
 }
 
-/// Append a line to the in-memory buffer and (if open) to the shared log file.
-/// One lock per line on each side keeps stdout/stderr writes from tearing.
-fn append_line(buf: &Mutex<String>, file: Option<&Mutex<std::fs::File>>, line: &str) {
+fn append_chunk(buf: &Mutex<String>, file: Option<&Mutex<std::fs::File>>, chunk: &[u8]) {
     {
         let mut b = buf.lock();
-        b.push_str(line);
-        b.push('\n');
+        b.push_str(&String::from_utf8_lossy(chunk));
+        if b.len() > MAX_CAPTURED_OUTPUT_BYTES {
+            let mut remove = b.len() - MAX_CAPTURED_OUTPUT_BYTES;
+            while !b.is_char_boundary(remove) {
+                remove += 1;
+            }
+            b.drain(..remove);
+        }
     }
     if let Some(f) = file {
         use std::io::Write;
         let mut g = f.lock();
-        let _ = g.write_all(line.as_bytes());
-        let _ = g.write_all(b"\n");
+        let _ = g.write_all(chunk);
         let _ = g.flush();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{append_chunk, MAX_CAPTURED_OUTPUT_BYTES};
+    use parking_lot::Mutex;
+
+    #[test]
+    fn captured_output_keeps_a_bounded_tail() {
+        let output = Mutex::new(String::new());
+        let prefix = vec![b'a'; MAX_CAPTURED_OUTPUT_BYTES];
+        append_chunk(&output, None, &prefix);
+        append_chunk(&output, None, b"tail");
+
+        let captured = output.lock();
+        assert_eq!(captured.len(), MAX_CAPTURED_OUTPUT_BYTES);
+        assert!(captured.ends_with("tail"));
     }
 }
