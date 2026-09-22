@@ -1871,17 +1871,15 @@ async fn choose_codex_option(
             crate::tmux::send_key_to_pane(pane_id, "Enter")?;
             return Ok(());
         }
-        if let Some(shortcut) = codex_option_shortcut(&screen, &target_lower) {
-            crate::tmux::send_key_to_pane(pane_id, &shortcut)?;
-            return Ok(());
-        }
         break;
     }
 
-    // Very small panes can hide the requested option. Retain directional
-    // navigation as a compatibility fallback, but use numeric shortcuts for
-    // the normal case so the menu needs only one capture.
-    for _ in 0..32 {
+    // Navigate by the selected label instead of the displayed ordinal. Codex
+    // versions differ in whether number keys activate picker entries, and
+    // model additions can reorder those entries while an older CLI process is
+    // still running. Following the selection marker works across both picker
+    // variants and remains stable when models are added or reordered.
+    for _ in 0..128 {
         if cancel.is_cancelled() {
             return Err("Plugin cancelled".into());
         }
@@ -1904,22 +1902,6 @@ async fn choose_codex_option(
 
 fn codex_menu_ready(screen: &str) -> bool {
     codex_active_model_dialog(screen)
-}
-
-fn codex_option_shortcut(screen: &str, target: &str) -> Option<String> {
-    screen.lines().rev().find_map(|line| {
-        let trimmed = line.trim_start();
-        let option = ["›", ">"]
-            .into_iter()
-            .find_map(|marker| trimmed.strip_prefix(marker))
-            .unwrap_or(trimmed)
-            .trim_start();
-        let (ordinal, label) = option.split_once('.')?;
-        if ordinal.len() != 1 || !matches!(ordinal.as_bytes().first(), Some(b'1'..=b'9')) {
-            return None;
-        }
-        option_text_matches(label.trim_start(), target).then(|| ordinal.to_string())
-    })
 }
 
 fn codex_active_reasoning_menu(screen: &str) -> bool {
@@ -2436,8 +2418,8 @@ mod tests {
 
     use super::{
         baseline_from_session, codex_active_model_dialog, codex_composer_draft,
-        codex_draft_to_stash, codex_option_shortcut, codex_vim_mode, live_model_selection,
-        load_plugin, redact_internal_values, selected_option_matches, strip_ansi, valid_plugin_id,
+        codex_draft_to_stash, codex_vim_mode, live_model_selection, load_plugin,
+        redact_internal_values, selected_option_matches, strip_ansi, valid_plugin_id,
         valid_version_pattern, version_matches, BaselineState, CodexVimMode, LiveModelSelection,
     };
 
@@ -2530,28 +2512,6 @@ actions:
             "  1. gpt-5.6-luna",
             "gpt-5.6-luna"
         ));
-    }
-
-    #[test]
-    fn codex_option_shortcut_finds_model_and_effort_ordinals() {
-        let model_menu = "  2. gpt-5.6-sol (current)\n  4. gpt-5.6-luna  Fast model";
-        let effort_menu = "  4. Extra high\n  5. More reasoning…";
-
-        assert_eq!(
-            codex_option_shortcut(model_menu, "gpt-5.6-luna").as_deref(),
-            Some("4")
-        );
-        assert_eq!(
-            codex_option_shortcut(effort_menu, "more reasoning").as_deref(),
-            Some("5")
-        );
-    }
-
-    #[test]
-    fn codex_option_shortcut_rejects_partial_labels_and_multi_digit_options() {
-        let menu = "  1. gpt-5.6-lunatic\n  10. gpt-5.6-luna";
-
-        assert_eq!(codex_option_shortcut(menu, "gpt-5.6-luna"), None);
     }
 
     #[test]
