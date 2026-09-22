@@ -5,7 +5,7 @@
   "scripts": {
     "start": "expo start",
     "android": "expo run:android",
-    "ios": "expo run:ios",
+    "ios": "expo prebuild --platform ios --no-install && expo run:ios",
     "web": "expo start --web --port 1942",
     "ota:publish": "pnpm dlx eoas@2.3.23 publish --branch production --channel production --nonInteractive --packageRunner pnpm",
     "ota:publish:android": "pnpm dlx eoas@2.3.23 publish --branch production --channel production --nonInteractive --platform android --packageRunner pnpm",
