@@ -2,7 +2,7 @@
   "expo": {
     "name": "ClawTab",
     "slug": "clawtab",
-    "version": "1.3.0",
+    "version": "1.3.1",
     "runtimeVersion": {
       "policy": "appVersion"
     },
@@ -23,7 +23,7 @@
       "supportsTablet": true,
       "deploymentTarget": "16.4",
       "bundleIdentifier": "cc.clawtab",
-      "buildNumber": "2",
+      "buildNumber": "3",
       "usesAppleSignIn": true,
       "infoPlist": {
         "UISupportedInterfaceOrientations": [
@@ -53,6 +53,14 @@
       "./plugins/with-native-answer",
       "./plugins/with-ios-simulator-keychain",
       "expo-router",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "enableSceneSupport": true
+          }
+        }
+      ],
       [
         "expo-splash-screen",
         {

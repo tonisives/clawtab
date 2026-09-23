@@ -2,8 +2,6 @@ packages:
   - desktop
   - remote
   - shared
-overrides:
-  expo-modules-jsi: 56.0.13
 allowBuilds:
   dtrace-provider: false
   esbuild: true
