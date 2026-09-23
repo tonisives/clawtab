@@ -7,6 +7,7 @@ use clawtab_lib::agent_plugins::{PluginHostCommand, PluginHostRequest, PluginHos
 use clawtab_lib::config::jobs::JobStatus;
 use clawtab_lib::ipc::{self, DesktopIpcCommand, IpcCommand, IpcResponse, PaneDirection};
 
+#[path = "ctl/ctl_create.rs"]
 mod ctl_create;
 
 /// Routes a parsed command to either the daemon or the desktop-app socket.
