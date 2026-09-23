@@ -285,6 +285,7 @@ fn write_cli_help(out: &mut String) {
     out.push_str("`cwtctl` is available for managing ClawTab jobs:\n\n");
     out.push_str("```\n");
     out.push_str("cwtctl jobs list      # List configured jobs grouped by group\n");
+    out.push_str("cwtctl jobs create    # Schedule a cron or one-time agent job\n");
     out.push_str("cwtctl jobs status    # Show status of all jobs\n");
     out.push_str("cwtctl jobs run <group>/<name> # Run a job and attach/follow output\n");
     out.push_str("cwtctl jobs pause <group>/<name> # Pause a running job\n");
@@ -386,6 +387,7 @@ pub fn build_agent_job(
         args: Vec::new(),
         cron: String::new(),
         schedule: None,
+        run_once: None,
         secret_keys: Vec::new(),
         env: std::collections::HashMap::new(),
         work_dir: Some(work_dir),

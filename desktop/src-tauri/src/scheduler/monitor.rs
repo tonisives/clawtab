@@ -27,6 +27,7 @@ pub struct MonitorParams {
     pub slug: String,
     pub agent_group: Option<String>,
     pub agent_prompt_path: Option<std::path::PathBuf>,
+    pub retired_one_shot: bool,
     pub kill_on_end: bool,
     pub telegram: Option<TelegramStream>,
     pub telegram_notify: TelegramNotify,
@@ -109,6 +110,7 @@ pub async fn monitor_pane(params: MonitorParams) {
         &params.run_id,
         &full_output,
         params.agent_group.as_deref(),
+        params.retired_one_shot,
     ) {
         let h = params.history.lock();
         let _ = h.update_log_path(&params.run_id, &path.to_string_lossy());
@@ -587,10 +589,12 @@ pub(crate) fn save_log_file(
     run_id: &str,
     content: &str,
     agent_group: Option<&str>,
+    retired_one_shot: bool,
 ) -> Option<std::path::PathBuf> {
     let dir = match crate::config::config_dir() {
         Some(d) => match agent_group {
             Some(group) => crate::agent::agent_logs_dir(group),
+            None if retired_one_shot => d.join("run-logs").join(slug),
             None => d.join("jobs").join(slug).join("logs"),
         },
         None => return None,

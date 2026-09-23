@@ -110,7 +110,7 @@ All keys can be customized through tmux options.
 
 ## Control from the CLI
 
-`cwtctl` talks directly to the daemon, so the desktop app does not need to be open.
+`cwtctl` works without the desktop app. Job control talks to the daemon; job creation writes local config and also works while the daemon is offline.
 
 ```sh
 cwtctl daemon status
@@ -123,6 +123,16 @@ cwtctl plugin installed --json
 cwtctl plugin list
 cwtctl plugin <name> run [pane_id] [key=value ...]
 ```
+
+Run `cwtctl jobs create` from a project directory for the interactive form and `nvim` description editor. You can also supply every field on the command line:
+
+```sh
+cwtctl jobs create --name daily-review --cron '0 9 * * *' --description-file review.md
+cwtctl jobs create --name follow-up --at '2026-10-02 09:00' --description 'Check the results'
+cat task.md | cwtctl jobs create --name task --at '2026-10-02T09:00:00+07:00' --description-stdin --keep-config
+```
+
+One-time jobs run when the daemon returns if their scheduled time passed while it was offline. By default, their config is removed after the agent starts, while the pane and run history remain available. `--keep-config` leaves the job disabled after launch.
 
 Agent actions are optional local executables. ClawTab installs none by default.
 Plugin packages are hot-discovered from

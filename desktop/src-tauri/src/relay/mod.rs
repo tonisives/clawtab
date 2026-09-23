@@ -601,6 +601,10 @@ fn job_to_remote(job: &Job) -> RemoteJob {
         enabled: job.enabled,
         cron: job.cron.clone(),
         schedule: job.schedule.clone(),
+        run_once: job.run_once.as_ref().map(|once| clawtab_protocol::RunOnceSchedule {
+            at: once.at.to_rfc3339(),
+            remove_after_start: once.remove_after_start,
+        }),
         group: job.group.clone(),
         slug: job.slug.clone(),
         work_dir,

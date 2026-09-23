@@ -4,7 +4,15 @@ import { formatNextRun } from "./cron";
 export let isJobScheduled = (job: {
   cron: string;
   schedule?: CalendarSchedule | null;
-}): boolean => Boolean(job.cron || job.schedule);
+  run_once?: { at: string } | null;
+}): boolean => Boolean(job.cron || job.schedule || job.run_once);
+
+export let describeRunOnce = (schedule: { at: string }): string => {
+  let date = new Date(schedule.at);
+  return Number.isNaN(date.getTime())
+    ? "Invalid one-time schedule"
+    : `Once on ${date.toLocaleString()}`;
+};
 
 let parseLocalStart = (value: string): Date | null => {
   let match = value.match(

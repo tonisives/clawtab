@@ -92,6 +92,7 @@ _cwtctl() {
               'resume:Resume a paused job'
               'restart:Restart a job'
               'status:Show job statuses'
+              'create:Create a scheduled agent job'
             )
             _describe -t subcmd 'jobs subcommand' sub
           elif (( CURRENT == 3 )) && [[ $words[2] == run || $words[2] == pause || $words[2] == resume || $words[2] == restart ]]; then

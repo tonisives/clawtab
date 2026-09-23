@@ -17,10 +17,10 @@ export function useScheduleState({ form, setForm, isNew }: UseScheduleStateParam
   const cron = form.cron ?? "";
   const initWeekly = !isNew ? parseCronToWeekly(cron) : null;
   const [manualOnly, setManualOnly] = useState(
-    !isNew ? cron === "" && !form.schedule : false,
+    !isNew ? cron === "" && !form.schedule && !form.run_once : false,
   );
-  const [scheduleMode, setScheduleMode] = useState<"weekly" | "calendar" | "cron">(
-    form.schedule ? "calendar" : !isNew && initWeekly === null && cron ? "cron" : "weekly",
+  const [scheduleMode, setScheduleMode] = useState<"weekly" | "calendar" | "cron" | "once">(
+    form.run_once ? "once" : form.schedule ? "calendar" : !isNew && initWeekly === null && cron ? "cron" : "weekly",
   );
   const [weeklyDays, setWeeklyDays] = useState<string[]>(initWeekly?.days ?? ["Mon"]);
   const [weeklyTimes, setWeeklyTimes] = useState<string[]>(initWeekly?.times ?? ["09:00"]);
@@ -36,49 +36,53 @@ export function useScheduleState({ form, setForm, isNew }: UseScheduleStateParam
   useEffect(() => {
     if (hasParams && !manualOnly) {
       setManualOnly(true);
-      setForm((prev) => ({ ...prev, cron: "", schedule: null }));
+      setForm((prev) => ({ ...prev, cron: "", schedule: null, run_once: null }));
     }
   }, [hasParams]);
 
   const selectManual = (manual: boolean) => {
     setManualOnly(manual);
     if (manual) {
-      setForm((prev) => ({ ...prev, cron: "", schedule: null }));
+      setForm((prev) => ({ ...prev, cron: "", schedule: null, run_once: null }));
       return;
     }
-    if (scheduleMode === "calendar") {
+    if (scheduleMode === "once") {
+      setForm((prev) => ({ ...prev, cron: "", schedule: null, run_once: prev.run_once ?? { at: new Date(Date.now() + 3600000).toISOString(), remove_after_start: true } }));
+    } else if (scheduleMode === "calendar") {
       setForm((prev) => ({
         ...prev,
         cron: "",
-        schedule: buildCalendarSchedule(calendarStart, calendarEvery),
+        schedule: buildCalendarSchedule(calendarStart, calendarEvery), run_once: null,
       }));
     } else if (scheduleMode === "weekly") {
       setForm((prev) => ({
         ...prev,
         cron: buildWeeklyCron(weeklyDays, weeklyTimes),
-        schedule: null,
+        schedule: null, run_once: null,
       }));
     } else {
-      setForm((prev) => ({ ...prev, cron: "0 0 * * *", schedule: null }));
+      setForm((prev) => ({ ...prev, cron: "0 0 * * *", schedule: null, run_once: null }));
     }
   };
 
-  const selectScheduleMode = (mode: "weekly" | "calendar" | "cron") => {
+  const selectScheduleMode = (mode: "weekly" | "calendar" | "cron" | "once") => {
     setScheduleMode(mode);
-    if (mode === "calendar") {
+    if (mode === "once") {
+      setForm((prev) => ({ ...prev, cron: "", schedule: null, run_once: prev.run_once ?? { at: new Date(Date.now() + 3600000).toISOString(), remove_after_start: true } }));
+    } else if (mode === "calendar") {
       setForm((prev) => ({
         ...prev,
         cron: "",
-        schedule: buildCalendarSchedule(calendarStart, calendarEvery),
+        schedule: buildCalendarSchedule(calendarStart, calendarEvery), run_once: null,
       }));
     } else if (mode === "weekly") {
       setForm((prev) => ({
         ...prev,
         cron: buildWeeklyCron(weeklyDays, weeklyTimes),
-        schedule: null,
+        schedule: null, run_once: null,
       }));
     } else {
-      setForm((prev) => ({ ...prev, cron: "0 0 * * *", schedule: null }));
+      setForm((prev) => ({ ...prev, cron: "0 0 * * *", schedule: null, run_once: null }));
     }
   };
 

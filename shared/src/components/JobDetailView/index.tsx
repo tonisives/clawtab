@@ -30,6 +30,7 @@ import { nextCronDate, formatNextRun, cronTooltip } from "../../util/cron";
 import {
   calendarScheduleTooltip,
   describeCalendarSchedule,
+  describeRunOnce,
   isJobScheduled,
   nextCalendarDate,
 } from "../../util/schedule";
@@ -527,7 +528,11 @@ export function JobDetailView({
               <span style={{ fontSize: 11, lineHeight: 1, letterSpacing: 1 }}>⋮⋮</span>
             </div>
           ) : null}
-          {job.schedule ? (
+          {job.run_once ? (
+            <View style={styles.infoPill}>
+              <Text style={styles.cronText}>{describeRunOnce(job.run_once)}</Text>
+            </View>
+          ) : job.schedule ? (
             <View style={styles.infoPill} {...(isWeb ? { title: calendarScheduleTooltip(job.schedule) } as any : {})}>
               <Text style={styles.cronText}>{describeCalendarSchedule(job.schedule)}</Text>
             </View>
@@ -546,7 +551,9 @@ export function JobDetailView({
             </View>
           ) : null}
           {scheduled && job.enabled ? (() => {
-            const next = job.schedule
+            const next = job.run_once
+              ? new Date(job.run_once.at)
+              : job.schedule
               ? nextCalendarDate(job.schedule)
               : nextCronDate(job.cron);
             return next ? (

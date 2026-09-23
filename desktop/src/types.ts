@@ -26,6 +26,7 @@ export interface Job {
   args: string[];
   cron: string;
   schedule?: CalendarSchedule | null;
+  run_once?: { at: string; remove_after_start: boolean } | null;
   secret_keys: string[];
   env: Record<string, string>;
   work_dir: string | null;

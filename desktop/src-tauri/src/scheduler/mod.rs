@@ -3,6 +3,7 @@ pub mod monitor;
 pub mod reattach;
 
 use parking_lot::Mutex;
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use chrono::{Duration, Local, NaiveDateTime};
@@ -20,12 +21,14 @@ pub async fn start(
     log::info!("Scheduler started");
     emit_missed_cron_jobs(&jobs_config, &ctx, event_sink.as_ref());
     log_startup_schedules(&jobs_config);
+    let launching_once = Arc::new(Mutex::new(HashSet::new()));
+    run_due_one_shots(&jobs_config, &ctx, &launching_once, Local::now());
 
     let mut last_check = Local::now();
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(30)).await;
         let now = Local::now();
-        run_due_jobs(&jobs_config, &ctx, last_check, now);
+        run_due_jobs(&jobs_config, &ctx, &launching_once, last_check, now);
         cleanup_stale_running(&jobs_config, &ctx, event_sink.as_ref());
         last_check = now;
     }
@@ -42,7 +45,7 @@ fn emit_missed_cron_jobs(
     let mut missed_jobs: Vec<String> = Vec::new();
 
     for job in &jobs {
-        if !job.enabled || !job_is_scheduled(job) {
+        if !job.enabled || !job_is_scheduled(job) || job.run_once.is_some() {
             continue;
         }
         let since = last_run_since(&ctx.history, &job.slug, lookback_limit);
@@ -103,7 +106,9 @@ fn log_startup_schedules(jobs_config: &Arc<Mutex<JobsConfig>>) {
         scheduled_jobs.len()
     );
     for job in &scheduled_jobs {
-        if let Some(schedule) = &job.schedule {
+        if let Some(run_once) = &job.run_once {
+            log::trace!("  '{}' one-time schedule at={}", job.name, run_once.at);
+        } else if let Some(schedule) = &job.schedule {
             match next_calendar_occurrence(schedule, Local::now().naive_local()) {
                 Ok(next) => {
                     log::trace!(
@@ -138,12 +143,19 @@ fn log_startup_schedules(jobs_config: &Arc<Mutex<JobsConfig>>) {
 fn run_due_jobs(
     jobs_config: &Arc<Mutex<JobsConfig>>,
     ctx: &JobContext,
+    launching_once: &Arc<Mutex<HashSet<String>>>,
     last_check: chrono::DateTime<Local>,
     now: chrono::DateTime<Local>,
 ) {
     let jobs = jobs_config.lock().jobs.clone();
     for job in &jobs {
         if !job.enabled || !job_is_scheduled(job) {
+            continue;
+        }
+        if job.run_once.is_some() {
+            if one_shot_due(job, ctx, now) {
+                spawn_one_shot(job.clone(), jobs_config.clone(), ctx.clone(), launching_once.clone());
+            }
             continue;
         }
         match job_due_between(job, last_check, now) {
@@ -164,6 +176,60 @@ fn run_due_jobs(
     }
 }
 
+fn run_due_one_shots(
+    jobs_config: &Arc<Mutex<JobsConfig>>,
+    ctx: &JobContext,
+    launching_once: &Arc<Mutex<HashSet<String>>>,
+    now: chrono::DateTime<Local>,
+) {
+    let jobs = jobs_config.lock().jobs.clone();
+    for job in jobs.into_iter().filter(|job| job.enabled && one_shot_due(job, ctx, now)) {
+        spawn_one_shot(job, jobs_config.clone(), ctx.clone(), launching_once.clone());
+    }
+}
+
+fn one_shot_due(job: &crate::config::jobs::Job, ctx: &JobContext, now: chrono::DateTime<Local>) -> bool {
+    let Some(schedule) = &job.run_once else { return false };
+    if schedule.at > now || !job.enabled {
+        return false;
+    }
+    !ctx.history.lock().get_by_job_id(&job.slug, 20).unwrap_or_default().iter()
+        .any(|run| run.trigger == "once" && (run.pane_id.is_some() || (run.finished_at.is_some() && run.exit_code == Some(0))))
+}
+
+fn spawn_one_shot(
+    job: crate::config::jobs::Job,
+    jobs_config: Arc<Mutex<JobsConfig>>,
+    ctx: JobContext,
+    launching_once: Arc<Mutex<HashSet<String>>>,
+) {
+    if !launching_once.lock().insert(job.slug.clone()) {
+        return;
+    }
+    tokio::spawn(async move {
+        let started = executor::execute_job(
+            &job, &ctx, "once", &std::collections::HashMap::new(),
+            executor::ExecuteOpts { use_auto_yes: true, ..Default::default() },
+        ).await;
+        if started {
+            let mut config = jobs_config.lock();
+            let result = if job.run_once.as_ref().is_some_and(|once| once.remove_after_start) {
+                config.delete_job(&job.slug)
+            } else {
+                let mut disabled = job.clone();
+                disabled.enabled = false;
+                config.save_job(&disabled)
+            };
+            if let Err(error) = result {
+                log::error!("Failed to retire one-time job '{}': {}", job.slug, error);
+            } else {
+                *config = JobsConfig::load();
+            }
+        }
+        launching_once.lock().remove(&job.slug);
+    });
+}
+
 fn spawn_scheduled_job(job: crate::config::jobs::Job, ctx: JobContext, trigger: &'static str) {
     tokio::spawn(async move {
         executor::execute_job(
@@ -182,7 +248,7 @@ fn spawn_scheduled_job(job: crate::config::jobs::Job, ctx: JobContext, trigger: 
 }
 
 fn job_is_scheduled(job: &crate::config::jobs::Job) -> bool {
-    job.schedule.is_some() || !job.cron.is_empty()
+    job.run_once.is_some() || job.schedule.is_some() || !job.cron.is_empty()
 }
 
 fn job_due_between(
@@ -190,6 +256,9 @@ fn job_due_between(
     since: chrono::DateTime<Local>,
     now: chrono::DateTime<Local>,
 ) -> Result<bool, String> {
+    if let Some(schedule) = &job.run_once {
+        return Ok(schedule.at > since && schedule.at <= now);
+    }
     if let Some(schedule) = &job.schedule {
         return calendar_due_between(schedule, since.naive_local(), now.naive_local());
     }
@@ -364,7 +433,7 @@ fn translate_dow(dow: &str) -> String {
         .join(",")
 }
 
-pub(crate) fn parse_cron(cron: &str) -> Option<Vec<Schedule>> {
+pub fn parse_cron(cron: &str) -> Option<Vec<Schedule>> {
     let parts: Vec<&str> = cron
         .split('|')
         .map(|s| s.trim())
@@ -383,7 +452,7 @@ pub(crate) fn parse_cron(cron: &str) -> Option<Vec<Schedule>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{calendar_due_between, next_calendar_occurrence};
+    use super::{calendar_due_between, job_due_between, next_calendar_occurrence};
     use chrono::NaiveDateTime;
     use clawtab_protocol::{CalendarRepeat, CalendarRepeatUnit, CalendarSchedule};
 
@@ -399,6 +468,17 @@ mod tests {
                 unit: CalendarRepeatUnit::Week,
             },
         }
+    }
+
+    #[test]
+    fn one_time_schedule_fires_only_across_its_timestamp() {
+        let yaml = "name: review\njob_type: job\nenabled: true\npath: ''\ncron: ''\nrun_once:\n  at: '2026-10-02T09:00:00+07:00'\n  remove_after_start: true\n";
+        let job = serde_yml::from_str(yaml).unwrap();
+        let before = chrono::DateTime::parse_from_rfc3339("2026-10-02T08:59:00+07:00").unwrap().with_timezone(&chrono::Local);
+        let at = chrono::DateTime::parse_from_rfc3339("2026-10-02T09:00:00+07:00").unwrap().with_timezone(&chrono::Local);
+        let after = chrono::DateTime::parse_from_rfc3339("2026-10-02T09:01:00+07:00").unwrap().with_timezone(&chrono::Local);
+        assert!(job_due_between(&job, before, at).unwrap());
+        assert!(!job_due_between(&job, at, after).unwrap());
     }
 
     #[test]

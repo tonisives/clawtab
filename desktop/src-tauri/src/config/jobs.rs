@@ -103,6 +103,8 @@ pub struct Job {
     pub cron: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub schedule: Option<CalendarSchedule>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_once: Option<RunOnceSchedule>,
     #[serde(default)]
     pub secret_keys: Vec<String>,
     #[serde(default)]
@@ -142,6 +144,13 @@ pub struct Job {
     pub added_at: Option<String>,
     #[serde(default = "default_max_history")]
     pub max_history: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RunOnceSchedule {
+    pub at: chrono::DateTime<chrono::FixedOffset>,
+    #[serde(default = "default_true")]
+    pub remove_after_start: bool,
 }
 
 fn default_true() -> bool {
@@ -633,6 +642,9 @@ fn parse_effort(value: &str) -> Option<&'static str> {
 }
 
 fn validate_job_schedule(job: &Job) -> Result<(), String> {
+    if job.run_once.is_some() && (!job.cron.is_empty() || job.schedule.is_some()) {
+        return Err("A one-time job cannot also have a cron or calendar schedule".to_string());
+    }
     let Some(schedule) = &job.schedule else {
         return Ok(());
     };
@@ -1169,6 +1181,20 @@ mod tests {
         assert!(validate_job_schedule(&job)
             .expect_err("mixed schedules should be rejected")
             .contains("both cron and calendar"));
+    }
+
+    #[test]
+    fn one_time_schedule_excludes_recurring_schedules() {
+        let mut job = parse_job(&base_yaml("params: []"));
+        job.run_once = Some(RunOnceSchedule {
+            at: chrono::DateTime::parse_from_rfc3339("2026-10-02T09:00:00+07:00").unwrap(),
+            remove_after_start: true,
+        });
+        assert!(validate_job_schedule(&job).is_err());
+        job.cron.clear();
+        assert!(validate_job_schedule(&job).is_ok());
+        let restored: Job = serde_yml::from_str(&serde_yml::to_string(&job).unwrap()).unwrap();
+        assert_eq!(restored.run_once, job.run_once);
     }
 
     fn test_job(name: &str, group: &str, slug: &str) -> Job {

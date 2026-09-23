@@ -1312,6 +1312,19 @@ fn update_job(
         }
         job.cron = cron.clone();
     }
+    if let Some(schedule) = &update.schedule {
+        job.schedule = schedule.clone();
+    }
+    if let Some(run_once) = &update.run_once {
+        job.run_once = run_once.as_ref().map(|once| {
+            chrono::DateTime::parse_from_rfc3339(&once.at)
+                .map(|at| crate::config::jobs::RunOnceSchedule {
+                    at,
+                    remove_after_start: once.remove_after_start,
+                })
+                .map_err(|error| format!("invalid one-time date: {error}"))
+        }).transpose()?;
+    }
     if let Some(group) = &update.group {
         job.group = if group.trim().is_empty() {
             "default".to_string()

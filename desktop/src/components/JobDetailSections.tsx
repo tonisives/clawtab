@@ -14,6 +14,7 @@ import {
   AgentSelector,
   agentSelectionLabel,
   describeCalendarSchedule,
+  describeRunOnce,
   JobDetailView,
   useJobDetail,
   useLogBuffer,
@@ -206,6 +207,7 @@ function ScheduleDialog({
       await onSave({
         cron: draft.cron,
         schedule: draft.schedule ?? null,
+        run_once: draft.run_once ?? null,
       });
       onCancel();
     } finally {
@@ -254,7 +256,7 @@ function InlineScheduleField({
   onSave: (patch: JobUpdate) => void | Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
-  const label = job.schedule
+  const label = job.run_once ? describeRunOnce(job.run_once) : job.schedule
     ? describeCalendarSchedule(job.schedule)
     : job.cron || "Manual";
 
@@ -711,7 +713,7 @@ export function DesktopDetailSections({
               label="Schedule"
               value={onUpdateJob ? (
                 <InlineScheduleField job={job} onSave={onUpdateJob} />
-              ) : job.schedule ? describeCalendarSchedule(job.schedule) : job.cron || "Manual"}
+              ) : job.run_once ? describeRunOnce(job.run_once) : job.schedule ? describeCalendarSchedule(job.schedule) : job.cron || "Manual"}
             />
             <DetailRow
               label="Group"

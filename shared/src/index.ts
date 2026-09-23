@@ -12,6 +12,7 @@ export type {
   CalendarRepeat,
   CalendarRepeatUnit,
   CalendarSchedule,
+  RunOnceSchedule,
   RunRecord,
   RunDetail,
   TelegramLogMode,
@@ -51,6 +52,7 @@ export { nextCronDate, formatNextRun, describeCron, cronTooltip } from "./util/c
 export {
   nextCalendarDate,
   describeCalendarSchedule,
+  describeRunOnce,
   compactCalendarSchedule,
   calendarScheduleTooltip,
   isJobScheduled,

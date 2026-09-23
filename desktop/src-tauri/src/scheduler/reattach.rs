@@ -28,9 +28,6 @@ pub fn reattach_running_jobs(
         .filter(|j| matches!(j.job_type, JobType::Claude | JobType::Job))
         .map(|j| (j.slug.as_str(), j))
         .collect();
-    if slug_to_job.is_empty() {
-        return;
-    }
     let Some(mut unfinished) = load_unfinished_runs(&ctx.history) else {
         return;
     };
@@ -41,10 +38,18 @@ pub fn reattach_running_jobs(
     let mut reattached = 0;
     let mut seen_panes = HashSet::new();
     for run in &unfinished {
+        if run.trigger == "once" && !slug_to_job.contains_key(run.job_id.as_str()) {
+            let Some(pane_id) = run.pane_id.as_deref() else { continue };
+            if !seen_panes.insert(pane_id.to_string()) { continue; }
+            if reattach_retired_one_shot(run, pane_id, &default_session, ctx) {
+                reattached += 1;
+            }
+            continue;
+        }
         let Some(job) = slug_to_job
             .get(run.job_id.as_str())
             .copied()
-            .filter(|j| j.enabled)
+            .filter(|j| j.enabled || j.run_once.is_some())
         else {
             continue;
         };
@@ -75,6 +80,64 @@ pub fn reattach_running_jobs(
             reattached
         );
         event_sink.emit_jobs_changed();
+    }
+}
+
+fn reattach_retired_one_shot(
+    run: &crate::history::RunRecord,
+    pane_id: &str,
+    default_session: &str,
+    ctx: &JobContext,
+) -> bool {
+    match tmux::pane_process_state(pane_id) {
+        Ok(tmux::PaneProcessState::Running) => {
+            let (group, name) = run.job_id.split_once('/').unwrap_or(("default", &run.job_id));
+            mark_running(&run.job_id, &run.id, &run.started_at, pane_id, default_session, &ctx.job_status);
+            let params = MonitorParams {
+                tmux_session: default_session.to_string(),
+                pane_id: pane_id.to_string(),
+                run_id: run.id.clone(),
+                job_id: name.to_string(),
+                group_name: group.to_string(),
+                slug: run.job_id.clone(),
+                agent_group: None,
+                agent_prompt_path: None,
+                retired_one_shot: true,
+                kill_on_end: false,
+                telegram: None,
+                telegram_notify: Default::default(),
+                notify_target: NotifyTarget::None,
+                history: Arc::clone(&ctx.history),
+                job_status: Arc::clone(&ctx.job_status),
+                notify_on_success: false,
+                relay: Arc::clone(&ctx.relay),
+                notifier: None,
+                is_reattach: true,
+                protected_panes: Arc::clone(&ctx.protected_panes),
+                trigger_id: None,
+                result_file: None,
+                resource_lease: None,
+            };
+            tokio::spawn(super::monitor::monitor_pane(params));
+            true
+        }
+        Ok(state) => {
+            let exit_code = match state {
+                tmux::PaneProcessState::Exited(code) => code,
+                _ => None,
+            };
+            let output = tmux::capture_pane_full(pane_id).unwrap_or_default();
+            let history = ctx.history.lock();
+            let _ = history.update_finished(&run.id, &Utc::now().to_rfc3339(), exit_code, &output, "");
+            if let Some(path) = super::monitor::save_log_file(&run.job_id, &run.id, &output, None, true) {
+                let _ = history.update_log_path(&run.id, &path.to_string_lossy());
+            }
+            false
+        }
+        Err(error) => {
+            log::warn!("Could not inspect retired one-time pane {}: {}", pane_id, error);
+            false
+        }
     }
 }
 
@@ -167,6 +230,7 @@ fn finalize_idle_pane(
             (job.group == "agent")
                 .then(|| crate::agent::agent_group_from_slug(&job.slug))
                 .as_deref(),
+            job.run_once.as_ref().is_some_and(|once| once.remove_after_start),
         ) {
             let _ = h.update_log_path(&run.id, &path.to_string_lossy());
         }
@@ -316,6 +380,7 @@ fn spawn_reattach_monitor(
         slug: job.slug.clone(),
         agent_group: (job.group == "agent").then(|| crate::agent::agent_group_from_slug(&job.slug)),
         agent_prompt_path: (job.group == "agent").then(|| std::path::PathBuf::from(&job.path)),
+        retired_one_shot: job.run_once.as_ref().is_some_and(|once| once.remove_after_start),
         kill_on_end: job.kill_on_end,
         telegram,
         telegram_notify: job.telegram_notify.clone(),

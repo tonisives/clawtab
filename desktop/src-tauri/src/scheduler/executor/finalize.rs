@@ -149,6 +149,7 @@ fn build_monitor_params(
         slug: job.slug.clone(),
         agent_group: (job.group == "agent").then(|| crate::agent::agent_group_from_slug(&job.slug)),
         agent_prompt_path: (job.group == "agent").then(|| std::path::PathBuf::from(&job.path)),
+        retired_one_shot: job.run_once.as_ref().is_some_and(|once| once.remove_after_start),
         kill_on_end: job.kill_on_end,
         telegram,
         telegram_notify: job.telegram_notify.clone(),

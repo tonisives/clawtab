@@ -105,7 +105,7 @@ pub async fn execute_job(
     trigger: &str,
     params: &HashMap<String, String>,
     opts: ExecuteOpts,
-) {
+) -> bool {
     let merged_params = merge_param_defaults(job, params);
     let params: &HashMap<String, String> = merged_params.as_ref().unwrap_or(params);
 
@@ -115,7 +115,7 @@ pub async fn execute_job(
     let resource_lease =
         match validate_admission(job, ctx, trigger_id.as_deref(), policy, opts.resource_lease) {
             Ok(lease) => lease,
-            Err(()) => return,
+            Err(()) => return false,
         };
 
     let run_id = opts
@@ -174,7 +174,7 @@ pub async fn execute_job(
         telegram_config: &telegram_config,
     };
 
-    handle_result(&rc, result, &mut pane_tx, opts.use_auto_yes, resource_lease).await;
+    handle_result(&rc, result, &mut pane_tx, opts.use_auto_yes, resource_lease).await
 }
 
 fn reject_trigger(ctx: &JobContext, trigger_id: &str, message: &str) {
@@ -547,11 +547,12 @@ async fn handle_result(
     pane_tx: &mut Option<tokio::sync::oneshot::Sender<(String, String)>>,
     use_auto_yes: bool,
     resource_lease: Option<crate::resource_policy::ResourceLease>,
-) {
+) -> bool {
     match result {
         Ok((_, _, _, Some(handle))) => {
             // monitor owns finalization for tmux jobs; drop the unused output.
             attach_monitor(rc, handle, pane_tx, use_auto_yes, resource_lease);
+            true
         }
         Ok((exit_code, stdout, stderr, None)) => {
             let success = exit_code == Some(0);
@@ -567,6 +568,7 @@ async fn handle_result(
             )
             .await;
             drop(resource_lease);
+            success
         }
         Err(e) => {
             finalize_run(
@@ -581,6 +583,7 @@ async fn handle_result(
             )
             .await;
             drop(resource_lease);
+            false
         }
     }
 }

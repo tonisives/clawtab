@@ -11,6 +11,7 @@ import { cronTooltip, nextCronDate, formatNextRun } from "../util/cron";
 import {
   calendarScheduleTooltip,
   compactCalendarSchedule,
+  describeRunOnce,
   isJobScheduled,
 } from "../util/schedule";
 import { colors } from "../theme/colors";
@@ -126,12 +127,14 @@ export const JobCard = memo(function JobCard({
             </View>
             <View style={styles.meta}>
               <View style={styles.metaLeft}>
-              {scheduled && job.enabled && !job.schedule ? (() => {
+              {scheduled && job.enabled && !job.schedule && !job.run_once ? (() => {
                 const next = nextCronDate(job.cron);
                 return next ? <Text style={styles.nextRunText} numberOfLines={1}>{formatNextRun(next)}</Text> : null;
               })() : null}
               {lastRun ? <Text style={styles.metaText}>{lastRun}</Text> : null}
-              {job.schedule ? (
+              {job.run_once ? (
+                <Text style={styles.cronText} numberOfLines={1}>{describeRunOnce(job.run_once)}</Text>
+              ) : job.schedule ? (
                 <Tooltip label={calendarScheduleTooltip(job.schedule)}>
                   <Text style={styles.cronText} numberOfLines={1}>
                     {compactCalendarSchedule(job.schedule)}

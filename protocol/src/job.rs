@@ -66,6 +66,12 @@ pub struct CalendarSchedule {
     pub repeat: CalendarRepeat,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RunOnceSchedule {
+    pub at: String,
+    pub remove_after_start: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct JobParam {
     pub name: String,
@@ -149,6 +155,8 @@ pub struct RemoteJob {
     pub cron: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub schedule: Option<CalendarSchedule>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_once: Option<RunOnceSchedule>,
     pub group: String,
     pub slug: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -195,6 +203,10 @@ pub struct JobUpdate {
     pub enabled: Option<bool>,
     #[serde(default)]
     pub cron: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_optional")]
+    pub schedule: Option<Option<CalendarSchedule>>,
+    #[serde(default, deserialize_with = "deserialize_optional_optional")]
+    pub run_once: Option<Option<RunOnceSchedule>>,
     #[serde(default)]
     pub group: Option<String>,
     #[serde(default, deserialize_with = "deserialize_optional_optional")]

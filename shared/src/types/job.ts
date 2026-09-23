@@ -20,6 +20,11 @@ export type CalendarSchedule = {
   repeat: CalendarRepeat;
 };
 
+export type RunOnceSchedule = {
+  at: string;
+  remove_after_start: boolean;
+};
+
 export interface JobParam {
   name: string;
   value?: string | null;
@@ -34,6 +39,7 @@ export interface RemoteJob {
   enabled: boolean;
   cron: string;
   schedule?: CalendarSchedule | null;
+  run_once?: RunOnceSchedule | null;
   group: string;
   slug: string;
   work_dir?: string;
@@ -57,6 +63,7 @@ export interface JobUpdate {
   enabled?: boolean;
   cron?: string;
   schedule?: CalendarSchedule | null;
+  run_once?: RunOnceSchedule | null;
   group?: string;
   work_dir?: string | null;
   tmux_session?: string | null;

@@ -7,14 +7,14 @@ interface ScheduleFieldsProps {
   form: Job;
   setForm: React.Dispatch<React.SetStateAction<Job>>;
   manualOnly: boolean;
-  scheduleMode: "weekly" | "calendar" | "cron";
+  scheduleMode: "weekly" | "calendar" | "cron" | "once";
   weeklyDays: string[];
   weeklyTimes: string[];
   calendarStart: string;
   calendarEvery: number;
   hasParams: boolean;
   selectManual: (manual: boolean) => void;
-  selectScheduleMode: (mode: "weekly" | "calendar" | "cron") => void;
+  selectScheduleMode: (mode: "weekly" | "calendar" | "cron" | "once") => void;
   toggleWeeklyDay: (day: string) => void;
   setWeeklyTimeAtIndex: (index: number, time: string) => void;
   addWeeklyTime: () => void;
@@ -57,6 +57,33 @@ export function ScheduleFields({
 
       {!manualOnly && (
         <>
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+              <input type="radio" name="schedule-mode" checked={scheduleMode === "once"} onChange={() => selectScheduleMode("once")} />
+              One-time
+            </label>
+            {scheduleMode === "once" && form.run_once && (
+              <div style={{ paddingLeft: 24 }}>
+                <input
+                  aria-label="One-time run date"
+                  type="datetime-local"
+                  value={(() => {
+                    const date = new Date(form.run_once.at);
+                    const pad = (value: number) => String(value).padStart(2, "0");
+                    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+                  })()}
+                  onChange={(event) => {
+                    const date = new Date(event.target.value);
+                    if (!Number.isNaN(date.getTime())) setForm((prev) => ({ ...prev, run_once: { at: date.toISOString(), remove_after_start: prev.run_once?.remove_after_start ?? true } }));
+                  }}
+                />
+                <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <input type="checkbox" checked={form.run_once.remove_after_start} onChange={(event) => setForm((prev) => ({ ...prev, run_once: prev.run_once ? { ...prev.run_once, remove_after_start: event.target.checked } : null }))} />
+                  Remove job config after agent starts
+                </label>
+              </div>
+            )}
+          </div>
           <div style={{ marginBottom: 16 }}>
             <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
               <input

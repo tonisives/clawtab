@@ -7,6 +7,8 @@ use clawtab_lib::agent_plugins::{PluginHostCommand, PluginHostRequest, PluginHos
 use clawtab_lib::config::jobs::JobStatus;
 use clawtab_lib::ipc::{self, DesktopIpcCommand, IpcCommand, IpcResponse, PaneDirection};
 
+mod ctl_create;
+
 /// Routes a parsed command to either the daemon or the desktop-app socket.
 /// `cwtctl` originally only spoke to the daemon; UI actions like `pane focus`
 /// and `open` live on the desktop socket so the daemon stays UI-agnostic.
@@ -83,12 +85,14 @@ fn print_jobs_usage() {
     eprintln!("  jobs resume <group>/<job>  Resume a paused job");
     eprintln!("  jobs restart <group>/<job> Restart a job");
     eprintln!("  jobs status                Show job statuses");
+    eprintln!("  jobs create                Create a scheduled agent job (interactive)");
+    eprintln!("  jobs create --name NAME (--cron EXPR | --at DATE) (--description TEXT | --description-file PATH | --description-stdin) [--keep-config]");
 }
 
 fn is_jobs_subcommand(command: &str) -> bool {
     matches!(
         command,
-        "list" | "ls" | "run" | "pause" | "resume" | "restart" | "status"
+        "list" | "ls" | "run" | "pause" | "resume" | "restart" | "status" | "create"
     )
 }
 
@@ -773,6 +777,13 @@ async fn main() {
 
     if command == "run" {
         run_job_command(&args, if jobs_scope { "cwtctl jobs" } else { "cwtctl" }).await;
+        return;
+    }
+
+    if command == "create" && jobs_scope {
+        if let Err(error) = ctl_create::create(&args[2..]) {
+            exit_error(&error);
+        }
         return;
     }
 
