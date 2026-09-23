@@ -124,7 +124,7 @@ cwtctl plugin list
 cwtctl plugin <name> run [pane_id] [key=value ...]
 ```
 
-Run `cwtctl jobs create` from a project directory for the interactive form and `nvim` description editor. You can also supply every field on the command line:
+Run `cwtctl jobs create` from a project directory for the interactive form and `nvim` description editor. It creates an agent job in the nearest configured group whose `folder_path` contains the current directory, or derives a group from the directory name when there is no match. You can also supply every field on the command line:
 
 ```sh
 cwtctl jobs create --name daily-review --cron '0 9 * * *' --description-file review.md
@@ -133,6 +133,8 @@ cat task.md | cwtctl jobs create --name task --at '2026-10-02T09:00:00+07:00' --
 ```
 
 One-time jobs run when the daemon returns if their scheduled time passed while it was offline. By default, their config is removed after the agent starts, while the pane and run history remain available. `--keep-config` leaves the job disabled after launch.
+
+The CLI accepts one description source: inline text, a text or Markdown file, or standard input. `--at` accepts a future local `YYYY-MM-DD HH:MM` date or RFC 3339 timestamp. `cwtctl jobs create` creates agent jobs; use the desktop app to create a Binary job that runs a script directly.
 
 Agent actions are optional local executables. ClawTab installs none by default.
 Plugin packages are hot-discovered from

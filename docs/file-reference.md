@@ -9,6 +9,7 @@
 | `~/.config/clawtab/jobs/` | Job definitions directory |
 | `~/.config/clawtab/jobs/<project>/<job-name>/job.yaml` | Individual job config |
 | `~/.config/clawtab/jobs/<project>/<job-name>/logs/<run-id>.log` | Tmux job output log |
+| `~/.config/clawtab/run-logs/<project>/<job-name>/<run-id>.log` | Output log for a one-time job whose config was removed |
 | `~/.config/clawtab/agent-plugins/<plugin-id>/plugin.yaml` | Local executable plugin manifest |
 | `~/.config/clawtab/agent/<group>/logs/<run-id>.log` | Ad-hoc `+` agent output log |
 | `~/.config/clawtab/jobs/<project>/<job-name>/job.md` | Job-specific prompt/instructions |
@@ -33,6 +34,7 @@
 | `manual` | GUI "Run Now" button |
 | `cron` | Scheduler match |
 | `calendar` | Calendar recurrence match |
+| `once` | One-time date match |
 | `cli` | cwtctl or IPC command |
 | `restart` | Restart command |
 

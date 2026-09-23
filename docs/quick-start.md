@@ -74,13 +74,27 @@ The wizard auto-detects tools and shows version + path for each. Missing tools c
 
 All job files (config, prompts, context) are stored centrally at `~/.config/clawtab/jobs/`.
 
+### Scheduled agent job from the CLI
+
+In a project directory, run `cwtctl jobs create` for an interactive form. Enter the name and a cron expression or one-time date, then write the job description in `nvim`. The command joins the nearest configured group whose project folder contains the current directory. If none matches, it creates a group from the directory name.
+
+You can also supply the fields directly:
+
+```bash
+cwtctl jobs create --name daily-review --cron '0 9 * * *' --description-file review.md
+cwtctl jobs create --name follow-up --at '2026-10-02 09:00' --description 'Check the results'
+cat task.md | cwtctl jobs create --name task --at '2026-10-02T09:00:00+07:00' --description-stdin
+```
+
+`--at` takes a future local date and time or RFC 3339 timestamp. A one-time job removes its config after the agent starts by default, while the tmux pane and run history remain available. Pass `--keep-config` to retain a disabled job. See [CLI & TUI](cli-tui.md) for details.
+
 ## Running a Job
 
 - **GUI**: Click "Run Now" on any job
 - **CLI**: `cwtctl jobs run <group>/<name>`
 - **TUI**: Select job, press `r`
 - **Telegram**: Send `/run <name>` to your bot
-- **Schedule**: Automatically triggered by the job's cron expression or calendar recurrence
+- **Schedule**: Automatically triggered by the job's cron expression, calendar recurrence, or one-time date
 
 ## Checking Status
 

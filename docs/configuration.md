@@ -17,6 +17,9 @@ All configuration lives under `~/.config/clawtab/`.
         context.md           # Auto-generated per-job context
         logs/
           <run-id>.log       # Captured output per run
+  run-logs/
+    <project-slug>/<job-name>/
+      <run-id>.log           # One-time output when config is removed
 ```
 
 ## settings.yaml
@@ -90,6 +93,20 @@ Standard 5-field cron format: `minute hour day month weekday`
 | `30 */2 * * *` | Every 2 hours at :30 |
 
 The scheduler polls every 30 seconds and checks if any scheduled time falls within the last polling window.
+
+### One-Time Jobs
+
+Use `run_once` for a single agent run. It cannot be combined with `cron` or `schedule`:
+
+```yaml
+run_once:
+  at: '2026-10-02T09:00:00+07:00'
+  remove_after_start: true
+```
+
+`at` stores a timestamp with an explicit UTC offset. A due one-time job runs when the daemon starts after downtime. With `remove_after_start: true`, its job directory is removed after the agent starts, but the tmux pane and run history remain available. Its output log is stored under `~/.config/clawtab/run-logs/<project-slug>/<job-name>/` so removing the job does not recreate its config directory. Set `remove_after_start: false` to keep the job disabled after launch.
+
+Create these jobs with `cwtctl jobs create --at ...` or the desktop editor. See [CLI & TUI](cli-tui.md) for the interactive form and description inputs.
 
 ### Calendar Recurrences
 

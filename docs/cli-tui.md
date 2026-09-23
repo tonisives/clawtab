@@ -18,6 +18,7 @@ cwtctl <command> [args]
 | Command | Description |
 |---------|-------------|
 | `jobs list` / `jobs ls` | List all jobs grouped by group |
+| `jobs create` | Create a scheduled agent job in the current project directory; works without the daemon |
 | `jobs run <group>/<job>` | Run a job and follow its output |
 | `jobs pause <group>/<job>` | Pause a running job |
 | `jobs resume <group>/<job>` | Resume a paused job |
@@ -89,6 +90,24 @@ asynchronous action.
 `pane focus` is intended to be called from `tmux.conf` and vim/nvim configs to share `Ctrl-h/j/k/l` navigation between vim windows, tmux panes, and ClawTab panes. See [Vim / Tmux Navigation](./vim-tmux-navigation.md).
 
 Exit codes: `0` on success, `1` on error (with message on stderr).
+
+### Create a scheduled agent job
+
+Run `cwtctl jobs create` from the project directory. The interactive form accepts a name and either a cron expression or a one-time date. Press `Tab` to change fields, `Ctrl-R` to switch schedule type, and `Ctrl-K` to toggle one-time config cleanup. Press `Enter` to write the description in `nvim`; `Esc` cancels.
+
+For a command without prompts, supply a name, exactly one schedule, and exactly one description source:
+
+```bash
+cwtctl jobs create --name daily-review --cron '0 9 * * *' --description-file review.md
+cwtctl jobs create --name follow-up --at '2026-10-02 09:00' --description 'Check the results'
+cat task.md | cwtctl jobs create --name task --at '2026-10-02T09:00:00+07:00' --description-stdin --keep-config
+```
+
+`--at` accepts a local `YYYY-MM-DD HH:MM` time or RFC 3339 with an explicit offset. The date must be in the future when the job is created. `--description-file` reads a text or Markdown file. These commands create agent jobs with descriptions stored in `job.md`; use the desktop app to configure a Binary job that runs a script directly.
+
+The command finds the nearest configured job group whose `folder_path` contains the current directory. If none matches, it uses a group derived from the current directory name. Job files are stored under `~/.config/clawtab/jobs/<group>/<name>/`.
+
+One-time jobs due while the daemon was offline run when it returns. By default, the daemon removes their config after the agent starts; the tmux pane and run history stay available for inspection. `--keep-config` leaves the job disabled after launch. Cron jobs keep their config and repeat.
 
 ## TUI: cwttui `beta`
 
