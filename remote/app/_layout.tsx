@@ -29,15 +29,6 @@ const navTheme = {
   },
 };
 
-function RootHeaderRight() {
-  const isPad = Platform.OS === "ios" && Platform.isPad === true;
-  return isPad ? (
-    <NotificationsMenuButton variant="fluid" />
-  ) : (
-    <NotificationsMenuButton countOnly />
-  );
-}
-
 let RootHeaderIcon = () => (
   <Image
     source={require("../assets/icon.png")}
@@ -137,9 +128,8 @@ function WebSocketProvider({ children }: { children: React.ReactNode }) {
 
 export default function RootLayout() {
   useWebDarkScrollbars();
-  const { isIosPadPortrait, isSplitView, isWide } = useResponsive();
+  const { isSplitView, isWide } = useResponsive();
   const mobileHeaderTab = useMobileHeaderStore((s) => s.tab);
-  const listHeaderShown = useMobileHeaderStore((s) => s.listHeaderShown);
   const loading = useAuthStore((s) => s.loading);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const init = useAuthStore((s) => s.init);
@@ -169,21 +159,16 @@ export default function RootLayout() {
             options={{
               animation: "none",
               orientation: Platform.OS === "ios" && !Platform.isPad ? "default" : undefined,
-              headerShown: !isWide && !isSplitView && !isIosPadPortrait && (isSettingsTab || listHeaderShown),
+              headerShown: isMobileWeb,
               title: isSplitView ? "" : isSettingsTab ? "Settings" : "ClawTab",
-              headerLargeTitle: !isMobileWeb,
-              headerTransparent: !isMobileWeb,
-              headerStyle: { backgroundColor: isMobileWeb ? colors.bg : "transparent" },
+              headerStyle: { backgroundColor: colors.bg },
               headerTintColor: colors.text,
-              headerShadowVisible: isMobileWeb,
-              headerLargeTitleStyle: styles.headerLargeTitle,
+              headerShadowVisible: true,
               headerTitleStyle: styles.headerTitle,
               headerTitle: isMobileWeb ? () => <RootHeaderIcon /> : undefined,
-              headerRight: isSplitView || isIosPadPortrait
-                ? () => null
-                : isMobileWeb
-                  ? () => <MobileWebHeaderActions isSettingsTab={isSettingsTab} />
-                  : () => <RootHeaderRight />,
+              headerRight: isMobileWeb
+                ? () => <MobileWebHeaderActions isSettingsTab={isSettingsTab} />
+                : undefined,
             }}
           />
           <Stack.Screen name="machines" options={{ title: "Manage machines", headerShown: true, headerTintColor: colors.text, headerStyle: { backgroundColor: colors.bg }, headerBackButtonDisplayMode: "minimal", animation: "slide_from_right" }} />
@@ -224,10 +209,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     backgroundColor: colors.bg,
-  },
-  headerLargeTitle: {
-    color: colors.text,
-    fontWeight: "700",
   },
   headerTitle: {
     color: colors.text,

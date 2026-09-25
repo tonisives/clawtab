@@ -3,7 +3,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { usePathname } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import SettingsScreen from "../../app/(tabs)/settings";
+import SettingsScreen from "../../app/(tabs)/(settings)/settings";
 import { colors } from "../theme/colors";
 import { NotificationsMenuButton } from "./NotificationsMenuButton";
 

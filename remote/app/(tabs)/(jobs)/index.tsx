@@ -1,6 +1,6 @@
-import { machineOnboardingChrome, machineOnboardingContent, machineManagementContent } from "../../src/components/MachineSetup";
+import { machineOnboardingChrome, machineOnboardingContent, machineManagementContent } from "../../../src/components/MachineSetup";
 import { useMachines, useHiddenGroups, machineRequest, machineState, scopedMessage } from "@clawtab/shared";
-import { machineApi } from "../../src/api/client";
+import { machineApi } from "../../../src/api/client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   View,
@@ -21,24 +21,24 @@ import { GlassView, isGlassEffectAPIAvailable } from "expo-glass-effect"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { DndContext, DragOverlay } from "@dnd-kit/core"
 import AsyncStorage from "@react-native-async-storage/async-storage"
-import { useJobsStore } from "../../src/store/jobs"
-import { useWsStore } from "../../src/store/ws"
-import { useJobFilterStore } from "../../src/store/jobFilter"
-import { usePinsStore } from "../../src/store/pins"
-import SettingsScreen from "./settings"
-import { JobDetailPane } from "../../src/components/JobDetailPane"
-import { ProcessDetailPane } from "../../src/components/ProcessDetailPane"
+import { useJobsStore } from "../../../src/store/jobs"
+import { useWsStore } from "../../../src/store/ws"
+import { useJobFilterStore } from "../../../src/store/jobFilter"
+import { usePinsStore } from "../../../src/store/pins"
+import SettingsScreen from "../(settings)/settings"
+import { JobDetailPane } from "../../../src/components/JobDetailPane"
+import { ProcessDetailPane } from "../../../src/components/ProcessDetailPane"
 import {
   LiquidSectionSwitcher,
   type SidebarSection as LiquidSidebarSection,
-} from "../../src/components/LiquidSectionSwitcher"
+} from "../../../src/components/LiquidSectionSwitcher"
 import {
   IpadBottomBar,
   type IpadBarSection,
   type IpadNavigationItem,
-} from "../../src/components/IpadBottomBar"
-import { NotificationsPanel } from "../../src/components/NotificationsPanel"
-import { LoadingBar } from "../../src/components/LoadingBar"
+} from "../../../src/components/IpadBottomBar"
+import { NotificationsPanel } from "../../../src/components/NotificationsPanel"
+import { LoadingBar } from "../../../src/components/LoadingBar"
 import {
   JobListView,
   SplitDetailArea,
@@ -53,18 +53,17 @@ import {
   DraggableJobCard,
   DraggableProcessCard,
   type DragData,
-} from "../../src/components/DraggableCards"
-import { getWsSend, nextId } from "../../src/lib/wsRuntime"
-import { registerRequest } from "../../src/lib/useRequestMap"
-import { useResponsive } from "../../src/hooks/useResponsive"
-import { useMobileHeaderStore } from "../../src/store/mobileHeader"
-import { useLandscapeShellStore } from "../../src/store/landscapeShell"
-import { NotificationsMenuButton } from "../../src/components/NotificationsMenuButton"
+} from "../../../src/components/DraggableCards"
+import { getWsSend, nextId } from "../../../src/lib/wsRuntime"
+import { registerRequest } from "../../../src/lib/useRequestMap"
+import { useResponsive } from "../../../src/hooks/useResponsive"
+import { useLandscapeShellStore } from "../../../src/store/landscapeShell"
+import { NotificationsMenuButton } from "../../../src/components/NotificationsMenuButton"
 import { colors } from "@clawtab/shared"
 import { spacing } from "@clawtab/shared"
 import type { AgentEffort, RemoteJob, JobListMode, JobSortMode, JobStatus, AgentModelOption, LatestSortMode } from "@clawtab/shared"
 import type { DetectedProcess, ProcessProvider } from "@clawtab/shared"
-import { buildModelOptions } from "../../src/lib/agentModels"
+import { buildModelOptions } from "../../../src/lib/agentModels"
 
 type GroupTabView = Record<string, "tabs" | "jobs">
 type GroupLatestSortMode = Record<string, LatestSortMode>
@@ -259,27 +258,11 @@ export default function JobsScreen() {
   const { width, isIosPad, isIosPadPortrait, isIosPhoneLandscape, isSplitView, isWide } = useResponsive()
   const router = useRouter()
   const insets = useSafeAreaInsets()
-  const setListHeaderShown = useMobileHeaderStore((s) => s.setListHeaderShown)
   const setFocusedShell = useLandscapeShellStore((s) => s.setFocusedShell)
   const showSidebar = useLandscapeShellStore((s) => s.showSidebar)
   const pendingSidebarShell = useLandscapeShellStore((s) => s.pendingSidebarShell)
   const focusedLandscapeShell = useLandscapeShellStore((s) => s.focusedShell)
   const clearPendingSidebarShell = useLandscapeShellStore((s) => s.clearPendingSidebarShell)
-  const lastListOffset = useRef(0)
-  const lastChromeChange = useRef(0)
-  const handleListScroll = useCallback((offset: number) => {
-    if (Platform.OS !== "ios") return
-    const delta = offset - lastListOffset.current
-    lastListOffset.current = offset
-    if (Date.now() - lastChromeChange.current < 250) return
-    if (offset <= 8 || delta < -2) {
-      lastChromeChange.current = Date.now()
-      setListHeaderShown(true)
-    } else if (offset > 48 && delta > 2) {
-      lastChromeChange.current = Date.now()
-      setListHeaderShown(false)
-    }
-  }, [setListHeaderShown])
   const searchQuery = useJobFilterStore((s) => s.query)
   const openSearch = useJobFilterStore((s) => s.openSearch)
   const setSearchQuery = useJobFilterStore((s) => s.setQuery)
@@ -872,7 +855,6 @@ export default function JobsScreen() {
       ]}
       contentInsetAdjustmentBehavior={Platform.OS === "web" ? "never" : "automatic"}
       scrollEventThrottle={16}
-      onScrollOffsetChange={handleListScroll}
       renderAsScrollRoot
     />
   )
@@ -1152,7 +1134,7 @@ export default function JobsScreen() {
           accessibilityRole="link"
           accessibilityLabel="Open ClawTab website"
         >
-          <Image source={require("../../assets/icon.png")} style={styles.listPaneBrandIcon} />
+          <Image source={require("../../../assets/icon.png")} style={styles.listPaneBrandIcon} />
           <Text style={styles.listPaneBrandText}>ClawTab</Text>
         </Pressable>
         {!isIosPad && <NotificationsMenuButton variant={isWide ? "compact" : "fluid"} />}
@@ -1271,7 +1253,6 @@ export default function JobsScreen() {
             contentContainerStyle={isIosPad ? { paddingBottom: insets.bottom + 96 } : isIosPhoneLandscape ? { paddingHorizontal: 0 } : undefined}
             edgeToEdge={isIosPhoneLandscape}
             scrollEnabled={Platform.OS !== "web" || !split.isDragging}
-            onScrollOffsetChange={handleListScroll}
             scrollEventThrottle={16}
             renderJobCard={renderDraggableJobCard}
             renderProcessCard={renderDraggableProcessCard}

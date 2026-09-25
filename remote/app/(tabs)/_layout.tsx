@@ -105,7 +105,7 @@ function TabsContent({
           minimizeBehavior="onScrollDown"
         >
           <NativeTabs.Trigger
-            name="index"
+            name="(jobs)"
             contentStyle={{ backgroundColor: colors.bg }}
             listeners={{ tabPress: () => setMobileHeaderTab("jobs") }}
           >
@@ -116,7 +116,7 @@ function TabsContent({
             />
           </NativeTabs.Trigger>
           <NativeTabs.Trigger
-            name="settings"
+            name="(settings)"
             contentStyle={{ backgroundColor: colors.bg }}
             listeners={{ tabPress: () => setMobileHeaderTab("settings") }}
           >
@@ -147,7 +147,7 @@ function TabsContent({
 
   const tabs = (
     <Tabs
-      initialRouteName="index"
+      initialRouteName="(jobs)"
       screenOptions={{
         headerShown:
           Platform.OS !== "web" && !isWide && !isSplitView && !isIosPadPortrait,
@@ -170,7 +170,7 @@ function TabsContent({
       }}
     >
       <Tabs.Screen
-        name="index"
+        name="(jobs)"
         options={{
           title: "",
           tabBarLabel: "Jobs",
@@ -199,7 +199,7 @@ function TabsContent({
         }}
       />
       <Tabs.Screen
-        name="settings"
+        name="(settings)"
         options={
           isWide || isSplitView || isIosPadPortrait
             ? { href: null }

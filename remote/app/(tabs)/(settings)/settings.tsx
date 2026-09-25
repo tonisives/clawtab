@@ -1,4 +1,4 @@
-import { useTerminalSettings } from "../../src/store/terminalSettings";
+import { useTerminalSettings } from "../../../src/store/terminalSettings";
 import { useEffect, useState, useCallback, useMemo } from "react"
 import {
   View,
@@ -11,21 +11,21 @@ import {
   Platform,
 } from "react-native"
 import { useRouter } from "expo-router"
-import { useAuthStore } from "../../src/store/auth"
-import { useWsStore } from "../../src/store/ws"
-import { useJobsStore } from "../../src/store/jobs"
-import { ContentContainer } from "../../src/components/ContentContainer"
-import { ApiTokensSection } from "../../src/components/ApiTokensSection"
-import { useResponsive } from "../../src/hooks/useResponsive"
+import { useAuthStore } from "../../../src/store/auth"
+import { useWsStore } from "../../../src/store/ws"
+import { useJobsStore } from "../../../src/store/jobs"
+import { ContentContainer } from "../../../src/components/ContentContainer"
+import { ApiTokensSection } from "../../../src/components/ApiTokensSection"
+import { useResponsive } from "../../../src/hooks/useResponsive"
 import { ShareSection } from "@clawtab/shared"
-import * as api from "../../src/api/client"
-import { confirm, alertError, openUrl } from "../../src/lib/platform"
-import { colors } from "../../src/theme/colors"
-import { radius, spacing } from "../../src/theme/spacing"
-import { getWsSend, nextId } from "../../src/lib/wsRuntime"
-import { clearRequest, registerRequest } from "../../src/lib/useRequestMap"
-import type { ProviderUsageSnapshot, UsageSnapshot } from "../../src/types/messages"
-import { UsageProgressBar, parseUsagePercent } from "../../src/components/UsageProgressBar"
+import * as api from "../../../src/api/client"
+import { confirm, alertError, openUrl } from "../../../src/lib/platform"
+import { colors } from "../../../src/theme/colors"
+import { radius, spacing } from "../../../src/theme/spacing"
+import { getWsSend, nextId } from "../../../src/lib/wsRuntime"
+import { clearRequest, registerRequest } from "../../../src/lib/useRequestMap"
+import type { ProviderUsageSnapshot, UsageSnapshot } from "../../../src/types/messages"
+import { UsageProgressBar, parseUsagePercent } from "../../../src/components/UsageProgressBar"
 
 type SubStatus = api.SubscriptionStatus | null
 
