@@ -1186,6 +1186,22 @@ fn normalize_activity_visible(text: &str) -> String {
         .to_string()
 }
 
+/// Codex can keep working without adding scrollback or changing colors. Its
+/// live status sits in the block immediately above the current composer.
+fn codex_working_status(screen: &str) -> bool {
+    let plain = strip_ansi(screen);
+    let lines: Vec<&str> = plain.lines().map(str::trim).collect();
+    let Some(composer) = lines.iter().rposition(|line| line.starts_with('\u{203a}')) else {
+        return false;
+    };
+    lines[..composer]
+        .iter()
+        .rev()
+        .skip_while(|line| line.is_empty())
+        .take_while(|line| !line.is_empty())
+        .any(|line| line.starts_with('\u{2022}') && line.contains("esc to interrupt"))
+}
+
 impl ActivityTracker {
     #[cfg(test)]
     fn update(
@@ -1213,7 +1229,7 @@ impl ActivityTracker {
             _,
             _,
             _,
-            _,
+            screen,
             _,
             _,
             activity_history,
@@ -1293,7 +1309,9 @@ impl ActivityTracker {
             let asking = asking_panes.contains(pane_id);
             activity.push(AgentActivity {
                 pane_id: pane_id.clone(),
-                working: recently_active && !asking,
+                working: (recently_active
+                    || (*provider == ProcessProvider::Codex && codex_working_status(screen)))
+                    && !asking,
                 asking,
             });
         }
@@ -1633,6 +1651,63 @@ mod tests {
             now + Duration::from_secs(11),
         );
         assert!(!expired[0].working);
+    }
+
+    #[test]
+    fn codex_live_status_stays_working_without_output_or_color_changes() {
+        let now = Instant::now();
+        let mut tracker = ActivityTracker::default();
+        let screen = "Tool output\n\n\x1b[2m\u{2022} Working (24m 17s \u{2022} esc to interrupt)\x1b[0m\n  2 background terminals running\n\n\u{203a} Ask Codex to do anything\n\nVim: Insert";
+        let mut process = agent_with_layout("%34", "", "", 100, 80, 24);
+        process.12 = ProcessProvider::Codex;
+        record_pane_capture(&mut process, screen, 5);
+        for elapsed in [0, 2, 60, 1_500] {
+            let activity = tracker.update(
+                &[process.clone()],
+                &HashSet::new(),
+                now + Duration::from_secs(elapsed),
+            );
+            assert!(activity[0].working);
+            assert!(!activity[0].asking);
+        }
+        let activity = tracker.update(
+            &[process.clone()],
+            &HashSet::from(["%34".to_string()]),
+            now + Duration::from_secs(1_501),
+        );
+        assert!(!activity[0].working);
+        assert!(activity[0].asking);
+
+        record_pane_capture(
+            &mut process,
+            "Task finished\n\n\u{203a} Ask Codex to do anything\n\nVim: Insert",
+            2,
+        );
+        let activity = tracker.update(
+            &[process],
+            &HashSet::new(),
+            now + Duration::from_secs(1_502),
+        );
+        assert!(!activity[0].working);
+    }
+
+    #[test]
+    fn codex_working_status_ignores_transcript_and_composer_text() {
+        for screen in [
+            "\u{2022} Working (2s \u{2022} esc to interrupt)\n\nTask finished\n\n\u{203a} Ask Codex to do anything",
+            "Task finished\n\n\u{203a} explain esc to interrupt\n  \u{2022} Working (2s \u{2022} esc to interrupt)",
+            "\u{2022} Working (2s \u{2022} esc to interrupt)",
+        ] {
+            assert!(!super::codex_working_status(screen));
+        }
+        let mut other_provider = agent(
+            "%1",
+            "\u{2022} Working (2s \u{2022} esc to interrupt)\n\n\u{203a} prompt",
+        );
+        other_provider.12 = ProcessProvider::Claude;
+        let activity =
+            ActivityTracker::default().update(&[other_provider], &HashSet::new(), Instant::now());
+        assert!(!activity[0].working);
     }
 
     #[test]
