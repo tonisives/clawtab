@@ -1187,19 +1187,30 @@ fn normalize_activity_visible(text: &str) -> String {
 }
 
 /// Codex can keep working without adding scrollback or changing colors. Its
-/// live status sits in the block immediately above the current composer.
+/// live status sits above the composer and optional queued-input panel.
 fn codex_working_status(screen: &str) -> bool {
     let plain = strip_ansi(screen);
     let lines: Vec<&str> = plain.lines().map(str::trim).collect();
     let Some(composer) = lines.iter().rposition(|line| line.starts_with('\u{203a}')) else {
         return false;
     };
-    lines[..composer]
-        .iter()
-        .rev()
-        .skip_while(|line| line.is_empty())
-        .take_while(|line| !line.is_empty())
-        .any(|line| line.starts_with('\u{2022}') && line.contains("esc to interrupt"))
+    let mut blocks = lines[..composer]
+        .rsplit(|line| line.is_empty())
+        .filter(|block| !block.is_empty());
+    let Some(mut status) = blocks.next() else {
+        return false;
+    };
+    if status.first() == Some(&"\u{2022} Queued follow-up inputs") {
+        let Some(previous) = blocks.next() else {
+            return false;
+        };
+        status = previous;
+    }
+    // A narrow pane can wrap the interrupt hint onto the following row.
+    status
+        .first()
+        .is_some_and(|line| line.starts_with('\u{2022}'))
+        && status.join(" ").contains("esc to interrupt")
 }
 
 impl ActivityTracker {
@@ -1708,6 +1719,19 @@ mod tests {
         let activity =
             ActivityTracker::default().update(&[other_provider], &HashSet::new(), Instant::now());
         assert!(!activity[0].working);
+    }
+
+    #[test]
+    fn codex_working_status_handles_queued_questions_and_wrapped_hints() {
+        for screen in [
+            "\u{2022} Working (9m 30s \u{2022} esc to interrupt)\n\n\u{2022} Queued follow-up inputs\n  ? 1 question\n    shift+left to answer\n\n\u{203a} Ask Codex to do anything",
+            "\u{2022} Working (9m 30s \u{2022} esc to\ninterrupt)\n\n\u{203a} Ask Codex to do anything",
+        ] {
+            assert!(super::codex_working_status(screen));
+        }
+        assert!(!super::codex_working_status(
+            "\u{2022} Working (2s \u{2022} esc to interrupt)\n\nTask finished\n\n\u{2022} Queued follow-up inputs\n  ? 1 question\n\n\u{203a} Ask Codex to do anything"
+        ));
     }
 
     #[test]
