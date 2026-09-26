@@ -157,18 +157,35 @@ pub struct HookPaneState {
 #[derive(Clone, Default)]
 pub struct HookRuntime {
     sessions: Arc<Mutex<HashMap<String, HookEventV1>>>,
+    // A shared Codex server inherits the pane it started in. Its hooks identify
+    // the session correctly, but that inherited pane/PID does not identify the TUI.
+    codex_panes: Arc<Mutex<HashMap<String, HashSet<String>>>>,
     notify: Arc<Notify>,
 }
 
 impl HookRuntime {
     pub fn pane_state(&self, pane_id: &str, provider: ProcessProvider) -> Option<HookPaneState> {
+        let codex_sessions = if provider == ProcessProvider::Codex {
+            Some(
+                self.codex_panes
+                    .lock()
+                    .get(pane_id)
+                    .cloned()
+                    .unwrap_or_default(),
+            )
+        } else {
+            None
+        };
         self.sessions
             .lock()
             .values()
             .filter(|event| {
                 !event.ended
                     && event.provider == provider
-                    && event.pane_id.as_deref() == Some(pane_id)
+                    && codex_sessions.as_ref().map_or_else(
+                        || event.pane_id.as_deref() == Some(pane_id),
+                        |ids| ids.contains(&event.session_id),
+                    )
             })
             .max_by_key(|event| {
                 let priority = match event.state {
@@ -186,12 +203,21 @@ impl HookRuntime {
     }
 
     pub fn all_bound_panes(&self) -> HashSet<String> {
-        self.sessions
+        let mut panes: HashSet<String> = self
+            .sessions
             .lock()
             .values()
-            .filter(|event| !event.ended)
+            .filter(|event| !event.ended && event.provider != ProcessProvider::Codex)
             .filter_map(|event| event.pane_id.clone())
-            .collect()
+            .collect();
+        panes.extend(
+            self.codex_panes
+                .lock()
+                .iter()
+                .filter(|(_, ids)| !ids.is_empty())
+                .map(|(pane, _)| pane.clone()),
+        );
+        panes
     }
 
     pub fn recent_attention(&self, age: Duration) -> bool {
@@ -201,19 +227,23 @@ impl HookRuntime {
         })
     }
 
-    pub fn retain_live_panes(&self, live_panes: &HashSet<String>) {
+    pub fn retain_live_panes(&self, live_panes: &HashSet<String>, codex_panes: &HashSet<String>) {
         if live_panes.is_empty() {
             return;
         }
+        self.codex_panes
+            .lock()
+            .retain(|pane, _| codex_panes.contains(pane));
         let removed: Vec<String> = {
             let mut sessions = self.sessions.lock();
             let removed = sessions
                 .iter()
                 .filter(|(_, event)| {
-                    event
-                        .pane_id
-                        .as_ref()
-                        .is_some_and(|pane_id| !live_panes.contains(pane_id))
+                    event.provider != ProcessProvider::Codex
+                        && event
+                            .pane_id
+                            .as_ref()
+                            .is_some_and(|pane_id| !live_panes.contains(pane_id))
                 })
                 .map(|(key, _)| key.clone())
                 .collect::<Vec<_>>();
@@ -233,6 +263,31 @@ impl HookRuntime {
         snapshot: &ProcessSnapshot,
     ) {
         let candidate_pids = snapshot.process_tree_pids(pane_pid);
+        if provider == ProcessProvider::Codex {
+            let ids = match crate::agent_session::codex_thread_id_for_pane(pane_pid, Some(snapshot))
+            {
+                Some(id) => HashSet::from([id]),
+                None => self
+                    .sessions
+                    .lock()
+                    .values()
+                    .filter(|event| event.provider == provider && !event.ended)
+                    .filter(|event| {
+                        event.process_id.is_some_and(|pid| {
+                            let pid = pid.to_string();
+                            candidate_pids.contains(&pid)
+                                && snapshot
+                                    .command_for_pid(&pid)
+                                    .is_some_and(|command| !command.contains("app-server"))
+                        })
+                    })
+                    .map(|event| event.session_id.clone())
+                    .collect(),
+            };
+            self.codex_panes.lock().insert(pane_id.to_string(), ids);
+            self.reconcile_completed_codex_turns(pane_id);
+            return;
+        }
         let (changed, removed): (Vec<HookEventV1>, Vec<String>) = {
             let mut sessions = self.sessions.lock();
             let removed = stale_process_session_keys(&sessions, pane_id, provider, &candidate_pids);
@@ -261,19 +316,22 @@ impl HookRuntime {
         for event in changed {
             persist_session_event(&event);
         }
-        if provider == ProcessProvider::Codex {
-            self.reconcile_completed_codex_turns(pane_id);
-        }
     }
 
     fn reconcile_completed_codex_turns(&self, pane_id: &str) {
+        let ids = self
+            .codex_panes
+            .lock()
+            .get(pane_id)
+            .cloned()
+            .unwrap_or_default();
         let candidates: Vec<HookEventV1> = self
             .sessions
             .lock()
             .values()
             .filter(|event| {
                 event.provider == ProcessProvider::Codex
-                    && event.pane_id.as_deref() == Some(pane_id)
+                    && ids.contains(&event.session_id)
                     && !event.ended
                     && event.state != HookAgentState::Idle
             })
@@ -300,6 +358,19 @@ impl HookRuntime {
 
     pub async fn notified(&self) {
         self.notify.notified().await;
+    }
+
+    fn event_panes(&self, event: &HookEventV1) -> Vec<String> {
+        if event.provider == ProcessProvider::Codex {
+            return self
+                .codex_panes
+                .lock()
+                .iter()
+                .filter(|(_, ids)| ids.contains(&event.session_id))
+                .map(|(pane, _)| pane.clone())
+                .collect();
+        }
+        event.pane_id.iter().cloned().collect()
     }
 
     fn apply(&self, event: HookEventV1) {
@@ -524,13 +595,13 @@ fn process_inbox(
         };
         persist_session_event(&event);
         runtime.apply(event.clone());
-        if let Some(pane_id) = event.pane_id.as_deref() {
+        for pane_id in runtime.event_panes(&event) {
             let mut activity = agent_activity.lock().clone();
             activity.retain(|item| item.pane_id != pane_id);
-            if let Some(state) = runtime.pane_state(pane_id, event.provider) {
-                let auto_yes = auto_yes_panes.lock().contains(pane_id);
+            if let Some(state) = runtime.pane_state(&pane_id, event.provider) {
+                let auto_yes = auto_yes_panes.lock().contains(&pane_id);
                 activity.push(activity_from_hook_state(
-                    pane_id,
+                    &pane_id,
                     state.state,
                     state.attention,
                     auto_yes,
@@ -1397,6 +1468,10 @@ mod tests {
     #[test]
     fn stale_process_state_does_not_override_current_idle_session() {
         let runtime = HookRuntime::default();
+        runtime.codex_panes.lock().insert(
+            "%9".to_string(),
+            HashSet::from(["current-idle".to_string()]),
+        );
         for (session_id, process_id, occurred_at_ms, state) in [
             ("old-working", 41, 10, HookAgentState::Working),
             ("current-idle", 42, 20, HookAgentState::Idle),
@@ -1447,5 +1522,84 @@ mod tests {
         );
 
         assert!(!activity.asking);
+    }
+
+    #[test]
+    fn shared_codex_hooks_follow_displayed_sessions_not_inherited_panes() {
+        let runtime = HookRuntime::default();
+        runtime.codex_panes.lock().extend([
+            ("%71".to_string(), HashSet::from(["first".to_string()])),
+            ("%74".to_string(), HashSet::from(["second".to_string()])),
+        ]);
+        for (session, event) in [("first", "stop"), ("second", "permission_request")] {
+            let event = HookEventV1::from_provider_payload(
+                ProcessProvider::Codex,
+                event,
+                &json!({"session_id": session}),
+                Some("%3".to_string()),
+                Some(70212),
+            )
+            .expect("event");
+            assert_eq!(
+                runtime.event_panes(&event),
+                [if session == "first" { "%71" } else { "%74" }]
+            );
+            runtime.apply(event);
+        }
+        assert!(runtime.pane_state("%3", ProcessProvider::Codex).is_none());
+        assert_eq!(
+            runtime
+                .pane_state("%71", ProcessProvider::Codex)
+                .expect("first")
+                .state,
+            HookAgentState::Idle
+        );
+        assert_eq!(
+            runtime
+                .pane_state("%74", ProcessProvider::Codex)
+                .expect("second")
+                .state,
+            HookAgentState::Waiting
+        );
+        assert_eq!(
+            runtime.all_bound_panes(),
+            HashSet::from(["%71".to_string(), "%74".to_string()])
+        );
+
+        // Switching the displayed session must stop exposing the old hook.
+        runtime
+            .codex_panes
+            .lock()
+            .insert("%74".to_string(), HashSet::from(["first".to_string()]));
+        assert_eq!(
+            runtime
+                .pane_state("%74", ProcessProvider::Codex)
+                .expect("switched")
+                .state,
+            HookAgentState::Idle
+        );
+        let event = HookEventV1::from_provider_payload(
+            ProcessProvider::Codex,
+            "user_prompt_submit",
+            &json!({"session_id": "second"}),
+            Some("%3".to_string()),
+            Some(70212),
+        )
+        .expect("new hook for hidden session");
+        assert!(runtime.event_panes(&event).is_empty());
+        runtime.apply(event);
+        assert_eq!(
+            runtime
+                .pane_state("%74", ProcessProvider::Codex)
+                .expect("still first")
+                .state,
+            HookAgentState::Idle
+        );
+        // The pane may still exist after its Codex process exits.
+        runtime.retain_live_panes(
+            &HashSet::from(["%71".to_string(), "%74".to_string()]),
+            &HashSet::from(["%71".to_string()]),
+        );
+        assert!(runtime.pane_state("%74", ProcessProvider::Codex).is_none());
     }
 }

@@ -521,7 +521,12 @@ pub async fn question_detection_loop(
         let processes = detection.processes;
         log::debug!("[questions] detected {} claude processes", processes.len());
 
-        hook_runtime.retain_live_panes(&detection.all_pane_ids);
+        let codex_panes = processes
+            .iter()
+            .filter(|process| process.12 == ProcessProvider::Codex)
+            .map(|process| process.0.clone())
+            .collect();
+        hook_runtime.retain_live_panes(&detection.all_pane_ids, &codex_panes);
 
         prune_stale_auto_yes_panes(&auto_yes_panes, &detection.all_pane_ids);
 

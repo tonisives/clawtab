@@ -4,7 +4,7 @@ use super::common::{
 };
 use super::{ProcessSnapshot, SessionInfo};
 use parking_lot::Mutex;
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
 use std::collections::HashMap;
 use std::fs;
 use std::io::BufRead;
@@ -92,18 +92,7 @@ fn resolve_session_info_with_details(
 ) -> SessionInfo {
     let mut info = SessionInfo::default();
 
-    let codex_pid = if is_codex_process_with_snapshot(pane_pid, snapshot) {
-        pane_pid.to_string()
-    } else {
-        match find_codex_child(pane_pid, snapshot) {
-            Some(pid) => pid,
-            None => return info,
-        }
-    };
-
-    let process_start_epoch =
-        snapshot.and_then(|snapshot| snapshot.start_epoch_for_pid(&codex_pid));
-    let Some(thread_id) = cached_codex_thread_id_by_pid(&codex_pid, process_start_epoch) else {
+    let Some(thread_id) = thread_id_for_pane(pane_pid, snapshot) else {
         return info;
     };
 
@@ -144,6 +133,99 @@ fn resolve_session_info_with_details(
     }
 
     info
+}
+
+pub(crate) fn thread_id_for_pane(
+    pane_pid: &str,
+    snapshot: Option<&ProcessSnapshot>,
+) -> Option<String> {
+    let codex_pid = if is_codex_process_with_snapshot(pane_pid, snapshot) {
+        pane_pid.to_string()
+    } else {
+        find_codex_child(pane_pid, snapshot)?
+    };
+
+    let process_start_epoch =
+        snapshot.and_then(|snapshot| snapshot.start_epoch_for_pid(&codex_pid));
+    // Daemon-backed TUIs have no thread IDs in their process logs. Match the
+    // displayed session only when both its exact name and directory are unique.
+    // Check this first: a shared server can itself descend from another TUI.
+    thread_id_from_pane_title(pane_pid)
+        .or_else(|| cached_codex_thread_id_by_pid(&codex_pid, process_start_epoch))
+}
+
+#[derive(Default)]
+struct PaneTitleCache {
+    checked_at: Option<Instant>,
+    sessions: HashMap<String, String>,
+}
+
+fn thread_id_from_pane_title(pane_pid: &str) -> Option<String> {
+    static CACHE: OnceLock<Mutex<PaneTitleCache>> = OnceLock::new();
+    let mut cache = CACHE.get_or_init(Default::default).lock();
+    if cache
+        .checked_at
+        .is_none_or(|time| time.elapsed() >= Duration::from_secs(2))
+    {
+        cache.sessions = read_pane_title_sessions().unwrap_or_default();
+        cache.checked_at = Some(Instant::now());
+    }
+    cache.sessions.get(pane_pid).cloned()
+}
+
+fn read_pane_title_sessions() -> Option<HashMap<String, String>> {
+    let output = std::process::Command::new("tmux")
+        .args([
+            "list-panes",
+            "-a",
+            "-F",
+            "#{pane_pid}\t#{pane_current_path}\t#{pane_title}",
+        ])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let conn = Connection::open_with_flags(
+        latest_codex_sqlite("state_")?,
+        OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .ok()?;
+    let mut sessions = HashMap::new();
+    for line in String::from_utf8_lossy(&output.stdout).lines() {
+        let mut parts = line.splitn(3, '\t');
+        let (Some(pid), Some(cwd), Some(title)) = (parts.next(), parts.next(), parts.next()) else {
+            continue;
+        };
+        if let Some(id) = unique_thread_for_title(&conn, title, cwd) {
+            sessions.insert(pid.to_string(), id);
+        }
+    }
+    Some(sessions)
+}
+
+fn unique_thread_for_title(conn: &Connection, title: &str, cwd: &str) -> Option<String> {
+    let (name, _) = title.rsplit_once(" | ")?;
+    // Codex prefixes an active task with a Braille spinner, but idle titles
+    // start directly with the session name. Preserve non-ASCII user text.
+    let name = match name.chars().next() {
+        Some(first) if ('\u{2800}'..='\u{28ff}').contains(&first) => {
+            name.get(first.len_utf8()..)?.trim_start()
+        }
+        _ => name,
+    };
+    if name.is_empty() {
+        return None;
+    }
+    let mut query = conn
+        .prepare("select id from threads where name = ?1 and cwd = ?2 and archived = 0 limit 2")
+        .ok()?;
+    let mut rows = query.query(params![name, cwd]).ok()?;
+    let id = rows.next().ok()??.get(0).ok()?;
+    if rows.next().ok()?.is_some() {
+        return None;
+    }
+    Some(id)
 }
 
 fn find_codex_child(parent_pid: &str, snapshot: Option<&ProcessSnapshot>) -> Option<String> {
@@ -688,6 +770,53 @@ fn read_codex_rollout_messages(path: &PathBuf) -> (Option<String>, Option<String
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn daemon_session_titles_require_unique_names_in_the_pane_directory() {
+        let conn = rusqlite::Connection::open_in_memory().expect("database");
+        conn.execute_batch(
+            "create table threads (id text, name text, cwd text, archived integer);
+            insert into threads values ('first', 'Fix state | details', '/project', 0),
+                ('other-directory', 'Fix state | details', '/elsewhere', 0),
+                ('archived', 'Fix state | details', '/project', 1),
+                ('unicode', '修正 state', '/project', 0);",
+        )
+        .expect("fixtures");
+        for title in [
+            "Fix state | details | project",
+            "\u{2839} Fix state | details | project",
+        ] {
+            assert_eq!(
+                super::unique_thread_for_title(&conn, title, "/project").as_deref(),
+                Some("first")
+            );
+        }
+        assert_eq!(
+            super::unique_thread_for_title(&conn, "修正 state | project", "/project").as_deref(),
+            Some("unicode")
+        );
+        assert_eq!(
+            super::unique_thread_for_title(&conn, "Fix state | details | project", "/missing"),
+            None
+        );
+        assert_eq!(
+            super::unique_thread_for_title(&conn, "hostname", "/project"),
+            None
+        );
+        assert_eq!(
+            super::unique_thread_for_title(&conn, "Fix state | project", "/project"),
+            None
+        );
+        conn.execute(
+            "insert into threads values ('duplicate', 'Fix state | details', '/project', 0)",
+            [],
+        )
+        .expect("duplicate");
+        assert_eq!(
+            super::unique_thread_for_title(&conn, "Fix state | details | project", "/project"),
+            None
+        );
+    }
+
     use super::{read_codex_last_query_from_tail, read_completed_turn_after};
     use std::fs;
     use std::io::Write;
