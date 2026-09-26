@@ -287,18 +287,20 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
   )
   let machineChoices = (
     <View style={styles.row}>
-      {machines.map((m) => (
+      {machines.map((m) => {
+        let appearance = machineAppearance(m, state.machineAppearance, state.machines)
+        return (
         <Pressable
           accessibilityRole="button"
           accessibilityState={{ selected: m.id === state.selected }}
           aria-pressed={m.id === state.selected}
           key={m.id}
           onPress={pickMachine(m.id)}
-          style={[styles.button, styles.machineButton, m.id === state.selected && styles.selectedMachine]}
+          style={[styles.button, styles.machineButton, m.id === state.selected && styles.selectedMachine, m.id === state.selected && { borderColor: appearance.color }]}
         >
           <View style={styles.labelRow}>
-            <MachineIcon appearance={machineAppearance(m, state.machineAppearance, state.machines)} />
-            <Text style={[styles.text, styles.machineName]}>{m.name}{m.id === localMachineId ? " · This Mac" : ""}</Text>
+            <MachineIcon appearance={appearance} />
+            <Text style={[styles.text, styles.machineName, { color: appearance.color }]}>{m.name}{m.id === localMachineId ? " · This Mac" : ""}</Text>
             {m.id === state.selected && <View style={styles.selectionDot} />}
           </View>
           <View style={styles.statusRow}>
@@ -310,7 +312,7 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
             </Text>
           </View>
         </Pressable>
-      ))}
+      )})}
     </View>
   )
   return (

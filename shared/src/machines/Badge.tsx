@@ -1,17 +1,18 @@
 import { Text, View, StyleSheet } from "react-native"
 import { useMachines } from "./client"
 import { MachineIcon, machineAppearance } from "./Appearance"
-export let MachineBadge = ({ machineId }: { machineId?: string }) => {
+export let MachineBadge = ({ machineId, compact = false }: { machineId?: string; compact?: boolean }) => {
   let state = useMachines()
   if (!machineId) return null
   let machine = state.machines.find((item) => item.id === machineId)
+  let appearance = machineAppearance(machine, state.machineAppearance, state.machines)
   return (
-    <View style={styles.row}>
-      <MachineIcon size={14} appearance={machineAppearance(machine, state.machineAppearance, state.machines)} />
-      <Text style={styles.badge}>
+    <View style={styles.row} accessibilityLabel={machine?.name ?? "Machine"}>
+      <MachineIcon size={compact ? 18 : 14} appearance={appearance} />
+      {!compact && <Text style={[styles.badge, { color: appearance.color }]}>
       {machine?.name ?? "Machine"}
       {machine?.online ? "" : " · offline"}
-      </Text>
+      </Text>}
     </View>
   )
 }

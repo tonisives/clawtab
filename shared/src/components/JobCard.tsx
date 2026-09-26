@@ -108,7 +108,7 @@ export const JobCard = memo(function JobCard({
             <View style={styles.titleRow}>
               <Text style={styles.name} numberOfLines={1}>
                 {job.display_name ?? job.name}
-              </Text>{Platform.OS !== "ios" && <MachineBadge machineId={job.machine_id} />}
+              </Text><MachineBadge machineId={job.machine_id} compact={Platform.OS === "ios"} />
               {onTogglePin ? (
                 <TouchableOpacity
                   ref={menuBtnRef}

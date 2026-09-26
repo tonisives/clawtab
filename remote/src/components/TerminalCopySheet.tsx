@@ -1,5 +1,5 @@
 import * as Clipboard from "expo-clipboard";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Modal, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import WebView from "react-native-webview";
@@ -31,10 +31,13 @@ export let TerminalCopySheet = ({ text, onClose }: TerminalCopySheetProps) => {
   let { width, height } = useWindowDimensions();
   let isLandscape = width > height;
   let source = useMemo(() => ({ html: copyHtml(text ?? "") }), [text]);
+  let [copied, setCopied] = useState<string | null>(null);
+  let link = text?.match(/https?:\/\/[^\s<>"']+/)?.[0]?.replace(/[),.;]+$/, "") ?? null;
+  let code = text?.match(/\b[A-Z0-9]{4}-[A-Z0-9]{4,5}\b/)?.[0] ?? null;
+  useEffect(() => setCopied(null), [text]);
 
-  let handleCopyAll = () => {
-    if (text) void Clipboard.setStringAsync(text);
-    onClose();
+  let copy = (value: string, label: string) => {
+    void Clipboard.setStringAsync(value).then(() => setCopied(label));
   };
 
   return (
@@ -53,6 +56,11 @@ export let TerminalCopySheet = ({ text, onClose }: TerminalCopySheetProps) => {
             </Pressable>
           </View>
           <Text style={styles.hint}>Touch and hold to select a passage, then drag the handles and tap Copy.</Text>
+          {(link || code) && <View style={styles.quickActions}>
+            {link && <Pressable style={styles.quickButton} accessibilityRole="button" accessibilityLabel="Copy terminal link" onPress={() => copy(link, "Link copied")}><Text style={styles.quickButtonText}>Copy link</Text></Pressable>}
+            {code && <Pressable style={styles.quickButton} accessibilityRole="button" accessibilityLabel="Copy terminal code" onPress={() => copy(code, "Code copied")}><Text style={styles.quickButtonText}>Copy code</Text></Pressable>}
+          </View>}
+          {copied && <Text accessibilityRole="alert" style={styles.hint}>{copied}</Text>}
           <WebView
             style={styles.textView}
             source={source}
@@ -66,7 +74,7 @@ export let TerminalCopySheet = ({ text, onClose }: TerminalCopySheetProps) => {
             style={styles.copyButton}
             accessibilityRole="button"
             accessibilityLabel="Copy all visible terminal text"
-            onPress={handleCopyAll}
+            onPress={() => text && copy(text, "Terminal text copied")}
           >
             <Text style={styles.copyButtonText}>Copy all visible text</Text>
           </Pressable>
@@ -84,6 +92,9 @@ const styles = StyleSheet.create({
   title: { color: colors.text, fontSize: 18, fontWeight: "600" },
   action: { color: colors.accent, fontSize: 16, padding: 8 },
   hint: { color: colors.textMuted, marginTop: 8, marginBottom: 12 },
+  quickActions: { flexDirection: "row", gap: 8, marginBottom: 8 },
+  quickButton: { borderWidth: 1, borderColor: colors.accent, borderRadius: 8, padding: 10 },
+  quickButtonText: { color: colors.accent, fontWeight: "600" },
   textView: { flex: 1, minHeight: 0, backgroundColor: colors.bg },
   copyButton: { backgroundColor: colors.accent, alignItems: "center", padding: 13, borderRadius: 8, marginTop: 12 },
   copyButtonText: { color: colors.text, fontWeight: "600" },

@@ -24,6 +24,7 @@ export let MachineTerminalControls = ({ paneId, connectedOnly = false }: { paneI
   let resource = splitResource(paneId)
   if (!resource) return null
   let machine = state.machines.find((m) => m.id === resource.machine)
+  let appearance = machineAppearance(machine, state.machineAppearance, state.machines)
   if (connectedOnly && (!state.connected || !machine?.online)) return null
   let controlled = !!state.connectionId && state.controllers[paneId] === state.connectionId
   let take = () => machineSend(resource.machine, { type: "take_control", pane_id: resource.id })
@@ -32,9 +33,9 @@ export let MachineTerminalControls = ({ paneId, connectedOnly = false }: { paneI
   return (
     <View style={styles.controlSection}>
       <View style={styles.bar}>
-        <MachineIcon appearance={machineAppearance(machine, state.machineAppearance, state.machines)} />
+        <MachineIcon appearance={appearance} />
         <View style={styles.controlInfo}>
-          <Text style={styles.machineName}>{machine?.name ?? "Remote machine"}</Text>
+          <Text style={[styles.machineName, { color: appearance.color }]}>{machine?.name ?? "Remote machine"}</Text>
           <Text style={styles.controlStatus}>
             {machine?.online ? (controlled ? "You have control" : "Watching") : "Offline"}
           </Text>

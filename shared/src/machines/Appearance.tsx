@@ -6,6 +6,22 @@ import { saveAccountPreferences, useMachines, type Machine, type MachineAppearan
 let ICONS: MachineAppearance["icon"][] = ["desktop", "laptop", "server", "terminal", "chip"]
 let PALETTE = ["#8d9fff", "#34b3a0", "#e5a450", "#dc7d9c", "#a78bfa", "#94a3b8"]
 
+let defaultIcon = (platform?: string): MachineAppearance["icon"] =>
+  platform === "linux" ? "server" : platform === "macos" ? "desktop" : "laptop"
+
+let defaultColor = (index: number) => {
+  if (index < PALETTE.length) return PALETTE[index]
+  let hue = (index * 137.508) % 360
+  let lightness = 0.7
+  let chroma = 0.65 * Math.min(lightness, 1 - lightness)
+  let channel = (offset: number) => {
+    let position = (offset + hue / 30) % 12
+    let value = lightness - chroma * Math.max(-1, Math.min(position - 3, 9 - position, 1))
+    return Math.round(value * 255).toString(16).padStart(2, "0")
+  }
+  return `#${channel(0)}${channel(8)}${channel(4)}`
+}
+
 export let machineAppearance = (
   machine?: Pick<Machine, "id" | "platform">,
   configured?: Record<string, MachineAppearance>,
@@ -15,8 +31,7 @@ export let machineAppearance = (
   if (saved) return saved
   let orderedIds = machines.map((item) => item.id).sort()
   let index = machine ? orderedIds.indexOf(machine.id) : -1
-  if (index < 0) return { icon: machine?.platform === "linux" ? "server" : "desktop", color: machine?.platform === "linux" ? "#34b3a0" : "#8d9fff" }
-  return { icon: ICONS[index % ICONS.length], color: PALETTE[Math.floor(index / ICONS.length) % PALETTE.length] }
+  return { icon: defaultIcon(machine?.platform), color: defaultColor(Math.max(0, index)) }
 }
 
 export let MachineIcon = ({ appearance, size = 20, strokeWidth = 1.5 }: { appearance: MachineAppearance; size?: number; strokeWidth?: number }) => {
@@ -25,7 +40,9 @@ export let MachineIcon = ({ appearance, size = 20, strokeWidth = 1.5 }: { appear
     screen: { width: size * 0.9, height: size * 0.65, borderWidth: strokeWidth, borderColor: appearance.color, borderRadius: 2 },
     stand: { width: size * 0.4, height: size * 0.16, borderBottomWidth: strokeWidth, borderColor: appearance.color },
     base: { width: size, borderBottomWidth: strokeWidth, borderColor: appearance.color, marginTop: 2 },
-    rack: { width: size * 0.8, height: size * 0.35, borderWidth: strokeWidth, borderColor: appearance.color, borderRadius: 2, marginVertical: 1, justifyContent: "center", paddingLeft: 2 },
+    tower: { width: size * 0.65, height: size * 0.95, borderWidth: strokeWidth, borderColor: appearance.color, borderRadius: 2, justifyContent: "space-evenly", alignItems: "center" },
+    slot: { width: size * 0.38, borderBottomWidth: strokeWidth, borderColor: appearance.color },
+    lights: { width: size * 0.38, flexDirection: "row", justifyContent: "flex-end", gap: 2 },
     dot: { width: strokeWidth, height: strokeWidth, backgroundColor: appearance.color },
     chip: { width: size * 0.65, height: size * 0.65, borderWidth: strokeWidth, borderColor: appearance.color, borderRadius: 2 },
     pins: { width: size * 0.35, height: size, position: "absolute", borderTopWidth: strokeWidth, borderBottomWidth: strokeWidth, borderColor: appearance.color },
@@ -33,7 +50,7 @@ export let MachineIcon = ({ appearance, size = 20, strokeWidth = 1.5 }: { appear
     terminal: { color: appearance.color, fontSize: size * 0.5, fontWeight: "700", textAlign: "center" },
   }), [appearance.color, size, strokeWidth])
   return <View style={iconStyles.frame} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-    {appearance.icon === "server" ? <><View style={iconStyles.rack}><View style={iconStyles.dot} /></View><View style={iconStyles.rack}><View style={iconStyles.dot} /></View></>
+    {appearance.icon === "server" ? <View style={iconStyles.tower}><View style={iconStyles.slot} /><View style={iconStyles.slot} /><View style={iconStyles.lights}><View style={iconStyles.dot} /><View style={iconStyles.dot} /></View></View>
       : appearance.icon === "chip" ? <><View style={iconStyles.pins} /><View style={iconStyles.pinsAcross} /><View style={iconStyles.chip} /></>
       : <><View style={iconStyles.screen}>{appearance.icon === "terminal" && <Text style={iconStyles.terminal}>{">_"}</Text>}</View>{appearance.icon === "desktop" && <View style={iconStyles.stand} />}{appearance.icon === "laptop" && <View style={iconStyles.base} />}</>}
   </View>
