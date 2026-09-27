@@ -3,7 +3,7 @@ import { BackHandler, Modal, SafeAreaView, Pressable, ScrollView, StyleSheet, Te
 import { colors } from "../theme/colors"
 
 export type MachineOnboardingContent = ReactNode | ((close: () => void) => ReactNode)
-export type MachineActionButtonProps = { label: string; onPress: () => void; accessibilityLabel?: string; disabled?: boolean; icon?: "back"; style?: StyleProp<ViewStyle> }
+export type MachineActionButtonProps = { label: string; onPress: () => void; accessibilityLabel?: string; disabled?: boolean; icon?: "back"; appearance?: "settings"; style?: StyleProp<ViewStyle> }
 export type MachineModalProps = { title: string; children: ReactNode; onClose: () => void }
 export type MachineOnboardingChrome = { renderActionButton: (props: MachineActionButtonProps) => ReactNode; Modal?: import("react").ComponentType<MachineModalProps> }
 type Page = { id: number; title: string; content: MachineOnboardingContent }
@@ -19,8 +19,8 @@ export let MachineOnboardingProvider = ({ content, management, chrome, children 
 export let MachineActionButton = (props: MachineActionButtonProps) => {
   let chrome = useContext(OnboardingContext).chrome
   if (chrome) return <>{chrome.renderActionButton(props)}</>
-  return <Pressable accessibilityRole="button" accessibilityLabel={props.accessibilityLabel} disabled={props.disabled} onPress={props.onPress} style={[styles.button, props.style]}>
-    <Text style={styles.action}>{props.icon === "back" ? "Back" : props.label}</Text>
+  return <Pressable accessibilityRole="button" accessibilityLabel={props.accessibilityLabel} disabled={props.disabled} onPress={props.onPress} style={[styles.button, props.appearance === "settings" && styles.settingsButton, props.style]}>
+    <Text style={[styles.action, props.appearance === "settings" && styles.settingsAction]}>{props.icon === "back" ? "Back" : props.label}</Text>
   </Pressable>
 }
 
@@ -90,4 +90,6 @@ let styles = StyleSheet.create({
   headerSpacer: { width: 44, height: 44 },
   button: { minHeight: 44, paddingHorizontal: 18, borderRadius: 999, backgroundColor: colors.groupedSurface, borderWidth: 1, borderColor: colors.border, alignItems: "center", justifyContent: "center" },
   action: { color: colors.accent, fontSize: 13, fontWeight: "600" },
+  settingsButton: { minHeight: 56, paddingVertical: 16, backgroundColor: colors.surface, borderColor: colors.accent },
+  settingsAction: { fontSize: 16 },
 })

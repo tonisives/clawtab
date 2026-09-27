@@ -19,7 +19,16 @@ let getStorefront = async () => {
 export let machineOnboardingContent: MachineOnboardingContent = (close) => <MachineSetup onNavigate={close} />
 export let machineManagementContent: MachineOnboardingContent = (close) => <MachineSetup manage onNavigate={close} />
 
-let LiquidMachineActionButton = ({ label, onPress, accessibilityLabel, disabled, icon, style }: MachineActionButtonProps) => {
+let LiquidMachineActionButton = ({ label, onPress, accessibilityLabel, disabled, icon, appearance, style }: MachineActionButtonProps) => {
+  if (appearance === "settings") return <Pressable
+    accessibilityRole="button"
+    accessibilityLabel={accessibilityLabel ?? label}
+    disabled={disabled}
+    onPress={onPress}
+    style={({ pressed }) => [styles.settingsActionButton, disabled && styles.liquidDisabled, pressed && styles.liquidPressed, style]}
+  >
+    <Text style={styles.settingsActionText}>{label}</Text>
+  </Pressable>
   let glassAvailable = Platform.OS === "ios" && (() => {
     try {
       return isGlassEffectAPIAvailable()
@@ -106,4 +115,6 @@ let styles = StyleSheet.create({
   liquidPressed: { opacity: 0.72, transform: [{ scale: 0.97 }] },
   liquidDisabled: { opacity: 0.45 },
   liquidAction: { color: colors.accent, fontSize: 13, fontWeight: "600" },
+  settingsActionButton: { minHeight: 56, paddingVertical: 16, borderRadius: 999, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.accent, justifyContent: "center", alignItems: "center" },
+  settingsActionText: { color: colors.accent, fontSize: 16, fontWeight: "600" },
 })

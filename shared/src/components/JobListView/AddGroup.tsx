@@ -62,7 +62,7 @@ export let AddGroup = ({ hook }: { hook: JobListViewHook }) => {
   if (!hook.groupPreferencesApi) return null;
   return (
     <>
-    <MachineActionButton label="Add group / machine" onPress={show} style={styles.add} />
+    <MachineActionButton label="Add group / machine" onPress={show} appearance="settings" style={styles.add} />
     {open && <MachineModal title="Add group / machine" onClose={cancel}>
     <View style={styles.form}>
       <TextInput accessibilityLabel="Group name" placeholder="Group name" placeholderTextColor={colors.textSecondary} value={name} onChangeText={setName} editable={!busy} maxLength={100} style={styles.input} />
