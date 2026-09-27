@@ -15,7 +15,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 COPY --from=build /out/ /usr/local/bin/
 COPY etc/agent-plugins/ /opt/clawtab/plugins/
 COPY etc/machine-entrypoint.sh /usr/local/bin/machine-entrypoint
+COPY etc/machine-profile.sh /etc/profile.d/clawtab.sh
 USER clawtab
 WORKDIR /home/clawtab
 ENV PATH="/home/clawtab/.local/bin:/usr/local/bin:/usr/bin:/bin"
+ENV NPM_CONFIG_PREFIX="/home/clawtab/.local"
 ENTRYPOINT ["sh", "/usr/local/bin/machine-entrypoint"]
