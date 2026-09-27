@@ -621,6 +621,10 @@ export function useJobListDerivedItems({
       allGroups.push({ type: "ungrouped", procs: detUngrouped });
     }
 
+    // Home groups stay above the regular sort order on every machine.
+    allGroups.sort((left, right) => Number(right.type === "saved" && right.displayGroup === "Home")
+      - Number(left.type === "saved" && left.displayGroup === "Home"));
+
     // Split into visible and hidden groups
     const isGroupHidden = (entry: GroupEntry) => {
       if (!hiddenGroups?.size) return false;

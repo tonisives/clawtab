@@ -23,7 +23,7 @@ export function GroupAgentRow({
   localHostRequest,
   mode = "plus",
 }: {
-  onRunAgent: (prompt: string, provider?: ProcessProvider, model?: string | null, effort?: AgentEffort | null, workDir?: string) => void | Promise<void>;
+  onRunAgent: (prompt: string, provider?: ProcessProvider, model?: string | null, effort?: AgentEffort | null, workDir?: string, requestedFolder?: string) => void | Promise<void>;
   provider?: ProcessProvider | null;
   model?: string | null;
   effort?: AgentEffort | null;
@@ -72,7 +72,7 @@ export function GroupAgentRow({
       if (!request) throw new Error("Could not check the folder on this machine.");
       let resolvedFolder = await resolveAgentFolder(folder, request);
       selectMachine(target ?? null);
-      await onRunAgent("", nextProvider, modelId, nextEffort, resolvedFolder);
+      await onRunAgent("", nextProvider, modelId, nextEffort, resolvedFolder, folder);
     } catch (error) {
       setError(error instanceof Error ? error.message : "Could not start agent");
     } finally {

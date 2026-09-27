@@ -1,5 +1,5 @@
 import { machineOnboardingChrome, machineOnboardingContent, machineManagementContent } from "../../../src/components/MachineSetup";
-import { useMachines, useHiddenGroups, machineRequest, machineState, scopedMessage } from "@clawtab/shared";
+import { useMachines, useHiddenGroups, machineHostRequest, machineRequest, machineState, scopedMessage, matchesSavedGroup, savedGroupKey, newOperationId, saveAccountPreferences } from "@clawtab/shared";
 import { machineApi } from "../../../src/api/client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
@@ -658,6 +658,55 @@ export default function JobsScreen() {
 
   const runAgentHandler = canRunAgents ? handleRunAgent : undefined
 
+  const checkedHomeMachines = useRef(new Set<string>())
+  useEffect(() => {
+    if (!loaded) return
+    let cancelled = false
+    const groupExistingHomeAgents = async () => {
+      for (const machine of machines.machines) {
+        if (cancelled || !machine.online || !machine.owned || checkedHomeMachines.current.has(machine.id)) continue
+        const ungrouped = detectedProcesses.filter((process) => process.machine_id === machine.id
+          && process.cwd
+          && !Object.values(machineState().jobGroups).some((group) => matchesSavedGroup(group, process.cwd, machine.id)))
+        if (!ungrouped.length) continue
+        try {
+          const folder = await machineHostRequest(machine.id, { action: "list_directory", path: "~" })
+          if (cancelled) return
+          if (typeof folder.path !== "string" || !folder.path.startsWith("/")) continue
+          checkedHomeMachines.current.add(machine.id)
+          if (!ungrouped.some((process) => process.cwd.replace(/\/+$/, "") === folder.path.replace(/\/+$/, ""))) continue
+          if (Object.values(machineState().jobGroups).some((group) => matchesSavedGroup(group, folder.path, machine.id))) continue
+          await saveAccountPreferences(machineApi, {
+            job_group: { id: newOperationId(), name: "Home", machine_id: machine.id, work_dir: folder.path },
+          })
+        } catch {
+          // Keep the agent list available while an offline machine reconnects.
+        }
+      }
+    }
+    void groupExistingHomeAgents()
+    return () => { cancelled = true }
+  }, [loaded, machines.machines, detectedProcesses])
+
+  const handleStartAgent = useCallback(async (
+    prompt: string, provider?: ProcessProvider, model?: string | null, effort?: AgentEffort | null,
+    workDir?: string, requestedFolder?: string,
+  ) => {
+    const target = machineState().selected
+    if (!target || !workDir) throw new Error("Choose a folder on a machine")
+    const existingGroup = Object.values(machineState().jobGroups).find((group) => matchesSavedGroup(group, workDir, target))
+    if (existingGroup) {
+      if (hiddenGroups.has(savedGroupKey(existingGroup))) await unhideGroup(savedGroupKey(existingGroup))
+    } else {
+      const isHome = requestedFolder?.trim() === "~"
+      const name = isHome ? "Home" : workDir.split("/").filter(Boolean).pop() ?? workDir
+      await saveAccountPreferences(machineApi, {
+        job_group: { id: newOperationId(), name, machine_id: target, work_dir: workDir },
+      })
+    }
+    await handleRunAgent(prompt, workDir, provider, model, effort)
+  }, [handleRunAgent, hiddenGroups, unhideGroup])
+
   const handleOpenSidebarSettings = useCallback(() => {
     if (isSplitView) setSidebarSection("settings")
     else if (isIosPad) router.push("/settings")
@@ -850,8 +899,8 @@ export default function JobsScreen() {
             mode="start"
             workDir="~"
             modelOptions={agentModelOptions}
-            onRunAgent={(prompt, provider, model, effort, workDir) =>
-              handleRunAgent(prompt, workDir, provider, model, effort)
+            onRunAgent={(prompt, provider, model, effort, workDir, requestedFolder) =>
+              handleStartAgent(prompt, provider, model, effort, workDir, requestedFolder)
             }
           />
         </View>
