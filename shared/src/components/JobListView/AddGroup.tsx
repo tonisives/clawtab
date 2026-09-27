@@ -69,12 +69,12 @@ export let AddGroup = ({ hook }: { hook: JobListViewHook }) => {
       <TextInput accessibilityLabel="Group folder" placeholder="Folder on selected machine" placeholderTextColor={colors.textSecondary} value={path} onChangeText={setPath} editable={!busy} autoCapitalize="none" autoCorrect={false} style={styles.input} />
       <Text style={styles.hint}>Use an existing folder. ~ opens the selected machine’s home folder.</Text>
       <View pointerEvents={busy ? "none" : "auto"}>
-        <MachineTargetPicker target={target} localMachineId={hook.localAgentMachineId} onSelect={setTarget} />
+        <MachineTargetPicker target={target} localMachineId={hook.localAgentMachineId} onSelect={setTarget} flatAddMachine />
       </View>
-      <ManageMachinesButton />
       {error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
       <View style={styles.actions}>
-        <MachineActionButton label={busy ? "Creating…" : "Create group"} disabled={busy} onPress={create} />
+        <ManageMachinesButton appearance="settingsCompact" style={styles.actionButton} />
+        <MachineActionButton label={busy ? "Creating…" : "Create group"} disabled={busy} onPress={create} appearance="settingsCompact" style={styles.actionButton} />
       </View>
     </View>
     </MachineModal>}
@@ -88,5 +88,6 @@ let styles = StyleSheet.create({
   input: { color: colors.text, borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: spacing.sm, fontSize: 14 },
   hint: { color: colors.textSecondary, fontSize: 12 },
   error: { color: colors.danger, fontSize: 12 },
-  actions: { flexDirection: "row", justifyContent: "flex-end", gap: spacing.sm },
+  actions: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  actionButton: { flex: 1 },
 });

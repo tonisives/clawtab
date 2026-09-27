@@ -22,7 +22,7 @@ export let MachineTargetPicker = ({ target, localMachineId, onSelect, flatAddMac
         <Text numberOfLines={1} style={[styles.name, { color: appearance.color }]}>{machine.name}</Text>
         {!machine.online && <Text style={styles.status}>Offline</Text>}
       </Pressable>})}
-      <AddMachineButton appearance={flatAddMachine ? "settings" : undefined} />
+      <AddMachineButton appearance={flatAddMachine ? "settingsCompact" : undefined} style={flatAddMachine ? styles.addMachine : undefined} />
     </ScrollView>
     {!options.length && <Text style={styles.status}>No machine available</Text>}
   </View>
@@ -31,6 +31,7 @@ let styles = StyleSheet.create({
   footer: { borderTopWidth: 1, borderColor: colors.border, padding: 10, gap: 8 },
   heading: { color: colors.textSecondary, fontSize: 11, fontWeight: "600" },
   row: { gap: 6, alignItems: "center" },
+  addMachine: { flexShrink: 0 },
   machine: { width: 94, minHeight: 64, padding: 8, gap: 6, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 8 },
   selected: { borderColor: colors.accent, backgroundColor: colors.groupedSurface },
   offline: { opacity: 0.45 },

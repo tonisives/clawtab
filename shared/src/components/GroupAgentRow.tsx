@@ -102,7 +102,7 @@ export function GroupAgentRow({
             <Text style={styles.folderHint}>~ opens this machine’s home folder.</Text>
           </View>
           {targetMachineId
-          ? <View><Text style={styles.status}>{machine?.name ?? (isLocal ? "This desktop" : "Group machine")}{!isLocal && !machine?.online ? " · Offline" : ""}</Text><AddMachineButton appearance="settings" /></View>
+          ? <View><Text style={styles.status}>{machine?.name ?? (isLocal ? "This desktop" : "Group machine")}{!isLocal && !machine?.online ? " · Offline" : ""}</Text><AddMachineButton appearance="settingsCompact" /></View>
           : <MachineTargetPicker target={target ?? null} localMachineId={localMachineId} onSelect={chooseTarget} flatAddMachine />}
         </View>}
         includeShell
