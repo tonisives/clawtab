@@ -104,6 +104,7 @@ cleanup() {
     fi
     lock_pid="$(sed -n '1p' "$LOCK_DIR/pid" 2>/dev/null || true)"
     if [ "$lock_pid" = "$$" ]; then
+        tmux set-option -gq @clawtab-daemon-running 0 2>/dev/null || true
         rm -f "$EVENT_PIPE" "$ACTIVITY_TSV" "$PANE_STATE_FILE" "$OPTION_CHANGES_FILE" 2>/dev/null || true
         rm -f "$LOCK_DIR/pid"
         rmdir "$LOCK_DIR" 2>/dev/null || true
@@ -259,24 +260,19 @@ fetch_snapshot() {
         head -n 1
 }
 
-# Keep the last successfully applied snapshot across short daemon/socket
-# interruptions. Clearing immediately makes every window icon disappear one at
-# a time, then reappear one at a time when the next fetch succeeds.
-FAILURES_BEFORE_CLEAR=15
-consecutive_failures=0
 activity_was_cleared=0
+tmux set-option -gq @clawtab-daemon-running 0 2>/dev/null || true
 
 record_snapshot_failure() {
-    consecutive_failures=$((consecutive_failures + 1))
-    if [ "$consecutive_failures" -ge "$FAILURES_BEFORE_CLEAR" ] &&
-        [ "$activity_was_cleared" -eq 0 ]; then
+    tmux set-option -gq @clawtab-daemon-running 0 2>/dev/null || true
+    if [ "$activity_was_cleared" -eq 0 ]; then
         clear_activity_options
         activity_was_cleared=1
     fi
 }
 
 record_snapshot_success() {
-    consecutive_failures=0
+    tmux set-option -gq @clawtab-daemon-running 1 2>/dev/null || true
     activity_was_cleared=0
 }
 

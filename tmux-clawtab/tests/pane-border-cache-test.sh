@@ -75,11 +75,25 @@ for helper in '~/.config/tmux/clawtab-pane-info.sh' \
     grep -Fq '#{@clawtab-pane-path}' "$TEST_TMUX_OPTIONS"
     grep -Fq '#{@clawtab-pane-info}' "$TEST_TMUX_OPTIONS"
     grep -Fq '#{@clawtab-pane-has-info}' "$TEST_TMUX_OPTIONS"
+    grep -Fq '#{@clawtab-daemon-running}' "$TEST_TMUX_OPTIONS"
     if grep -Fq '#(' "$TEST_TMUX_OPTIONS"; then
         printf 'pane border still invokes a shell helper: %s\n' "$helper" >&2
         exit 1
     fi
 done
+
+# Re-sourcing upgrades an existing auto-yes marker in place.
+export TEST_BORDER_FORMAT='#[align=right]#{?#{==:#{@clawtab-auto-yes},1},#[fg=green#,bold][Y]#[default],#{?#{||:#{m:*.*.*,#{pane_current_command}},#{||:#{m:*codex*,#{pane_current_command}},#{m:*claude*,#{pane_current_command}}}},#[fg=colour240][y]#[default],}}'
+: >"$TEST_TMUX_OPTIONS"
+bash "$PLUGIN_DIR/clawtab.tmux"
+grep -Fq '#{@clawtab-daemon-running}' "$TEST_TMUX_OPTIONS"
+[ "$(grep -o 'clawtab-auto-yes' "$TEST_TMUX_OPTIONS" | wc -l | tr -d ' ')" = 1 ]
+
+# A user-defined pane border has the same marker inside a larger format.
+export TEST_BORDER_FORMAT='before #{?#{==:#{@clawtab-auto-yes},1},[Y],#{?#{m:*codex*,#{pane_current_command}},[y],}} after'
+: >"$TEST_TMUX_OPTIONS"
+bash "$PLUGIN_DIR/clawtab.tmux"
+grep -Fq 'before #{?#{@clawtab-daemon-running},#{?#{==:#{@clawtab-auto-yes},1},[Y],#{?#{m:*codex*,#{pane_current_command}},[y],}},} after' "$TEST_TMUX_OPTIONS"
 
 # Exercise the listener's real event decoder without starting a listener.
 JQ_BIN="$(command -v jq)"
