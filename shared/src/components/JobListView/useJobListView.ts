@@ -147,6 +147,7 @@ export function useJobListView(props: JobListViewProps) {
     groupLatestSortMode: props.groupLatestSortMode,
     handleRefresh,
     headerContent: props.headerContent,
+    afterToolbarContent: props.afterToolbarContent,
     hideSearchBar: props.hideSearchBar ?? false,
     hiddenSectionCollapsed,
     hoverSwitchTimerRef: refs.hoverSwitchTimerRef,

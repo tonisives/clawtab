@@ -41,6 +41,7 @@ import { NotificationsPanel } from "../../../src/components/NotificationsPanel"
 import { LoadingBar } from "../../../src/components/LoadingBar"
 import {
   JobListView,
+  GroupAgentRow,
   SplitDetailArea,
   DropZoneOverlay,
   JobCard,
@@ -843,6 +844,18 @@ export default function JobsScreen() {
           {bannerContent}
         </>
       }
+      afterToolbarContent={runAgentHandler ? (
+        <View style={styles.startAgentRow}>
+          <GroupAgentRow
+            mode="start"
+            workDir="~"
+            modelOptions={agentModelOptions}
+            onRunAgent={(prompt, provider, model, effort, workDir) =>
+              handleRunAgent(prompt, workDir, provider, model, effort)
+            }
+          />
+        </View>
+      ) : null}
       showEmpty={loaded}
       emptyMessage={"Add a group or machine below to start your first agent."}
       searchQuery={searchQuery}
@@ -1329,6 +1342,11 @@ const styles = StyleSheet.create({
     padding: 0,
     paddingTop: 0,
     paddingBottom: spacing.lg,
+  },
+  startAgentRow: {
+    paddingHorizontal: spacing.lg - spacing.md,
+    marginTop: -spacing.sm,
+    marginBottom: spacing.md,
   },
   portraitPageTitle: {
     color: colors.text,

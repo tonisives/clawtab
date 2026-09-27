@@ -19,7 +19,7 @@ export type AgentSelectorProps = {
   onSelectDefault?: () => void | Promise<void>;
   includeShell?: boolean;
   defaultLabel?: string;
-  mode?: "plus" | "button";
+  mode?: "plus" | "button" | "start";
   label?: string;
   disabled?: boolean;
   fullWidth?: boolean;
@@ -61,7 +61,7 @@ export function AgentSelector({
       resetMenu();
       return;
     }
-    if (mode === "plus") {
+    if (mode === "plus" || mode === "start") {
       setMenuOpen(true);
       return;
     }
@@ -191,10 +191,10 @@ export function AgentSelector({
       </TouchableOpacity>
       {menuOpen && (
         <PopupMenu
-          presentation={mode === "plus" ? "bottom-sheet" : "popup"}
+          presentation={mode === "plus" || mode === "start" ? "bottom-sheet" : "popup"}
           title={stage === "model" ? "Add agent" : "Choose effort"}
           onBack={stage === "effort" ? () => setStage("model") : resetMenu}
-          autoFocus={mode === "plus"}
+          autoFocus={mode === "plus" || mode === "start"}
           items={stage === "model" ? modelItems : [
             ...(Platform.OS === "ios" ? [] : [{ type: "item" as const, label: "Back to models", keepOpen: true, onPress: () => setStage("model") }]),
             ...effortItems,

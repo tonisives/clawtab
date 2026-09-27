@@ -80,6 +80,7 @@ export interface JobListViewProps {
   interactiveHiddenGroups?: boolean;
   // Header content (for banners, notifications, etc.)
   headerContent?: React.ReactNode;
+  afterToolbarContent?: React.ReactNode;
   // Show empty state
   showEmpty?: boolean;
   emptyMessage?: string;

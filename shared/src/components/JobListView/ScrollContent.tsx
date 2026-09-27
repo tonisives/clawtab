@@ -42,6 +42,7 @@ export function JobListScrollContent({ hook }: JobListScrollContentProps) {
     >
       {hook.headerContent}
       <JobListToolbar hook={hook} />
+      {hook.afterToolbarContent}
       <JobListItems hook={hook} />
       <AddGroup hook={hook} />
       {hook.groupMenu && (hook.onAddJob || hook.onGroupLatestSortChange || hook.onHideGroup || hook.onUnhideGroup) && (

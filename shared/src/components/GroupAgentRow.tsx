@@ -21,6 +21,7 @@ export function GroupAgentRow({
   targetMachineId,
   sourceMachineId,
   localHostRequest,
+  mode = "plus",
 }: {
   onRunAgent: (prompt: string, provider?: ProcessProvider, model?: string | null, effort?: AgentEffort | null, workDir?: string) => void | Promise<void>;
   provider?: ProcessProvider | null;
@@ -32,6 +33,7 @@ export function GroupAgentRow({
   targetMachineId?: string;
   sourceMachineId?: string;
   localHostRequest?: (request: MachineMessage) => Promise<MachineMessage>;
+  mode?: "plus" | "start";
 }) {
   const sendingRef = useRef(false);
   let machines = useMachines();
@@ -81,11 +83,13 @@ export function GroupAgentRow({
 
   return (
     <View
-      style={styles.row}
+      style={[styles.row, mode === "start" && styles.startRow]}
       {...(Platform.OS === "web" && workDir ? { dataSet: { agentWorkdir: workDir } } : {})}
     >
       <AgentSelector
-        mode="plus"
+        mode={mode}
+        label={mode === "start" ? "Start agent" : undefined}
+        fullWidth={mode === "start"}
         disabled={busy}
         provider={provider}
         model={model}
@@ -123,4 +127,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: Platform.OS === "web" ? spacing.xs : spacing.md,
     paddingVertical: Platform.OS === "web" ? 2 : spacing.sm,
   },
+  startRow: { width: "100%", paddingVertical: 0 },
 });

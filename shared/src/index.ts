@@ -125,6 +125,7 @@ export { ShareSection } from "./components/ShareSection";
 export type { ShareInfo, SharedWithMeInfo, ShareSectionProps } from "./components/ShareSection";
 export { PopupMenu } from "./components/PopupMenu";
 export { AgentSelector } from "./components/AgentSelector";
+export { GroupAgentRow } from "./components/GroupAgentRow";
 export type { AgentSelectorProps } from "./components/AgentSelector";
 export { SplitDetailArea } from "./components/SplitDetailArea";
 export type { SplitDetailAreaProps } from "./components/SplitDetailArea";
