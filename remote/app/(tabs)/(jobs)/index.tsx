@@ -1344,7 +1344,7 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.lg,
   },
   startAgentRow: {
-    paddingHorizontal: spacing.lg - spacing.md,
+    marginHorizontal: Platform.OS === "web" ? spacing.xs : spacing.md,
     marginTop: -spacing.sm,
     marginBottom: spacing.md,
   },

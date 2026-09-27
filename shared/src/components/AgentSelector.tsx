@@ -6,6 +6,7 @@ import type { AgentEffort, AgentModelOption, AgentSelection, ProcessProvider } f
 import { AGENT_EFFORT_OPTIONS, defaultAgentEffort, isSyntheticAgentModel } from "../types/process";
 import { agentSelectionLabel, labelForProvider, modelPickerLabel } from "../util/agent";
 import { JobKindIcon } from "./JobKindIcon";
+import { MachineActionButton } from "../machines/Onboarding";
 import { PopupMenu, type PopupMenuItem } from "./PopupMenu";
 
 export type AgentSelectorProps = {
@@ -166,7 +167,9 @@ export function AgentSelector({
 
   return (
     <View style={[styles.wrap, fullWidth && styles.fullWidth]}>
-      <TouchableOpacity
+      {mode === "start" ? (
+        <MachineActionButton label={buttonLabel} onPress={() => openMenu(null)} disabled={disabled} style={styles.startButton} />
+      ) : <TouchableOpacity
         ref={buttonRef}
         accessibilityRole="button"
         accessibilityLabel={mode === "plus" ? "Add agent" : buttonLabel}
@@ -188,7 +191,7 @@ export function AgentSelector({
             <Text style={styles.chevron}>{"\u25BE"}</Text>
           </>
         )}
-      </TouchableOpacity>
+      </TouchableOpacity>}
       {menuOpen && (
         <PopupMenu
           presentation={mode === "plus" || mode === "start" ? "bottom-sheet" : "popup"}
@@ -217,6 +220,9 @@ const styles = StyleSheet.create({
   },
   fullWidth: {
     flex: 1,
+  },
+  startButton: {
+    alignSelf: "stretch",
   },
   plusButton: {
     width: Platform.OS === "web" ? 28 : 34,

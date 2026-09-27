@@ -127,5 +127,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: Platform.OS === "web" ? spacing.xs : spacing.md,
     paddingVertical: Platform.OS === "web" ? 2 : spacing.sm,
   },
-  startRow: { width: "100%", paddingVertical: 0 },
+  startRow: { width: "100%", paddingHorizontal: 0, paddingVertical: 0 },
 });
