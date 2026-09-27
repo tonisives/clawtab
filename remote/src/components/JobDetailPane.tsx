@@ -208,8 +208,6 @@ export function JobDetailPane({ jobName, onClose, embedded = false }: JobDetailP
             onResize={sendResize}
             interactive
             forceDarkTheme
-            extendedViewport={Platform.OS === "ios"}
-            extendedViewportHeight={350}
             onScrollGesture={landscapeHeader.onScrollGesture}
             onLongPressCopyText={setCopyText}
           />

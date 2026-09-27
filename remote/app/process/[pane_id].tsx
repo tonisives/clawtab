@@ -400,8 +400,6 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification, f
             onResize={sendResize}
             interactive
             forceDarkTheme
-            extendedViewport
-            extendedViewportHeight={350}
             onScrollGesture={landscapeHeader.onScrollGesture}
             onLongPressCopyText={setCopyText}
           />

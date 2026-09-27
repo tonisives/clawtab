@@ -273,8 +273,6 @@ export default function JobDetailScreen() {
               onResize={sendResize}
               interactive
               forceDarkTheme
-              extendedViewport
-              extendedViewportHeight={350}
               onScrollGesture={landscapeHeader.onScrollGesture}
               onLongPressCopyText={setCopyText}
             />

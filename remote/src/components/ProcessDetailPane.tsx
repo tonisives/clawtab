@@ -293,8 +293,6 @@ export function ProcessDetailPane({ paneId, onClose, embedded = false }: Process
             onResize={sendResize}
             interactive
             forceDarkTheme
-            extendedViewport={Platform.OS === "ios"}
-            extendedViewportHeight={350}
             onScrollGesture={landscapeHeader.onScrollGesture}
             onLongPressCopyText={setCopyText}
           />
