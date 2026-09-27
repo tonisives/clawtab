@@ -29,6 +29,11 @@ SESSION_CACHE_TMP_FILE=""
 USAGE_CACHE_ROOT="${TMPDIR:-/tmp}/clawtab-usage-cache"
 USAGE_CACHE_FILE=""
 USAGE_CACHE_TMP_FILE=""
+ACTION_FILE=""
+ACTION_DONE_FILE=""
+ACTION_PID=""
+ACTION_LOADING=0
+ACTION_FORMAT=""
 
 AGENT_LABEL="Unsupported"
 
@@ -50,7 +55,7 @@ set_agent_label() {
 
 META_FILE=$(mktemp /tmp/clawtab-meta-XXXXXX)
 TITLE_FILE=""
-trap 'rm -f "$META_FILE" "$TITLE_FILE" "$SESSION_CACHE_TMP_FILE" "$USAGE_CACHE_TMP_FILE" "$DATA_PANE_COMMAND_FILE" "$DATA_SKILLS_FILE" "$DATA_SECRETS_FILE" "$DATA_SESSION_FILE" "$DATA_SESSION_DONE_FILE" "$DATA_DONE_FILE" "$USAGE_FILE" "$USAGE_DONE_FILE"' EXIT
+trap 'rm -f "$META_FILE" "$TITLE_FILE" "$SESSION_CACHE_TMP_FILE" "$USAGE_CACHE_TMP_FILE" "$ACTION_FILE" "$ACTION_DONE_FILE" "$DATA_PANE_COMMAND_FILE" "$DATA_SKILLS_FILE" "$DATA_SECRETS_FILE" "$DATA_SESSION_FILE" "$DATA_SESSION_DONE_FILE" "$DATA_DONE_FILE" "$USAGE_FILE" "$USAGE_DONE_FILE"' EXIT
 
 # State
 TAB=0
@@ -329,9 +334,12 @@ load_agent_actions() {
     AGENT_ACTION_AVAILABLE=()
     AGENT_ACTION_UNAVAILABLE_REASONS=()
     AGENT_ACTIONS_JSON=""
-    command -v cwtctl &>/dev/null || return 0
+    local actions_file="${1:-}"
+    if [ -z "$actions_file" ]; then
+        command -v cwtctl &>/dev/null || return 0
+    fi
 
-    if ! command -v jq &>/dev/null; then
+    if [ "${ACTION_FORMAT:-}" = "text" ] || { [ -z "${ACTION_FORMAT:-}" ] && ! command -v jq &>/dev/null; }; then
         local action_id title status available unavailable_reason
         while IFS=$'\t' read -r action_id title status; do
             [ -n "$action_id" ] || continue
@@ -343,12 +351,16 @@ load_agent_actions() {
                 unavailable_reason="${status#unavailable: }"
             fi
             append_agent_action "$action_id" "$title" "$available" "$unavailable_reason"
-        done < <(cwtctl agent actions "$PANE_ID" 2>/dev/null || true)
+        done < <(if [ -n "$actions_file" ]; then cat "$actions_file"; else cwtctl agent actions "$PANE_ID" 2>/dev/null || true; fi)
         return 0
     fi
 
     local actions_json
-    actions_json=$(cwtctl agent actions "$PANE_ID" --json 2>/dev/null) || return 0
+    if [ -n "$actions_file" ]; then
+        actions_json=$(<"$actions_file")
+    else
+        actions_json=$(cwtctl agent actions "$PANE_ID" --json 2>/dev/null) || return 0
+    fi
     if ! printf '%s' "$actions_json" | jq -e '.actions | type == "array"' >/dev/null 2>&1; then
         return 0
     fi
@@ -367,7 +379,37 @@ load_agent_actions() {
     )
 }
 
-load_agent_actions
+start_agent_actions_load() {
+    command -v cwtctl &>/dev/null || return 0
+    ACTION_FILE=$(mktemp /tmp/clawtab-actions-XXXXXX)
+    ACTION_DONE_FILE="${ACTION_FILE}.done"
+    if command -v jq &>/dev/null; then
+        ACTION_FORMAT="json"
+    else
+        ACTION_FORMAT="text"
+    fi
+    (
+        if [ "$ACTION_FORMAT" = "json" ]; then
+            cwtctl agent actions "$PANE_ID" --json > "$ACTION_FILE" 2>/dev/null || true
+        else
+            cwtctl agent actions "$PANE_ID" > "$ACTION_FILE" 2>/dev/null || true
+        fi
+        : > "$ACTION_DONE_FILE"
+    ) &
+    ACTION_PID=$!
+    ACTION_LOADING=1
+}
+
+finish_agent_actions_load() {
+    [ "$ACTION_LOADING" -eq 1 ] || return 1
+    [ -f "$ACTION_DONE_FILE" ] || return 1
+    load_agent_actions "$ACTION_FILE"
+    ACTION_LOADING=0
+    rm -f "$ACTION_FILE" "$ACTION_DONE_FILE"
+    ACTION_FILE=""
+    ACTION_DONE_FILE=""
+    return 0
+}
 
 # Session info (loaded once)
 SESSION_ID=""
@@ -1441,6 +1483,8 @@ draw_plugins() {
             printf "${C_DIM}No matches${C_RESET}" >&3
         elif ! command -v cwtctl &>/dev/null; then
             printf "${C_DIM}cwtctl not found${C_RESET}" >&3
+        elif [ "$ACTION_LOADING" -eq 1 ]; then
+            printf "${C_DIM}Loading plugins...${C_RESET}" >&3
         else
             printf "${C_DIM}No plugins available${C_RESET}" >&3
         fi
@@ -2131,14 +2175,18 @@ exec 3>&1 1>/dev/null
 # Hide cursor, enable alternate screen
 tput civis 2>/dev/null >&3
 printf '\033[?1049h' >&3
-trap 'printf "\033[?1049l" >&3; tput cnorm 2>/dev/null >&3; if [ -n "$DATA_PID" ]; then kill "$DATA_PID" 2>/dev/null || true; fi; if [ -n "$USAGE_PID" ]; then kill "$USAGE_PID" 2>/dev/null || true; fi; rm -f "$META_FILE" "$TITLE_FILE" "$SESSION_CACHE_TMP_FILE" "$USAGE_CACHE_TMP_FILE" "$DATA_PANE_COMMAND_FILE" "$DATA_SKILLS_FILE" "$DATA_SECRETS_FILE" "$DATA_SESSION_FILE" "$DATA_SESSION_DONE_FILE" "$DATA_DONE_FILE" "$USAGE_FILE" "$USAGE_DONE_FILE"' EXIT
+trap 'printf "\033[?1049l" >&3; tput cnorm 2>/dev/null >&3; if [ -n "$ACTION_PID" ]; then kill "$ACTION_PID" 2>/dev/null || true; fi; if [ -n "$DATA_PID" ]; then kill "$DATA_PID" 2>/dev/null || true; fi; if [ -n "$USAGE_PID" ]; then kill "$USAGE_PID" 2>/dev/null || true; fi; rm -f "$META_FILE" "$TITLE_FILE" "$SESSION_CACHE_TMP_FILE" "$USAGE_CACHE_TMP_FILE" "$ACTION_FILE" "$ACTION_DONE_FILE" "$DATA_PANE_COMMAND_FILE" "$DATA_SKILLS_FILE" "$DATA_SECRETS_FILE" "$DATA_SESSION_FILE" "$DATA_SESSION_DONE_FILE" "$DATA_DONE_FILE" "$USAGE_FILE" "$USAGE_DONE_FILE"' EXIT
 
 # Initial draw
 draw
+start_agent_actions_load
 
 # Event loop
 max=0
 while true; do
+    if finish_agent_actions_load; then
+        draw_tab_content
+    fi
     if finish_session_load; then
         draw_tabs
         draw_tab_content

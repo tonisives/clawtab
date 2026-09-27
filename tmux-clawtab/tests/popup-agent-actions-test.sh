@@ -13,7 +13,7 @@ ACTION_FUNCTIONS_FILE="$TEST_DIR/agent-actions.sh"
 trap 'rm -rf "$TEST_DIR"' EXIT
 
 printf '%s\n\n' 'value with spaces; $(this must stay literal)' > "$INPUT_FILE"
-sed -n '/^append_agent_action() {/,/^load_agent_actions$/p' "$POPUP_SCRIPT" | sed '$d' > "$LOAD_FUNCTIONS_FILE"
+sed -n '/^append_agent_action() {/,/^start_agent_actions_load() {$/p' "$POPUP_SCRIPT" | sed '$d' > "$LOAD_FUNCTIONS_FILE"
 sed -n '/^select_agent_option() {/,/^# Actions$/p' "$POPUP_SCRIPT" | sed '$d' > "$ACTION_FUNCTIONS_FILE"
 
 TEST_ACTIONS_JSON='{
