@@ -88,8 +88,27 @@ if [[ "$current_border" == *"@clawtab-pane-path"* && "$current_border" == *"@cla
     border_cache_enabled=1
 fi
 
-if [[ "$current_border" != *"clawtab-auto-yes"* ]]; then
-    clawtab_part="#[align=right]#{?#{==:#{@clawtab-auto-yes},1},#[fg=green#,bold][Y]#[default],#{?#{||:#{m:*.*.*,#{pane_current_command}},#{||:#{m:*codex*,#{pane_current_command}},#{m:*claude*,#{pane_current_command}}}},#[fg=colour240][y]#[default],}}"
+auto_yes_start='#{?#{==:#{@clawtab-auto-yes},1},'
+if [[ "$current_border" != *"clawtab-daemon-running"* &&
+      "$current_border" == *"$auto_yes_start"* ]]; then
+    border_prefix="${current_border%%"$auto_yes_start"*}"
+    border_rest="${current_border:${#border_prefix}}"
+    depth=0
+    for ((i = 0; i < ${#border_rest}; i++)); do
+        if [[ "${border_rest:i:2}" == '#{' ]]; then
+            depth=$((depth + 1))
+            i=$((i + 1))
+        elif [[ "${border_rest:i:1}" == '}' ]]; then
+            depth=$((depth - 1))
+            if [ "$depth" -eq 0 ]; then
+                auto_yes_expression="${border_rest:0:i+1}"
+                current_border="${border_prefix}#{?#{@clawtab-daemon-running},${auto_yes_expression},}${border_rest:i+1}"
+                break
+            fi
+        fi
+    done
+elif [[ "$current_border" != *"clawtab-auto-yes"* ]]; then
+    clawtab_part="#[align=right]#{?#{@clawtab-daemon-running},#{?#{==:#{@clawtab-auto-yes},1},#[fg=green#,bold][Y]#[default],#{?#{||:#{m:*.*.*,#{pane_current_command}},#{||:#{m:*codex*,#{pane_current_command}},#{m:*claude*,#{pane_current_command}}}},#[fg=colour240][y]#[default],}},}"
     current_border="${current_border}${clawtab_part}"
 fi
 tmux set-option -g pane-border-format "$current_border"
@@ -116,9 +135,11 @@ spinner_command=$(printf '%q' "$CURRENT_DIR/scripts/agent-spinner.sh")
 clawtab_question_part="#{?#{@clawtab-agent-question},#[fg=yellow#,bold]!#[default],}"
 clawtab_working_part="#{?#{@clawtab-agent-working},#{?#{@clawtab-agent-question}, ,}#[fg=cyan#,bold]*#[default],}"
 clawtab_check_part="#{?#{@clawtab-agent-present},#{?#{@clawtab-agent-question},,#{?#{@clawtab-agent-working},,#[fg=green#,bold]✓#[default]}},}"
-clawtab_activity_core="${clawtab_question_part}${clawtab_working_part}${clawtab_check_part}"
 clawtab_activity_prefix="#{?#{||:#{@clawtab-agent-question},#{||:#{@clawtab-agent-working},#{@clawtab-agent-present}}}, ,}"
-clawtab_activity_part="${clawtab_activity_prefix}${clawtab_activity_core}"
+old_clawtab_activity_core="${clawtab_question_part}${clawtab_working_part}${clawtab_check_part}"
+old_clawtab_activity_part="${clawtab_activity_prefix}${old_clawtab_activity_core}"
+clawtab_activity_core="#{?#{@clawtab-daemon-running},${old_clawtab_activity_core},}"
+clawtab_activity_part="#{?#{@clawtab-daemon-running},${old_clawtab_activity_part},}"
 animated_clawtab_working_part="#{?#{@clawtab-agent-working},#{?#{@clawtab-agent-question}, ,}#[fg=cyan]#(${spinner_command})#[default],}"
 animated_clawtab_activity_core="${clawtab_question_part}${animated_clawtab_working_part}${clawtab_check_part}"
 previous_clawtab_activity_part="#{?#{@clawtab-agent-question}, #[fg=yellow#,bold]!#[default],}#{?#{@clawtab-agent-working}, #[fg=cyan]#(${spinner_command})#[default],}#{?#{@clawtab-agent-present}, #[fg=green#,bold]✓#[default],}"
@@ -145,6 +166,20 @@ append_activity_format() {
     # Do not append the current indicators more than once when the plugin is
     # reloaded.
     if [[ "$current_format" == *"$clawtab_activity_core"* ]]; then
+        return
+    fi
+    if [[ "$current_format" == *"$clawtab_activity_part"* ]]; then
+        return
+    fi
+
+    if [[ "$current_format" == *"$old_clawtab_activity_part"* ]]; then
+        current_format="${current_format/"$old_clawtab_activity_part"/"$clawtab_activity_part"}"
+        tmux set-option -g "$option_name" "$current_format"
+        return
+    fi
+    if [[ "$current_format" == *"$old_clawtab_activity_core"* ]]; then
+        current_format="${current_format/"$old_clawtab_activity_core"/"$clawtab_activity_core"}"
+        tmux set-option -g "$option_name" "$current_format"
         return
     fi
 
