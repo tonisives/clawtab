@@ -1345,8 +1345,8 @@ const styles = StyleSheet.create({
   },
   startAgentRow: {
     marginHorizontal: spacing.xxl,
-    marginTop: -spacing.sm,
-    marginBottom: spacing.md,
+    marginTop: spacing.xl,
+    marginBottom: spacing.xl,
   },
   portraitPageTitle: {
     color: colors.text,

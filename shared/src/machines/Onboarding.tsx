@@ -62,7 +62,7 @@ let FallbackMachineModal = ({ title, children, onClose }: MachineModalProps) => 
   </Modal>
 }
 
-let MachinePageButton = ({ manage = false }: { manage?: boolean }) => {
+let MachinePageButton = ({ manage = false, appearance, style }: { manage?: boolean; appearance?: MachineActionButtonProps["appearance"]; style?: StyleProp<ViewStyle> }) => {
   let onboarding = useContext(OnboardingContext)
   let stack = useContext(StackContext)
   let content = manage ? onboarding.management : onboarding.content
@@ -72,11 +72,11 @@ let MachinePageButton = ({ manage = false }: { manage?: boolean }) => {
   let show = () => stack ? stack.push({ title, content }) : setOpen(true)
   if (!content) return null
   return <>
-    <MachineActionButton label={manage ? title : "+ Add machine"} onPress={show} />
+    <MachineActionButton label={manage ? title : "+ Add machine"} onPress={show} appearance={appearance} style={style} />
     {open && <MachineModal title={title} onClose={close}>{typeof content === "function" ? content(close) : content}</MachineModal>}
   </>
 }
-export let AddMachineButton = () => <MachinePageButton />
+export let AddMachineButton = ({ appearance, style }: { appearance?: MachineActionButtonProps["appearance"]; style?: StyleProp<ViewStyle> } = {}) => <MachinePageButton appearance={appearance} style={style} />
 export let ManageMachinesButton = () => <MachinePageButton manage />
 
 let styles = StyleSheet.create({

@@ -88,7 +88,7 @@ export function GroupAgentRow({
     >
       <AgentSelector
         mode={mode}
-        label={mode === "start" ? "Start agent" : undefined}
+        label={mode === "start" ? "+ Add agent" : undefined}
         fullWidth={mode === "start"}
         disabled={busy}
         provider={provider}
@@ -102,8 +102,8 @@ export function GroupAgentRow({
             <Text style={styles.folderHint}>~ opens this machine’s home folder.</Text>
           </View>
           {targetMachineId
-          ? <View><Text style={styles.status}>{machine?.name ?? (isLocal ? "This desktop" : "Group machine")}{!isLocal && !machine?.online ? " · Offline" : ""}</Text><AddMachineButton /></View>
-          : <MachineTargetPicker target={target ?? null} localMachineId={localMachineId} onSelect={chooseTarget} />}
+          ? <View><Text style={styles.status}>{machine?.name ?? (isLocal ? "This desktop" : "Group machine")}{!isLocal && !machine?.online ? " · Offline" : ""}</Text><AddMachineButton appearance="settings" /></View>
+          : <MachineTargetPicker target={target ?? null} localMachineId={localMachineId} onSelect={chooseTarget} flatAddMachine />}
         </View>}
         includeShell
         onChange={(selection) => launch(selection.provider, selection.modelId, selection.effort)}
