@@ -32,8 +32,11 @@ pub(super) fn open_pty_and_attach(
         .map_err(|e| format!("openpty: {}", e))?;
 
     let mut cmd = CommandBuilder::new("tmux");
-    cmd.args(["attach-session", "-t", view_session]);
+    // Headless hosts may have a POSIX locale and no terminal capabilities.
+    // Our viewer is xterm.js, so preserve Unicode and full RGB colors.
+    cmd.args(["-u", "-T", "RGB", "attach-session", "-t", view_session]);
     cmd.env("TERM", "xterm-256color");
+    cmd.env("COLORTERM", "truecolor");
 
     let _child = pair
         .slave

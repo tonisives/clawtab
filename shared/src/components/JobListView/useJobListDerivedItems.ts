@@ -501,6 +501,7 @@ export function useJobListDerivedItems({
 
     // Unified group entries for interleaved sorting
     type GroupEntry =
+      | { type: "home"; groupKey: string; displayGroup: string; memberKeys: string[]; procs: DetectedProcess[]; shells: ShellPane[] }
       | { type: "saved"; groupKey: string; displayGroup: string; folderPath: string; machineId: string; procs: DetectedProcess[]; shells: ShellPane[] }
       | { type: "job"; group: string; displayGroup: string; folderPath?: string; jobs: RemoteJob[]; procs: DetectedProcess[] }
       | { type: "detected"; groupKey: string; displayGroup: string; folderPath: string; procs: DetectedProcess[] }
@@ -519,7 +520,25 @@ export function useJobListDerivedItems({
         : sortMode === "name"
           ? processDisplayTitle(left).localeCompare(processDisplayTitle(right))
           : processSortTimestamp(right, sortMode) - processSortTimestamp(left, sortMode));
-      allGroups.push({ type: "saved", groupKey, displayGroup: group.name, folderPath: group.work_dir, machineId: group.machine_id, procs, shells });
+      if (group.name === "Home") {
+        let home = allGroups.find((entry) => entry.type === "home");
+        if (home?.type === "home") {
+          home.procs.push(...procs);
+          home.shells.push(...shells);
+          home.memberKeys.push(groupKey);
+        } else {
+          allGroups.push({ type: "home", groupKey: "__home", displayGroup: "Home", memberKeys: [groupKey], procs, shells });
+        }
+      } else {
+        allGroups.push({ type: "saved", groupKey, displayGroup: group.name, folderPath: group.work_dir, machineId: group.machine_id, procs, shells });
+      }
+    }
+
+    const home = allGroups.find((entry) => entry.type === "home");
+    if (home?.type === "home") {
+      const latestSort = groupLatestSortMode?.[home.groupKey] ?? "activity";
+      home.procs.sort((left, right) => processLatestTimestamp(right, latestSort)
+        - processLatestTimestamp(left, latestSort) || compareProcessActivity(left, right));
     }
 
     for (const group of sortedGroupKeys) {
@@ -621,13 +640,13 @@ export function useJobListDerivedItems({
       allGroups.push({ type: "ungrouped", procs: detUngrouped });
     }
 
-    // Home groups stay above the regular sort order on every machine.
-    allGroups.sort((left, right) => Number(right.type === "saved" && right.displayGroup === "Home")
-      - Number(left.type === "saved" && left.displayGroup === "Home"));
+    allGroups.sort((left, right) => Number(right.type === "home") - Number(left.type === "home"));
 
     // Split into visible and hidden groups
     const isGroupHidden = (entry: GroupEntry) => {
       if (!hiddenGroups?.size) return false;
+      if (entry.type === "home") return hiddenGroups.has(entry.groupKey)
+        || entry.memberKeys.every((key) => hiddenGroups.has(key));
       const name = entry.type === "saved" ? entry.groupKey : "displayGroup" in entry ? entry.displayGroup : "";
       return hiddenGroups.has(name);
     };
@@ -638,7 +657,14 @@ export function useJobListDerivedItems({
 
     const appendGroupEntries = (entries: GroupEntry[], hidden = false) => {
       for (const entry of entries) {
-        if (entry.type === "saved") {
+        if (entry.type === "home") {
+          result.push({ kind: "header", group: entry.groupKey, displayGroup: "Home", hidden, agentOnly: true });
+          if (query || !collapsedGroups.has(entry.groupKey)) {
+            result.push(...entry.procs.map((process): ListItem => ({ kind: "process", process, inGroup: true })));
+            result.push(...entry.shells.map((shell): ListItem => ({ kind: "shell", shell })));
+            if (onRunAgent) result.push({ kind: "group-agent", workDir: "~", footerPath: "~" });
+          }
+        } else if (entry.type === "saved") {
           result.push({ kind: "header", group: entry.groupKey, displayGroup: entry.displayGroup, folderPath: entry.folderPath, hidden, agentOnly: true });
           if (query || !collapsedGroups.has(entry.groupKey)) {
             result.push(...entry.procs.map((process): ListItem => ({ kind: "process", process, inGroup: true })));
@@ -726,7 +752,7 @@ export function useJobListDerivedItems({
         } else {
           for (const entry of hiddenEntries) {
             const displayGroup = "displayGroup" in entry ? entry.displayGroup : "Detected";
-            const group = entry.type === "job" ? entry.displayGroup : entry.type === "detected" || entry.type === "saved" ? entry.groupKey : "detected";
+            const group = entry.type === "job" ? entry.displayGroup : entry.type === "detected" || entry.type === "saved" || entry.type === "home" ? entry.groupKey : "detected";
             result.push({ kind: "hidden-header", group, displayGroup });
           }
         }

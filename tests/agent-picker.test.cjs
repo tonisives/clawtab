@@ -186,6 +186,27 @@ test('identical paths on different machines keep agents in separate groups', () 
   assert.equal(items.find((item) => item.kind === 'process' && item.process.pane_id === 'desktop').process.machine_id, 'desktop');
 });
 
+test('Home combines machines and orders agents by latest activity above project groups', () => {
+  let homeGroups = ['desktop', 'remote'].map((machine_id) => ({
+    id: `home-${machine_id}`, name: 'Home', machine_id, work_dir: `/${machine_id}/home`,
+  }));
+  let processes = [
+    { pane_id: 'local-older', machine_id: 'desktop', cwd: '/desktop/home', provider: 'codex', _last_activity: 10 },
+    { pane_id: 'remote-newest', machine_id: 'remote', cwd: '/remote/home', provider: 'codex', _last_activity: 30 },
+    { pane_id: 'local-newer', machine_id: 'desktop', cwd: '/desktop/home', provider: 'codex', _last_activity: 20 },
+  ];
+  let { items } = derivedGroups({ savedGroups: [{ ...groupA, name: 'A Project' }, ...homeGroups], detectedProcesses: processes });
+  assert.equal(items[0].displayGroup, 'Home');
+  assert.equal(items.filter((item) => item.kind === 'header' && item.displayGroup === 'Home').length, 1);
+  assert.deepEqual(Array.from(items.filter((item) => item.kind === 'process'), (item) => item.process.pane_id),
+    ['remote-newest', 'local-newer', 'local-older']);
+  let add = items.find((item) => item.kind === 'group-agent');
+  assert.equal(add.workDir, '~');
+  assert.equal(add.machineId, undefined);
+  assert.equal(derivedGroups({ savedGroups: homeGroups, detectedProcesses: processes },
+    { collapsedGroups: new Set(['__home']) }).items.length, 1);
+});
+
 test('saved groups respect collapse, hide, search, and latest mode', () => {
   let processes = [{ pane_id: 'p', machine_id: 'remote', cwd: groupA.work_dir, provider: 'codex', first_query: 'fix regression' }];
   assert.equal(derivedGroups({}, { collapsedGroups: new Set(['saved:group-a']) }).items.length, 1);
