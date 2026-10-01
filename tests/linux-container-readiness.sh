@@ -23,6 +23,7 @@ def cpu_seconds():
     return (int(fields[11]) + int(fields[12])) / os.sysconf('SC_CLK_TCK')
 # Let startup finish, then detect the Linux inbox access-event feedback loop.
 time.sleep(1)
+list(Path('/home/clawtab/.config/clawtab/agent-hooks/inbox').iterdir())
 before = cpu_seconds()
 time.sleep(3)
 used = cpu_seconds() - before
