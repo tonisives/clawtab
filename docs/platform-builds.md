@@ -2,20 +2,52 @@
 
 ## Linux
 
-GitHub releases include headless agent hosts for x86_64 and ARM64. These are not desktop GUI packages. They require glibc 2.35 or newer, systemd, tmux, Git, and Python 3. Ubuntu 22.04 or newer meets the glibc requirement.
+GitHub releases include the Linux daemon for x86_64 and ARM64. Each package contains `clawtab-daemon`, `cwtctl`, agent hooks, and the session shortcuts plugin. Use the same package as a local daemon or a paired remote agent host. Linux packages require glibc 2.35 or newer, systemd, tmux, Git, and Python 3. Use Ubuntu 22.04+ or Debian 12+.
 
 Download the archive and matching `.sha256` file from the same [release](https://github.com/tonisives/clawtab/releases/latest). For x86_64:
 
 ```sh
 sha256sum --check clawtab-linux-x86_64.tar.gz.sha256
-mkdir clawtab-linux
+mkdir -p clawtab-linux
 tar -xzf clawtab-linux-x86_64.tar.gz -C clawtab-linux
 sh clawtab-linux/install.sh
 export PATH="$HOME/.local/bin:$PATH"
-cwtctl setup
 ```
 
-Use `aarch64` instead of `x86_64` for ARM64. Approve the pairing code in **Machines > Add machine**. For updates, run `cwtctl daemon restart` after installing the new package.
+Use `aarch64` instead of `x86_64` for ARM64. Add `~/.local/bin` to your shell's PATH. Install and authenticate the coding tools you want to run on this machine.
+
+### 1. Local daemon
+
+Local use is free and requires no ClawTab account or relay. Start the systemd user service, verify local IPC, and list your jobs:
+
+```sh
+cwtctl daemon install
+cwtctl daemon ping
+cwtctl jobs list
+```
+
+The daemon handles schedules, agent discovery, question detection, and local commands. Manage jobs with `cwtctl` and use tmux for your terminals. See the [CLI reference](cli-tui.md).
+
+The service starts on login. To keep it running after logout and start it at boot:
+
+```sh
+loginctl enable-linger "$USER"
+```
+
+Your system may require administrator authorization. Lingering does not recreate running agents after a reboot.
+
+### 2. Remote agent host
+
+Pair the machine to control its agents from macOS desktop, iPhone, or web Remote. This connects the same daemon to the relay:
+
+```sh
+cwtctl setup --name build-host --linger
+cwtctl daemon ping
+```
+
+Approve the pairing code in **Machines > Add machine** on desktop or mobile. Setup pairs the host and enables its service. `--linger` keeps it available after logout. Hosted Remote requires a subscription; you can also use a self-hosted relay with `--relay https://…`. See [remote machine setup](remote-machines.md).
+
+For updates to either setup, run `cwtctl daemon restart` after installing the new package. Existing tmux agents survive daemon restarts. Linux packages provide terminal tools and a headless daemon; the desktop GUI is available on macOS.
 
 The **Linux agent host** workflow tests and builds both architectures on pull requests, version tags, and manual dispatch. Version tags attach the archives and checksums to the GitHub release.
 

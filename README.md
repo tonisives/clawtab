@@ -23,7 +23,7 @@
 | Platform | Availability |
 | --- | --- |
 | macOS | [Desktop app for Apple Silicon and Intel](https://github.com/tonisives/clawtab/releases/latest), or `brew install --cask tonisives/tap/clawtab` |
-| Linux | Headless agent host: [x86_64](https://github.com/tonisives/clawtab/releases/latest/download/clawtab-linux-x86_64.tar.gz) / [ARM64](https://github.com/tonisives/clawtab/releases/latest/download/clawtab-linux-aarch64.tar.gz) |
+| Linux | Local daemon or remote agent host: [x86_64](https://github.com/tonisives/clawtab/releases/latest/download/clawtab-linux-x86_64.tar.gz) / [ARM64](https://github.com/tonisives/clawtab/releases/latest/download/clawtab-linux-aarch64.tar.gz) |
 | Windows | No native Windows build yet |
 | iPhone / iPad | [App Store](https://apps.apple.com/us/app/clawtab/id6759683841) |
 | Android | Google Play build workflow added; store release pending signing and submission |
