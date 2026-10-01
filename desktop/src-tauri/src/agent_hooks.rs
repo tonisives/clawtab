@@ -525,7 +525,7 @@ pub async fn run_event_watcher(
     auto_yes_panes: Arc<Mutex<HashSet<String>>>,
     event_sink: Arc<dyn EventSink>,
 ) {
-    use notify::{RecommendedWatcher, RecursiveMode, Watcher};
+    use notify::{RecursiveMode, Watcher};
     let inbox = inbox_dir();
     let sessions = sessions_dir();
     if let Err(error) = create_private_dir(&inbox).and_then(|_| create_private_dir(&sessions)) {
@@ -535,23 +535,9 @@ pub async fn run_event_watcher(
         );
         return;
     }
-    replay_session_markers(&runtime);
-    process_inbox(
-        &runtime,
-        &agent_activity,
-        &auto_yes_panes,
-        event_sink.as_ref(),
-    );
-
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-    let mut watcher = match RecommendedWatcher::new(
-        move |result: notify::Result<notify::Event>| {
-            if result.is_ok() {
-                let _ = tx.send(());
-            }
-        },
-        notify::Config::default(),
-    ) {
+    // One pending wakeup is enough: each pass drains the entire inbox.
+    let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+    let mut watcher = match inbox_watcher(tx) {
         Ok(watcher) => watcher,
         Err(error) => {
             log::warn!("[agent-hooks] failed to create watcher: {}", error);
@@ -562,6 +548,14 @@ pub async fn run_event_watcher(
         log::warn!("[agent-hooks] failed to watch inbox: {}", error);
         return;
     }
+    // Register first so events written during startup cannot be missed.
+    replay_session_markers(&runtime);
+    process_inbox(
+        &runtime,
+        &agent_activity,
+        &auto_yes_panes,
+        event_sink.as_ref(),
+    );
     while rx.recv().await.is_some() {
         process_inbox(
             &runtime,
@@ -570,6 +564,23 @@ pub async fn run_event_watcher(
             event_sink.as_ref(),
         );
     }
+}
+
+fn inbox_watcher(tx: tokio::sync::mpsc::Sender<()>) -> notify::Result<notify::RecommendedWatcher> {
+    use notify::{EventKind, RecommendedWatcher, Watcher};
+    RecommendedWatcher::new(
+        move |result: notify::Result<notify::Event>| {
+            if let Ok(event) = result {
+                // Linux reports opening/reading the directory as access events.
+                // Waking on those would make process_inbox trigger itself forever.
+                // Removing consumed events also requires no further scan.
+                if matches!(event.kind, EventKind::Create(_) | EventKind::Modify(_)) {
+                    let _ = tx.try_send(());
+                }
+            }
+        },
+        notify::Config::default(),
+    )
 }
 
 fn process_inbox(
@@ -1301,6 +1312,63 @@ mod tests {
     use serde_json::json;
     use std::collections::HashSet;
     use std::fs;
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn inbox_reads_and_removals_do_not_wake_watcher() {
+        use notify::{RecursiveMode, Watcher};
+        use std::time::Duration;
+        use tokio::time::timeout;
+
+        let dir = tempfile::tempdir().expect("inbox directory");
+        let event_path = dir.path().join("event.json");
+        fs::write(&event_path, "{}").expect("existing event");
+        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+        let mut watcher = super::inbox_watcher(tx).expect("inbox watcher");
+        watcher
+            .watch(dir.path(), RecursiveMode::NonRecursive)
+            .expect("watch inbox");
+
+        let entries: Vec<_> = fs::read_dir(dir.path()).expect("scan inbox").collect();
+        assert_eq!(entries.len(), 1);
+        fs::read(&event_path).expect("read event");
+        fs::remove_file(&event_path).expect("consume event");
+        assert!(timeout(Duration::from_millis(200), rx.recv())
+            .await
+            .is_err());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn atomic_hook_writes_wake_watcher_and_coalesce() {
+        use notify::{RecursiveMode, Watcher};
+        use std::time::Duration;
+        use tokio::time::{sleep, timeout};
+
+        let dir = tempfile::tempdir().expect("inbox directory");
+        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+        let mut watcher = super::inbox_watcher(tx).expect("inbox watcher");
+        watcher
+            .watch(dir.path(), RecursiveMode::NonRecursive)
+            .expect("watch inbox");
+        for index in 0..20 {
+            super::atomic_write_json(&dir.path().join(format!("{index}.json")), &json!({}))
+                .expect("atomic hook event");
+        }
+        // Let the OS deliver the burst without draining the single pending wakeup.
+        sleep(Duration::from_millis(100)).await;
+        assert_eq!(rx.len(), 1);
+        assert_eq!(
+            timeout(Duration::from_secs(2), rx.recv())
+                .await
+                .expect("write notification"),
+            Some(())
+        );
+        assert_eq!(fs::read_dir(dir.path()).expect("scan inbox").count(), 20);
+        assert!(timeout(Duration::from_millis(200), rx.recv())
+            .await
+            .is_err());
+    }
 
     #[test]
     fn completed_codex_turn_clears_stale_permission_and_preserves_newer_hooks() {

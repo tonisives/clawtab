@@ -14,6 +14,21 @@ done
 cwtctl jobs list
 test ! -e /home/clawtab/.config/clawtab/machine-paired
 printf 'PASS: unpaired daemon responds to readiness probe\n'
+python3 - "$daemon_pid" <<'PYTEST'
+import os,sys,time
+from pathlib import Path
+pid = sys.argv[1]
+def cpu_seconds():
+    fields = Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()
+    return (int(fields[11]) + int(fields[12])) / os.sysconf('SC_CLK_TCK')
+# Let startup finish, then detect the Linux inbox access-event feedback loop.
+time.sleep(1)
+before = cpu_seconds()
+time.sleep(3)
+used = cpu_seconds() - before
+assert used < 0.3, f'idle daemon consumed {used:.2f} CPU seconds in 3 seconds'
+print(f'PASS: idle daemon consumed {used:.2f} CPU seconds in 3 seconds')
+PYTEST
 cat > /tmp/pairing-fixture.py <<'PY'
 import http.server,json,urllib.parse,pathlib
 class Handler(http.server.BaseHTTPRequestHandler):
