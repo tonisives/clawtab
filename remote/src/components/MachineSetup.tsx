@@ -83,7 +83,9 @@ export let MachineSetup = ({ onNavigate, manage = false }: { onNavigate?: () => 
   </View>
   return <MachineOnboardingProvider content={machineOnboardingContent} management={machineManagementContent} chrome={machineOnboardingChrome}>
     {manage && <View style={styles.navigation}><AddMachineButton /></View>}
-    {(manage || allowNewRentals) && <RentalsPanel showExistingRentals={manage} allowNewRentals={allowNewRentals} onOrderingChange={setOrdering} api={rentalApi} {...checkout} platform={Platform.OS === "ios" ? "ios" : Platform.OS === "android" ? "android" : "web"} openUrl={openCheckout} />}
+    {(manage || allowNewRentals) && <RentalsPanel showExistingRentals={manage} allowNewRentals={allowNewRentals} onOrderingChange={setOrdering} api={rentalApi} {...checkout} platform={Platform.OS === "ios" ? "ios" : Platform.OS === "android" ? "android" : "web"} openUrl={openCheckout}>
+      {manage && <MachinesPanel presentation="panel" approvePairing={approveMachinePairing} api={machineApi} />}
+    </RentalsPanel>}
     {allowNewRentals && !checkout.purchases && <View style={styles.unavailable}>
       <Text style={styles.unavailableTitle}>Rent a machine</Text>
       <Text style={styles.detail}>{loading ? "Checking availability…" : rentalAvailabilityMessage(checkout.reason)}</Text>
@@ -91,7 +93,6 @@ export let MachineSetup = ({ onNavigate, manage = false }: { onNavigate?: () => 
     </View>}
     {!manage && !ordering && <View style={styles.connection}><ConnectMachine approvePairing={approveMachinePairing} /></View>}
     {!manage && !ordering && <View style={styles.navigation}><ManageMachinesButton /></View>}
-    {manage && <View style={styles.management}><MachinesPanel presentation="panel" approvePairing={approveMachinePairing} api={machineApi} /></View>}
   </MachineOnboardingProvider>
 }
 
@@ -105,7 +106,6 @@ let styles = StyleSheet.create({
   detail: { color: colors.textSecondary, fontSize: 13, lineHeight: 19 },
   connection: { paddingTop: 16 },
   navigation: { padding: 16 },
-  management: { paddingHorizontal: 16, paddingBottom: 16 },
   liquidFrame: { minHeight: 44, borderRadius: 999, overflow: "hidden", alignSelf: "flex-start" },
   liquidBackFrame: { width: 44, height: 44 },
   liquidFallback: { backgroundColor: colors.groupedSurface, borderWidth: 1, borderColor: colors.border },

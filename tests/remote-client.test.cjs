@@ -67,8 +67,15 @@ test('already-versioned websocket URLs remain versioned once; launch target is e
   assert.equal(ws.url, 'ws://localhost/v2/ws?token=fixture');
   ws.onopen(); ws.receive({ type: 'machines', connection_id: 'connection', machines: [{ id: a, online: false, owned: true }, { id: b, online: false, owned: true }] });
   assert.equal(client.machineState().selected, null);
-  client.sendResource({ type: 'run_agent', prompt: 'fixture' });
+  let replies = [];
+  client.onMachineEvent((machine, message) => replies.push(message));
+  client.sendResource({ type: 'run_agent', id: 'untargeted', prompt: 'fixture' });
+  await new Promise(setImmediate);
   assert.equal(ws.sent.length, 0);
+  assert.equal(client.machineState().error, null);
+  assert.equal(replies[0].id, 'untargeted');
+  assert.equal(replies[0].success, false);
+  assert.match(replies[0].error, /Select a machine/);
   stop();
 });
 test('logout rejects pending mutations and clears cached machine contents', async (t) => {
@@ -156,7 +163,7 @@ test('a stopped account lookup cannot overwrite a newer connection error', async
   assert.equal(client.machineState().error, 'Current account error');
 });
 
-test('unchanged errors do not recursively notify machine subscribers', () => {
+test('untargeted subscriptions do not notify global machine subscribers', () => {
   let { client } = load();
   let calls = 0;
   let unsubscribe = client.subscribeMachines(() => {
@@ -166,7 +173,7 @@ test('unchanged errors do not recursively notify machine subscribers', () => {
   });
   client.sendResource({ type: 'subscribe_pty', pane_id: '%1' });
   unsubscribe();
-  assert.equal(calls, 1);
+  assert.equal(calls, 0);
 });
 
 let fakeClock = () => {

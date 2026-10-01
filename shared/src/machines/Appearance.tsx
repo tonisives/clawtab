@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native"
+import { Modal, Pressable, StyleSheet, Text, TextInput, View, type GestureResponderEvent } from "react-native"
 import { colors } from "../theme/colors"
 import { saveAccountPreferences, useMachines, type Machine, type MachineAppearance, type PreferencesApi } from "./client"
 
@@ -76,7 +76,6 @@ export let MachineAppearanceEditor = ({ machine, api }: { machine: Machine; api:
   let pickIcon = (value: MachineAppearance["icon"]) => () => setIcon(value)
   let pickColor = (value: string) => () => setColor(value)
   return <View style={styles.editor}>
-    <Text style={styles.label}>Machine appearance</Text>
     <View style={styles.row}>{ICONS.map((value) => <Pressable key={value} accessibilityRole="radio" accessibilityLabel={`${value} icon`} accessibilityState={{ selected: icon === value }} onPress={pickIcon(value)} style={[styles.option, icon === value && styles.selected]}><MachineIcon appearance={{ ...preview, icon: value }} /></Pressable>)}</View>
     <View style={styles.row}>{PALETTE.map((value) => <Pressable key={value} accessibilityRole="radio" accessibilityLabel={`Color ${value}`} accessibilityState={{ selected: color === value }} onPress={pickColor(value)} style={[styles.option, color === value && styles.selected]}><MachineIcon appearance={{ icon: "chip", color: value }} /></Pressable>)}</View>
     <View style={styles.row}>
@@ -87,7 +86,39 @@ export let MachineAppearanceEditor = ({ machine, api }: { machine: Machine; api:
     {error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
   </View>
 }
+export let MachineAppearanceButton = ({ machine, api }: { machine: Machine; api: PreferencesApi }) => {
+  let state = useMachines()
+  let [open, setOpen] = useState(false)
+  let show = () => setOpen(true)
+  let close = () => setOpen(false)
+  let keepOpen = (event: GestureResponderEvent) => event.stopPropagation()
+  return <>
+    <Pressable accessibilityRole="button" accessibilityLabel={`Edit appearance of ${machine.name}`} onPress={show} style={styles.appearanceButton}>
+      <MachineIcon appearance={machineAppearance(machine, state.machineAppearance, state.machines)} size={18} />
+      <Text style={styles.label}>Machine appearance</Text>
+    </Pressable>
+    {open && <Modal visible transparent animationType="fade" onRequestClose={close}>
+      <Pressable style={styles.backdrop} onPress={close}>
+        <Pressable accessibilityViewIsModal style={styles.dialog} onPress={keepOpen}>
+          <View style={styles.header}>
+            <View style={styles.heading}><Text style={styles.title}>Machine appearance</Text><Text style={styles.hint}>{machine.name}</Text></View>
+            <Pressable accessibilityRole="button" accessibilityLabel="Close machine appearance" onPress={close} style={styles.closeButton}><Text style={styles.closeText}>Close</Text></Pressable>
+          </View>
+          <MachineAppearanceEditor machine={machine} api={api} />
+        </Pressable>
+      </Pressable>
+    </Modal>}
+  </>
+}
 let styles = StyleSheet.create({
+  appearanceButton: { flexDirection: "row", alignItems: "center", gap: 8, alignSelf: "flex-start", minHeight: 44, paddingHorizontal: 12, marginVertical: 8, borderWidth: 1, borderColor: colors.border, borderRadius: 999 },
+  backdrop: { flex: 1, justifyContent: "center", alignItems: "center", padding: 20, backgroundColor: "rgba(0, 0, 0, 0.58)" },
+  dialog: { width: "100%", maxWidth: 440, padding: 18, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 16 },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
+  heading: { flex: 1, gap: 4 },
+  title: { color: colors.text, fontSize: 16, fontWeight: "600" },
+  closeButton: { minHeight: 44, paddingHorizontal: 8, justifyContent: "center" },
+  closeText: { color: colors.accent, fontSize: 13, fontWeight: "600" },
   editor: { gap: 8, paddingVertical: 12 },
   row: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 6 },
   label: { color: colors.text, fontSize: 13 },

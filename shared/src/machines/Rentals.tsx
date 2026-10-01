@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
 import { View, Text, TextInput, Pressable, StyleSheet } from "react-native"
 import { machineRequest, machineSend, machineState, resourceKey, newOperationId, selectMachine, useMachines } from "./client"
 import { colors } from "../theme/colors"
@@ -35,7 +35,7 @@ type Rental = {
   needs_attention: boolean
 }
 type RentalApi = (method: string, path: string, body?: Record<string, unknown>) => Promise<any>
-type Props = { showExistingRentals?: boolean; allowNewRentals?: boolean; onOrderingChange?: (ordering: boolean) => void; api: RentalApi; purchases: boolean; platform?: "web" | "desktop" | "ios" | "android"; storefront?: string; openUrl?: (url: string) => Promise<unknown> }
+type Props = { children?: ReactNode; showExistingRentals?: boolean; allowNewRentals?: boolean; onOrderingChange?: (ordering: boolean) => void; api: RentalApi; purchases: boolean; platform?: "web" | "desktop" | "ios" | "android"; storefront?: string; openUrl?: (url: string) => Promise<unknown> }
 type Terminal = { machine: string; pane: string; session: string; command: string }
 let money = (quote: Quote) => new Intl.NumberFormat(undefined, { style: "currency", currency: quote.currency }).format(quote.monthly_cents / 100)
 let date = (value: string) => new Date(value).toLocaleString()
@@ -52,11 +52,15 @@ let Button = ({ label, onPress, disabled = false, primary = false }: { label: st
   </Pressable>
 )
 
-export let RentalsPanel = ({ api, purchases, platform = "web", storefront, openUrl, onOrderingChange, allowNewRentals = true, showExistingRentals = true }: Props) => {
+export let RentalsPanel = ({ children, api, purchases, platform = "web", storefront, openUrl, onOrderingChange, allowNewRentals = true, showExistingRentals = true }: Props) => {
   let machines = useMachines()
   let [rentals, setRentals] = useState<Rental[]>([])
   let [purchasedRental, setPurchasedRental] = useState<string | null>(null)
   let visibleRentals = showExistingRentals ? rentals : rentals.filter((rental) => rental.id === purchasedRental)
+  let activeRentals = visibleRentals.filter((rental) => !["deleted", "failed"].includes(rental.state))
+  let historyRentals = visibleRentals.filter((rental) => ["deleted", "failed"].includes(rental.state))
+  let [showHistory, setShowHistory] = useState(false)
+  let toggleHistory = () => setShowHistory((value) => !value)
   let [catalog, setCatalog] = useState<Quote[]>([])
   let [enabled, setEnabled] = useState(false)
   let [managed, setManaged] = useState<string | null>(null)
@@ -183,15 +187,15 @@ export let RentalsPanel = ({ api, purchases, platform = "web", storefront, openU
   let choose = (quote: Quote) => () => { setSelected(quoteId(quote)); setAccepted(false); requestId.current = null }
   let editName = (value: string) => { setName(value); requestId.current = null }
   let editKeys = (value: string) => { setKeys(value); requestId.current = null }
-  if ((!purchases || !allowNewRentals) && visibleRentals.length === 0 && !error) return null
+  if ((!purchases || !allowNewRentals) && visibleRentals.length === 0 && !error && !children) return null
   return (
     <View style={styles.panel}>
-      {!showOrder && <View style={styles.row}>
-        <Text style={styles.heading}>{visibleRentals.length ? "Your boxes" : "Rent a machine"}</Text>
-        {allowNewRentals && purchases && visibleRentals.length > 0 && !showOrder && <Button label="Rent a box" onPress={startOrder} disabled={busy} />}
+      {!showOrder && (activeRentals.length > 0 || (allowNewRentals && purchases)) && <View style={styles.row}>
+        <Text style={styles.heading}>{activeRentals.length ? "Your boxes" : "Rent a machine"}</Text>
+        {allowNewRentals && purchases && activeRentals.length > 0 && <Button label="Rent a box" onPress={startOrder} disabled={busy} />}
       </View>}
       {error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
-      {allowNewRentals && purchases && !visibleRentals.length && !showOrder && <>
+      {allowNewRentals && purchases && !activeRentals.length && !showOrder && <>
         <Text style={styles.detail}>Ready for your agents. Relay included.</Text>
         <Button label={busy ? "Loading boxes…" : "Rent a box"} onPress={startOrder} disabled={busy} primary />
       </>}
@@ -230,7 +234,7 @@ export let RentalsPanel = ({ api, purchases, platform = "web", storefront, openU
         </>}
         <Button label="Close" onPress={closeOrder} />
       </View>}
-      {visibleRentals.map((rental) => {
+      {activeRentals.map((rental) => {
         let available = rental.machine_id && machines.machines.some((machine) => machine.id === rental.machine_id && machine.online)
         let managing = managed === rental.id
         let providerName = rental.agent_provider === "claude" ? "Claude Code" : rental.agent_provider === "codex" ? "Codex" : "OpenCode"
@@ -266,6 +270,18 @@ export let RentalsPanel = ({ api, purchases, platform = "web", storefront, openU
           </View>}
         </View>
       })}
+      {children}
+      {historyRentals.length > 0 && <View style={styles.history}>
+        <Pressable accessibilityRole="button" accessibilityState={{ expanded: showHistory }} onPress={toggleHistory} style={styles.historyToggle}>
+          <Text style={styles.heading}>Box history ({historyRentals.length})</Text>
+          <Text style={styles.link}>{showHistory ? "Hide" : "Show"}</Text>
+        </Pressable>
+        {showHistory && historyRentals.map((rental) => <View key={rental.id} style={styles.card}>
+          <Text style={styles.heading}>{rental.name}</Text>
+          <Text style={styles.detail}>{rental.state === "failed" ? "Order closed" : "Permanently deleted"}</Text>
+          {purchases && <Text style={styles.detail}>{rental.quote.memory_gb} GB · {rental.quote.region_description} · {money(rental.quote)} / month, plus applicable tax</Text>}
+        </View>)}
+      </View>}
       {terminal && <MachineTerminalScreen machineId={terminal.machine} paneId={terminal.pane} tmuxSession={terminal.session}
         title={terminal.command ? "Provider sign-in" : "Terminal"} signIn={!!terminal.command} onClose={closeTerminal} />}
     </View>
@@ -273,6 +289,8 @@ export let RentalsPanel = ({ api, purchases, platform = "web", storefront, openU
 }
 let styles = StyleSheet.create({
   panel: { gap: 12, padding: 16 },
+  history: { gap: 12, marginTop: 20, paddingTop: 16, borderTopWidth: 1, borderTopColor: colors.border },
+  historyToggle: { minHeight: 44, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
   row: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 10 },
   heading: { color: colors.text, fontSize: 16, fontWeight: "600" },
   text: { color: colors.text, fontSize: 14 },

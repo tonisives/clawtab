@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { ConnectMachine, ManageMachinesButton, MachineOnboardingProvider, MachinesPanel, RentalsPanel } from "@clawtab/shared"
+import { AddMachineButton, ConnectMachine, ManageMachinesButton, MachineOnboardingProvider, MachinesPanel, RentalsPanel } from "@clawtab/shared"
 import { openUrl } from "@tauri-apps/plugin-opener"
 import { approveDesktopMachine, localHostRequest, desktopMachineApi, localMachineId } from "../machines/connection"
 import { checkRemoteConnection, retryRemoteConnection, useRemoteConnection } from "../machines/remoteConnection"
@@ -18,6 +18,17 @@ export let DesktopMachinesPanel = ({ onOpenAccount, manage = true }: { onOpenAcc
     {remote.error && <><p role="alert">{remote.error}</p><button className="btn" onClick={retryConnection}>Retry connection</button></>}
     <button className="btn btn-primary" onClick={onOpenAccount}>Open Remote Access</button>
   </div>
+  let managementPanel = <MachinesPanel
+    key={machineType}
+    machineType={machineType}
+    presentation="panel"
+    showConnectionStatus={false}
+    localMachineId={localMachineId()}
+    onOpenAccount={onOpenAccount}
+    approvePairing={approveDesktopMachine}
+    localRequest={localHostRequest}
+    api={desktopMachineApi}
+  />
   return <MachineOnboardingProvider
     content={(close) => <DesktopMachinesPanel manage={false} onOpenAccount={() => { close(); onOpenAccount() }} />}
     management={(close) => <DesktopMachinesPanel onOpenAccount={() => { close(); onOpenAccount() }} />}
@@ -32,21 +43,14 @@ export let DesktopMachinesPanel = ({ onOpenAccount, manage = true }: { onOpenAcc
       </div>}
       <section className={manage ? "desktop-machines-management" : undefined} aria-label={manage ? (machineType === "personal" ? "Personal machines" : "Rented boxes") : "Add machine"}>
         {manage && <header className="desktop-machines-heading">
+          <AddMachineButton />
           <h3>{machineType === "personal" ? "Personal machines" : "Rented boxes"}</h3>
           <p>{machineType === "personal" ? "Connect and manage your own computers, including this Mac." : "Manage your rented servers, agent setup, payments, and renewals."}</p>
         </header>}
-        {(!manage || machineType === "rented") && <RentalsPanel showExistingRentals={manage} api={desktopMachineApi} platform="desktop" purchases openUrl={openUrl} />}
-        {manage ? <MachinesPanel
-          key={machineType}
-          machineType={machineType}
-          presentation="panel"
-          showConnectionStatus={false}
-          localMachineId={localMachineId()}
-          onOpenAccount={onOpenAccount}
-          approvePairing={approveDesktopMachine}
-          localRequest={localHostRequest}
-          api={desktopMachineApi}
-        /> : <><ConnectMachine approvePairing={approveDesktopMachine} /><ManageMachinesButton /></>}
+        {(!manage || machineType === "rented") && <RentalsPanel showExistingRentals={manage} allowNewRentals={!manage} api={desktopMachineApi} platform="desktop" purchases openUrl={openUrl}>
+          {manage && managementPanel}
+        </RentalsPanel>}
+        {manage ? machineType === "personal" && managementPanel : <><ConnectMachine approvePairing={approveDesktopMachine} /><ManageMachinesButton /></>}
       </section>
     </div>
   </MachineOnboardingProvider>

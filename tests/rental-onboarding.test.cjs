@@ -15,7 +15,7 @@ let findType = (tree, type) => {
   return tree.type === type ? tree : findType(tree.props?.children, type);
 };
 let flush = () => new Promise((resolve) => setImmediate(resolve));
-let harness = (rental, launch, props = {}) => {
+let harness = (rental, launch, props = {}, rentals = [rental]) => {
   let states = [], cursor = 0, effects = [], operation = 0;
   let machines = { machines: [{ id: rental.machine_id, online: true }], agentModels: { default_provider: 'codex' }, controllers: {} };
   let react = {
@@ -38,7 +38,7 @@ let harness = (rental, launch, props = {}) => {
   let calls = [];
   let api = async (method, path, body) => {
     calls.push({ method, path, body });
-    if (method === 'GET') return { rentals: [rental] };
+    if (method === 'GET') return { rentals };
     if (body.action === 'prepare') {
       rental.setup.provider ??= 'codex';
       rental.setup.login_operation_id ??= 'login-stable';
@@ -102,4 +102,28 @@ test('add-machine view keeps existing boxes in management', async () => {
   view.render(); await flush();
   assert.equal(find(view.render(), 'Sign in to Codex'), undefined);
   assert.ok(find(view.render(), 'Rent a box'));
+});
+
+test('deleted and failed boxes stay in collapsed history after the management controls', async () => {
+  let current = rental();
+  let deleted = { ...rental(), id: 'deleted', name: 'Deleted box', state: 'deleted' };
+  let failed = { ...rental(), id: 'failed', name: 'Failed order', state: 'failed' };
+  let controls = { type: 'MachineControls', props: {} };
+  let view = harness(current, async () => {}, { allowNewRentals: false, children: controls }, [deleted, current, failed]);
+  view.render(); await flush();
+  let tree = view.render();
+  let text = (node) => !node ? '' : Array.isArray(node) ? node.map(text).join(' ') : typeof node === 'string' ? node : text(node.props?.children);
+  assert.ok(find(tree, 'Start agent'));
+  assert.doesNotMatch(text(tree), /Deleted box|Failed order/);
+  let history = tree.props.children.find((child) => child?.props?.children?.[0]?.props?.accessibilityState?.expanded === false);
+  assert.ok(tree.props.children.indexOf(controls) < tree.props.children.indexOf(history));
+  history.props.children[0].props.onPress();
+  assert.match(text(view.render()), /Deleted box.*Permanently deleted.*Failed order.*Order closed/);
+});
+
+test('machine controls remain available when the account has no rentals', async () => {
+  let controls = { type: 'MachineControls', props: {} };
+  let view = harness(rental(), async () => {}, { allowNewRentals: false, children: controls }, []);
+  view.render(); await flush();
+  assert.equal(findType(view.render(), 'MachineControls'), controls);
 });

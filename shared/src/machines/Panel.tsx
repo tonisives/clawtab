@@ -1,8 +1,8 @@
 import { ConnectMachine } from "./Connect"
 import { colors } from "../theme/colors"
 import { useState, useRef } from "react"
-import { MachineIcon, machineAppearance, MachineAppearanceEditor } from "./Appearance"
-import { View, Text, Pressable, TextInput, ScrollView, StyleSheet } from "react-native"
+import { MachineIcon, machineAppearance, MachineAppearanceButton } from "./Appearance"
+import { View, Text, Pressable, TextInput, ScrollView, StyleSheet, Platform } from "react-native"
 import {
   useMachines,
   selectMachine,
@@ -60,7 +60,10 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
   } | null>(null)
   let [progress, setProgress] = useState("")
   let [operation, setOperation] = useState<{ id: string; machine: string } | null>(null)
-  let visibleMachines = state.machines.filter((machine) => !machineType || (machineType === "rented" ? !!machine.rental : !machine.rental))
+  let visibleMachines = state.machines.filter((machine) =>
+    !["deleted", "failed"].includes(machine.rental?.state ?? "") &&
+    (!machineType || (machineType === "rented" ? !!machine.rental : !machine.rental)),
+  )
   let machine = visibleMachines.find((m) => m.id === state.selected)
   let models: Record<string, string[]> = state.agentModels?.enabled_models ?? (machine
     ? (state.snapshots[machine.id]?.settings_response?.enabled_models ?? {})
@@ -361,8 +364,9 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
       {(expanded || presentation === "panel") && (
         <ScrollView style={presentation === "panel" ? styles.panelBody : styles.body}>
           {presentation === "panel" && tab !== "pair" && machineChoices}
-          {presentation === "panel" && tab !== "pair" && machine?.owned && api && <MachineAppearanceEditor key={machine.id} machine={machine} api={api} />}
-          <View style={styles.row}>
+          {presentation === "panel" && machine?.owned && api && <MachineAppearanceButton key={machine.id} machine={machine} api={api} />}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabsScroll}>
+          <View style={styles.tabs} accessibilityRole="tablist" accessibilityLabel="Machine controls">
             {[
               "agents",
               "jobs",
@@ -370,19 +374,18 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
               ...(localRequest ? ["transfers"] : []),
               "models",
               "access",
-              ...(machineType === "rented" ? [] : ["pair"]),
+              ...(presentation === "compact" && machineType !== "rented" ? ["pair"] : []),
             ].map((value) => (
               <Pressable
-                accessibilityRole="button"
+                accessibilityRole="tab"
                 key={value}
                 onPress={openTab(value)}
                 accessibilityState={{ selected: tab === value }}
                 aria-pressed={tab === value}
-                style={[styles.button, tab === value && styles.activeButton]}
+                style={[styles.tabButton, tab === value && styles.activeTabButton]}
               >
                 <View style={styles.labelRow}>
-                  {presentation === "panel" && tab === value && <View style={styles.selectionDot} />}
-                  <Text style={[styles.text, tab === value && styles.activeText]}>
+                  <Text style={[styles.tabText, tab === value && styles.activeTabText]}>
                     {value === "pair" ? "Add machine" : value[0].toUpperCase() + value.slice(1)}
                     {presentation === "compact" && tab === value ? " · selected" : ""}
                   </Text>
@@ -390,6 +393,7 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
               </Pressable>
             ))}
           </View>
+          </ScrollView>
           {tab === "pair" && <ConnectMachine approvePairing={approvePairing} initiallyExpanded />}
           {tab !== "pair" && <Text style={styles.title}>{tab[0].toUpperCase() + tab.slice(1)}</Text>}
           {!machine && tab !== "pair" && (
@@ -401,7 +405,7 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
                     ? (presentation === "panel" ? "Select a machine above" : "Select a machine below") + " to manage its " + tab + "."
                     : machineType === "rented" ? "Your rented boxes will appear here once connected." : "No machines are paired with this account yet. Add a machine to manage its " + tab + "."}
               </Text>
-              {state.connected && !visibleMachines.length && machineType !== "rented" && <Pressable accessibilityRole="button" onPress={openTab("pair")} style={styles.button}>
+              {presentation === "compact" && state.connected && !visibleMachines.length && machineType !== "rented" && <Pressable accessibilityRole="button" onPress={openTab("pair")} style={styles.button}>
                 <Text style={styles.text}>Pair your first machine</Text>
               </Pressable>}
             </>
@@ -791,6 +795,12 @@ let createStyles = (desktop: boolean) => StyleSheet.create({
   panelBody: { paddingRight: 8 },
   body: { maxHeight: 440, paddingRight: 8 },
   row: { flexDirection: "row", flexWrap: "wrap", gap: 6, paddingVertical: 4 },
+  tabsScroll: { flexGrow: 0, marginVertical: 8 },
+  tabs: { flexDirection: "row", alignItems: "center", backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 999, padding: Platform.OS === "web" ? 2 : 4 },
+  tabButton: { justifyContent: "center", alignItems: "center", minHeight: Platform.OS === "web" ? 28 : 38, paddingHorizontal: Platform.OS === "web" ? 10 : 12, paddingVertical: Platform.OS === "web" ? 2 : 7, borderRadius: 999 },
+  activeTabButton: { backgroundColor: colors.accent },
+  tabText: { color: colors.textSecondary, fontSize: 12, fontWeight: "600" },
+  activeTabText: { color: "#ffffff" },
   title: { color: desktop ? colors.text : "#fff", fontWeight: "600", marginTop: 18, marginBottom: 8 },
   text: { color: desktop ? colors.text : "#e5e7eb", fontSize: 13 },
   detail: { color: desktop ? colors.textSecondary : "#b6bbc5", fontSize: 12 },
@@ -803,7 +813,6 @@ let createStyles = (desktop: boolean) => StyleSheet.create({
   connectingDot: { backgroundColor: desktop ? colors.warning : "#fbbf24" },
   selectionDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: desktop ? colors.accent : "#9fa8da" },
   machineName: { fontWeight: "600" },
-  activeText: { color: desktop ? colors.accent : "#fff", fontWeight: "600" },
   error: { color: desktop ? colors.danger : "#ffabab", padding: 8 },
   code: { fontFamily: "monospace", color: desktop ? colors.textSecondary : "#d1d5db", fontSize: 12, padding: 8 },
   button: {
@@ -818,7 +827,6 @@ let createStyles = (desktop: boolean) => StyleSheet.create({
   },
   machineButton: { borderWidth: 1, borderColor: desktop ? colors.borderLight : "transparent", borderRadius: 16, paddingVertical: 12, minWidth: desktop ? 160 : undefined },
   selectedMachine: { borderColor: desktop ? colors.accent : "#9fa8da", backgroundColor: desktop ? colors.accentBg : "#353942" },
-  activeButton: { backgroundColor: desktop ? colors.accentBg : "#4b5262", borderColor: desktop ? colors.accent : "transparent" },
   input: {
     borderColor: desktop ? colors.border : "#50545d",
     borderWidth: 1,

@@ -201,8 +201,7 @@ export let sendResource = (message: MachineMessage) => {
     .filter((value) => value !== null)
   let machine = identities[0]?.machine ?? state.selected
   if (!machine || identities.some((resource) => resource.machine !== machine)) {
-    let error = "Choose one machine for this request"
-    update({ error })
+    let error = "Select a machine to continue"
     if (message.id)
       queueMicrotask(() =>
         events.forEach((listener) =>
