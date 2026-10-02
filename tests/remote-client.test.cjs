@@ -272,6 +272,7 @@ test('mobile subscription replay records the connection before synchronous error
     'react-native': { AppState: { addEventListener: () => ({ remove: noop }) }, Platform: { OS: 'ios' } },
     '@clawtab/shared': {
       machineState: () => state, machineProcesses: () => [],
+      resolveEnabledModels: (enabled) => enabled,
       machineJobs: () => ({ jobs: [], statuses: {} }),
       subscribeMachines: (callback) => { notify = callback; return noop; },
       onMachineEvent: () => noop, connectMachines: () => noop,

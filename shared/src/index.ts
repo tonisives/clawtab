@@ -146,7 +146,7 @@ export * from "./machines/Terminal";
 export * from "./machines/Panel";
 export * from "./machines/Rentals";
 
-export { buildModelOptions, BARE_PROVIDER_OPTIONS, labelForProviderModel } from "./util/agentModels";
+export { buildModelOptions, resolveEnabledModels, BARE_PROVIDER_OPTIONS, labelForProviderModel } from "./util/agentModels";
 export { useHiddenGroups } from "./hooks/useHiddenGroups";
 
 export { matchesSavedGroup, savedGroupKey } from "./util/jobGroups";
@@ -154,3 +154,5 @@ export { matchesSavedGroup, savedGroupKey } from "./util/jobGroups";
 export * from "./machines/Connect";
 
 export * from "./machines/Onboarding";
+
+export { ModelManager, ModelManagerModal } from "./machines/Models";

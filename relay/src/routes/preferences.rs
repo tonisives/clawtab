@@ -81,8 +81,37 @@ pub struct ModelPreference {
 #[serde(deny_unknown_fields)]
 pub struct AgentModels {
     enabled_models: HashMap<String, Vec<String>>,
+    #[serde(default)]
+    disabled_models: HashMap<String, Vec<String>>,
     default_provider: String,
     default_model: Option<String>,
+}
+
+impl AgentModels {
+    fn validate(&self) -> Result<(), AppError> {
+        let providers = ["claude", "codex", "opencode", "antigravity", "shell"];
+        let valid_id = |id: &str| {
+            !id.trim().is_empty() && id.len() <= 256 && !id.chars().any(char::is_control)
+        };
+        if !providers.contains(&self.default_provider.as_str())
+            || self
+                .enabled_models
+                .iter()
+                .chain(self.disabled_models.iter())
+                .any(|(provider, ids)| {
+                    !providers.contains(&provider.as_str())
+                        || ids.len() > 256
+                        || ids.iter().any(|id| !valid_id(id))
+                })
+            || self
+                .default_model
+                .as_deref()
+                .is_some_and(|id| !valid_id(id))
+        {
+            return Err(AppError::BadRequest("Invalid model preferences".into()));
+        }
+        Ok(())
+    }
 }
 
 #[derive(Deserialize)]
@@ -115,23 +144,7 @@ pub async fn set_preferences(
         }
         Preference::Models(preference) => {
             let models = preference.agent_models;
-            let providers = ["claude", "codex", "opencode", "antigravity", "shell"];
-            let valid_id = |id: &str| {
-                !id.trim().is_empty() && id.len() <= 256 && !id.chars().any(char::is_control)
-            };
-            if !providers.contains(&models.default_provider.as_str())
-                || models.enabled_models.iter().any(|(provider, ids)| {
-                    !providers.contains(&provider.as_str())
-                        || ids.len() > 256
-                        || ids.iter().any(|id| !valid_id(id))
-                })
-                || models
-                    .default_model
-                    .as_deref()
-                    .is_some_and(|id| !valid_id(id))
-            {
-                return Err(AppError::BadRequest("Invalid model preferences".into()));
-            }
+            models.validate()?;
             let models = serde_json::to_value(models)
                 .map_err(|_| AppError::BadRequest("Invalid model preferences".into()))?;
             sqlx::query("INSERT INTO user_preferences (user_id, agent_models) VALUES ($1,$2)
@@ -187,4 +200,41 @@ async fn set_hidden_group(
     .fetch_one(&state.pool)
     .await?;
     Ok(Json(serde_json::json!({ "hidden_groups": groups })))
+}
+
+#[cfg(test)]
+mod model_tests {
+    use super::AgentModels;
+
+    #[test]
+    fn accepts_legacy_preferences_and_persists_explicit_exclusions() {
+        let legacy = serde_json::json!({"enabled_models": {"codex": ["gpt-old"]}, "default_provider": "codex", "default_model": null});
+        let models: AgentModels =
+            serde_json::from_value(legacy.clone()).expect("legacy preferences");
+        assert!(models.disabled_models.is_empty());
+        assert!(models.validate().is_ok());
+        let mut current = legacy;
+        current["disabled_models"] = serde_json::json!({"codex": ["gpt-6.1-sol"]});
+        let models: AgentModels = serde_json::from_value(current).expect("current preferences");
+        assert!(models.validate().is_ok());
+        let saved = serde_json::to_value(models).expect("serialized preferences");
+        assert_eq!(saved["disabled_models"]["codex"][0], "gpt-6.1-sol");
+    }
+
+    #[test]
+    fn exclusions_obey_the_same_provider_and_identifier_limits_as_enabled_models() {
+        for exclusions in [
+            serde_json::json!({"invalid": ["model"]}),
+            serde_json::json!({"codex": [""]}),
+            serde_json::json!({"codex": ["model\n"]}),
+            serde_json::json!({"codex": vec!["model"; 257]}),
+        ] {
+            let models: AgentModels = serde_json::from_value(serde_json::json!({
+                "enabled_models": {}, "disabled_models": exclusions,
+                "default_provider": "codex", "default_model": null,
+            }))
+            .expect("preference shape");
+            assert!(models.validate().is_err());
+        }
+    }
 }

@@ -114,6 +114,9 @@ async fn dispatch_message(
     event_sink: &dyn EventSink,
 ) -> Option<DesktopMessage> {
     match msg {
+        ClientMessage::GetSettings { id, refresh_models } => {
+            Some(handle_get_settings(id, &ctx.settings, refresh_models).await)
+        }
         ClientMessage::GetUsage { id } => Some(handle_get_usage(id, ctx).await),
         ClientMessage::DetectProcesses { id } => {
             let processes = crate::process_snapshot::detect_processes_snapshot(
@@ -552,7 +555,6 @@ fn dispatch_pty_msg(
     event_sink: &dyn EventSink,
 ) -> Option<DesktopMessage> {
     match msg {
-        ClientMessage::GetSettings { id } => Some(handle_get_settings(id, &ctx.settings)),
         ClientMessage::SetAutoYesPanes { pane_ids, .. } => {
             handle_set_auto_yes_panes(pane_ids, &ctx.auto_yes_panes, &ctx.relay, event_sink);
             None
@@ -673,17 +675,23 @@ fn handle_subscribe_logs(
     DesktopMessage::SubscribeLogsAck { id, success: true }
 }
 
-fn handle_get_settings(
+async fn handle_get_settings(
     id: String,
     settings: &Arc<Mutex<crate::config::settings::AppSettings>>,
+    refresh_models: bool,
 ) -> DesktopMessage {
+    let catalog = crate::agent_models::detect_catalog(refresh_models).await;
     let s = settings.lock();
-    let enabled_models: HashMap<String, Vec<String>> = s.enabled_models.clone();
+    let enabled_models = s.enabled_models.clone();
+    let disabled_models = s.disabled_models.clone();
     let default_provider = s.default_provider.as_str().to_string();
     let default_model = s.default_model.clone();
     DesktopMessage::SettingsResponse {
         id,
         enabled_models,
+        disabled_models,
+        detected_models: catalog.models,
+        model_detection_errors: catalog.errors,
         default_provider,
         default_model,
     }

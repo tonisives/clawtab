@@ -369,13 +369,13 @@ export let ModelsPanel = () => {
     const enabled = settings.enabled_models ?? {}
     const updates: Record<string, string[]> = {}
     if (enabled.claude === undefined && claudeApiModels.length > 0) {
-      updates.claude = claudeApiModels.map(([id]) => id)
+      updates.claude = claudeApiModels.map(([id]) => id).filter((id) => !settings.disabled_models?.claude?.includes(id))
     }
     if (enabled.codex === undefined && codexApiModels.length > 0) {
-      updates.codex = codexApiModels.map(([id]) => id)
+      updates.codex = codexApiModels.map(([id]) => id).filter((id) => !settings.disabled_models?.codex?.includes(id))
     }
     if (enabled.antigravity === undefined && antigravityApiModels.length > 0) {
-      updates.antigravity = antigravityApiModels.map(([id]) => id)
+      updates.antigravity = antigravityApiModels.map(([id]) => id).filter((id) => !settings.disabled_models?.antigravity?.includes(id))
     }
     if (Object.keys(updates).length === 0) return
     const next = { ...enabled, ...updates }
@@ -390,7 +390,7 @@ export let ModelsPanel = () => {
     const current = enabled.codex ?? []
     const detected = codexApiModels.map(([id]) => id)
     const disabledBeforeRefresh = disabledCodexOnRefreshRef.current
-    const missing = detected.filter((id) => !current.includes(id) && !disabledBeforeRefresh.has(id))
+    const missing = detected.filter((id) => !current.includes(id) && !disabledBeforeRefresh.has(id) && !settings.disabled_models?.codex?.includes(id))
     if (missing.length === 0) {
       enableDetectedCodexOnRefreshRef.current = false
       disabledCodexOnRefreshRef.current = new Set()
@@ -410,7 +410,7 @@ export let ModelsPanel = () => {
     const current = enabled.antigravity ?? []
     const detected = antigravityApiModels.map(([id]) => id)
     const disabledBeforeRefresh = disabledAntigravityOnRefreshRef.current
-    const missing = detected.filter((id) => !current.includes(id) && !disabledBeforeRefresh.has(id))
+    const missing = detected.filter((id) => !current.includes(id) && !disabledBeforeRefresh.has(id) && !settings.disabled_models?.antigravity?.includes(id))
     if (missing.length === 0) {
       enableDetectedAntigravityOnRefreshRef.current = false
       disabledAntigravityOnRefreshRef.current = new Set()
@@ -507,11 +507,15 @@ export let ModelsPanel = () => {
       if (idx >= 0) list.splice(idx, 1)
     }
     next[provider] = list
+    let excluded = new Set(settings.disabled_models?.[provider] ?? [])
+    if (on) excluded.delete(modelId)
+    else excluded.add(modelId)
+    let disabled_models = { ...settings.disabled_models, [provider]: [...excluded] }
     // If disabling the current default model, clear it
     if (!on && isDefault(provider as ProcessProvider, modelId)) {
-      update({ enabled_models: next, default_model: null })
+      update({ enabled_models: next, disabled_models, default_model: null })
     } else {
-      update({ enabled_models: next })
+      update({ enabled_models: next, disabled_models })
     }
   }
 
@@ -519,10 +523,11 @@ export let ModelsPanel = () => {
     const next = { ...enabledModels }
     const list = (next[provider] ?? []).filter((id) => id !== modelId)
     next[provider] = list
+    let disabled_models = { ...settings.disabled_models, [provider]: [...new Set([...(settings.disabled_models?.[provider] ?? []), modelId])] }
     if (isDefault(provider, modelId)) {
-      update({ enabled_models: next, default_model: null })
+      update({ enabled_models: next, disabled_models, default_model: null })
     } else {
-      update({ enabled_models: next })
+      update({ enabled_models: next, disabled_models })
     }
   }
 
@@ -532,7 +537,8 @@ export let ModelsPanel = () => {
     if (allModels.some((m) => m.provider === provider && m.modelId === modelId)) return
     const next = { ...enabledModels }
     next[provider] = [...(next[provider] ?? []), modelId]
-    update({ enabled_models: next })
+    let disabled_models = { ...settings.disabled_models, [provider]: (settings.disabled_models?.[provider] ?? []).filter((id) => id !== modelId) }
+    update({ enabled_models: next, disabled_models })
     setCustomModelInput((prev) => ({ ...prev, [provider]: "" }))
   }
 

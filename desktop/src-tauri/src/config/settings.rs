@@ -186,6 +186,9 @@ pub struct AppSettings {
     /// Per-provider list of enabled model IDs for the quick-select dropdown
     #[serde(default)]
     pub enabled_models: HashMap<String, Vec<String>>,
+    /// Explicit exclusions survive discovery of newly released models.
+    #[serde(default)]
+    pub disabled_models: HashMap<String, Vec<String>>,
     pub claude_path: String,
     pub preferred_editor: String,
     pub preferred_terminal: String,
@@ -254,6 +257,7 @@ impl Default for AppSettings {
             legacy_title_summary_model: None,
             legacy_title_summary_effort: None,
             enabled_models: HashMap::new(),
+            disabled_models: HashMap::new(),
             claude_path: "claude".to_string(),
             preferred_editor: "nvim".to_string(),
             preferred_terminal: "auto".to_string(),

@@ -5,6 +5,7 @@
 
 mod aerospace;
 pub mod agent;
+pub mod agent_models;
 pub mod agent_hooks;
 pub mod agent_plugins;
 pub mod agent_session;

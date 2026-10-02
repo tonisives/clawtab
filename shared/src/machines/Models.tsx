@@ -1,0 +1,194 @@
+import { useRef, useState } from "react"
+import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native"
+import { colors } from "../theme/colors"
+import { spacing } from "../theme/spacing"
+import { CURRENT_AGENT_MODEL_OPTIONS, isSyntheticAgentModel, type ProcessProvider } from "../types/process"
+import { labelForProvider } from "../util/agent"
+import { resolveEnabledModels, type DetectedAgentModels } from "../util/agentModels"
+import {
+  machineErrorMessage,
+  machineRequest,
+  saveAccountPreferences,
+  saveAgentModelPreferences,
+  useMachines,
+  type AgentModelPreferences,
+  type PreferencesApi,
+} from "./client"
+
+const PROVIDERS: ProcessProvider[] = ["codex", "claude", "opencode", "antigravity"]
+
+type ModelRowProps = {
+  id: string
+  name: string
+  enabled: boolean
+  isDefault: boolean
+  busy: boolean
+  onToggle: (id: string, enabled: boolean) => void
+  onDefault: (id: string) => void
+}
+
+let ModelRow = ({ id, name, enabled, isDefault, busy, onToggle, onDefault }: ModelRowProps) => {
+  let toggle = () => onToggle(id, !enabled)
+  let setDefault = () => onDefault(id)
+  return (
+    <View style={styles.modelRow}>
+      <View style={styles.modelName}>
+        <Text style={styles.text}>{name}</Text>
+        {name !== id && <Text style={styles.hint}>{id}</Text>}
+      </View>
+      {enabled && <Pressable accessibilityRole="button" accessibilityLabel={`Use ${id} by default`} disabled={busy} onPress={setDefault} style={styles.smallButton}>
+        <Text style={isDefault ? styles.selectedText : styles.hint}>{isDefault ? "Default" : "Set default"}</Text>
+      </Pressable>}
+      <Pressable accessibilityRole="button" accessibilityLabel={`${enabled ? "Remove" : "Add"} ${id}`} accessibilityState={{ disabled: busy }} disabled={busy} onPress={toggle} style={[styles.smallButton, enabled && styles.enabledButton]}>
+        <Text style={enabled ? styles.selectedText : styles.text}>{enabled ? "Remove" : "Add"}</Text>
+      </Pressable>
+    </View>
+  )
+}
+
+export let ModelManager = ({ machineId, api }: { machineId?: string; api?: PreferencesApi }) => {
+  let state = useMachines()
+  let target = machineId ?? state.selected ?? state.machines.find((machine) => machine.owned && machine.online)?.id
+  let machine = state.machines.find((item) => item.id === target && item.owned)
+  let settings = machine ? state.snapshots[machine.id]?.settings_response : undefined
+  let preferences: AgentModelPreferences = state.agentModels ?? {
+    enabled_models: settings?.enabled_models ?? {},
+    disabled_models: settings?.disabled_models ?? {},
+    default_provider: settings?.default_provider ?? "codex",
+    default_model: settings?.default_model ?? null,
+  }
+  let detected: DetectedAgentModels = settings?.detected_models ?? {}
+  let enabledModels = resolveEnabledModels(preferences.enabled_models, detected, preferences.disabled_models)
+  let [provider, setProvider] = useState<ProcessProvider>("codex")
+  let [customModel, setCustomModel] = useState("")
+  let [search, setSearch] = useState("")
+  let [busy, setBusy] = useState(false)
+  let [error, setError] = useState<string | null>(null)
+  let saving = useRef(false)
+  let enabledIds = new Set(enabledModels[provider] ?? CURRENT_AGENT_MODEL_OPTIONS.filter((option) => option.provider === provider).flatMap((option) => option.modelId ? [option.modelId] : []))
+  let known = new Map<string, string>(detected[provider] ?? CURRENT_AGENT_MODEL_OPTIONS.filter((option) => option.provider === provider).flatMap((option) => option.modelId ? [[option.modelId, option.label] as [string, string]] : []))
+  for (let id of [...enabledIds, ...(preferences.disabled_models?.[provider] ?? [])]) {
+    if (!known.has(id)) known.set(id, id)
+  }
+  let query = search.trim().toLowerCase()
+  let models = [...known].filter(([id, name]) => !isSyntheticAgentModel(id) && (!query || `${id} ${name}`.toLowerCase().includes(query)))
+  let action = async (work: () => Promise<unknown>) => {
+    if (saving.current) return
+    saving.current = true
+    setBusy(true)
+    setError(null)
+    try {
+      await work()
+    } catch (error) {
+      setError(machineErrorMessage(error, "Could not save models"))
+    } finally {
+      saving.current = false
+      setBusy(false)
+    }
+  }
+  let save = (next: AgentModelPreferences) => api
+    ? saveAccountPreferences(api, { agent_models: next })
+    : saveAgentModelPreferences(next)
+  let toggleModel = (id: string, enabled: boolean) => void action(async () => {
+    let selected = new Set(enabledIds)
+    let excluded = new Set(preferences.disabled_models?.[provider] ?? [])
+    if (enabled) {
+      selected.add(id)
+      excluded.delete(id)
+    } else {
+      selected.delete(id)
+      excluded.add(id)
+    }
+    await save({
+      ...preferences,
+      enabled_models: { ...preferences.enabled_models, [provider]: [...selected] },
+      disabled_models: { ...preferences.disabled_models, [provider]: [...excluded] },
+      default_model: !enabled && preferences.default_provider === provider && preferences.default_model === id ? null : preferences.default_model,
+    })
+  })
+  let addCustomModel = () => void action(async () => {
+    let id = customModel.trim()
+    if (!id || id.length > 256 || /[\x00-\x1f\x7f]/.test(id) || isSyntheticAgentModel(id)) throw new Error("Enter a valid model identifier")
+    await save({
+      ...preferences,
+      enabled_models: { ...preferences.enabled_models, [provider]: [...new Set([...enabledIds, id])] },
+      disabled_models: { ...preferences.disabled_models, [provider]: (preferences.disabled_models?.[provider] ?? []).filter((value) => value !== id) },
+    })
+    setCustomModel("")
+  })
+  let setDefault = (id: string) => void action(() => save({ ...preferences, default_provider: provider, default_model: id }))
+  let clearDefault = () => void action(() => save({ ...preferences, default_model: null }))
+  let refresh = () => void action(async () => {
+    if (!machine?.online) throw new Error("Connect an owned machine to detect models")
+    await machineRequest(machine.id, { type: "get_settings", refresh_models: true })
+  })
+  let chooseProvider = (next: ProcessProvider) => () => {
+    setProvider(next)
+    setSearch("")
+    setCustomModel("")
+    setError(null)
+  }
+  let detectionError = settings?.model_detection_errors?.[provider]
+  return (
+    <View style={styles.content}>
+      <Text style={styles.hint}>Models detected on your machine appear automatically. Add or remove models to customize your agent menus across your machines and apps.</Text>
+      <Pressable accessibilityRole="button" disabled={busy || !machine?.online} onPress={refresh} style={styles.button}>
+        <Text style={styles.text}>{busy ? "Updating models..." : "Refresh detected models"}</Text>
+      </Pressable>
+      {!machine?.online && <Text style={styles.hint}>Connect an owned machine to detect its available models. You can still manage saved models.</Text>}
+      <View style={styles.providers}>
+        {PROVIDERS.map((value) => <Pressable key={value} accessibilityRole="tab" accessibilityState={{ selected: provider === value }} disabled={busy} onPress={chooseProvider(value)} style={[styles.button, provider === value && styles.enabledButton]}>
+          <Text style={provider === value ? styles.selectedText : styles.text}>{labelForProvider(value)}</Text>
+        </Pressable>)}
+      </View>
+      {detectionError && <Text style={styles.hint}>{labelForProvider(provider)} detection: {detectionError}. Saved models remain available.</Text>}
+      <TextInput accessibilityLabel="Search models" value={search} onChangeText={setSearch} placeholder="Search models" placeholderTextColor={colors.textSecondary} autoCapitalize="none" autoCorrect={false} style={styles.input} />
+      {models.slice(0, 100).map(([id, name]) => <ModelRow key={id} id={id} name={name} enabled={enabledIds.has(id)} busy={busy} isDefault={preferences.default_provider === provider && preferences.default_model === id} onToggle={toggleModel} onDefault={setDefault} />)}
+      {models.length > 100 && <Text style={styles.hint}>Showing 100 of {models.length} models. Search to find a model.</Text>}
+      {models.length === 0 && <Text style={styles.hint}>{query ? "No matching models." : "No models detected. Add a model below or refresh."}</Text>}
+      <View style={styles.addRow}>
+        <TextInput accessibilityLabel="Custom model identifier" value={customModel} onChangeText={setCustomModel} onSubmitEditing={addCustomModel} editable={!busy} placeholder="Custom model identifier" placeholderTextColor={colors.textSecondary} autoCapitalize="none" autoCorrect={false} style={[styles.input, styles.customInput]} />
+        <Pressable accessibilityRole="button" accessibilityLabel="Add custom model" disabled={busy || !customModel.trim()} onPress={addCustomModel} style={styles.button}><Text style={styles.text}>Add</Text></Pressable>
+      </View>
+      {preferences.default_model && <Pressable accessibilityRole="button" disabled={busy} onPress={clearDefault} style={styles.button}><Text style={styles.hint}>Clear default model</Text></Pressable>}
+      {error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
+    </View>
+  )
+}
+
+export let ModelManagerModal = ({ machineId, onClose }: { machineId?: string; onClose: () => void }) => (
+  <Modal visible animationType="slide" transparent={Platform.OS === "web"} presentationStyle={Platform.OS === "web" ? "overFullScreen" : "pageSheet"} onRequestClose={onClose}>
+    <View style={styles.modalBackdrop}>
+      <View style={styles.modal}>
+        <View style={styles.header}>
+          <Text style={styles.title}>Manage models</Text>
+          <Pressable accessibilityRole="button" onPress={onClose} style={styles.button}><Text style={styles.text}>Done</Text></Pressable>
+        </View>
+        <ScrollView keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
+          <ModelManager machineId={machineId} />
+        </ScrollView>
+      </View>
+    </View>
+  </Modal>
+)
+
+const styles = StyleSheet.create({
+  content: { gap: spacing.sm },
+  providers: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs },
+  button: { padding: spacing.sm, borderWidth: 1, borderColor: colors.border, borderRadius: 8, alignItems: "center" },
+  smallButton: { padding: spacing.sm, borderWidth: 1, borderColor: colors.border, borderRadius: 8 },
+  enabledButton: { backgroundColor: colors.accentBg, borderColor: colors.accentDim },
+  text: { color: colors.text, fontSize: 13 },
+  hint: { color: colors.textSecondary, fontSize: 12 },
+  selectedText: { color: colors.accent, fontSize: 13 },
+  title: { color: colors.text, fontSize: 18, fontWeight: "600" },
+  modelRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs, paddingVertical: spacing.xs, borderBottomWidth: 1, borderBottomColor: colors.border },
+  modelName: { flex: 1, gap: 2 },
+  input: { borderWidth: 1, borderColor: colors.border, borderRadius: 8, padding: spacing.sm, color: colors.text, fontSize: 13 },
+  customInput: { flex: 1 },
+  addRow: { flexDirection: "row", gap: spacing.sm },
+  error: { color: colors.danger, fontSize: 13 },
+  modalBackdrop: { flex: 1, backgroundColor: "rgba(0, 0, 0, 0.5)", alignItems: "center", justifyContent: "center", padding: Platform.OS === "web" ? spacing.lg : 0 },
+  modal: { width: "100%", maxWidth: 640, maxHeight: "100%", flex: 1, padding: spacing.lg, backgroundColor: colors.surface, borderRadius: Platform.OS === "web" ? 12 : 0, paddingTop: Platform.OS === "web" ? spacing.lg : 32 },
+  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.md },
+})

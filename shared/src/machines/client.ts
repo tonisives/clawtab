@@ -19,6 +19,7 @@ export type Machine = {
 export type MachineMessage = Record<string, any>
 export type AgentModelPreferences = {
   enabled_models: Record<string, string[]>
+  disabled_models?: Record<string, string[]>
   default_provider: string
   default_model?: string | null
 }
@@ -63,6 +64,7 @@ let initialState = (): MachineState => ({
   jobGroups: {},
 })
 let state = initialState()
+let activePreferencesApi: PreferencesApi | undefined
 let preferencesGeneration = 0
 let preferencesRevision = 0
 let listeners = new Set<() => void>()
@@ -115,6 +117,10 @@ export let saveAccountPreferences = async (api: PreferencesApi, preferences: Rec
     applyAccountPreferences(result)
   }
   return result
+}
+export let saveAgentModelPreferences = (agent_models: AgentModelPreferences) => {
+  if (!activePreferencesApi) return Promise.reject(new Error("Sign in to manage models"))
+  return saveAccountPreferences(activePreferencesApi, { agent_models })
 }
 export let filterMachine = (filter: string | null) => update({ filter })
 export let clearMachineError = () => update({ error: null })
@@ -239,6 +245,7 @@ export let sendResource = (message: MachineMessage) => {
 
 export let connectMachines = (getUrl: () => Promise<string>, preferencesApi?: PreferencesApi) => {
   stopConnection?.()
+  activePreferencesApi = preferencesApi
   connectionUrl = getUrl
   let stopped = false
   let reconnect: ReturnType<typeof setTimeout> | undefined
@@ -458,6 +465,7 @@ export let connectMachines = (getUrl: () => Promise<string>, preferencesApi?: Pr
   stopConnection = () => {
     if (stopped) return
     stopped = true
+    activePreferencesApi = undefined
     preferencesGeneration++
     preferencesRevision++
     retryConnection = null

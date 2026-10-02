@@ -15,6 +15,8 @@ export type AgentSelectorProps = {
   provider?: ProcessProvider | null;
   model?: string | null;
   effort?: AgentEffort | null;
+  onManageModels?: () => void;
+  onOpen?: () => void;
   onChange: (selection: AgentSelection) => void | Promise<void>;
   includeDefault?: boolean;
   onSelectDefault?: () => void | Promise<void>;
@@ -30,6 +32,8 @@ export type AgentSelectorProps = {
 export function AgentSelector({
   modelOptions = [],
   machinePicker,
+  onManageModels,
+  onOpen,
   provider,
   model,
   effort,
@@ -62,6 +66,7 @@ export function AgentSelector({
       resetMenu();
       return;
     }
+    onOpen?.();
     if (mode === "plus" || mode === "start") {
       setMenuOpen(true);
       return;
@@ -81,7 +86,7 @@ export function AgentSelector({
       return;
     }
     setMenuOpen(true);
-  }, [disabled, menuOpen, mode, resetMenu]);
+  }, [disabled, menuOpen, mode, onOpen, resetMenu]);
 
   const chooseModel = useCallback((nextProvider: ProcessProvider, nextModel: string | null) => {
     if (nextProvider === "shell") {
@@ -149,6 +154,14 @@ export function AgentSelector({
       icon: <JobKindIcon kind="shell" size={16} compact bare />,
       onPress: () => chooseModel("shell", null),
     });
+  }
+
+  if (onManageModels) {
+    if (modelItems.length > 0) modelItems.push({ type: "separator" });
+    modelItems.push({ type: "item", label: "Manage models", onPress: () => {
+      resetMenu();
+      onManageModels();
+    } });
   }
 
   const effortItems: PopupMenuItem[] = AGENT_EFFORT_OPTIONS.map((option) => ({

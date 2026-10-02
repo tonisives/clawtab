@@ -32,8 +32,9 @@ test('terminal encoder remains self-contained when embedded in the WebView', () 
 });
 
 const models = load('shared/src/types/process.ts');
+const modelUtilities = load('shared/src/util/agentModels.ts', { '../types/process': models });
 for (const file of ['remote/src/lib/agentModels.ts', 'desktop/src/components/JobEditor/utils.ts']) {
-  const { buildModelOptions } = load(file, { '@clawtab/shared': models, './types': {} });
+  const { buildModelOptions } = load(file, { '@clawtab/shared': { ...models, ...modelUtilities }, './types': {} });
   test(`${file}: pickers honor checked models and place Astra first`, () => {
     const result = buildModelOptions(['claude', 'codex'], {
       codex: ['gpt-5.6-sol', 'gpt-6-astra', 'codex-high', 'gpt-6-astra'],

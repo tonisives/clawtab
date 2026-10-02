@@ -140,6 +140,7 @@ export interface AppSettings {
   default_model: string | null;
   title_summary: TitleSummarySettings;
   enabled_models: Record<string, string[]>;
+  disabled_models?: Record<string, string[]>;
   claude_path: string;
   preferred_editor: string;
   preferred_terminal: string;

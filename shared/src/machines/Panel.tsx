@@ -1,3 +1,5 @@
+import { ModelManager } from "./Models"
+import { resolveEnabledModels } from "../util/agentModels"
 import { ConnectMachine } from "./Connect"
 import { colors } from "../theme/colors"
 import { useState, useRef } from "react"
@@ -13,7 +15,6 @@ import {
   clearMachineError,
   machineErrorMessage,
   retryMachines,
-  saveAccountPreferences,
   type MachineMessage,
 } from "./client"
 
@@ -33,8 +34,6 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
   let [tab, setTab] = useState("agents")
   let [expanded, setExpanded] = useState(false)
   let cancelled = useRef(false)
-  let [modelProvider, setModelProvider] = useState("codex")
-  let [modelNames, setModelNames] = useState("")
   let [shares, setShares] = useState<MachineMessage[]>([])
   let [removeConfirm, setRemoveConfirm] = useState(false)
   let [path, setPath] = useState("~")
@@ -65,9 +64,9 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
     (!machineType || (machineType === "rented" ? !!machine.rental : !machine.rental)),
   )
   let machine = visibleMachines.find((m) => m.id === state.selected)
-  let models: Record<string, string[]> = state.agentModels?.enabled_models ?? (machine
-    ? (state.snapshots[machine.id]?.settings_response?.enabled_models ?? {})
-    : {})
+  let hostSettings = machine ? state.snapshots[machine.id]?.settings_response : undefined
+  let preferences = state.agentModels ?? hostSettings
+  let models = resolveEnabledModels(preferences?.enabled_models ?? {}, hostSettings?.detected_models, preferences?.disabled_models)
   let choose = (id: string) => {
     selectMachine(id)
     setPath("~")
@@ -77,7 +76,6 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
     setShares([])
     setRemoveConfirm(false)
     setProgress("")
-    setModelNames("")
   }
   let act = async (work: () => Promise<unknown>) => {
     setBusy(true)
@@ -231,23 +229,6 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
       setProgress("Transfer cancelled")
     })
   }
-  let saveModels = () =>
-    void act(async () => {
-      if (!api || !["codex", "claude", "opencode", "antigravity"].includes(modelProvider))
-        throw new Error("Choose a supported provider")
-      await saveAccountPreferences(api, { agent_models: {
-        default_provider: state.agentModels?.default_provider ?? "codex",
-        default_model: state.agentModels?.default_provider === modelProvider ? null : state.agentModels?.default_model ?? null,
-        enabled_models: {
-          ...models,
-          [modelProvider]: modelNames
-            .split("\n")
-            .map((name) => name.trim())
-            .filter(Boolean),
-        },
-      } })
-      setProgress("Enabled models saved for all machines")
-    })
   let loadShares = () =>
     void act(async () => {
       if (machine && api) setShares((await api("GET", `/machines/${machine.id}/grants`)).shares)
@@ -482,38 +463,7 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
                   </View>
                 </>
               )}
-              {tab === "models" && machine.owned && (
-                <>
-                  <Text style={styles.title}>Your enabled models</Text>
-                  <Text style={styles.text}>
-                    These choices apply to all your machines and apps. Enter one model per line;
-                    an empty list disables that provider’s models.
-                  </Text>
-                  <TextInput
-                    accessibilityLabel="Model provider"
-                    style={styles.input}
-                    value={modelProvider}
-                    onChangeText={setModelProvider}
-                  />
-                  <TextInput
-                    accessibilityLabel="Enabled model identifiers"
-                    multiline
-                    style={styles.input}
-                    value={modelNames}
-                    onChangeText={setModelNames}
-                    placeholder="Model identifiers, one per line"
-                    placeholderTextColor="#989ca6"
-                  />
-                  <Pressable
-                    accessibilityRole="button"
-                    disabled={busy}
-                    onPress={saveModels}
-                    style={styles.button}
-                  >
-                    <Text style={styles.text}>Save enabled models</Text>
-                  </Pressable>
-                </>
-              )}
+              {tab === "models" && machine.owned && <ModelManager key={machine.id} machineId={machine.id} api={api} />}
               {(tab === "agents" || tab === "jobs") && (
                 <TextInput
                   accessibilityLabel="Agent prompt"

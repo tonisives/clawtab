@@ -76,9 +76,11 @@ function abbreviatedModelLabel(modelId: string | null | undefined, maxLength: nu
   return (semantic || cleanModelId).slice(-maxLength);
 }
 
-export function modelPickerLabel(modelId: string | null | undefined, fallback: string): string {
+export let modelPickerLabel = (modelId: string | null | undefined, fallback: string): string => {
+  let versioned = modelId?.match(/^gpt-([0-9.]+)-(.+)$/);
+  if (versioned) return `${versioned[2].replace(/-/g, " ")} ${versioned[1]}`;
   return compactModelLabel(modelId) || fallback;
-}
+};
 
 export function agentSelectionLabel(
   provider: ProcessProvider | null | undefined,

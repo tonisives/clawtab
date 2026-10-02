@@ -12,6 +12,7 @@ import {
   sendResource,
   machineSend,
   splitResource,
+  resolveEnabledModels,
   type MachineMessage,
 } from "@clawtab/shared"
 import { getWsUrl, registerMachinePushToken, isInvalidRefreshError, machineApi } from "../api/client"
@@ -77,9 +78,10 @@ let synchronize = () => {
           scopedMessage(id, snapshot.pinned_items ?? { type: "pinned_items", items: [] }).items,
       ),
     )
-  let settings = state.agentModels ?? (state.selected ? state.snapshots[state.selected]?.settings_response : null)
+  let hostSettings = state.selected ? state.snapshots[state.selected]?.settings_response : null
+  let settings = state.agentModels ?? hostSettings
   jobs.setDesktopSettings(
-    settings?.enabled_models ?? {},
+    resolveEnabledModels(settings?.enabled_models ?? {}, hostSettings?.detected_models, settings?.disabled_models),
     settings?.default_provider ?? "codex",
     settings?.default_model,
   )

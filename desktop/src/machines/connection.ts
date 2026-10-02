@@ -68,6 +68,7 @@ export let useDesktopMachines = () => {
 }
 let modelPreferences = (settings: AppSettings) => ({
   enabled_models: settings.enabled_models ?? {},
+  disabled_models: settings.disabled_models ?? {},
   default_provider: settings.default_provider,
   default_model: settings.default_model ?? null,
 })

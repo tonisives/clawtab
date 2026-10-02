@@ -3,12 +3,13 @@ import { useCallback, useRef, useState } from "react";
 import { Platform, StyleSheet, Text, TextInput, View } from "react-native";
 import { spacing } from "../theme/spacing";
 import type { AgentEffort, AgentModelOption, ProcessProvider } from "../types/process";
-import { useMachines, selectMachine, machineHostRequest, type MachineMessage } from "../machines/client";
+import { useMachines, selectMachine, machineHostRequest, machineRequest, type MachineMessage } from "../machines/client";
 import { defaultAgentFolder, resolveAgentFolder } from "../util/agentFolder";
 import { buildModelOptions } from "../util/agentModels";
 import { MachineTargetPicker } from "../machines/TargetPicker";
 import { colors } from "../theme/colors";
 import { AgentSelector } from "./AgentSelector";
+import { ModelManagerModal } from "../machines/Models";
 
 export function GroupAgentRow({
   onRunAgent,
@@ -38,6 +39,7 @@ export function GroupAgentRow({
   const sendingRef = useRef(false);
   let machines = useMachines();
   let [busy, setBusy] = useState(false);
+  let [modelsOpen, setModelsOpen] = useState(false);
   let [error, setError] = useState<string | null>(null);
   let hasLocal = localMachineId !== undefined;
   let target = targetMachineId ?? machines.selected ?? localMachineId ?? (hasLocal ? null : machines.machines.find((machine) => machine.online && machine.owned)?.id);
@@ -47,11 +49,19 @@ export function GroupAgentRow({
   let folderKey = target ?? "local";
   let folder = folders[folderKey] ?? defaultAgentFolder(workDir, sourceMachineId ?? localMachineId, target);
   let settings = target ? machines.snapshots[target]?.settings_response : undefined;
+  let settingsOptions = settings
+    ? buildModelOptions(["claude", "codex", "opencode", "antigravity"], settings.enabled_models ?? {}, settings.detected_models, settings.disabled_models)
+    : [];
   let options = machines.agentModels
-    ? buildModelOptions(["claude", "codex", "opencode", "antigravity"], machines.agentModels.enabled_models)
-    : modelOptions.length ? modelOptions : settings
-      ? buildModelOptions(["claude", "codex", "opencode", "antigravity"], settings.enabled_models ?? {})
-      : [];
+    ? buildModelOptions(["claude", "codex", "opencode", "antigravity"], machines.agentModels.enabled_models, settings?.detected_models, machines.agentModels.disabled_models)
+    : !hasLocal && settings ? settingsOptions : modelOptions.length ? modelOptions : settingsOptions;
+  let refreshModels = () => {
+    if (!hasLocal && target && machine?.owned && machine.online) {
+      void machineRequest(target, { type: "get_settings" }).catch(() => {});
+    }
+  };
+  let openModels = () => { refreshModels(); setModelsOpen(true); };
+  let closeModels = () => setModelsOpen(false);
   let chooseTarget = (id: string | null) => {
     selectMachine(id);
     setError(null);
@@ -95,6 +105,8 @@ export function GroupAgentRow({
         model={model}
         effort={effort}
         modelOptions={options}
+        onManageModels={!hasLocal ? openModels : undefined}
+        onOpen={refreshModels}
         machinePicker={<View>
           <View style={styles.folder}>
             <Text style={styles.folderLabel}>Folder on {machine?.name ?? "this desktop"}</Text>
@@ -109,6 +121,7 @@ export function GroupAgentRow({
         onChange={(selection) => launch(selection.provider, selection.modelId, selection.effort)}
         nativeBottomInset={88}
       />
+      {modelsOpen && <ModelManagerModal machineId={target ?? undefined} onClose={closeModels} />}
       {busy && <Text style={styles.status}>Starting agent…</Text>}
       {error && <Text style={styles.error}>{error}</Text>}
     </View>

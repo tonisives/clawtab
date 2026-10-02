@@ -110,6 +110,8 @@ pub enum ClientMessage {
     },
     GetSettings {
         id: String,
+        #[serde(default)]
+        refresh_models: bool,
     },
     GetUsage {
         id: String,
@@ -344,6 +346,12 @@ pub enum DesktopMessage {
     SettingsResponse {
         id: String,
         enabled_models: HashMap<String, Vec<String>>,
+        #[serde(default)]
+        disabled_models: HashMap<String, Vec<String>>,
+        #[serde(default)]
+        detected_models: HashMap<String, Vec<(String, String)>>,
+        #[serde(default)]
+        model_detection_errors: HashMap<String, String>,
         default_provider: String,
         default_model: Option<String>,
     },
