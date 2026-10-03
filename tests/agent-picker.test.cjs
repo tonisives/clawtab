@@ -63,7 +63,8 @@ test('mobile defaults to an online owned machine and uses its enabled models', a
   let view = harness('../shared/src/components/GroupAgentRow.tsx', machineMock(state));
   let picker = selector(view.render(view.exports.GroupAgentRow, { onRunAgent: (...args) => { launched = { target: state.selected, args }; } }));
   assert.equal(targetPicker(picker).props.target, 'a');
-  assert.deepEqual(Array.from(picker.props.modelOptions, (model) => model.modelId), ['opus']);
+  assert.ok(picker.props.modelOptions.some((model) => model.modelId === 'opus'));
+  assert.ok(picker.props.modelOptions.every((model) => model.provider === 'claude'));
   await picker.props.onChange({ provider: 'claude', modelId: 'opus', effort: 'high' });
   assert.equal(launched.target, 'a');
   assert.deepEqual(launched.args, ['', 'claude', 'opus', 'high', '/home/user', '~']);
@@ -77,7 +78,7 @@ test('target changes refresh models and launch errors are visible', async () => 
   assert.equal(picker.props.modelOptions.length, 0);
   targetPicker(picker).props.onSelect('b');
   picker = selector(view.render(view.exports.GroupAgentRow, props));
-  assert.equal(picker.props.modelOptions[0].modelId, 'gpt-test');
+  assert.ok(picker.props.modelOptions.some((model) => model.modelId === 'gpt-test'));
   await picker.props.onChange({ provider: 'codex', modelId: 'gpt-test', effort: 'high' });
   assert.ok(find(view.render(view.exports.GroupAgentRow, props), (node) => node.props?.children === 'Working directory missing'));
 });
@@ -121,9 +122,11 @@ test('configured account models stay the same across desktop and remote targets'
   let launched;
   let props = { localMachineId: 'a', modelOptions: [{ provider: 'codex', modelId: 'old-default' }], onRunAgent: (...args) => { launched = args; } };
   let render = () => selector(view.render(view.exports.GroupAgentRow, props));
-  assert.deepEqual(Array.from(render().props.modelOptions, (option) => option.modelId), ['my-custom-model']);
+  let firstModels = Array.from(render().props.modelOptions, (option) => option.modelId);
+  assert.ok(firstModels.includes('my-custom-model'));
+  assert.equal(firstModels.includes('old-default'), false);
   targetPicker(render()).props.onSelect('b');
-  assert.deepEqual(Array.from(render().props.modelOptions, (option) => option.modelId), ['my-custom-model']);
+  assert.deepEqual(Array.from(render().props.modelOptions, (option) => option.modelId), firstModels);
   await render().props.onChange({ provider: 'codex', modelId: 'my-custom-model', effort: 'high' });
   assert.equal(launched[2], 'my-custom-model');
 });
@@ -277,7 +280,7 @@ test('OpenCode catalogs stay opt-in while their models remain available to manag
   assert.deepEqual(Array.from(models.buildModelOptions(['opencode'], { opencode: ['provider/selected'] }, catalog), (option) => option.modelId), ['provider/selected']);
 });
 
-test('remote plus menus refresh their target catalog and open model management without launching', () => {
+test('remote plus menus refresh their target catalog and carry an inline editor', () => {
   let state = { selected: 'a', machines: [{ id: 'a', online: true, owned: true }], snapshots: { a: { settings_response: { enabled_models: { codex: ['gpt-old'], claude: [], opencode: [], antigravity: [] }, detected_models: { codex: [['gpt-6.1-sol', 'GPT-6.1 Sol']] } } } } };
   let requests = [], launched = false;
   let mock = machineMock(state);
@@ -289,22 +292,53 @@ test('remote plus menus refresh their target catalog and open model management w
   picker.props.onOpen();
   assert.equal(requests[0].target, 'a');
   assert.equal(requests[0].message.type, 'get_settings');
-  picker.props.onManageModels();
-  assert.ok(find(view.render(view.exports.GroupAgentRow, props), (node) => node.props?.machineId === 'a' && typeof node.props?.onClose === 'function'));
+  assert.equal(picker.props.modelEditor.props.machineId, 'a');
+  assert.equal(picker.props.modelEditor.props.compact, true);
   assert.equal(launched, false);
 });
 
-test('Manage models closes the agent menu and opens management without selecting a model', () => {
-  let opened = false, selected = false;
+test('Edit models stays in the plus popup and returns to model choices without launching', () => {
+  let selected = false;
   let view = harness('../shared/src/components/AgentSelector.tsx');
-  let props = { modelOptions: [], onManageModels: () => { opened = true; }, onChange: () => { selected = true; } };
+  let editor = { type: 'ModelManager' }, footer = { type: 'MachineTargetPicker' };
+  let props = { mode: 'plus', modelOptions: [], modelEditor: editor, machinePicker: footer, onChange: () => { selected = true; } };
   let render = () => view.render(view.exports.AgentSelector, props);
   find(render(), (node) => node.type === 'TouchableOpacity').props.onPress({});
   let popup = find(render(), (node) => Array.isArray(node.props?.items));
-  popup.props.items.find((item) => item.label === 'Manage models').onPress();
-  assert.equal(opened, true);
+  let edit = popup.props.items.find((item) => item.label === 'Edit models');
+  assert.equal(edit.keepOpen, true);
+  edit.onPress();
+  popup = find(render(), (node) => Array.isArray(node.props?.items));
+  assert.equal(popup.props.title, 'Edit models');
+  assert.equal(popup.props.content, editor);
+  assert.equal(popup.props.footer, undefined);
   assert.equal(selected, false);
-  assert.equal(find(render(), (node) => Array.isArray(node.props?.items)), undefined);
+  popup.props.onBack();
+  popup = find(render(), (node) => Array.isArray(node.props?.items));
+  assert.equal(popup.props.title, 'Add agent');
+  assert.equal(popup.props.content, undefined);
+  assert.equal(popup.props.footer, footer);
+  assert.ok(popup.props.items.some((item) => item.label === 'Edit models'));
+});
+
+test('older host model choices include sol 6.1 and still respect explicit removals', () => {
+  let { exports: models } = harness('../shared/src/util/agentModels.ts');
+  let enabled = { codex: ['gpt-5.6-sol'] };
+  let catalog = models.hostModelCatalog({ enabled_models: enabled });
+  assert.ok(models.buildModelOptions(['codex'], enabled, catalog).some((option) => option.modelId === 'gpt-6.1-sol'));
+  assert.equal(models.buildModelOptions(['codex'], enabled, catalog, { codex: ['gpt-6.1-sol'] }).some((option) => option.modelId === 'gpt-6.1-sol'), false);
+  assert.equal(models.buildModelOptions(['codex'], { codex: [] }).length, 0);
+  let live = models.hostModelCatalog({ detected_models: { codex: [['future-release', 'Future']] } });
+  assert.deepEqual(Array.from(models.buildModelOptions(['codex'], enabled, live), (option) => option.modelId), ['future-release', 'gpt-5.6-sol']);
+  assert.equal(Object.keys(models.hostModelCatalog()).length, 0);
+  assert.equal(Object.keys(models.hostModelCatalog({ detected_models: {} })).length, 0);
+});
+
+test('a remote plus menu includes sol 6.1 when its older host has not loaded detection yet', () => {
+  let state = { selected: 'a', machines: [{ id: 'a', online: true, owned: true }], snapshots: { a: { settings_response: { enabled_models: { codex: ['gpt-5.6-sol'], claude: [], opencode: [], antigravity: [] } } } } };
+  let view = harness('../shared/src/components/GroupAgentRow.tsx', machineMock(state));
+  let picker = selector(view.render(view.exports.GroupAgentRow, { onRunAgent: () => {} }));
+  assert.ok(picker.props.modelOptions.some((option) => option.modelId === 'gpt-6.1-sol'));
 });
 
 let managerFixture = () => {

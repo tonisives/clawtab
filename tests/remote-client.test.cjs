@@ -273,6 +273,7 @@ test('mobile subscription replay records the connection before synchronous error
     '@clawtab/shared': {
       machineState: () => state, machineProcesses: () => [],
       resolveEnabledModels: (enabled) => enabled,
+      hostModelCatalog: (settings) => settings?.detected_models ?? {},
       machineJobs: () => ({ jobs: [], statuses: {} }),
       subscribeMachines: (callback) => { notify = callback; return noop; },
       onMachineEvent: () => noop, connectMachines: () => noop,

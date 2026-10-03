@@ -1,10 +1,10 @@
 import { useRef, useState } from "react"
-import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native"
+import { Pressable, StyleSheet, Text, TextInput, View } from "react-native"
 import { colors } from "../theme/colors"
 import { spacing } from "../theme/spacing"
 import { CURRENT_AGENT_MODEL_OPTIONS, isSyntheticAgentModel, type ProcessProvider } from "../types/process"
-import { labelForProvider } from "../util/agent"
-import { resolveEnabledModels, type DetectedAgentModels } from "../util/agentModels"
+import { labelForProvider, modelPickerLabel } from "../util/agent"
+import { hostModelCatalog, resolveEnabledModels } from "../util/agentModels"
 import {
   machineErrorMessage,
   machineRequest,
@@ -23,20 +23,21 @@ type ModelRowProps = {
   enabled: boolean
   isDefault: boolean
   busy: boolean
+  compact: boolean
   onToggle: (id: string, enabled: boolean) => void
   onDefault: (id: string) => void
 }
 
-let ModelRow = ({ id, name, enabled, isDefault, busy, onToggle, onDefault }: ModelRowProps) => {
+let ModelRow = ({ id, name, enabled, isDefault, busy, compact, onToggle, onDefault }: ModelRowProps) => {
   let toggle = () => onToggle(id, !enabled)
   let setDefault = () => onDefault(id)
   return (
     <View style={styles.modelRow}>
       <View style={styles.modelName}>
-        <Text style={styles.text}>{name}</Text>
-        {name !== id && <Text style={styles.hint}>{id}</Text>}
+        <Text style={styles.text}>{compact ? modelPickerLabel(id, name) : name}</Text>
+        {!compact && name !== id && <Text style={styles.hint}>{id}</Text>}
       </View>
-      {enabled && <Pressable accessibilityRole="button" accessibilityLabel={`Use ${id} by default`} disabled={busy} onPress={setDefault} style={styles.smallButton}>
+      {enabled && !compact && <Pressable accessibilityRole="button" accessibilityLabel={`Use ${id} by default`} disabled={busy} onPress={setDefault} style={styles.smallButton}>
         <Text style={isDefault ? styles.selectedText : styles.hint}>{isDefault ? "Default" : "Set default"}</Text>
       </Pressable>}
       <Pressable accessibilityRole="button" accessibilityLabel={`${enabled ? "Remove" : "Add"} ${id}`} accessibilityState={{ disabled: busy }} disabled={busy} onPress={toggle} style={[styles.smallButton, enabled && styles.enabledButton]}>
@@ -46,7 +47,7 @@ let ModelRow = ({ id, name, enabled, isDefault, busy, onToggle, onDefault }: Mod
   )
 }
 
-export let ModelManager = ({ machineId, api }: { machineId?: string; api?: PreferencesApi }) => {
+export let ModelManager = ({ machineId, api, compact = false }: { machineId?: string; api?: PreferencesApi; compact?: boolean }) => {
   let state = useMachines()
   let target = machineId ?? state.selected ?? state.machines.find((machine) => machine.owned && machine.online)?.id
   let machine = state.machines.find((item) => item.id === target && item.owned)
@@ -57,7 +58,7 @@ export let ModelManager = ({ machineId, api }: { machineId?: string; api?: Prefe
     default_provider: settings?.default_provider ?? "codex",
     default_model: settings?.default_model ?? null,
   }
-  let detected: DetectedAgentModels = settings?.detected_models ?? {}
+  let detected = hostModelCatalog(settings)
   let enabledModels = resolveEnabledModels(preferences.enabled_models, detected, preferences.disabled_models)
   let [provider, setProvider] = useState<ProcessProvider>("codex")
   let [customModel, setCustomModel] = useState("")
@@ -130,10 +131,10 @@ export let ModelManager = ({ machineId, api }: { machineId?: string; api?: Prefe
   }
   let detectionError = settings?.model_detection_errors?.[provider]
   return (
-    <View style={styles.content}>
-      <Text style={styles.hint}>Models detected on your machine appear automatically. Add or remove models to customize your agent menus across your machines and apps.</Text>
+    <View style={[styles.content, compact && styles.compactContent]}>
+      {!compact && <Text style={styles.hint}>Models detected on your machine appear automatically. Add or remove models to customize your agent menus across your machines and apps.</Text>}
       <Pressable accessibilityRole="button" disabled={busy || !machine?.online} onPress={refresh} style={styles.button}>
-        <Text style={styles.text}>{busy ? "Updating models..." : "Refresh detected models"}</Text>
+        <Text style={styles.text}>{busy ? "Updating models..." : compact ? "Refresh models" : "Refresh detected models"}</Text>
       </Pressable>
       {!machine?.online && <Text style={styles.hint}>Connect an owned machine to detect its available models. You can still manage saved models.</Text>}
       <View style={styles.providers}>
@@ -143,37 +144,22 @@ export let ModelManager = ({ machineId, api }: { machineId?: string; api?: Prefe
       </View>
       {detectionError && <Text style={styles.hint}>{labelForProvider(provider)} detection: {detectionError}. Saved models remain available.</Text>}
       <TextInput accessibilityLabel="Search models" value={search} onChangeText={setSearch} placeholder="Search models" placeholderTextColor={colors.textSecondary} autoCapitalize="none" autoCorrect={false} style={styles.input} />
-      {models.slice(0, 100).map(([id, name]) => <ModelRow key={id} id={id} name={name} enabled={enabledIds.has(id)} busy={busy} isDefault={preferences.default_provider === provider && preferences.default_model === id} onToggle={toggleModel} onDefault={setDefault} />)}
+      {models.slice(0, 100).map(([id, name]) => <ModelRow key={id} id={id} name={name} enabled={enabledIds.has(id)} busy={busy} compact={compact} isDefault={preferences.default_provider === provider && preferences.default_model === id} onToggle={toggleModel} onDefault={setDefault} />)}
       {models.length > 100 && <Text style={styles.hint}>Showing 100 of {models.length} models. Search to find a model.</Text>}
       {models.length === 0 && <Text style={styles.hint}>{query ? "No matching models." : "No models detected. Add a model below or refresh."}</Text>}
       <View style={styles.addRow}>
         <TextInput accessibilityLabel="Custom model identifier" value={customModel} onChangeText={setCustomModel} onSubmitEditing={addCustomModel} editable={!busy} placeholder="Custom model identifier" placeholderTextColor={colors.textSecondary} autoCapitalize="none" autoCorrect={false} style={[styles.input, styles.customInput]} />
         <Pressable accessibilityRole="button" accessibilityLabel="Add custom model" disabled={busy || !customModel.trim()} onPress={addCustomModel} style={styles.button}><Text style={styles.text}>Add</Text></Pressable>
       </View>
-      {preferences.default_model && <Pressable accessibilityRole="button" disabled={busy} onPress={clearDefault} style={styles.button}><Text style={styles.hint}>Clear default model</Text></Pressable>}
+      {!compact && preferences.default_model && <Pressable accessibilityRole="button" disabled={busy} onPress={clearDefault} style={styles.button}><Text style={styles.hint}>Clear default model</Text></Pressable>}
       {error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
     </View>
   )
 }
 
-export let ModelManagerModal = ({ machineId, onClose }: { machineId?: string; onClose: () => void }) => (
-  <Modal visible animationType="slide" transparent={Platform.OS === "web"} presentationStyle={Platform.OS === "web" ? "overFullScreen" : "pageSheet"} onRequestClose={onClose}>
-    <View style={styles.modalBackdrop}>
-      <View style={styles.modal}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Manage models</Text>
-          <Pressable accessibilityRole="button" onPress={onClose} style={styles.button}><Text style={styles.text}>Done</Text></Pressable>
-        </View>
-        <ScrollView keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
-          <ModelManager machineId={machineId} />
-        </ScrollView>
-      </View>
-    </View>
-  </Modal>
-)
-
 const styles = StyleSheet.create({
   content: { gap: spacing.sm },
+  compactContent: { padding: spacing.md },
   providers: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs },
   button: { padding: spacing.sm, borderWidth: 1, borderColor: colors.border, borderRadius: 8, alignItems: "center" },
   smallButton: { padding: spacing.sm, borderWidth: 1, borderColor: colors.border, borderRadius: 8 },
@@ -181,14 +167,10 @@ const styles = StyleSheet.create({
   text: { color: colors.text, fontSize: 13 },
   hint: { color: colors.textSecondary, fontSize: 12 },
   selectedText: { color: colors.accent, fontSize: 13 },
-  title: { color: colors.text, fontSize: 18, fontWeight: "600" },
   modelRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs, paddingVertical: spacing.xs, borderBottomWidth: 1, borderBottomColor: colors.border },
   modelName: { flex: 1, gap: 2 },
   input: { borderWidth: 1, borderColor: colors.border, borderRadius: 8, padding: spacing.sm, color: colors.text, fontSize: 13 },
   customInput: { flex: 1 },
   addRow: { flexDirection: "row", gap: spacing.sm },
   error: { color: colors.danger, fontSize: 13 },
-  modalBackdrop: { flex: 1, backgroundColor: "rgba(0, 0, 0, 0.5)", alignItems: "center", justifyContent: "center", padding: Platform.OS === "web" ? spacing.lg : 0 },
-  modal: { width: "100%", maxWidth: 640, maxHeight: "100%", flex: 1, padding: spacing.lg, backgroundColor: colors.surface, borderRadius: Platform.OS === "web" ? 12 : 0, paddingTop: Platform.OS === "web" ? spacing.lg : 32 },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.md },
 })

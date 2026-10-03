@@ -51,6 +51,7 @@ export type PopupMenuItem =
   | { type: "submenu"; label: string; items: PopupMenuItem[] };
 
 interface PopupMenuProps {
+  content?: ReactNode;
   footer?: ReactNode;
   items: PopupMenuItem[];
   position?: { top: number; left: number } | null;
@@ -95,6 +96,8 @@ function HoverableItem({ item, onPress, highlighted = false, onHover, showDivide
 
   return (
     <TouchableOpacity
+      accessibilityRole="button"
+      accessibilityLabel={item.label}
       style={[
         styles.item,
         showDivider && styles.itemDivider,
@@ -132,7 +135,7 @@ function HoverableItem({ item, onPress, highlighted = false, onHover, showDivide
   );
 }
 
-export function PopupMenu({ items, footer, position, onClose, onBack, dropdownRef, triggerRef, autoFocus = false, initialHighlight = true, nativeBottomInset = 8, nativePlacement = "auto", presentation = "popup", title }: PopupMenuProps) {
+export function PopupMenu({ items, content, footer, position, onClose, onBack, dropdownRef, triggerRef, autoFocus = false, initialHighlight = true, nativeBottomInset = 8, nativePlacement = "auto", presentation = "popup", title }: PopupMenuProps) {
   let isSheet = presentation === "bottom-sheet";
   const localRef = useRef<View>(null);
   const ref = dropdownRef ?? localRef;
@@ -383,7 +386,7 @@ export function PopupMenu({ items, footer, position, onClose, onBack, dropdownRe
           )}
         </View>
       )}
-      <ScrollView style={isSheet ? styles.sheetScroll : { maxHeight: Math.max(96, windowSize.height - nativeBottomInset - 32 - (footer ? 110 : 0)) }} keyboardShouldPersistTaps="handled">
+      <ScrollView style={isSheet ? styles.sheetScroll : { maxHeight: Math.max(96, windowSize.height - nativeBottomInset - 32 - (footer ? 110 : 0)) }} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
         {submenu && (
           <TouchableOpacity
             style={styles.backItem}
@@ -424,6 +427,7 @@ export function PopupMenu({ items, footer, position, onClose, onBack, dropdownRe
             />
           );
         })}
+        {content}
       </ScrollView>
       {footer}
     </View>

@@ -13,6 +13,7 @@ import {
   machineSend,
   splitResource,
   resolveEnabledModels,
+  hostModelCatalog,
   type MachineMessage,
 } from "@clawtab/shared"
 import { getWsUrl, registerMachinePushToken, isInvalidRefreshError, machineApi } from "../api/client"
@@ -81,7 +82,7 @@ let synchronize = () => {
   let hostSettings = state.selected ? state.snapshots[state.selected]?.settings_response : null
   let settings = state.agentModels ?? hostSettings
   jobs.setDesktopSettings(
-    resolveEnabledModels(settings?.enabled_models ?? {}, hostSettings?.detected_models, settings?.disabled_models),
+    resolveEnabledModels(settings?.enabled_models ?? {}, hostModelCatalog(hostSettings), settings?.disabled_models),
     settings?.default_provider ?? "codex",
     settings?.default_model,
   )

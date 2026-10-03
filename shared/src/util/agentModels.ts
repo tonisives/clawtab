@@ -26,6 +26,18 @@ export const BARE_PROVIDER_OPTIONS: AgentModelOption[] = [
 
 export type DetectedAgentModels = Record<string, [string, string][]>;
 
+export let hostModelCatalog = (settings?: { detected_models?: DetectedAgentModels } | null): DetectedAgentModels => {
+  if (!settings) return {};
+  if (settings.detected_models !== undefined) return settings.detected_models;
+  // Older hosts only send saved choices. Use the bundled catalog until they
+  // can report live detection, so newly supported models still appear.
+  let catalog: DetectedAgentModels = {};
+  for (let option of CURRENT_AGENT_MODEL_OPTIONS) {
+    if (option.modelId) (catalog[option.provider] ??= []).push([option.modelId, option.label]);
+  }
+  return catalog;
+};
+
 export let resolveEnabledModels = (
   enabledModels: Record<string, string[]>,
   detectedModels: DetectedAgentModels = {},

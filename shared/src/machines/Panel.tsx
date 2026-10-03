@@ -1,5 +1,5 @@
 import { ModelManager } from "./Models"
-import { resolveEnabledModels } from "../util/agentModels"
+import { hostModelCatalog, resolveEnabledModels } from "../util/agentModels"
 import { ConnectMachine } from "./Connect"
 import { colors } from "../theme/colors"
 import { useState, useRef } from "react"
@@ -66,7 +66,7 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
   let machine = visibleMachines.find((m) => m.id === state.selected)
   let hostSettings = machine ? state.snapshots[machine.id]?.settings_response : undefined
   let preferences = state.agentModels ?? hostSettings
-  let models = resolveEnabledModels(preferences?.enabled_models ?? {}, hostSettings?.detected_models, preferences?.disabled_models)
+  let models = resolveEnabledModels(preferences?.enabled_models ?? {}, hostModelCatalog(hostSettings), preferences?.disabled_models)
   let choose = (id: string) => {
     selectMachine(id)
     setPath("~")

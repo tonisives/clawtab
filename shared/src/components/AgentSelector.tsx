@@ -15,7 +15,7 @@ export type AgentSelectorProps = {
   provider?: ProcessProvider | null;
   model?: string | null;
   effort?: AgentEffort | null;
-  onManageModels?: () => void;
+  modelEditor?: ReactNode;
   onOpen?: () => void;
   onChange: (selection: AgentSelection) => void | Promise<void>;
   includeDefault?: boolean;
@@ -32,7 +32,7 @@ export type AgentSelectorProps = {
 export function AgentSelector({
   modelOptions = [],
   machinePicker,
-  onManageModels,
+  modelEditor,
   onOpen,
   provider,
   model,
@@ -49,7 +49,7 @@ export function AgentSelector({
   nativeBottomInset = 88,
 }: AgentSelectorProps) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const [stage, setStage] = useState<"model" | "effort">("model");
+  const [stage, setStage] = useState<"model" | "effort" | "edit">("model");
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
   const [pending, setPending] = useState<{ provider: ProcessProvider; modelId: string | null; defaultEffort: AgentEffort | null } | null>(null);
   const buttonRef = useRef<any>(null);
@@ -156,12 +156,9 @@ export function AgentSelector({
     });
   }
 
-  if (onManageModels) {
+  if (modelEditor) {
     if (modelItems.length > 0) modelItems.push({ type: "separator" });
-    modelItems.push({ type: "item", label: "Manage models", onPress: () => {
-      resetMenu();
-      onManageModels();
-    } });
+    modelItems.push({ type: "item", label: "Edit models", hint: "\u203a", keepOpen: true, onPress: () => setStage("edit") });
   }
 
   const effortItems: PopupMenuItem[] = AGENT_EFFORT_OPTIONS.map((option) => ({
@@ -208,14 +205,15 @@ export function AgentSelector({
       {menuOpen && (
         <PopupMenu
           presentation={mode === "plus" || mode === "start" ? "bottom-sheet" : "popup"}
-          title={stage === "model" ? "Add agent" : "Choose effort"}
-          onBack={stage === "effort" ? () => setStage("model") : resetMenu}
+          title={stage === "model" ? "Add agent" : stage === "edit" ? "Edit models" : "Choose effort"}
+          onBack={stage !== "model" ? () => setStage("model") : resetMenu}
           autoFocus={mode === "plus" || mode === "start"}
           items={stage === "model" ? modelItems : [
             ...(Platform.OS === "ios" ? [] : [{ type: "item" as const, label: "Back to models", keepOpen: true, onPress: () => setStage("model") }]),
-            ...effortItems,
+            ...(stage === "effort" ? effortItems : []),
           ]}
-          footer={machinePicker}
+          content={stage === "edit" ? modelEditor : undefined}
+          footer={stage === "edit" ? undefined : machinePicker}
           position={menuPos}
           onClose={resetMenu}
           triggerRef={buttonRef}

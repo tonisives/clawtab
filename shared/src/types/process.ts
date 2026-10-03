@@ -51,6 +51,9 @@ export function isSyntheticAgentModel(modelId: string | null | undefined): boole
  */
 export const CURRENT_AGENT_MODEL_OPTIONS: AgentModelOption[] = [
   { provider: "codex", modelId: "gpt-6-astra", label: "GPT-6-Astra" },
+  { provider: "codex", modelId: "gpt-6.1-sol", label: "GPT-6.1-Sol" },
+  { provider: "codex", modelId: "gpt-6-sol", label: "GPT-6-Sol" },
+  { provider: "codex", modelId: "gpt-6-luna", label: "GPT-6-Luna" },
   { provider: "codex", modelId: "gpt-5.6-sol", label: "GPT-5.6-Sol" },
   { provider: "codex", modelId: "gpt-5.6-terra", label: "GPT-5.6-Terra" },
   { provider: "codex", modelId: "gpt-5.6-luna", label: "GPT-5.6-Luna" },

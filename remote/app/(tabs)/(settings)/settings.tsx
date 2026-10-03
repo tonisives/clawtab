@@ -17,7 +17,7 @@ import { useJobsStore } from "../../../src/store/jobs"
 import { ContentContainer } from "../../../src/components/ContentContainer"
 import { ApiTokensSection } from "../../../src/components/ApiTokensSection"
 import { useResponsive } from "../../../src/hooks/useResponsive"
-import { ModelManager, ShareSection } from "@clawtab/shared"
+import { ShareSection } from "@clawtab/shared"
 import * as api from "../../../src/api/client"
 import { confirm, alertError, openUrl } from "../../../src/lib/platform"
 import { colors } from "../../../src/theme/colors"
@@ -277,11 +277,6 @@ export default function SettingsScreen({ inModal = false }: { inModal?: boolean 
                   </View>
                 </View>
               )}
-            </View>
-
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Models</Text>
-              <ModelManager api={api.machineApi} />
             </View>
 
             <View style={styles.section}>

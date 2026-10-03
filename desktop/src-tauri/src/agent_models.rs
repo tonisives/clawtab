@@ -81,9 +81,13 @@ async fn detect_installed(provider: &str) -> Result<Option<Vec<(String, String)>
 }
 
 async fn model_command(binary: &str, args: &[&str]) -> Result<std::process::Output, String> {
+    // Background hosts may have a minimal PATH. Run the same absolute path
+    // found by installation detection, including its standard-bin fallbacks.
+    let executable =
+        crate::tools::which(binary).ok_or_else(|| format!("{} is not installed", binary))?;
     let output = tokio::time::timeout(
         Duration::from_secs(12),
-        tokio::process::Command::new(binary)
+        tokio::process::Command::new(executable)
             .args(args)
             .kill_on_drop(true)
             .output(),
@@ -307,6 +311,18 @@ fn default_antigravity_models() -> Vec<(String, String)> {
 #[cfg(test)]
 mod tests {
     use super::{default_antigravity_models, parse_antigravity_models_output, parse_claude_family};
+
+    #[tokio::test]
+    #[ignore = "requires an installed, authenticated Codex CLI"]
+    async fn detects_installed_codex_catalog() {
+        let models = super::detect_codex_models()
+            .await
+            .expect("Codex model detection");
+        assert!(!models.is_empty());
+        assert!(models
+            .iter()
+            .all(|(id, name)| !id.is_empty() && !name.is_empty()));
+    }
 
     #[test]
     fn codex_catalog_includes_new_listable_models_without_hardcoded_ids() {
