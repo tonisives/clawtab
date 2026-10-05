@@ -157,6 +157,8 @@ fn build_monitor_params(
         history: Arc::clone(&ctx.history),
         job_status: Arc::clone(&ctx.job_status),
         notify_on_success,
+        settings: Arc::clone(&ctx.settings),
+        telegram_chat_id: job.telegram_chat_id,
         relay: Arc::clone(&ctx.relay),
         notifier: ctx.notifier.clone(),
         is_reattach: false,
@@ -241,9 +243,23 @@ fn record_history(rc: &RunCtx<'_>, outcome: &RunOutcome<'_>, finished_at: &str) 
 async fn dispatch_notification(rc: &RunCtx<'_>, outcome: &RunOutcome<'_>) {
     let job = rc.job;
     let ctx = rc.ctx;
+    if !outcome.success {
+        crate::telegram::failure::enqueue(
+            &ctx.history.lock(),
+            rc.telegram_config.as_ref(),
+            crate::telegram::failure::JobFailure {
+                run_id: rc.run_id,
+                group: crate::config::jobs::job_group(job),
+                job_id: &job.name,
+                slug: &job.slug,
+                chat_id: job.telegram_chat_id,
+                exit_code: outcome.exit_code,
+            },
+        );
+    }
     match job.notify_target {
         NotifyTarget::Telegram => {
-            if job.telegram_notify.finish {
+            if job.telegram_notify.finish && outcome.success {
                 let Some(ref tg) = rc.telegram_config else {
                     return;
                 };

@@ -1,4 +1,5 @@
 pub mod commands;
+pub mod failure;
 pub mod polling;
 pub mod types;
 

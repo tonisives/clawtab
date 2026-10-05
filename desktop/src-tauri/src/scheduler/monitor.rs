@@ -35,6 +35,8 @@ pub struct MonitorParams {
     pub history: Arc<Mutex<HistoryStore>>,
     pub job_status: Arc<Mutex<HashMap<String, JobStatus>>>,
     pub notify_on_success: bool,
+    pub settings: Arc<Mutex<crate::config::settings::AppSettings>>,
+    pub telegram_chat_id: Option<i64>,
     pub relay: Arc<Mutex<Option<RelayHandle>>>,
     pub notifier: Option<Arc<dyn crate::notifications::Notifier>>,
     /// When true, skip the "job started" notification (used for reattach).
@@ -521,11 +523,26 @@ async fn notify_finish(
     exit_code: Option<i32>,
     succeeded: bool,
 ) {
+    if !succeeded {
+        let config = params.settings.lock().telegram.clone();
+        crate::telegram::failure::enqueue(
+            &params.history.lock(),
+            config.as_ref(),
+            crate::telegram::failure::JobFailure {
+                run_id: &params.run_id,
+                group: &params.group_name,
+                job_id: &params.job_id,
+                slug: &params.slug,
+                chat_id: params.telegram_chat_id,
+                exit_code,
+            },
+        );
+    }
     if !params.telegram_notify.finish {
         return;
     }
     let status = if succeeded { "completed" } else { "failed" };
-    if use_telegram {
+    if use_telegram && succeeded {
         if let Some(ref tg) = params.telegram {
             if params.notify_on_success {
                 let text = crate::telegram::format_job_status_message(
@@ -573,6 +590,10 @@ fn collect_trigger_result(
         retry_at: None,
     }
 }
+
+#[cfg(test)]
+#[path = "monitor_failure_tests.rs"]
+mod failure_tests;
 
 #[cfg(test)]
 #[path = "monitor_lifecycle_tests.rs"]

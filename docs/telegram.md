@@ -55,6 +55,18 @@ production: Job deploy failed (exit 1)
 The job group prefixes each notification. Completion notifications contain only
 the final status, not the job's log output.
 
+Failure alerts use the global `Notify on job failure` setting even when a job's
+routine finish notifications are disabled or its notification target is App or
+None. They cover nonzero process exits, missing panes, and launch errors. Alerts
+include the run ID and a `cwtctl jobs restart <group>/<job>` command; terminal
+output is not included.
+
+The daemon stores failure alerts in its history database before delivery. If
+Telegram is unreachable, it retries every 30 seconds and resumes pending alerts
+after a daemon restart. Per-job chat routing takes precedence over the global
+chat list. Successful delivery is remembered to avoid repeated notifications
+for the same run and chat; a crash during delivery can still repeat an alert.
+
 Toggle `Notify on job success` and `Notify on job failure` checkboxes in the Notifications section after setup.
 
 ### Per-Job Routing

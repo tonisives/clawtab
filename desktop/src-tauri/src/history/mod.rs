@@ -1,3 +1,7 @@
+mod failure_notifications;
+#[cfg(test)]
+pub(crate) use failure_notifications::test_store as test_failure_store;
+
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -80,6 +84,7 @@ impl HistoryStore {
         .ok();
 
         let store = Self { conn };
+        store.initialize_failure_notifications()?;
         crate::agent::migrate_legacy_agent_storage();
         store.backfill_orphan_logs();
         Ok(store)

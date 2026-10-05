@@ -67,7 +67,7 @@ pub fn reattach_running_jobs(
             .clone()
             .unwrap_or_else(|| default_session.clone());
 
-        if finalize_if_dead_or_idle(run, job, &pane_id, &ctx.history) {
+        if finalize_if_dead_or_idle(run, job, &pane_id, ctx) {
             continue;
         }
         reattach_one_run(run, job, &session, &pane_id, ctx, telegram_config.as_ref());
@@ -110,6 +110,8 @@ fn reattach_retired_one_shot(
                 history: Arc::clone(&ctx.history),
                 job_status: Arc::clone(&ctx.job_status),
                 notify_on_success: false,
+                settings: Arc::clone(&ctx.settings),
+                telegram_chat_id: None,
                 relay: Arc::clone(&ctx.relay),
                 notifier: None,
                 is_reattach: true,
@@ -131,6 +133,16 @@ fn reattach_retired_one_shot(
             let _ = history.update_finished(&run.id, &Utc::now().to_rfc3339(), exit_code, &output, "");
             if let Some(path) = super::monitor::save_log_file(&run.job_id, &run.id, &output, None, true) {
                 let _ = history.update_log_path(&run.id, &path.to_string_lossy());
+            }
+            drop(history);
+            if exit_code != Some(0) {
+                let config = ctx.settings.lock().telegram.clone();
+                let (group, job_id) = run.job_id.split_once('/').unwrap_or(("default", &run.job_id));
+                crate::telegram::failure::enqueue(
+                    &ctx.history.lock(), config.as_ref(), crate::telegram::failure::JobFailure {
+                        run_id: &run.id, group, job_id, slug: &run.job_id, chat_id: None, exit_code,
+                    },
+                );
             }
             false
         }
@@ -177,16 +189,18 @@ fn finalize_if_dead_or_idle(
     run: &crate::history::RunRecord,
     job: &crate::config::jobs::Job,
     pane_id: &str,
-    history: &Arc<Mutex<crate::history::HistoryStore>>,
+    ctx: &JobContext,
 ) -> bool {
     match tmux::pane_process_state(pane_id) {
         Ok(tmux::PaneProcessState::Running) => false,
         Ok(tmux::PaneProcessState::Exited(exit_code)) => {
-            finalize_idle_pane(run, job, pane_id, exit_code, history);
+            finalize_idle_pane(run, job, pane_id, exit_code, &ctx.history);
+            queue_orphan_failure(run, job, exit_code, ctx);
             true
         }
         Ok(tmux::PaneProcessState::Missing) => {
-            finalize_idle_pane(run, job, pane_id, None, history);
+            finalize_idle_pane(run, job, pane_id, None, &ctx.history);
+            queue_orphan_failure(run, job, None, ctx);
             true
         }
         Err(error) => {
@@ -199,6 +213,30 @@ fn finalize_if_dead_or_idle(
             true
         }
     }
+}
+
+fn queue_orphan_failure(
+    run: &crate::history::RunRecord,
+    job: &crate::config::jobs::Job,
+    exit_code: Option<i32>,
+    ctx: &JobContext,
+) {
+    if exit_code == Some(0) {
+        return;
+    }
+    let config = ctx.settings.lock().telegram.clone();
+    crate::telegram::failure::enqueue(
+        &ctx.history.lock(),
+        config.as_ref(),
+        crate::telegram::failure::JobFailure {
+            run_id: &run.id,
+            group: crate::config::jobs::job_group(job),
+            job_id: &job.name,
+            slug: &job.slug,
+            chat_id: job.telegram_chat_id,
+            exit_code,
+        },
+    );
 }
 
 fn finalize_idle_pane(
@@ -388,6 +426,8 @@ fn spawn_reattach_monitor(
         history: Arc::clone(&ctx.history),
         job_status: Arc::clone(&ctx.job_status),
         notify_on_success,
+        settings: Arc::clone(&ctx.settings),
+        telegram_chat_id: job.telegram_chat_id,
         relay: Arc::clone(&ctx.relay),
         notifier: None,
         is_reattach: true,

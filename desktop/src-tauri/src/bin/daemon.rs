@@ -440,6 +440,12 @@ fn main() {
             });
         }
 
+        // Persisted job failure alerts retry independently of interactive Telegram polling.
+        tokio::spawn(telegram::failure::run(
+            Arc::clone(&settings),
+            Arc::clone(&history),
+        ));
+
         // Telegram agent polling
         {
             let telegram_state = telegram::polling::AgentState {
