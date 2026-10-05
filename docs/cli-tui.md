@@ -105,6 +105,8 @@ cat task.md | cwtctl jobs create --name task --at '2026-10-02T09:00:00+07:00' --
 
 `--at` accepts a local `YYYY-MM-DD HH:MM` time or RFC 3339 with an explicit offset. The date must be in the future when the job is created. `--description-file` reads a text or Markdown file. These commands create agent jobs with descriptions stored in `job.md`; use the desktop app to configure a Binary job that runs a script directly.
 
+Scheduling is part of `jobs create`; there is no separate `jobs schedule` command. New jobs inherit ClawTab's default agent provider and model when they run. To schedule OpenCode specifically, choose it as the default agent or select it on the job in ClawTab after creation. The creation command does not currently accept a provider or model option.
+
 The command finds the nearest configured job group whose `folder_path` contains the current directory. If none matches, it uses a group derived from the current directory name. Job files are stored under `~/.config/clawtab/jobs/<group>/<name>/`.
 
 One-time jobs due while the daemon was offline run when it returns. By default, the daemon removes their config after the agent starts; the tmux pane and run history stay available for inspection. `--keep-config` leaves the job disabled after launch. Cron jobs keep their config and repeat.

@@ -95,6 +95,18 @@ _cwtctl() {
               'create:Create a scheduled agent job'
             )
             _describe -t subcmd 'jobs subcommand' sub
+          elif [[ $words[2] == create ]]; then
+            words=("${words[@]:1}")
+            (( CURRENT-- ))
+            _arguments \
+              '(- *)'{-h,--help}'[Show job creation help]' \
+              '--name[Name of the new job]:job name:' \
+              '(--at --keep-config)--cron[Repeat on a cron schedule]:cron expression:' \
+              '(--cron)--at[Run once at a future local time or RFC 3339 timestamp]:date and time:' \
+              '(--description-file --description-stdin)--description[Job instructions]:description:' \
+              '(--description --description-stdin)--description-file[Read job instructions from a file]:description file:_files' \
+              '(--description --description-file)--description-stdin[Read job instructions from stdin]' \
+              '(--cron)--keep-config[Keep a one-time job disabled after it starts]'
           elif (( CURRENT == 3 )) && [[ $words[2] == run || $words[2] == pause || $words[2] == resume || $words[2] == restart ]]; then
             _cwtctl_jobs
           elif (( CURRENT == 4 )) && [[ $words[2] == run || $words[2] == pause || $words[2] == resume || $words[2] == restart ]] && [[ $words[3] != */* ]]; then
