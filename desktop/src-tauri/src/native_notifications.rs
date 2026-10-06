@@ -9,7 +9,7 @@ use std::sync::Once;
 
 use objc2::rc::Retained;
 use objc2::runtime::Bool;
-use objc2_foundation::{NSError, NSString};
+use objc2_foundation::{NSBundle, NSError, NSString};
 use objc2_user_notifications::{
     UNAuthorizationOptions, UNMutableNotificationContent, UNNotificationRequest,
     UNNotificationSound, UNUserNotificationCenter,
@@ -20,6 +20,9 @@ static AUTH_REQUEST: Once = Once::new();
 /// Send a notification through UNUserNotificationCenter. Returns Err if the
 /// framework wasn't available (e.g. running outside an .app bundle).
 pub fn send(title: &str, body: &str) -> Result<(), String> {
+    if unsafe { NSBundle::mainBundle().bundleIdentifier() }.is_none() {
+        return Err("Native notifications require an app bundle identifier".to_string());
+    }
     AUTH_REQUEST.call_once(request_authorization);
 
     let center = unsafe { UNUserNotificationCenter::currentNotificationCenter() };
@@ -87,5 +90,13 @@ fn request_authorization() {
 
     unsafe {
         center.requestAuthorizationWithOptions_completionHandler(options, &handler);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn unbundled_native_notification_returns_error_for_system_fallback() {
+        assert!(super::send("ClawTab test", "Fallback check").is_err());
     }
 }

@@ -244,6 +244,13 @@ async fn dispatch_notification(rc: &RunCtx<'_>, outcome: &RunOutcome<'_>) {
     let job = rc.job;
     let ctx = rc.ctx;
     if !outcome.success {
+        let local_enabled = ctx.settings.lock().notify_job_failures_local;
+        crate::notifications::notify_job_failure(
+            ctx.notifier.as_deref(),
+            local_enabled,
+            &job.slug,
+            outcome.exit_code,
+        );
         crate::telegram::failure::enqueue(
             &ctx.history.lock(),
             rc.telegram_config.as_ref(),
@@ -284,8 +291,10 @@ async fn dispatch_notification(rc: &RunCtx<'_>, outcome: &RunOutcome<'_>) {
                 "failed"
             };
             crate::relay::push_job_notification(&ctx.relay, &job.slug, event, rc.run_id);
-            if let Some(ref n) = ctx.notifier {
-                n.notify_job(&job.name, event);
+            if outcome.success {
+                if let Some(ref n) = ctx.notifier {
+                    n.notify_job(&job.name, event);
+                }
             }
         }
         NotifyTarget::None => {}

@@ -228,6 +228,9 @@ pub struct AppSettings {
     /// Auto-yes panes are silenced regardless of this flag.
     #[serde(default = "default_true")]
     pub notify_questions_local: bool,
+    /// Show local job failure alerts independently of Telegram and routine job notifications.
+    #[serde(default = "default_true")]
+    pub notify_job_failures_local: bool,
     /// When false, suppresses pushing Claude questions to the relay so
     /// connected mobile clients don't receive notifications.
     #[serde(default = "default_true")]
@@ -278,6 +281,7 @@ impl Default for AppSettings {
             pinned_pane_identities: HashMap::new(),
             shortcuts: ShortcutSettings::default(),
             notify_questions_local: true,
+            notify_job_failures_local: true,
             notify_questions_remote: true,
             auto_release_on_blur: false,
         }

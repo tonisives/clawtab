@@ -113,7 +113,7 @@ fn reattach_retired_one_shot(
                 settings: Arc::clone(&ctx.settings),
                 telegram_chat_id: None,
                 relay: Arc::clone(&ctx.relay),
-                notifier: None,
+                notifier: ctx.notifier.clone(),
                 is_reattach: true,
                 protected_panes: Arc::clone(&ctx.protected_panes),
                 trigger_id: None,
@@ -136,6 +136,13 @@ fn reattach_retired_one_shot(
             }
             drop(history);
             if exit_code != Some(0) {
+                let local_enabled = ctx.settings.lock().notify_job_failures_local;
+                crate::notifications::notify_job_failure(
+                    ctx.notifier.as_deref(),
+                    local_enabled,
+                    &run.job_id,
+                    exit_code,
+                );
                 let config = ctx.settings.lock().telegram.clone();
                 let (group, job_id) = run.job_id.split_once('/').unwrap_or(("default", &run.job_id));
                 crate::telegram::failure::enqueue(
@@ -224,6 +231,10 @@ fn queue_orphan_failure(
     if exit_code == Some(0) {
         return;
     }
+    let local_enabled = ctx.settings.lock().notify_job_failures_local;
+    crate::notifications::notify_job_failure(
+        ctx.notifier.as_deref(), local_enabled, &job.slug, exit_code,
+    );
     let config = ctx.settings.lock().telegram.clone();
     crate::telegram::failure::enqueue(
         &ctx.history.lock(),
@@ -429,7 +440,7 @@ fn spawn_reattach_monitor(
         settings: Arc::clone(&ctx.settings),
         telegram_chat_id: job.telegram_chat_id,
         relay: Arc::clone(&ctx.relay),
-        notifier: None,
+        notifier: ctx.notifier.clone(),
         is_reattach: true,
         protected_panes: Arc::clone(&ctx.protected_panes),
         trigger_id: None,

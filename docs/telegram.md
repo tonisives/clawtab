@@ -61,6 +61,14 @@ None. They cover nonzero process exits, missing panes, and launch errors. Alerts
 include the run ID and a `cwtctl jobs restart <group>/<job>` command; terminal
 output is not included.
 
+Job failures also show an immediate local macOS notification with the job and
+exit code, even while offline. This alert is independent of Telegram and each
+job's routine finish settings. It uses the desktop notification path when the
+app is open and a local system notification when the app is closed. macOS must
+allow notifications for the app used to display the banner. To disable local
+failure banners, set `notify_job_failures_local: false` in `settings.yaml`;
+the default is `true`.
+
 The daemon stores failure alerts in its history database before delivery. If
 Telegram is unreachable, it retries every 30 seconds and resumes pending alerts
 after a daemon restart. Per-job chat routing takes precedence over the global

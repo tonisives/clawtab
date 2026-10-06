@@ -524,6 +524,13 @@ async fn notify_finish(
     succeeded: bool,
 ) {
     if !succeeded {
+        let local_enabled = params.settings.lock().notify_job_failures_local;
+        crate::notifications::notify_job_failure(
+            params.notifier.as_deref(),
+            local_enabled,
+            &params.slug,
+            exit_code,
+        );
         let config = params.settings.lock().telegram.clone();
         crate::telegram::failure::enqueue(
             &params.history.lock(),
@@ -565,8 +572,10 @@ async fn notify_finish(
     }
     if use_app {
         crate::relay::push_job_notification(&params.relay, &params.slug, status, &params.run_id);
-        if let Some(ref n) = params.notifier {
-            n.notify_job(&params.job_id, status);
+        if succeeded {
+            if let Some(ref n) = params.notifier {
+                n.notify_job(&params.job_id, status);
+            }
         }
     }
 }

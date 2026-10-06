@@ -13,6 +13,25 @@ pub trait Notifier: Send + Sync {
     fn notify_job(&self, job_id: &str, event: &str);
 }
 
+/// Failure banners do not wait for network delivery or routine finish notifications.
+pub fn notify_job_failure(
+    notifier: Option<&dyn Notifier>,
+    enabled: bool,
+    slug: &str,
+    exit_code: Option<i32>,
+) {
+    if !enabled {
+        return;
+    }
+    if let Some(notifier) = notifier {
+        let event = exit_code.map_or_else(
+            || "failed".to_string(),
+            |code| format!("failed (exit {code})"),
+        );
+        notifier.notify_job(slug, &event);
+    }
+}
+
 /// Tauri-backed notifier using tauri-plugin-notification.
 #[cfg(feature = "desktop")]
 pub struct TauriNotifier {
@@ -108,11 +127,18 @@ impl OsascriptNotifier {
                 .replace('\n', " "),
             title.replace('\\', "\\\\").replace('"', "\\\""),
         );
-        std::process::Command::new("osascript")
+        let output = std::process::Command::new("osascript")
             .args(["-e", &script])
             .output()
-            .map(|_| ())
-            .map_err(|e| e.to_string())
+            .map_err(|e| e.to_string())?;
+        if output.status.success() {
+            Ok(())
+        } else {
+            Err(format!(
+                "Local notification command exited with {}",
+                output.status
+            ))
+        }
     }
 }
 
@@ -167,8 +193,16 @@ impl IpcNotifier {
             };
             let delivered = ipc::broadcast_event(&subs, &event).await;
             if delivered == 0 {
-                let _ =
-                    OsascriptNotifier::send_notification(&title_for_fallback, &body_for_fallback);
+                if let Err(error) =
+                    OsascriptNotifier::send_notification(&title_for_fallback, &body_for_fallback)
+                {
+                    log::warn!("[notifications] local notification failed: {}", error);
+                } else {
+                    log::info!(
+                        "[notifications] local notification queued: {}",
+                        title_for_fallback
+                    );
+                }
             }
         });
     }

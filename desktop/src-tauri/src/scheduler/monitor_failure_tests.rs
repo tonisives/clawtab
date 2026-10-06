@@ -77,3 +77,69 @@ async fn successful_job_never_queues_failure_alert() {
         .expect("pending")
         .is_empty());
 }
+
+#[derive(Default)]
+struct RecordingNotifier(Mutex<Vec<(String, String)>>);
+
+impl crate::notifications::Notifier for RecordingNotifier {
+    fn notify_question(&self, _: &clawtab_protocol::ClaudeQuestion) {}
+    fn notify_job(&self, job: &str, event: &str) {
+        self.0.lock().push((job.to_string(), event.to_string()));
+    }
+}
+
+#[tokio::test]
+async fn local_failure_banner_is_immediate_without_telegram_and_never_doubled_for_app_jobs() {
+    for target in [
+        NotifyTarget::None,
+        NotifyTarget::App,
+        NotifyTarget::Telegram,
+    ] {
+        for finish in [false, true] {
+            let directory = tempfile::tempdir().expect("test directory");
+            let use_app = target == NotifyTarget::App;
+            let mut params = params(directory.path(), target.clone(), finish);
+            params.settings.lock().telegram = None;
+            let recorder = Arc::new(RecordingNotifier::default());
+            params.notifier = Some(recorder.clone());
+            notify_finish(&params, false, use_app, Some(7), false).await;
+            assert_eq!(
+                *recorder.0.lock(),
+                vec![("local/quiet-job".to_string(), "failed (exit 7)".to_string())]
+            );
+            assert!(params
+                .history
+                .lock()
+                .pending_failure_notifications()
+                .expect("pending")
+                .is_empty());
+        }
+    }
+}
+
+#[tokio::test]
+async fn local_failure_banner_setting_does_not_disable_queued_telegram_alerts() {
+    let directory = tempfile::tempdir().expect("test directory");
+    let mut params = params(directory.path(), NotifyTarget::App, true);
+    params.settings.lock().notify_job_failures_local = false;
+    let recorder = Arc::new(RecordingNotifier::default());
+    params.notifier = Some(recorder.clone());
+    notify_finish(&params, false, true, Some(7), false).await;
+    assert!(recorder.0.lock().is_empty());
+    assert_eq!(
+        params
+            .history
+            .lock()
+            .pending_failure_notifications()
+            .expect("pending")
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn existing_settings_enable_local_failure_banners_by_default() {
+    let settings: crate::config::settings::AppSettings =
+        serde_yml::from_str("{}").expect("existing config");
+    assert!(settings.notify_job_failures_local);
+}
