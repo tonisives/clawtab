@@ -1383,7 +1383,9 @@ fn collect_q_running_panes(
     jobs_config: &Arc<Mutex<JobsConfig>>,
     job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
 ) -> HashMap<String, (String, String)> {
-    let statuses = job_status.lock();
+    // Release job status before taking config: process detection reads them
+    // in the opposite order, which otherwise deadlocks the auto-yes loop.
+    let statuses = job_status.lock().clone();
     let config = jobs_config.lock();
     statuses
         .iter()
@@ -1574,7 +1576,7 @@ fn record_pane_capture(process: &mut DetectedAgent, visible: &str, cursor_y: u16
 #[cfg(test)]
 mod tests {
     use super::{
-        evict_stale_cache_entries, filter_auto_yes_questions, find_yes_option,
+        collect_q_running_panes, evict_stale_cache_entries, filter_auto_yes_questions, find_yes_option,
         parse_numbered_options, parse_opencode_buttons, record_pane_capture,
         resolved_hook_activity, should_capture_question_screen, update_question_cache,
         ActivityTracker, DetectedAgent, HookAgentState, ProcessProvider,
@@ -1583,6 +1585,51 @@ mod tests {
     use clawtab_protocol::{ClaudeQuestion, QuestionOption};
     use std::collections::HashSet;
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn running_pane_lookup_does_not_deadlock_with_process_detection() {
+        use crate::config::jobs::JobsConfig;
+        use parking_lot::Mutex;
+        use std::collections::HashMap;
+        use std::sync::{mpsc, Arc, Barrier};
+
+        let config = Arc::new(Mutex::new(JobsConfig::default()));
+        let statuses = Arc::new(Mutex::new(HashMap::new()));
+        let start = Arc::new(Barrier::new(2));
+        let (done_tx, done_rx) = mpsc::channel();
+
+        let question_worker = {
+            let config = Arc::clone(&config);
+            let statuses = Arc::clone(&statuses);
+            let start = Arc::clone(&start);
+            let done_tx = done_tx.clone();
+            std::thread::spawn(move || {
+                start.wait();
+                for _ in 0..10_000 {
+                    assert!(collect_q_running_panes(&config, &statuses).is_empty());
+                }
+                done_tx.send(()).unwrap();
+            })
+        };
+        let process_worker = std::thread::spawn(move || {
+            start.wait();
+            for _ in 0..10_000 {
+                // Process detection reads config before job status.
+                let _config = config.lock();
+                std::thread::yield_now();
+                let _statuses = statuses.lock();
+            }
+            done_tx.send(()).unwrap();
+        });
+
+        for _ in 0..2 {
+            done_rx
+                .recv_timeout(Duration::from_secs(5))
+                .expect("job locks deadlocked");
+        }
+        question_worker.join().unwrap();
+        process_worker.join().unwrap();
+    }
 
     fn agent_with_layout(
         pane_id: &str,
