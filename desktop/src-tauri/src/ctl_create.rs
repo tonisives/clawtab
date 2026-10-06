@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use chrono::{DateTime, Local, TimeZone};
+use clawtab_lib::agent_session::ProcessProvider;
 use clawtab_lib::config::jobs::{
     derive_slug, Job, JobType, JobsConfig, NotifyTarget, RunOnceSchedule, TelegramLogMode,
     TelegramNotify,
@@ -25,6 +26,8 @@ struct CreateInput {
     file: Option<PathBuf>,
     stdin: bool,
     keep_config: bool,
+    provider: Option<ProcessProvider>,
+    model: Option<String>,
 }
 
 struct TerminalGuard;
@@ -38,7 +41,8 @@ impl Drop for TerminalGuard {
 
 pub fn create(args: &[String]) -> Result<(), String> {
     if args.len() == 1 && matches!(args[0].as_str(), "--help" | "-h") {
-        println!("Usage: cwtctl jobs create [--name NAME (--cron EXPR | --at 'YYYY-MM-DD HH:MM') (--description TEXT | --description-file PATH | --description-stdin) [--keep-config]]");
+        println!("Usage: cwtctl jobs create [--name NAME (--cron EXPR | --at 'YYYY-MM-DD HH:MM') (--description TEXT | --description-file PATH | --description-stdin) [--provider PROVIDER [--model MODEL]] [--keep-config]]");
+        println!("Providers: claude, codex, opencode, antigravity. Omit --provider to use ClawTab's default agent. --model requires --provider; OpenCode model IDs use provider/model.");
         println!("With no options, opens the interactive job creator and nvim.");
         return Ok(());
     }
@@ -97,6 +101,14 @@ fn parse_args(args: &[String]) -> Result<CreateInput, String> {
             "--at" => input.at = Some(value.clone()),
             "--description" => input.description = Some(value.clone()),
             "--description-file" => input.file = Some(PathBuf::from(value)),
+            "--provider" => {
+                input.provider = Some(
+                    ProcessProvider::from_name(value)
+                        .filter(|provider| provider.supports_model_flag())
+                        .ok_or("--provider must be claude, codex, opencode, or antigravity")?,
+                );
+            }
+            "--model" => input.model = Some(value.trim().to_string()),
             _ => return Err(format!("unknown option: {flag}")),
         }
         index += 2;
@@ -227,11 +239,33 @@ fn parse_at(value: &str) -> Result<DateTime<chrono::FixedOffset>, String> {
 }
 
 fn save(input: CreateInput, description: String) -> Result<(), String> {
-    validate_fields(&input)?;
-    let name = input.name.trim();
     if description.trim().is_empty() {
         return Err("description cannot be empty".into());
     }
+    let cwd = fs::canonicalize(std::env::current_dir().map_err(|error| error.to_string())?)
+        .map_err(|error| error.to_string())?;
+    let config = JobsConfig::load();
+    let job = prepare_job(input, &config, &cwd)?;
+    let jobs_dir = JobsConfig::jobs_dir_public().ok_or("cannot determine config directory")?;
+    let path = jobs_dir.join(&job.slug);
+    fs::create_dir_all(path.parent().ok_or("invalid job folder")?)
+        .map_err(|error| error.to_string())?;
+    fs::create_dir(&path)
+        .map_err(|error| format!("cannot create job folder {}: {error}", path.display()))?;
+    if let Err(error) = fs::write(path.join("job.md"), description)
+        .map_err(|error| error.to_string())
+        .and_then(|_| config.save_job(&job))
+    {
+        let _ = fs::remove_dir_all(&path);
+        return Err(error);
+    }
+    println!("Created {}", job.slug);
+    Ok(())
+}
+
+fn prepare_job(input: CreateInput, config: &JobsConfig, cwd: &Path) -> Result<Job, String> {
+    validate_fields(&input)?;
+    let name = input.name.trim();
     let run_once = if let Some(value) = &input.at {
         let at = parse_at(value)?;
         Some(RunOnceSchedule {
@@ -242,10 +276,7 @@ fn save(input: CreateInput, description: String) -> Result<(), String> {
         None
     };
 
-    let cwd = fs::canonicalize(std::env::current_dir().map_err(|error| error.to_string())?)
-        .map_err(|error| error.to_string())?;
-    let config = JobsConfig::load();
-    let (project_root, matched_group) = project_for_cwd(&config.jobs, &cwd);
+    let (project_root, matched_group) = project_for_cwd(&config.jobs, cwd);
     let derived = derive_slug(&matched_group, Some(name), &config.jobs);
     let (normalized_group, job_suffix) = derived.split_once('/').ok_or("invalid job slug")?;
     let group = if config.jobs.iter().any(|job| {
@@ -271,7 +302,7 @@ fn save(input: CreateInput, description: String) -> Result<(), String> {
     let slug = format!("{group}/{job_suffix}");
     let job_id = slug.split('/').next_back().unwrap_or(name).to_string();
     let folder_path = project_root.to_string_lossy().into_owned();
-    let job = Job {
+    Ok(Job {
         name: name.to_string(),
         job_type: JobType::Job,
         enabled: true,
@@ -292,35 +323,30 @@ fn save(input: CreateInput, description: String) -> Result<(), String> {
         telegram_notify: TelegramNotify::default(),
         notify_target: NotifyTarget::None,
         group,
-        slug: slug.clone(),
+        slug,
         skill_paths: Vec::new(),
         params: Vec::new(),
         kill_on_end: false,
         auto_yes: true,
-        agent_provider: None,
-        agent_model: None,
+        agent_provider: input.provider,
+        agent_model: input.model,
         agent_effort: None,
         added_at: None,
         max_history: 3,
-    };
-    let jobs_dir = JobsConfig::jobs_dir_public().ok_or("cannot determine config directory")?;
-    let path = jobs_dir.join(&slug);
-    fs::create_dir_all(path.parent().ok_or("invalid job folder")?)
-        .map_err(|error| error.to_string())?;
-    fs::create_dir(&path)
-        .map_err(|error| format!("cannot create job folder {}: {error}", path.display()))?;
-    if let Err(error) = fs::write(path.join("job.md"), description)
-        .map_err(|error| error.to_string())
-        .and_then(|_| config.save_job(&job))
-    {
-        let _ = fs::remove_dir_all(&path);
-        return Err(error);
-    }
-    println!("Created {slug}");
-    Ok(())
+    })
 }
 
 fn validate_fields(input: &CreateInput) -> Result<(), String> {
+    if let Some(model) = &input.model {
+        if model.is_empty() {
+            return Err("--model cannot be empty".into());
+        }
+        if input.provider.is_none() {
+            return Err(
+                "--model requires --provider so the model belongs to a specific agent".into(),
+            );
+        }
+    }
     let name = input.name.trim();
     if name.is_empty() || name.contains('/') || name.contains('\\') {
         return Err("name must be nonempty and cannot contain path separators".into());
@@ -363,7 +389,99 @@ fn project_for_cwd(jobs: &[Job], cwd: &Path) -> (PathBuf, String) {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_args, parse_at, project_for_cwd};
+    use super::{parse_args, parse_at, prepare_job, project_for_cwd, validate_fields};
+    use clawtab_lib::agent_session::ProcessProvider;
+    use clawtab_lib::config::jobs::{Job, JobsConfig};
+
+    #[test]
+    fn opencode_selection_survives_job_serialization_for_both_schedule_types() {
+        let dir = tempfile::tempdir().unwrap();
+        for (schedule, value) in [
+            ("--cron", "0 9 * * *"),
+            ("--at", "2099-10-07T09:00:00+07:00"),
+        ] {
+            let args = [
+                "--name",
+                "review",
+                schedule,
+                value,
+                "--provider",
+                "opencode",
+                "--model",
+                "anthropic/claude-sonnet-4-5",
+                "--description",
+                "Review changes",
+            ]
+            .map(String::from);
+            let job = prepare_job(
+                parse_args(&args).unwrap(),
+                &JobsConfig::default(),
+                dir.path(),
+            )
+            .unwrap();
+            let restored: Job = serde_yml::from_str(&serde_yml::to_string(&job).unwrap()).unwrap();
+            assert_eq!(restored.agent_provider, Some(ProcessProvider::Opencode));
+            assert_eq!(
+                restored.agent_model.as_deref(),
+                Some("anthropic/claude-sonnet-4-5")
+            );
+            if schedule == "--cron" {
+                assert_eq!(restored.cron, value);
+                assert!(restored.run_once.is_none());
+            } else {
+                assert!(restored.cron.is_empty());
+                assert_eq!(restored.run_once.unwrap().at, parse_at(value).unwrap());
+            }
+        }
+    }
+
+    #[test]
+    fn omitted_provider_keeps_existing_default_behavior() {
+        let dir = tempfile::tempdir().unwrap();
+        let args = ["--name", "review", "--cron", "0 9 * * *"].map(String::from);
+        let job = prepare_job(
+            parse_args(&args).unwrap(),
+            &JobsConfig::default(),
+            dir.path(),
+        )
+        .unwrap();
+        assert!(job.agent_provider.is_none());
+        assert!(job.agent_model.is_none());
+    }
+
+    #[test]
+    fn rejects_unknown_providers_and_models_without_a_provider() {
+        for provider in ["unknown", "shell"] {
+            assert!(parse_args(&["--provider".into(), provider.into()]).is_err());
+        }
+        let args = [
+            "--name",
+            "review",
+            "--cron",
+            "0 9 * * *",
+            "--model",
+            "some-model",
+        ]
+        .map(String::from);
+        assert!(validate_fields(&parse_args(&args).unwrap())
+            .unwrap_err()
+            .contains("--model requires --provider"));
+        let args = [
+            "--name",
+            "review",
+            "--cron",
+            "0 9 * * *",
+            "--provider",
+            "opencode",
+            "--model",
+            " ",
+        ]
+        .map(String::from);
+        assert_eq!(
+            validate_fields(&parse_args(&args).unwrap()).unwrap_err(),
+            "--model cannot be empty"
+        );
+    }
 
     #[test]
     fn date_with_offset_parses() {

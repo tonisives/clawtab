@@ -105,7 +105,15 @@ cat task.md | cwtctl jobs create --name task --at '2026-10-02T09:00:00+07:00' --
 
 `--at` accepts a local `YYYY-MM-DD HH:MM` time or RFC 3339 with an explicit offset. The date must be in the future when the job is created. `--description-file` reads a text or Markdown file. These commands create agent jobs with descriptions stored in `job.md`; use the desktop app to configure a Binary job that runs a script directly.
 
-Scheduling is part of `jobs create`; there is no separate `jobs schedule` command. New jobs inherit ClawTab's default agent provider and model when they run. To schedule OpenCode specifically, choose it as the default agent or select it on the job in ClawTab after creation. The creation command does not currently accept a provider or model option.
+Scheduling is part of `jobs create`; there is no separate `jobs schedule` command. Use `--provider opencode` to pin a job to OpenCode, regardless of ClawTab's default agent. The other supported providers are `claude`, `codex`, and `antigravity`. Omit the flag to inherit ClawTab's default agent when the job runs.
+
+```bash
+opencode models
+cwtctl jobs create --name daily-review --provider opencode --cron '0 9 * * *' --description-file review.md
+cwtctl jobs create --name daily-review-pinned --provider opencode --model 'anthropic/claude-sonnet-4-5' --cron '0 9 * * *' --description-file review.md
+```
+
+`--model` requires `--provider`. For OpenCode, choose a `provider/model` ID from `opencode models`; the example ID must be available through your configured provider. Without `--model`, a job uses ClawTab's default model only when its provider matches the default provider; otherwise the selected CLI chooses its own model. Install and authenticate that CLI on the machine running the job. Creating a job saves its configuration without starting the agent; the running daemon executes it when due.
 
 The command finds the nearest configured job group whose `folder_path` contains the current directory. If none matches, it uses a group derived from the current directory name. Job files are stored under `~/.config/clawtab/jobs/<group>/<name>/`.
 

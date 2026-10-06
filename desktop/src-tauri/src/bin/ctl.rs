@@ -87,7 +87,7 @@ fn print_jobs_usage() {
     eprintln!("  jobs restart <group>/<job> Restart a job");
     eprintln!("  jobs status                Show job statuses");
     eprintln!("  jobs create                Create a scheduled agent job (interactive)");
-    eprintln!("  jobs create --name NAME (--cron EXPR | --at DATE) (--description TEXT | --description-file PATH | --description-stdin) [--keep-config]");
+    eprintln!("  jobs create --name NAME (--cron EXPR | --at DATE) (--description TEXT | --description-file PATH | --description-stdin) [--provider PROVIDER [--model MODEL]] [--keep-config]");
 }
 
 fn is_jobs_subcommand(command: &str) -> bool {

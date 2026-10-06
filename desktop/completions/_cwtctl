@@ -101,6 +101,8 @@ _cwtctl() {
             _arguments \
               '(- *)'{-h,--help}'[Show job creation help]' \
               '--name[Name of the new job]:job name:' \
+              '--provider[Agent CLI for this job]:provider:(claude codex opencode antigravity)' \
+              '--model[Model for the selected provider; OpenCode uses provider/model]:model:' \
               '(--at --keep-config)--cron[Repeat on a cron schedule]:cron expression:' \
               '(--cron)--at[Run once at a future local time or RFC 3339 timestamp]:date and time:' \
               '(--description-file --description-stdin)--description[Job instructions]:description:' \
