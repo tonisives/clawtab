@@ -30,7 +30,7 @@ const ptySubscriptions = new Map<string, PtySubscription>();
 
 type PtyConnectionState = "idle" | "connecting" | "failed";
 
-const SUBSCRIBE_ACK_TIMEOUT_MS = 15000;
+const SUBSCRIBE_OUTPUT_TIMEOUT_MS = 15000;
 const SUBSCRIBE_RETRY_WINDOW_MS = 45000;
 const SUBSCRIBE_RETRY_BASE_MS = 700;
 const SUBSCRIBE_RETRY_MAX_MS = 3000;
@@ -123,9 +123,9 @@ function sendSubscribe(paneId: string, subscription: PtySubscription) {
     if (subscription.state === "connecting") {
       subscription.pendingAckId = undefined;
       clearRequest(id);
-      scheduleSubscribeRetry(paneId, subscription, "Terminal connection timed out.");
+      scheduleSubscribeRetry(paneId, subscription, "Terminal output timed out. Reopen the pane to retry.");
     }
-  }, SUBSCRIBE_ACK_TIMEOUT_MS);
+  }, SUBSCRIBE_OUTPUT_TIMEOUT_MS);
   ackPromise.then((ack) => {
     if (subscription.pendingAckId !== id) return;
     subscription.pendingAckId = undefined;
@@ -139,12 +139,8 @@ function sendSubscribe(paneId: string, subscription: PtySubscription) {
       );
       return;
     }
-    if (subscription.ackTimer) clearTimeout(subscription.ackTimer);
-    subscription.ackTimer = undefined;
-    clearSubscribeRetry(subscription);
-    subscription.retryAttempt = 0;
-    subscription.startedAt = Date.now();
-    setSubscriptionState(subscription, "idle");
+    // An attach acknowledgement does not guarantee a redraw reached us.
+    // Keep the watchdog running until actual terminal output arrives.
   });
   return true;
 }
@@ -172,6 +168,7 @@ export function releaseActivePtySubscriptions() {
     subscription.subscribeTimer = undefined;
     if (subscription.unsubscribeTimer) clearTimeout(subscription.unsubscribeTimer);
     subscription.unsubscribeTimer = undefined;
+    clearSubscribeWait(subscription);
     clearSubscribeRetry(subscription);
     send({ type: "unsubscribe_pty", pane_id: paneId });
     subscription.released = true;
@@ -186,7 +183,7 @@ function isTerminalReset(data: string) {
 export function dispatchPtyOutput(paneId: string, data: string) {
   terminalCache.append(paneId, data);
   const subscription = ptySubscriptions.get(paneId);
-  if (subscription) {
+  if (subscription && data && !isTerminalReset(data)) {
     clearSubscribeWait(subscription);
     clearSubscribeRetry(subscription);
     subscription.retryAttempt = 0;
@@ -261,7 +258,7 @@ export function usePty(
     let stateListener: ((state: PtyConnectionState, error?: string) => void) | undefined;
 
     const onOutput = (data: string) => {
-      if (!gotDataRef.current) {
+      if (!gotDataRef.current && data && !isTerminalReset(data)) {
         gotDataRef.current = true;
         setHasOutput(true);
         setConnecting(false);

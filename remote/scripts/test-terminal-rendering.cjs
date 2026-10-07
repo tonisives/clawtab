@@ -23,6 +23,7 @@ let load = (filename, dependencies, globals = {}) => {
 };
 
 let react = {
+  useEffect: () => {},
   useRef: (current) => ({ current }),
   useState: (value) => [value, () => {}],
   useCallback: (callback) => callback,
@@ -127,4 +128,98 @@ test('overflowed terminal caches never replay an incomplete escape stream', () =
   cache.append('pane', fresh);
   assert.equal(cache.get('pane').length, 1);
   assert.equal(cache.get('pane')[0], fresh);
+});
+
+let subscriptionFixture = () => {
+  let effects = [], sent = [], states = [], waiters = new Map(), timers = new Map();
+  let time = 0, id = 0, timerId = 0;
+  let api = load('../src/hooks/usePty.ts', {
+    react: { ...react, useEffect: (effect) => effects.push(effect), useState: (initial) => {
+      let index = states.length;
+      states.push(initial);
+      return [initial, (value) => { states[index] = value; }];
+    } },
+    '@clawtab/shared': { splitResource: () => null, machineState: () => ({}) },
+    '../lib/terminalCache': { terminalCache: { get: () => [], append: () => {} } },
+    '../lib/wsRuntime': { getWsSend: () => (message) => sent.push(message), nextId: () => String(++id) },
+    '../lib/useRequestMap': {
+      clearRequest: (key) => waiters.delete(key),
+      registerRequest: (key) => new Promise((resolve) => waiters.set(key, resolve)),
+    },
+  }, {
+    Date: { now: () => time },
+    setTimeout: (callback, delay) => { timers.set(++timerId, { callback, at: time + delay }); return timerId; },
+    clearTimeout: (key) => timers.delete(key),
+    setInterval: () => 1, clearInterval: () => {},
+  });
+  api.usePty('%test', 'test', { current: {
+    dimensions: () => ({ cols: 39, rows: 28 }), clear: () => {}, write: () => {},
+  } });
+  effects.forEach((effect) => effect());
+  return {
+    api, sent, states,
+    acknowledge: async () => {
+      let message = sent.filter((item) => item.type === 'subscribe_pty').at(-1);
+      waiters.get(message.id)?.({ success: true });
+      await Promise.resolve();
+    },
+    advance: (ms) => {
+      let until = time + ms;
+      while (true) {
+        let next = [...timers].sort((a, b) => a[1].at - b[1].at)[0];
+        if (!next || next[1].at > until) break;
+        time = next[1].at;
+        timers.delete(next[0]);
+        next[1].callback();
+      }
+      time = until;
+    },
+  };
+};
+
+test('an acknowledged attach without output retries and eventually reports failure', async () => {
+  let fixture = subscriptionFixture();
+  await fixture.acknowledge();
+  assert.equal(fixture.states[0], true);
+  fixture.advance(15_700);
+  assert.equal(fixture.sent.length, 2);
+  await fixture.acknowledge();
+  fixture.advance(16_400);
+  assert.equal(fixture.sent.length, 3);
+  await fixture.acknowledge();
+  fixture.advance(15_000);
+  assert.match(fixture.states[1], /Terminal output timed out/);
+  assert.equal(fixture.states[0], false);
+  assert.equal(fixture.states[2], false);
+});
+
+test('a reset alone cannot finish loading or cancel output recovery', async () => {
+  let fixture = subscriptionFixture();
+  fixture.api.dispatchPtyOutput('%test', 'G2M=');
+  await fixture.acknowledge();
+  assert.equal(fixture.states[2], false);
+  assert.equal(fixture.states[0], true);
+  fixture.advance(15_700);
+  assert.equal(fixture.sent.length, 2);
+  fixture.api.dispatchPtyOutput('%test', 'ZnJhbWU=');
+  await fixture.acknowledge();
+  fixture.advance(60_000);
+  assert.equal(fixture.sent.length, 2);
+  assert.equal(fixture.states[2], true);
+  assert.equal(fixture.states[0], false);
+  assert.equal(fixture.states[1], undefined);
+});
+
+test('backgrounding cancels pending output recovery until the app resumes', async () => {
+  let fixture = subscriptionFixture();
+  fixture.api.releaseActivePtySubscriptions();
+  await fixture.acknowledge();
+  fixture.advance(60_000);
+  assert.deepEqual(fixture.sent.map((message) => message.type), ['subscribe_pty', 'unsubscribe_pty']);
+  fixture.api.replayActivePtySubscriptions('resume');
+  assert.equal(fixture.sent.at(-1).type, 'subscribe_pty');
+  fixture.api.dispatchPtyOutput('%test', 'ZnJhbWU=');
+  fixture.advance(60_000);
+  assert.equal(fixture.sent.length, 3);
+  assert.equal(fixture.states[2], true);
 });

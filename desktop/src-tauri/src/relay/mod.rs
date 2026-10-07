@@ -1,4 +1,6 @@
 mod handler;
+#[cfg(test)]
+mod reconnect_tests;
 
 use parking_lot::Mutex;
 use std::collections::HashMap;
@@ -24,6 +26,7 @@ const RELAY_HTTP_TIMEOUT: Duration = Duration::from_secs(15);
 pub struct RelayHandle {
     tx: mpsc::Sender<String>,
     cancel: tokio_util::sync::CancellationToken,
+    shutdown: tokio_util::sync::CancellationToken,
 }
 
 impl RelayHandle {
@@ -31,6 +34,7 @@ impl RelayHandle {
     pub fn send_message(&self, msg: &DesktopMessage) {
         if let Ok(json) = serde_json::to_string(msg) {
             if self.tx.try_send(json).is_err() {
+                log::warn!("Relay: outgoing queue unavailable, reconnecting");
                 self.cancel.cancel();
             }
         }
@@ -38,7 +42,7 @@ impl RelayHandle {
 
     /// Disconnect from the relay server.
     pub fn disconnect(&self) {
-        self.cancel.cancel();
+        self.shutdown.cancel();
     }
 }
 
@@ -408,10 +412,14 @@ async fn attempt_session(
 
             let (ws_sink, ws_stream) = ws_stream.split();
             let (tx, rx) = mpsc::channel::<String>(512);
-            let cancel = tokio_util::sync::CancellationToken::new();
+            // Queue overflow must retire only this socket. Intentional
+            // disconnects also cancel the parent and stop the reconnect loop.
+            let shutdown = tokio_util::sync::CancellationToken::new();
+            let cancel = shutdown.child_token();
             let handle = RelayHandle {
                 tx: tx.clone(),
                 cancel: cancel.clone(),
+                shutdown: shutdown.clone(),
             };
 
             push_full_state(&handle, jobs_config, job_status);
@@ -451,7 +459,7 @@ async fn attempt_session(
                 *guard = None;
             }
 
-            if cancel.is_cancelled() {
+            if shutdown.is_cancelled() {
                 log::info!("Relay: disconnected by user");
                 return SessionOutcome::Done;
             }
