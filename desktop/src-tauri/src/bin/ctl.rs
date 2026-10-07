@@ -4,7 +4,7 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 
 use clawtab_lib::agent_plugins::{PluginHostCommand, PluginHostRequest, PluginHostResponse};
-use clawtab_lib::config::jobs::JobStatus;
+use clawtab_lib::config::jobs::{find_job, JobStatus, JobsConfig};
 use clawtab_lib::ipc::{self, DesktopIpcCommand, IpcCommand, IpcResponse, PaneDirection};
 
 #[path = "../ctl_create.rs"]
@@ -86,6 +86,9 @@ fn print_jobs_usage() {
     eprintln!("  jobs resume <group>/<job>  Resume a paused job");
     eprintln!("  jobs restart <group>/<job> Restart a job");
     eprintln!("  jobs status                Show job statuses");
+    eprintln!(
+        "  jobs edit <group>/<job>    Edit job YAML in nvim (enabled: false disables scheduling)"
+    );
     eprintln!("  jobs create                Create a scheduled agent job (interactive)");
     eprintln!("  jobs create --name NAME (--cron EXPR | --at DATE) (--description TEXT | --description-file PATH | --description-stdin) [--provider PROVIDER [--model MODEL]] [--keep-config]");
 }
@@ -93,8 +96,41 @@ fn print_jobs_usage() {
 fn is_jobs_subcommand(command: &str) -> bool {
     matches!(
         command,
-        "list" | "ls" | "run" | "pause" | "resume" | "restart" | "status" | "create"
+        "list" | "ls" | "run" | "pause" | "resume" | "restart" | "status" | "create" | "edit"
     )
+}
+
+fn edit_job_command(args: &[String]) -> Result<(), String> {
+    if args.len() == 3 && matches!(args[2].as_str(), "help" | "-h" | "--help") {
+        println!("Usage: cwtctl jobs edit <group>/<job> (or: cwtctl jobs edit <group> <job>)");
+        println!("Opens job.yaml in nvim; works without the daemon.");
+        println!("Set enabled: false to disable future scheduled runs, or true to enable them.");
+        println!("The running daemon reloads saved changes automatically.");
+        return Ok(());
+    }
+    let reference = require_job_reference(args, "jobs edit");
+    let config = JobsConfig::load();
+    let job = find_job(&config.jobs, &reference)?;
+    let path = JobsConfig::jobs_dir_public()
+        .ok_or("Could not determine config directory")?
+        .join(&job.slug)
+        .join("job.yaml");
+    if !path.is_file() {
+        return Err(format!("Job YAML not found: {}", path.display()));
+    }
+    eprintln!(
+        "Editing {} (enabled: false disables future scheduled runs)",
+        path.display()
+    );
+    let status = Command::new("nvim")
+        .arg("--")
+        .arg(&path)
+        .status()
+        .map_err(|error| format!("Failed to launch nvim: {error}"))?;
+    if !status.success() {
+        return Err(format!("nvim exited with {status}"));
+    }
+    Ok(())
 }
 
 fn print_agent_usage() {
@@ -781,6 +817,13 @@ async fn main() {
         return;
     }
 
+    if command == "edit" && jobs_scope {
+        if let Err(error) = edit_job_command(&args) {
+            exit_error(&error);
+        }
+        return;
+    }
+
     if command == "create" && jobs_scope {
         if let Err(error) = ctl_create::create(&args[2..]) {
             exit_error(&error);
@@ -957,7 +1000,8 @@ async fn main() {
             if let Some(query) = last_query {
                 println!("last_query={}", query);
             }
-            if info.session_started_at.is_none() && first_query.is_none() && display_name.is_none() {
+            if info.session_started_at.is_none() && first_query.is_none() && display_name.is_none()
+            {
                 eprintln!("No session info found");
                 std::process::exit(1);
             }

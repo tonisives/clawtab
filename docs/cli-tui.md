@@ -21,6 +21,7 @@ cwtctl <command> [args]
 | `jobs create` | Create a scheduled agent job in the current project directory; works without the daemon |
 | `jobs run <group>/<job>` | Run a job and follow its output |
 | `jobs pause <group>/<job>` | Pause a running job |
+| `jobs edit <group>/<job>` | Edit job YAML in nvim; works without the daemon |
 | `jobs resume <group>/<job>` | Resume a paused job |
 | `jobs restart <group>/<job>` | Restart a completed/failed job |
 | `jobs status` | Show all job statuses as JSON |
@@ -90,6 +91,16 @@ asynchronous action.
 `pane focus` is intended to be called from `tmux.conf` and vim/nvim configs to share `Ctrl-h/j/k/l` navigation between vim windows, tmux panes, and ClawTab panes. See [Vim / Tmux Navigation](./vim-tmux-navigation.md).
 
 Exit codes: `0` on success, `1` on error (with message on stderr).
+
+### Edit a job or disable its schedule
+
+```bash
+cwtctl jobs edit tskr/data-story-scout
+```
+
+This opens the job's `job.yaml` in `nvim`. Set `enabled: false` to disable future scheduled runs, or `enabled: true` to enable them. You can also edit `cron` and the other job settings. Save and quit with `:wq`; the running daemon reloads saved changes automatically. The edit command works even when the daemon is offline.
+
+`jobs pause` and `jobs resume` control a running process. Disabling scheduling does not stop a job that is already running.
 
 ### Create a scheduled agent job
 

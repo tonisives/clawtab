@@ -93,6 +93,7 @@ _cwtctl() {
               'restart:Restart a job'
               'status:Show job statuses'
               'create:Create a scheduled agent job'
+              'edit:Edit job YAML in nvim; enable or disable scheduling'
             )
             _describe -t subcmd 'jobs subcommand' sub
           elif [[ $words[2] == create ]]; then
@@ -109,9 +110,9 @@ _cwtctl() {
               '(--description --description-stdin)--description-file[Read job instructions from a file]:description file:_files' \
               '(--description --description-file)--description-stdin[Read job instructions from stdin]' \
               '(--cron)--keep-config[Keep a one-time job disabled after it starts]'
-          elif (( CURRENT == 3 )) && [[ $words[2] == run || $words[2] == pause || $words[2] == resume || $words[2] == restart ]]; then
+          elif (( CURRENT == 3 )) && [[ $words[2] == run || $words[2] == pause || $words[2] == resume || $words[2] == restart || $words[2] == edit ]]; then
             _cwtctl_jobs
-          elif (( CURRENT == 4 )) && [[ $words[2] == run || $words[2] == pause || $words[2] == resume || $words[2] == restart ]] && [[ $words[3] != */* ]]; then
+          elif (( CURRENT == 4 )) && [[ $words[2] == run || $words[2] == pause || $words[2] == resume || $words[2] == restart || $words[2] == edit ]] && [[ $words[3] != */* ]]; then
             _cwtctl_jobs_for_group "$words[3]"
           fi
           ;;
