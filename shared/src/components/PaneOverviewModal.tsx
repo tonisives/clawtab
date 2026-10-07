@@ -1,7 +1,7 @@
-import { Modal, SafeAreaView, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
+import { Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { MachineTerminalControls } from "../machines/Terminal";
 import { resourceLabel } from "../machines/client";
+import { NativePaneOverview } from "./NativePaneOverview";
 import { AgentActionFormModal } from "./AgentActionFormModal";
 import type { AgentActionDescriptor } from "../types/agentPlugin";
 import { colors } from "../theme/colors";
@@ -10,7 +10,6 @@ import { compactPath, formatTime, timeAgo } from "../util/format";
 
 const MAX_QUERY_CHARS = 640;
 const MAX_VISIBLE_ACTIONS = 4;
-const isIOS = Platform.OS === "ios";
 
 export type PaneOverviewData = {
   paneId: string;
@@ -113,7 +112,9 @@ let AgentActionList = ({ children }: { children: ReactNode[] }) => {
   );
 };
 
-export const PaneOverviewModal = ({ visible, onClose, actions, ...pane }: PaneOverviewModalProps) => {
+export let PaneOverviewModal = (props: PaneOverviewModalProps) => Platform.OS === "web" ? <WebPaneOverview {...props} /> : <NativePaneOverview {...props} />;
+
+let WebPaneOverview = ({ visible, onClose, actions, ...pane }: PaneOverviewModalProps) => {
   const latestQuery = pane.lastQuery && pane.lastQuery !== pane.firstQuery ? pane.lastQuery : null;
   const title = pane.cwd ? compactPath(pane.cwd) : "Pane overview";
   const [selectedAgentAction, setSelectedAgentAction] = useState<AgentActionDescriptor | null>(null);
@@ -145,9 +146,9 @@ export const PaneOverviewModal = ({ visible, onClose, actions, ...pane }: PaneOv
   };
 
   const content = (
-    <View style={[styles.root, isIOS && styles.fullScreenRoot]}>
-      {!isIOS && <Pressable style={StyleSheet.absoluteFill} onPress={handleClose} />}
-      <View style={[styles.card, isIOS && styles.fullScreenCard]}>
+    <View style={styles.root}>
+      <Pressable style={StyleSheet.absoluteFill} onPress={handleClose} />
+      <View style={styles.card}>
         <View style={styles.header}>
           <View style={styles.headerText}>
             <Text style={styles.title} numberOfLines={1}>{title}</Text>
@@ -168,8 +169,7 @@ export const PaneOverviewModal = ({ visible, onClose, actions, ...pane }: PaneOv
           </Pressable>
         </View>
 
-        <ScrollView style={isIOS ? styles.fullScreenScroll : styles.scroll} contentContainerStyle={styles.content}>
-          {isIOS && <MachineTerminalControls paneId={pane.paneId} connectedOnly />}
+        <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
           {(actions?.onToggleAutoYes || actions?.onTogglePin || actions?.onStop || actions?.onStart) ? (
             <View style={styles.actions}>
               <View style={styles.toggleGroup}>
@@ -296,19 +296,6 @@ export const PaneOverviewModal = ({ visible, onClose, actions, ...pane }: PaneOv
     </View>
   );
 
-  if (isIOS) {
-    return (
-      <Modal visible={visible} presentationStyle="fullScreen" supportedOrientations={["portrait", "portrait-upside-down", "landscape-left", "landscape-right"]} animationType="slide" onRequestClose={handleClose}>
-        <SafeAreaView style={styles.fullScreenRoot}>{content}</SafeAreaView>
-      </Modal>
-    );
-  }
-
-  if (Platform.OS !== "web") {
-    if (!visible) return null;
-    return <View style={styles.nativeRoot}>{content}</View>;
-  }
-
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={handleClose}>
       {content}
@@ -317,30 +304,6 @@ export const PaneOverviewModal = ({ visible, onClose, actions, ...pane }: PaneOv
 };
 
 const styles = StyleSheet.create({
-  fullScreenRoot: {
-    flex: 1,
-    padding: 0,
-    backgroundColor: colors.surface,
-  },
-  fullScreenCard: {
-    flex: 1,
-    maxWidth: "100%",
-    maxHeight: "100%",
-    borderRadius: 0,
-    borderWidth: 0,
-  },
-  fullScreenScroll: {
-    flex: 1,
-  },
-  nativeRoot: {
-    position: "absolute",
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    zIndex: 1000,
-    elevation: 1000,
-  },
   root: {
     flex: 1,
     justifyContent: "center",

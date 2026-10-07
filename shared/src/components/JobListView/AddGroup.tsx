@@ -62,19 +62,19 @@ export let AddGroup = ({ hook }: { hook: JobListViewHook }) => {
   if (!hook.groupPreferencesApi) return null;
   return (
     <>
-    <MachineActionButton label="Add group / machine" onPress={show} appearance="settings" style={styles.add} />
+    <MachineActionButton label="Add group / machine" onPress={show} style={styles.add} />
     {open && <MachineModal title="Add group / machine" onClose={cancel}>
     <View style={styles.form}>
       <TextInput accessibilityLabel="Group name" placeholder="Group name" placeholderTextColor={colors.textSecondary} value={name} onChangeText={setName} editable={!busy} maxLength={100} style={styles.input} />
       <TextInput accessibilityLabel="Group folder" placeholder="Folder on selected machine" placeholderTextColor={colors.textSecondary} value={path} onChangeText={setPath} editable={!busy} autoCapitalize="none" autoCorrect={false} style={styles.input} />
       <Text style={styles.hint}>Use an existing folder. ~ opens the selected machine’s home folder.</Text>
       <View pointerEvents={busy ? "none" : "auto"}>
-        <MachineTargetPicker target={target} localMachineId={hook.localAgentMachineId} onSelect={setTarget} flatAddMachine />
+        <MachineTargetPicker target={target} localMachineId={hook.localAgentMachineId} onSelect={setTarget} />
       </View>
       {error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
       <View style={styles.actions}>
-        <ManageMachinesButton appearance="settingsCompact" style={styles.actionButton} />
-        <MachineActionButton label={busy ? "Creating…" : "Create group"} disabled={busy} onPress={create} appearance="settingsCompact" style={styles.actionButton} />
+        <ManageMachinesButton style={styles.actionButton} />
+        <MachineActionButton label={busy ? "Creating…" : "Create group"} disabled={busy} onPress={create} style={styles.actionButton} />
       </View>
     </View>
     </MachineModal>}
@@ -83,7 +83,7 @@ export let AddGroup = ({ hook }: { hook: JobListViewHook }) => {
 };
 
 let styles = StyleSheet.create({
-  add: { alignSelf: "stretch", marginHorizontal: spacing.xxl, marginTop: spacing.md, marginBottom: spacing.sm },
+  add: { alignSelf: "flex-start", marginHorizontal: spacing.xxl, marginTop: spacing.md, marginBottom: spacing.sm },
   form: { padding: spacing.md, gap: spacing.md },
   input: { color: colors.text, borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: spacing.sm, fontSize: 14 },
   hint: { color: colors.textSecondary, fontSize: 12 },

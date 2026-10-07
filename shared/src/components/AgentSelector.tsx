@@ -175,7 +175,7 @@ export function AgentSelector({
   return (
     <View style={[styles.wrap, fullWidth && styles.fullWidth]}>
       {mode === "start" ? (
-        <MachineActionButton label={buttonLabel} onPress={() => openMenu(null)} disabled={disabled} appearance="settings" style={styles.startButton} />
+        <MachineActionButton label={buttonLabel} onPress={() => openMenu(null)} disabled={disabled} style={styles.startButton} />
       ) : <TouchableOpacity
         ref={buttonRef}
         accessibilityRole="button"

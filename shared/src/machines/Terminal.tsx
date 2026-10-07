@@ -18,7 +18,7 @@ import {
   type MachineMessage,
 } from "./client"
 
-export let MachineTerminalControls = ({ paneId, connectedOnly = false }: { paneId: string; connectedOnly?: boolean }) => {
+export let MachineTerminalControls = ({ paneId, connectedOnly = false, inset = false }: { paneId: string; connectedOnly?: boolean; inset?: boolean }) => {
   let state = useMachines()
   let [showControlInfo, setShowControlInfo] = useState(false)
   let resource = splitResource(paneId)
@@ -31,7 +31,7 @@ export let MachineTerminalControls = ({ paneId, connectedOnly = false }: { paneI
   let release = () =>
     machineSend(resource.machine, { type: "release_control", pane_id: resource.id })
   return (
-    <View style={styles.controlSection}>
+    <View style={[styles.controlSection, inset && styles.insetControls]}>
       <View style={styles.bar}>
         <MachineIcon appearance={appearance} />
         <View style={styles.controlInfo}>
@@ -186,6 +186,7 @@ let styles = StyleSheet.create({
     borderBottomColor: colors.border,
     paddingBottom: spacing.sm,
   },
+  insetControls: { backgroundColor: colors.surface, borderRadius: 24, borderCurve: "continuous", padding: 16, borderBottomWidth: 0 },
   bar: {
     flexDirection: "row",
     alignItems: "center",

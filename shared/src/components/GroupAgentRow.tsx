@@ -105,8 +105,8 @@ export function GroupAgentRow({
         onOpen={refreshModels}
         machinePicker={<View>
           {targetMachineId
-          ? <View><Text style={styles.status}>{machine?.name ?? (isLocal ? "This desktop" : "Group machine")}{!isLocal && !machine?.online ? " · Offline" : ""}</Text><AddMachineButton appearance="settingsCompact" /></View>
-          : <MachineTargetPicker target={target ?? null} localMachineId={localMachineId} onSelect={chooseTarget} flatAddMachine />}
+          ? <View><Text style={styles.status}>{machine?.name ?? (isLocal ? "This desktop" : "Group machine")}{!isLocal && !machine?.online ? " · Offline" : ""}</Text><AddMachineButton /></View>
+          : <MachineTargetPicker target={target ?? null} localMachineId={localMachineId} onSelect={chooseTarget} />}
         </View>}
         includeShell
         onChange={(selection) => launch(selection.provider, selection.modelId, selection.effort)}

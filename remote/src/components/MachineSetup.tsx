@@ -19,15 +19,15 @@ let getStorefront = async () => {
 export let machineOnboardingContent: MachineOnboardingContent = (close) => <MachineSetup onNavigate={close} />
 export let machineManagementContent: MachineOnboardingContent = (close) => <MachineSetup manage onNavigate={close} />
 
-let LiquidMachineActionButton = ({ label, onPress, accessibilityLabel, disabled, icon, appearance, style }: MachineActionButtonProps) => {
-  if (appearance === "settings" || appearance === "settingsCompact") return <Pressable
+let LiquidMachineActionButton = ({ label, onPress, accessibilityLabel, disabled, tone, icon, appearance, style }: MachineActionButtonProps) => {
+  if (appearance === "settings") return <Pressable
     accessibilityRole="button"
     accessibilityLabel={accessibilityLabel ?? label}
     disabled={disabled}
     onPress={onPress}
-    style={({ pressed }) => [styles.settingsActionButton, appearance === "settingsCompact" && styles.settingsCompactActionButton, disabled && styles.liquidDisabled, pressed && styles.liquidPressed, style]}
+    style={({ pressed }) => [styles.settingsActionButton, disabled && styles.liquidDisabled, pressed && styles.liquidPressed, style]}
   >
-    <Text style={[styles.settingsActionText, appearance === "settingsCompact" && styles.settingsCompactActionText]}>{label}</Text>
+    <Text style={styles.settingsActionText}>{label}</Text>
     <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
   </Pressable>
   let glassAvailable = Platform.OS === "ios" && (() => {
@@ -37,18 +37,21 @@ let LiquidMachineActionButton = ({ label, onPress, accessibilityLabel, disabled,
       return false
     }
   })()
-  let content = <View pointerEvents="none" style={[styles.liquidPressable, icon === "back" && styles.liquidBackPressable]}>
-    {icon === "back" ? <Ionicons name="chevron-back" size={22} color={colors.text} /> : <Text style={styles.liquidAction}>{label}</Text>}
+  let content = <>
+    {icon === "back" ? <Ionicons name="chevron-back" size={22} color={colors.text} /> : <Text style={[styles.liquidAction, tone === "danger" && styles.dangerText]}>{label}</Text>}
+  </>
+  return <View style={[styles.liquidFrame, icon === "back" && styles.liquidBackFrame, !glassAvailable && styles.liquidFallback, !glassAvailable && tone === "danger" && styles.dangerButton, style]}>
+    {glassAvailable && <GlassView pointerEvents="none" glassEffectStyle="regular" colorScheme="dark" style={[StyleSheet.absoluteFill, styles.liquidGlass]} />}
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? label}
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [styles.liquidPressable, icon === "back" && styles.liquidBackPressable, disabled && styles.liquidDisabled, pressed && styles.liquidPressed]}
+    >
+      {content}
+    </Pressable>
   </View>
-  return <Pressable
-    accessibilityRole="button"
-    accessibilityLabel={accessibilityLabel ?? label}
-    disabled={disabled}
-    onPress={onPress}
-    style={({ pressed }) => [styles.liquidFrame, icon === "back" && styles.liquidBackFrame, !glassAvailable && styles.liquidFallback, disabled && styles.liquidDisabled, pressed && styles.liquidPressed, style]}
-  >
-    {glassAvailable ? <GlassView pointerEvents="none" glassEffectStyle="regular" colorScheme="dark" style={styles.liquidGlass}>{content}</GlassView> : content}
-  </Pressable>
 }
 
 export let machineOnboardingChrome: MachineOnboardingChrome = {
@@ -84,7 +87,7 @@ export let MachineSetup = ({ onNavigate, manage = false }: { onNavigate?: () => 
     <Pressable accessibilityRole="button" onPress={signIn} style={styles.button}><Text style={styles.action}>Sign in</Text></Pressable>
   </View>
   return <MachineOnboardingProvider content={machineOnboardingContent} management={machineManagementContent} chrome={machineOnboardingChrome}>
-    {manage && <View style={styles.navigation}><AddMachineButton appearance="settings" /></View>}
+    {manage && <View style={styles.navigation}><AddMachineButton /></View>}
     {(manage || allowNewRentals) && <RentalsPanel showExistingRentals={manage} allowNewRentals={allowNewRentals} onOrderingChange={setOrdering} api={rentalApi} {...checkout} platform={Platform.OS === "ios" ? "ios" : Platform.OS === "android" ? "android" : "web"} openUrl={openCheckout}>
       {manage && <MachinesPanel presentation="panel" approvePairing={approveMachinePairing} api={machineApi} />}
     </RentalsPanel>}
@@ -94,7 +97,7 @@ export let MachineSetup = ({ onNavigate, manage = false }: { onNavigate?: () => 
       {!loading && ["connection", "storefront"].includes(checkout.reason ?? "") && <Pressable accessibilityRole="button" onPress={retry} style={styles.button}><Text style={styles.action}>Try again</Text></Pressable>}
     </View>}
     {!manage && !ordering && <View style={styles.connection}><ConnectMachine approvePairing={approveMachinePairing} /></View>}
-    {!manage && !ordering && <View style={styles.navigation}><ManageMachinesButton appearance="settings" /></View>}
+    {!manage && !ordering && <View style={styles.navigation}><ManageMachinesButton /></View>}
   </MachineOnboardingProvider>
 }
 
@@ -109,16 +112,16 @@ let styles = StyleSheet.create({
   connection: { paddingTop: 16 },
   navigation: { padding: 16 },
   liquidFrame: { minHeight: 44, borderRadius: 999, overflow: "hidden", alignSelf: "flex-start" },
+  liquidGlass: { borderRadius: 999 },
   liquidBackFrame: { width: 44, height: 44 },
   liquidFallback: { backgroundColor: colors.groupedSurface, borderWidth: 1, borderColor: colors.border },
-  liquidGlass: { minHeight: 44, borderRadius: 999, overflow: "hidden" },
   liquidPressable: { minHeight: 44, paddingHorizontal: 18, alignItems: "center", justifyContent: "center" },
   liquidBackPressable: { width: 44, paddingHorizontal: 0 },
   liquidPressed: { opacity: 0.72, transform: [{ scale: 0.97 }] },
   liquidDisabled: { opacity: 0.45 },
+  dangerButton: { backgroundColor: colors.dangerBg, borderColor: colors.danger },
+  dangerText: { color: colors.danger },
   liquidAction: { color: colors.accent, fontSize: 13, fontWeight: "600" },
   settingsActionButton: { minHeight: 56, paddingVertical: 16, paddingHorizontal: 18, borderRadius: 24, borderCurve: "continuous", backgroundColor: colors.surface, flexDirection: "row", gap: 12, justifyContent: "space-between", alignItems: "center" },
   settingsActionText: { flexShrink: 1, color: colors.text, fontSize: 16, fontWeight: "600" },
-  settingsCompactActionButton: { minHeight: 44, paddingVertical: 8, paddingHorizontal: 14 },
-  settingsCompactActionText: { fontSize: 13 },
 })

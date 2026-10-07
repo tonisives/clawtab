@@ -3,8 +3,8 @@ import { BackHandler, Modal, SafeAreaView, Pressable, ScrollView, StyleSheet, Te
 import { colors } from "../theme/colors"
 
 export type MachineOnboardingContent = ReactNode | ((close: () => void) => ReactNode)
-export type MachineActionButtonProps = { label: string; onPress: () => void; accessibilityLabel?: string; disabled?: boolean; icon?: "back"; appearance?: "settings" | "settingsCompact"; style?: StyleProp<ViewStyle> }
-export type MachineModalProps = { title: string; children: ReactNode; onClose: () => void }
+export type MachineActionButtonProps = { label: string; onPress: () => void; accessibilityLabel?: string; disabled?: boolean; tone?: "danger"; icon?: "back"; appearance?: "settings"; style?: StyleProp<ViewStyle> }
+export type MachineModalProps = { title: string; children: ReactNode; overlay?: ReactNode; onClose: () => void }
 export type MachineOnboardingChrome = { renderSettingsIcon?: () => ReactNode; renderActionButton: (props: MachineActionButtonProps) => ReactNode; Modal?: import("react").ComponentType<MachineModalProps> }
 type Page = { id: number; title: string; content: MachineOnboardingContent }
 let OnboardingContext = createContext<{ content?: MachineOnboardingContent; management?: MachineOnboardingContent; chrome?: MachineOnboardingChrome }>({})
@@ -21,8 +21,8 @@ export let MachineSettingsIcon = () => useContext(OnboardingContext).chrome?.ren
 export let MachineActionButton = (props: MachineActionButtonProps) => {
   let chrome = useContext(OnboardingContext).chrome
   if (chrome) return <>{chrome.renderActionButton(props)}</>
-  return <Pressable accessibilityRole="button" accessibilityLabel={props.accessibilityLabel} disabled={props.disabled} onPress={props.onPress} style={[styles.button, props.appearance && styles.settingsButton, props.appearance === "settingsCompact" && styles.settingsCompactButton, props.style]}>
-    <Text style={[styles.action, props.appearance === "settings" && styles.settingsAction]}>{props.icon === "back" ? "Back" : props.label}</Text>
+  return <Pressable accessibilityRole="button" accessibilityLabel={props.accessibilityLabel} disabled={props.disabled} onPress={props.onPress} style={[styles.button, props.tone === "danger" && styles.dangerButton, props.appearance && styles.settingsButton, props.style]}>
+    <Text style={[styles.action, props.tone === "danger" && styles.dangerText, props.appearance === "settings" && styles.settingsAction]}>{props.icon === "back" ? "Back" : props.label}</Text>
   </Pressable>
 }
 
@@ -32,7 +32,7 @@ export let MachineModal = (props: MachineModalProps) => {
   return NativeModal ? <NativeModal {...props} /> : <FallbackMachineModal {...props} />
 }
 
-let FallbackMachineModal = ({ title, children, onClose }: MachineModalProps) => {
+let FallbackMachineModal = ({ title, children, overlay, onClose }: MachineModalProps) => {
   let [pages, setPages] = useState<Page[]>([])
   let nextPage = useRef(0)
   let push = (page: Omit<Page, "id">) => {
@@ -59,6 +59,7 @@ let FallbackMachineModal = ({ title, children, onClose }: MachineModalProps) => 
             {typeof page.content === "function" ? page.content(onClose) : page.content}
           </ScrollView>)}
         </View>
+        {overlay}
       </SafeAreaView>
     </StackContext.Provider>
   </Modal>
@@ -102,8 +103,9 @@ let styles = StyleSheet.create({
   title: { flex: 1, color: colors.text, fontSize: 18, fontWeight: "600", textAlign: "center" },
   headerSpacer: { width: 44, height: 44 },
   button: { minHeight: 44, paddingHorizontal: 18, borderRadius: 999, backgroundColor: colors.groupedSurface, borderWidth: 1, borderColor: colors.border, alignItems: "center", justifyContent: "center" },
+  dangerButton: { backgroundColor: colors.dangerBg, borderColor: colors.danger },
+  dangerText: { color: colors.danger },
   action: { color: colors.accent, fontSize: 13, fontWeight: "600" },
   settingsButton: { minHeight: 56, paddingVertical: 16, backgroundColor: colors.surface, borderColor: colors.accent },
-  settingsCompactButton: { minHeight: 44, paddingVertical: 8, paddingHorizontal: 14 },
   settingsAction: { fontSize: 16 },
 })

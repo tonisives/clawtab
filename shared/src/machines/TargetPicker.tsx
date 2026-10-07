@@ -4,7 +4,7 @@ import { colors } from "../theme/colors"
 import { MachineIcon, machineAppearance } from "./Appearance"
 import { useMachines } from "./client"
 
-export let MachineTargetPicker = ({ target, localMachineId, onSelect, flatAddMachine = false }: { target: string | null; localMachineId?: string | null; onSelect: (id: string | null) => void; flatAddMachine?: boolean }) => {
+export let MachineTargetPicker = ({ target, localMachineId, onSelect }: { target: string | null; localMachineId?: string | null; onSelect: (id: string | null) => void }) => {
   let state = useMachines()
   let local = state.machines.find((machine) => machine.id === localMachineId)
   let options = [
@@ -22,7 +22,7 @@ export let MachineTargetPicker = ({ target, localMachineId, onSelect, flatAddMac
         <Text numberOfLines={1} style={[styles.name, { color: appearance.color }]}>{machine.name}</Text>
         {!machine.online && <Text style={styles.status}>Offline</Text>}
       </Pressable>})}
-      <AddMachineButton appearance={flatAddMachine ? "settingsCompact" : undefined} style={flatAddMachine ? styles.addMachine : undefined} />
+      <AddMachineButton style={styles.addMachine} />
     </ScrollView>
     {!options.length && <Text style={styles.status}>No machine available</Text>}
   </View>
