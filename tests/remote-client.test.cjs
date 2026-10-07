@@ -341,3 +341,64 @@ for (let platform of ['web', 'ios']) {
     cleanup();
   });
 }
+
+test('settings reports the named machine status when another host is online', () => {
+  let notify, cleanup, replayCount = 0, wsState;
+  let noop = () => {};
+  let state = { connected: true, selected: a, snapshots: {}, machines: [{ id: a, name: 'tonis', online: false, owned: true }, { id: b, name: 'Other host', online: true, owned: true }] };
+  let store = Object.assign(() => true, {
+    setState: (value) => { wsState = value; },
+    getState: () => new Proxy({}, { get: () => noop }),
+  });
+  let modules = {
+    react: { useEffect: (effect) => { cleanup = effect(); }, useCallback: (callback) => callback },
+    'react-native': { AppState: { addEventListener: () => ({ remove: noop }) }, Platform: { OS: 'ios' } },
+    '@clawtab/shared': {
+      machineState: () => state, machineProcesses: () => [],
+      resolveEnabledModels: (enabled) => enabled,
+      hostModelCatalog: (settings) => settings?.detected_models ?? {},
+      machineJobs: () => ({ jobs: [], statuses: {} }),
+      subscribeMachines: (callback) => { notify = callback; return noop; },
+      onMachineEvent: () => noop, connectMachines: () => noop,
+    },
+    '../lib/notifications': { getPushToken: async () => null },
+    '../lib/terminalCache': { terminalCache: { clear: noop, delete: noop } },
+    './usePty': { replayActivePtySubscriptions: () => {
+      if (++replayCount > 3) throw new Error('Recursive subscription replay');
+      notify();
+    } },
+  };
+  let exports = {};
+  let source = ts.transpileModule(fs.readFileSync(require.resolve('../remote/src/hooks/useWebSocket.ts'), 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
+  vm.runInNewContext(source, { exports, require: (name) => modules[name] ?? new Proxy({}, { get: (_, key) => String(key).startsWith('use') ? store : noop }) });
+  exports.useWebSocket();
+  notify();
+  assert.equal(wsState.desktopDeviceName, 'tonis');
+  assert.equal(wsState.desktopOnline, false);
+  state.machines[0].online = true;
+  notify();
+  assert.equal(wsState.desktopOnline, true);
+  state.machines[0].online = false;
+  state.selected = null;
+  notify();
+  assert.equal(wsState.desktopDeviceName, 'Other host');
+  assert.equal(wsState.desktopOnline, true);
+  cleanup();
+});
+
+
+test('pane loading follows its host rather than another selected online machine', () => {
+  let state = { connected: true, selected: b, machines: [{ id: a, owned: true, online: false }, { id: b, owned: true, online: true }] };
+  let exports = {};
+  let source = ts.transpileModule(fs.readFileSync(require.resolve('../remote/src/hooks/useMachineStatus.ts'), 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
+  vm.runInNewContext(source, { exports, require: () => ({ useMachines: () => state, splitResource: (key) => key.includes('::') ? { machine: key.split('::')[0] } : null }) });
+  assert.equal(exports.useMachineStatus(a + '::%1').online, false);
+  assert.equal(exports.useMachineStatus(b + '::%1').online, true);
+  state.machines[0].online = true;
+  assert.equal(exports.useMachineStatus(a + '::%1').online, true);
+  state.machines[0].online = false;
+  assert.equal(exports.useMachineStatus(a + '::%1').online, false);
+  assert.equal(exports.useMachineStatus('%1').online, true);
+  state.connected = false;
+  assert.equal(exports.useMachineStatus(b + '::%1').connected, false);
+});

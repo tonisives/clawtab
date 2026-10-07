@@ -15,7 +15,7 @@ import { usePinsStore } from "../../src/store/pins";
 import { useNotificationStore } from "../../src/store/notifications";
 import { JobKindIcon, OptionButtons, PaneOverviewModal, XtermLog, compactPath, findYesOption, kindForProcess, colors, radius, spacing } from "@clawtab/shared";
 import type { XtermLogHandle } from "@clawtab/shared";
-import { useWsStore } from "../../src/store/ws";
+import { useMachineStatus } from "../../src/hooks/useMachineStatus";
 import { getWsSend, nextId } from "../../src/lib/wsRuntime";
 import { stopSession } from "../../src/lib/stopSession";
 import { usePty } from "../../src/hooks/usePty";
@@ -115,8 +115,7 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification, f
     }
   }, [process, pane_id, preserveTerminal, questions, jobs, statuses, router]);
 
-  const connected = useWsStore((s) => s.connected);
-  const desktopOnline = useWsStore((s) => s.desktopOnline);
+  let { connected, online: desktopOnline } = useMachineStatus(pane_id);
   const loaded = useJobsStore((s) => s.loaded);
 
   // Cold start from notification: waiting for relay data

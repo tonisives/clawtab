@@ -52,6 +52,7 @@ export type PopupMenuItem =
 
 interface PopupMenuProps {
   content?: ReactNode;
+  headerAction?: ReactNode;
   footer?: ReactNode;
   items: PopupMenuItem[];
   position?: { top: number; left: number } | null;
@@ -135,7 +136,7 @@ function HoverableItem({ item, onPress, highlighted = false, onHover, showDivide
   );
 }
 
-export function PopupMenu({ items, content, footer, position, onClose, onBack, dropdownRef, triggerRef, autoFocus = false, initialHighlight = true, nativeBottomInset = 8, nativePlacement = "auto", presentation = "popup", title }: PopupMenuProps) {
+export function PopupMenu({ items, content, headerAction, footer, position, onClose, onBack, dropdownRef, triggerRef, autoFocus = false, initialHighlight = true, nativeBottomInset = 8, nativePlacement = "auto", presentation = "popup", title }: PopupMenuProps) {
   let isSheet = presentation === "bottom-sheet";
   const localRef = useRef<View>(null);
   const ref = dropdownRef ?? localRef;
@@ -371,19 +372,19 @@ export function PopupMenu({ items, content, footer, position, onClose, onBack, d
         onKeyDown: handleKeyDown,
       } : {})}
     >
-      {isSheet && (
+      {(isSheet || headerAction) && (
         <View style={styles.sheetHeader}>
-          {Platform.OS === "ios" && (
+          {(Platform.OS === "ios" || headerAction) && (
             <Pressable style={styles.sheetBack} onPress={onBack ?? onClose} accessibilityRole="button" accessibilityLabel="Back">
               <Text style={styles.sheetBackIcon}>{"\u2039"}</Text>
             </Pressable>
           )}
           <Text style={styles.sheetTitle} numberOfLines={1} accessibilityRole="header">{title}</Text>
-          {Platform.OS === "ios" ? <View style={styles.sheetHeaderSpacer} /> : (
+          {headerAction ?? (Platform.OS === "ios" ? <View style={styles.sheetHeaderSpacer} /> : (
             <Pressable style={styles.sheetClose} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close add agent">
               <Text style={styles.sheetCloseText}>Close</Text>
             </Pressable>
-          )}
+          ))}
         </View>
       )}
       <ScrollView style={isSheet ? styles.sheetScroll : { maxHeight: Math.max(96, windowSize.height - nativeBottomInset - 32 - (footer ? 110 : 0)) }} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>

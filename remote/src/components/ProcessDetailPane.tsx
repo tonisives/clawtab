@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { useJobsStore } from "../store/jobs"
 import { useNotificationStore } from "../store/notifications"
 import { usePinsStore } from "../store/pins"
-import { useWsStore } from "../store/ws"
+import { useMachineStatus } from "../hooks/useMachineStatus";
 import { JobDetailView, StatusBadge, encodeTerminalInput, findYesOption, XtermLog, colors, spacing } from "@clawtab/shared"
 import type { XtermLogHandle } from "@clawtab/shared"
 import { getWsSend, nextId } from "../lib/wsRuntime"
@@ -93,8 +93,7 @@ export function ProcessDetailPane({ paneId, onClose, embedded = false }: Process
   )
   const process = storeProcess
 
-  const connected = useWsStore((s) => s.connected)
-  const desktopOnline = useWsStore((s) => s.desktopOnline)
+  let { connected, online: desktopOnline } = useMachineStatus(paneId)
   const loaded = useJobsStore((s) => s.loaded)
   const processesLoaded = useJobsStore((s) => s.processesLoaded)
 

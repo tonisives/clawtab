@@ -41,9 +41,11 @@ import type { ClientMessage } from "../types/messages"
 let synchronize = () => {
   let state = machineState()
   let selected = state.machines.find((m) => m.id === state.selected)
+    ?? state.machines.find((m) => m.online && m.owned)
+    ?? state.machines.find((m) => m.online)
   useWsStore.setState({
     connected: state.connected,
-    desktopOnline: state.machines.some((m) => m.online),
+    desktopOnline: selected?.online ?? false,
     desktopDeviceId: selected?.id ?? null,
     desktopDeviceName: selected?.name ?? null,
   })

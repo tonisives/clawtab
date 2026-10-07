@@ -5,6 +5,7 @@ import { spacing } from "../theme/spacing";
 import type { AgentEffort, AgentModelOption, AgentSelection, ProcessProvider } from "../types/process";
 import { AGENT_EFFORT_OPTIONS, defaultAgentEffort, isSyntheticAgentModel } from "../types/process";
 import { agentSelectionLabel, labelForProvider, modelPickerLabel } from "../util/agent";
+import { SettingsIcon } from "./SettingsIcon";
 import { JobKindIcon } from "./JobKindIcon";
 import { MachineActionButton } from "../machines/Onboarding";
 import { PopupMenu, type PopupMenuItem } from "./PopupMenu";
@@ -156,11 +157,6 @@ export function AgentSelector({
     });
   }
 
-  if (modelEditor) {
-    if (modelItems.length > 0) modelItems.push({ type: "separator" });
-    modelItems.push({ type: "item", label: "Edit models", hint: "\u203a", keepOpen: true, onPress: () => setStage("edit") });
-  }
-
   const effortItems: PopupMenuItem[] = AGENT_EFFORT_OPTIONS.map((option) => ({
     type: "item" as const,
     label: option.label,
@@ -212,6 +208,11 @@ export function AgentSelector({
             ...(Platform.OS === "ios" ? [] : [{ type: "item" as const, label: "Back to models", keepOpen: true, onPress: () => setStage("model") }]),
             ...(stage === "effort" ? effortItems : []),
           ]}
+          headerAction={stage === "model" && modelEditor ? (
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Edit models" onPress={() => setStage("edit")} style={styles.editModelsButton}>
+              <SettingsIcon />
+            </TouchableOpacity>
+          ) : undefined}
           content={stage === "edit" ? modelEditor : undefined}
           footer={stage === "edit" ? undefined : machinePicker}
           position={menuPos}
@@ -275,6 +276,7 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 9,
   },
+  editModelsButton: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
   effortDot: {
     width: 10,
     height: 10,

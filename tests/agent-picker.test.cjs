@@ -305,9 +305,9 @@ test('Edit models stays in the plus popup and returns to model choices without l
   let render = () => view.render(view.exports.AgentSelector, props);
   find(render(), (node) => node.type === 'TouchableOpacity').props.onPress({});
   let popup = find(render(), (node) => Array.isArray(node.props?.items));
-  let edit = popup.props.items.find((item) => item.label === 'Edit models');
-  assert.equal(edit.keepOpen, true);
-  edit.onPress();
+  assert.equal(popup.props.items.some((item) => item.label === 'Edit models'), false);
+  assert.equal(popup.props.headerAction.props.accessibilityLabel, 'Edit models');
+  popup.props.headerAction.props.onPress();
   popup = find(render(), (node) => Array.isArray(node.props?.items));
   assert.equal(popup.props.title, 'Edit models');
   assert.equal(popup.props.content, editor);
@@ -318,7 +318,7 @@ test('Edit models stays in the plus popup and returns to model choices without l
   assert.equal(popup.props.title, 'Add agent');
   assert.equal(popup.props.content, undefined);
   assert.equal(popup.props.footer, footer);
-  assert.ok(popup.props.items.some((item) => item.label === 'Edit models'));
+  assert.equal(popup.props.headerAction.props.accessibilityLabel, 'Edit models');
 });
 
 test('older host model choices include sol 6.1 and still respect explicit removals', () => {
@@ -409,3 +409,16 @@ test('picker labels distinguish releases of the same model family', () => {
   assert.equal(labels.modelPickerLabel('gpt-6.1-sol', 'GPT-6.1 Sol'), 'sol 6.1');
   assert.equal(labels.modelPickerLabel('gpt-6-sol', 'GPT-6 Sol'), 'sol 6');
 });
+
+for (let workDir of [undefined, '/home/user/project']) {
+  test(`plus launch uses ${workDir ?? 'home'} without a folder input`, async () => {
+    let state = { selected: 'a', machines: [{ id: 'a', owned: true, online: true }], snapshots: {} };
+    let launched;
+    let view = harness('../shared/src/components/GroupAgentRow.tsx', machineMock(state));
+    let picker = selector(view.render(view.exports.GroupAgentRow, { workDir, sourceMachineId: 'a', targetMachineId: workDir ? 'a' : undefined, onRunAgent: (...args) => { launched = args; } }));
+    assert.equal(find(picker.props.machinePicker, (node) => node.type === 'TextInput'), undefined);
+    await picker.props.onChange({ provider: 'shell', modelId: null, effort: null });
+    assert.equal(launched[4], workDir ?? '/home/user');
+    assert.equal(launched[5], workDir ?? '~');
+  });
+}
