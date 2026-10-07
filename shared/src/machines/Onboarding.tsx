@@ -5,7 +5,7 @@ import { colors } from "../theme/colors"
 export type MachineOnboardingContent = ReactNode | ((close: () => void) => ReactNode)
 export type MachineActionButtonProps = { label: string; onPress: () => void; accessibilityLabel?: string; disabled?: boolean; icon?: "back"; appearance?: "settings" | "settingsCompact"; style?: StyleProp<ViewStyle> }
 export type MachineModalProps = { title: string; children: ReactNode; onClose: () => void }
-export type MachineOnboardingChrome = { renderActionButton: (props: MachineActionButtonProps) => ReactNode; Modal?: import("react").ComponentType<MachineModalProps> }
+export type MachineOnboardingChrome = { renderSettingsIcon?: () => ReactNode; renderActionButton: (props: MachineActionButtonProps) => ReactNode; Modal?: import("react").ComponentType<MachineModalProps> }
 type Page = { id: number; title: string; content: MachineOnboardingContent }
 let OnboardingContext = createContext<{ content?: MachineOnboardingContent; management?: MachineOnboardingContent; chrome?: MachineOnboardingChrome }>({})
 let StackContext = createContext<{ push: (page: Omit<Page, "id">) => void } | null>(null)
@@ -15,6 +15,8 @@ export let MachineOnboardingProvider = ({ content, management, chrome, children 
   let parent = useContext(OnboardingContext)
   return <OnboardingContext.Provider value={{ content: content ?? parent.content, management: management ?? parent.management, chrome: chrome ?? parent.chrome }}>{children}</OnboardingContext.Provider>
 }
+
+export let MachineSettingsIcon = () => useContext(OnboardingContext).chrome?.renderSettingsIcon?.() ?? null
 
 export let MachineActionButton = (props: MachineActionButtonProps) => {
   let chrome = useContext(OnboardingContext).chrome

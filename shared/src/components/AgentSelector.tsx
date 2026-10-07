@@ -5,9 +5,8 @@ import { spacing } from "../theme/spacing";
 import type { AgentEffort, AgentModelOption, AgentSelection, ProcessProvider } from "../types/process";
 import { AGENT_EFFORT_OPTIONS, defaultAgentEffort, isSyntheticAgentModel } from "../types/process";
 import { agentSelectionLabel, labelForProvider, modelPickerLabel } from "../util/agent";
-import { SettingsIcon } from "./SettingsIcon";
 import { JobKindIcon } from "./JobKindIcon";
-import { MachineActionButton } from "../machines/Onboarding";
+import { MachineActionButton, MachineSettingsIcon } from "../machines/Onboarding";
 import { PopupMenu, type PopupMenuItem } from "./PopupMenu";
 
 export type AgentSelectorProps = {
@@ -210,7 +209,7 @@ export function AgentSelector({
           ]}
           headerAction={stage === "model" && modelEditor ? (
             <TouchableOpacity accessibilityRole="button" accessibilityLabel="Edit models" onPress={() => setStage("edit")} style={styles.editModelsButton}>
-              <SettingsIcon />
+              <MachineSettingsIcon />
             </TouchableOpacity>
           ) : undefined}
           content={stage === "edit" ? modelEditor : undefined}

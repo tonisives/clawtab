@@ -51,6 +51,7 @@ let LiquidMachineActionButton = ({ label, onPress, accessibilityLabel, disabled,
 }
 
 export let machineOnboardingChrome: MachineOnboardingChrome = {
+  renderSettingsIcon: () => <Ionicons name="settings-outline" size={20} color={colors.textSecondary} />,
   Modal: Platform.OS === "web" ? undefined : MachineNavigationModal,
   renderActionButton: (props) => <LiquidMachineActionButton {...props} />,
 }
