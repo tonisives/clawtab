@@ -1,5 +1,5 @@
 import { useRef, useState } from "react"
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native"
+import { Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native"
 import { colors } from "../theme/colors"
 import { spacing } from "../theme/spacing"
 import { CURRENT_AGENT_MODEL_OPTIONS, isSyntheticAgentModel, type ProcessProvider } from "../types/process"
@@ -168,15 +168,15 @@ const styles = StyleSheet.create({
   content: { gap: spacing.sm },
   compactContent: { padding: spacing.md },
   providers: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs },
-  button: { padding: spacing.sm, borderWidth: 1, borderColor: colors.border, borderRadius: 8, alignItems: "center" },
-  smallButton: { padding: spacing.sm, borderWidth: 1, borderColor: colors.border, borderRadius: 8 },
+  button: { padding: spacing.sm, borderWidth: 1, borderColor: colors.border, borderRadius: Platform.OS === "ios" ? 16 : 8, alignItems: "center" },
+  smallButton: { padding: spacing.sm, borderWidth: 1, borderColor: colors.border, borderRadius: Platform.OS === "ios" ? 16 : 8 },
   enabledButton: { backgroundColor: colors.accentBg, borderColor: colors.accentDim },
   text: { color: colors.text, fontSize: 13 },
   hint: { color: colors.textSecondary, fontSize: 12 },
   selectedText: { color: colors.accent, fontSize: 13 },
   modelRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs, paddingVertical: spacing.xs, borderBottomWidth: 1, borderBottomColor: colors.border },
   modelName: { flex: 1, gap: 2 },
-  input: { borderWidth: 1, borderColor: colors.border, borderRadius: 8, padding: spacing.sm, color: colors.text, fontSize: 13 },
+  input: { borderWidth: 1, borderColor: colors.border, borderRadius: Platform.OS === "ios" ? 16 : 8, padding: spacing.sm, color: colors.text, fontSize: 13 },
   customInput: { flex: 1 },
   addRow: { flexDirection: "row", gap: spacing.sm },
   error: { color: colors.danger, fontSize: 13 },

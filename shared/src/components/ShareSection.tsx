@@ -192,7 +192,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     ...(Platform.OS !== "web"
       ? {
-          marginHorizontal: -spacing.md,
+
         }
       : {}),
   },
@@ -237,8 +237,8 @@ const styles = StyleSheet.create({
     ...(Platform.OS !== "web"
       ? {
           gap: 0,
-          marginHorizontal: -spacing.md,
-          borderRadius: 18,
+
+          borderRadius: 24,
           overflow: "hidden",
           backgroundColor: colors.surface,
         }

@@ -1,5 +1,4 @@
-import { TabScreenStack } from "../../../src/components/TabScreenStack";
+import { Stack } from "expo-router"
 
-export default function SettingsStackLayout() {
-  return <TabScreenStack screen="settings" title="Settings" />;
-}
+let SettingsStackLayout = () => <Stack screenOptions={{ headerShown: false }} />
+export default SettingsStackLayout

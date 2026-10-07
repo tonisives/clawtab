@@ -1,3 +1,4 @@
+import { radius } from "../theme/spacing"
 import { KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { colors } from "@clawtab/shared";
 
@@ -39,9 +40,9 @@ export function TerminalWriteDialog({ visible, draft, onDraftChange, onClose, on
 
 const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: "#0009", alignItems: "center", justifyContent: "center", padding: 24 },
-  dialog: { width: "100%", maxWidth: 420, backgroundColor: colors.surface, borderRadius: 14, paddingTop: 20, overflow: "hidden" },
+  dialog: { width: "100%", maxWidth: 420, backgroundColor: colors.surface, borderRadius: radius.lg, paddingTop: 20, overflow: "hidden" },
   title: { color: colors.text, fontSize: 17, fontWeight: "600", textAlign: "center", marginBottom: 16 },
-  input: { color: colors.text, backgroundColor: colors.bg, borderRadius: 8, minHeight: 110, maxHeight: 230, marginHorizontal: 16, padding: 12, fontSize: 16, textAlignVertical: "top" },
+  input: { color: colors.text, backgroundColor: colors.bg, borderRadius: radius.sm, minHeight: 110, maxHeight: 230, marginHorizontal: 16, padding: 12, fontSize: 16, textAlignVertical: "top" },
   actions: { flexDirection: "row", borderTopWidth: 1, borderTopColor: colors.border, marginTop: 20 },
   action: { flex: 1, minHeight: 48, alignItems: "center", justifyContent: "center" },
   actionText: { color: colors.accent, fontSize: 17, fontWeight: "600" },

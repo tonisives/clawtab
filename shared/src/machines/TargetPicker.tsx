@@ -1,5 +1,5 @@
 import { AddMachineButton } from "./Onboarding"
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import { colors } from "../theme/colors"
 import { MachineIcon, machineAppearance } from "./Appearance"
 import { useMachines } from "./client"
@@ -32,7 +32,7 @@ let styles = StyleSheet.create({
   heading: { color: colors.textSecondary, fontSize: 11, fontWeight: "600" },
   row: { gap: 6, alignItems: "center" },
   addMachine: { flexShrink: 0 },
-  machine: { width: 94, minHeight: 64, padding: 8, gap: 6, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 8 },
+  machine: { width: 94, minHeight: 64, padding: 8, gap: 6, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border, borderRadius: Platform.OS === "ios" ? 20 : 8 },
   selected: { borderColor: colors.accent, backgroundColor: colors.groupedSurface },
   offline: { opacity: 0.45 },
   name: { color: colors.text, fontSize: 11, maxWidth: "100%" },

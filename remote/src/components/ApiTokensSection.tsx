@@ -268,8 +268,8 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     ...(Platform.OS !== "web"
       ? {
-          marginHorizontal: -spacing.md,
-          borderRadius: 18,
+
+          borderRadius: 24,
           borderWidth: 0,
         }
       : {}),
@@ -288,8 +288,8 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     ...(Platform.OS !== "web"
       ? {
-          marginHorizontal: -spacing.md,
-          borderRadius: 18,
+
+          borderRadius: 24,
           borderWidth: 0,
         }
       : {}),
@@ -347,8 +347,8 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     ...(Platform.OS !== "web"
       ? {
-          marginHorizontal: -spacing.md,
-          borderRadius: 18,
+
+          borderRadius: 24,
           borderWidth: 0,
         }
       : {}),
@@ -400,7 +400,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     ...(Platform.OS !== "web"
       ? {
-          marginHorizontal: -spacing.md,
+
         }
       : {}),
   },
@@ -435,7 +435,7 @@ const styles = StyleSheet.create({
   },
   codeBlock: {
     backgroundColor: colors.surface,
-    borderRadius: Platform.OS === "web" ? radius.sm : 18,
+    borderRadius: Platform.OS === "web" ? radius.sm : 24,
     padding: spacing.md,
     borderWidth: 1,
     borderColor: colors.border,
@@ -445,7 +445,7 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     ...(Platform.OS !== "web"
       ? {
-          marginHorizontal: -spacing.md,
+
           borderWidth: 0,
         }
       : {}),

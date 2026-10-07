@@ -1,3 +1,4 @@
+import { MachineSettingsPageButton } from "./Onboarding"
 import { ModelManager } from "./Models"
 import { hostModelCatalog, resolveEnabledModels } from "../util/agentModels"
 import { ConnectMachine } from "./Connect"
@@ -19,6 +20,7 @@ import {
 } from "./client"
 
 type Props = {
+  managementSection?: string
   machineType?: "personal" | "rented"
   presentation?: "compact" | "panel"
   showConnectionStatus?: boolean
@@ -28,10 +30,10 @@ type Props = {
   approvePairing: (code: string) => Promise<unknown>
   localRequest?: (request: MachineMessage) => Promise<MachineMessage>
 }
-export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, localMachineId, presentation = "compact", showConnectionStatus = true, machineType }: Props) => {
+export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, localMachineId, presentation = "compact", showConnectionStatus = true, machineType, managementSection }: Props) => {
   let styles = presentation === "panel" ? desktopStyles : compactStyles
   let state = useMachines()
-  let [tab, setTab] = useState("agents")
+  let [tab, setTab] = useState(managementSection ?? "agents")
   let [expanded, setExpanded] = useState(false)
   let cancelled = useRef(false)
   let [shares, setShares] = useState<MachineMessage[]>([])
@@ -346,6 +348,13 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
         <ScrollView style={presentation === "panel" ? styles.panelBody : styles.body}>
           {presentation === "panel" && tab !== "pair" && machineChoices}
           {presentation === "panel" && machine?.owned && api && <MachineAppearanceButton key={machine.id} machine={machine} api={api} />}
+          {Platform.OS !== "web" && presentation === "panel" && !managementSection ? <View style={styles.settingsPages}>
+            {machine && ["agents", "jobs", "repositories", ...(localRequest ? ["transfers"] : []), "models", "access"].map((section) => <MachineSettingsPageButton key={section} title={section[0].toUpperCase() + section.slice(1)}>
+              <MachinesPanel managementSection={section} presentation="panel" approvePairing={approvePairing} localRequest={localRequest} api={api} localMachineId={localMachineId} machineType={machineType} showConnectionStatus={false} />
+            </MachineSettingsPageButton>)}
+            {!machine && <Text style={styles.detail}>Select a machine above to manage its agents, models, and access.</Text>}
+          </View> : null}
+          {(Platform.OS === "web" || presentation === "compact") && <>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabsScroll}>
           <View style={styles.tabs} accessibilityRole="tablist" accessibilityLabel="Machine controls">
             {[
@@ -375,6 +384,8 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
             ))}
           </View>
           </ScrollView>
+          </>}
+          {(Platform.OS === "web" || presentation === "compact" || managementSection) && <>
           {tab === "pair" && <ConnectMachine approvePairing={approvePairing} initiallyExpanded />}
           {tab !== "pair" && <Text style={styles.title}>{tab[0].toUpperCase() + tab.slice(1)}</Text>}
           {!machine && tab !== "pair" && (
@@ -735,12 +746,14 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
               {progress}
             </Text>
           )}
+          </>}
         </ScrollView>
       )}
     </View>
   )
 }
 let createStyles = (desktop: boolean) => StyleSheet.create({
+  settingsPages: { gap: 8, paddingVertical: 16 },
   panel: { backgroundColor: desktop ? "transparent" : "#202226", padding: 8, gap: 8 },
   panelBody: { paddingRight: 8 },
   body: { maxHeight: 440, paddingRight: 8 },
@@ -775,12 +788,12 @@ let createStyles = (desktop: boolean) => StyleSheet.create({
     alignSelf: "flex-start",
     marginVertical: 3,
   },
-  machineButton: { borderWidth: 1, borderColor: desktop ? colors.borderLight : "transparent", borderRadius: 16, paddingVertical: 12, minWidth: desktop ? 160 : undefined },
+  machineButton: { borderWidth: 1, borderColor: desktop ? colors.borderLight : "transparent", borderRadius: Platform.OS === "ios" ? 24 : 16, borderCurve: "continuous", paddingVertical: 12, minWidth: desktop ? 160 : undefined },
   selectedMachine: { borderColor: desktop ? colors.accent : "#9fa8da", backgroundColor: desktop ? colors.accentBg : "#353942" },
   input: {
     borderColor: desktop ? colors.border : "#50545d",
     borderWidth: 1,
-    borderRadius: 12,
+    borderRadius: Platform.OS === "ios" ? 20 : 12,
     padding: 10,
     color: desktop ? colors.text : "#fff",
     minWidth: 180,

@@ -28,6 +28,7 @@ let LiquidMachineActionButton = ({ label, onPress, accessibilityLabel, disabled,
     style={({ pressed }) => [styles.settingsActionButton, appearance === "settingsCompact" && styles.settingsCompactActionButton, disabled && styles.liquidDisabled, pressed && styles.liquidPressed, style]}
   >
     <Text style={[styles.settingsActionText, appearance === "settingsCompact" && styles.settingsCompactActionText]}>{label}</Text>
+    <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
   </Pressable>
   let glassAvailable = Platform.OS === "ios" && (() => {
     try {
@@ -83,7 +84,7 @@ export let MachineSetup = ({ onNavigate, manage = false }: { onNavigate?: () => 
     <Pressable accessibilityRole="button" onPress={signIn} style={styles.button}><Text style={styles.action}>Sign in</Text></Pressable>
   </View>
   return <MachineOnboardingProvider content={machineOnboardingContent} management={machineManagementContent} chrome={machineOnboardingChrome}>
-    {manage && <View style={styles.navigation}><AddMachineButton /></View>}
+    {manage && <View style={styles.navigation}><AddMachineButton appearance="settings" /></View>}
     {(manage || allowNewRentals) && <RentalsPanel showExistingRentals={manage} allowNewRentals={allowNewRentals} onOrderingChange={setOrdering} api={rentalApi} {...checkout} platform={Platform.OS === "ios" ? "ios" : Platform.OS === "android" ? "android" : "web"} openUrl={openCheckout}>
       {manage && <MachinesPanel presentation="panel" approvePairing={approveMachinePairing} api={machineApi} />}
     </RentalsPanel>}
@@ -93,7 +94,7 @@ export let MachineSetup = ({ onNavigate, manage = false }: { onNavigate?: () => 
       {!loading && ["connection", "storefront"].includes(checkout.reason ?? "") && <Pressable accessibilityRole="button" onPress={retry} style={styles.button}><Text style={styles.action}>Try again</Text></Pressable>}
     </View>}
     {!manage && !ordering && <View style={styles.connection}><ConnectMachine approvePairing={approveMachinePairing} /></View>}
-    {!manage && !ordering && <View style={styles.navigation}><ManageMachinesButton /></View>}
+    {!manage && !ordering && <View style={styles.navigation}><ManageMachinesButton appearance="settings" /></View>}
   </MachineOnboardingProvider>
 }
 
@@ -116,8 +117,8 @@ let styles = StyleSheet.create({
   liquidPressed: { opacity: 0.72, transform: [{ scale: 0.97 }] },
   liquidDisabled: { opacity: 0.45 },
   liquidAction: { color: colors.accent, fontSize: 13, fontWeight: "600" },
-  settingsActionButton: { minHeight: 56, paddingVertical: 16, paddingHorizontal: 18, borderRadius: 999, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.accent, justifyContent: "center", alignItems: "center" },
-  settingsActionText: { color: colors.accent, fontSize: 16, fontWeight: "600" },
+  settingsActionButton: { minHeight: 56, paddingVertical: 16, paddingHorizontal: 18, borderRadius: 24, borderCurve: "continuous", backgroundColor: colors.surface, flexDirection: "row", gap: 12, justifyContent: "space-between", alignItems: "center" },
+  settingsActionText: { flexShrink: 1, color: colors.text, fontSize: 16, fontWeight: "600" },
   settingsCompactActionButton: { minHeight: 44, paddingVertical: 8, paddingHorizontal: 14 },
   settingsCompactActionText: { fontSize: 13 },
 })

@@ -13,7 +13,8 @@ export const styles = StyleSheet.create({
   nativeGroupedRows: {
     marginHorizontal: spacing.md,
     marginVertical: spacing.md,
-    borderRadius: 18,
+    borderRadius: Platform.OS === "ios" ? 28 : 18,
+    borderCurve: "continuous",
     overflow: "hidden",
     backgroundColor: colors.groupedSurface,
   },

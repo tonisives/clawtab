@@ -64,6 +64,17 @@ let FallbackMachineModal = ({ title, children, onClose }: MachineModalProps) => 
   </Modal>
 }
 
+export let MachineSettingsPageButton = ({ title, children }: { title: string; children: ReactNode }) => {
+  let stack = useContext(StackContext)
+  let [open, setOpen] = useState(false)
+  let close = () => setOpen(false)
+  let show = () => stack ? stack.push({ title, content: children }) : setOpen(true)
+  return <>
+    <MachineActionButton label={title} appearance="settings" onPress={show} />
+    {open && <MachineModal title={title} onClose={close}>{children}</MachineModal>}
+  </>
+}
+
 let MachinePageButton = ({ manage = false, appearance, style }: { manage?: boolean; appearance?: MachineActionButtonProps["appearance"]; style?: StyleProp<ViewStyle> }) => {
   let onboarding = useContext(OnboardingContext)
   let stack = useContext(StackContext)

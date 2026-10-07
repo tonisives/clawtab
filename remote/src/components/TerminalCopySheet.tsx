@@ -1,3 +1,4 @@
+import { radius } from "../theme/spacing"
 import * as Clipboard from "expo-clipboard";
 import { useEffect, useMemo, useState } from "react";
 import { Modal, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
@@ -93,9 +94,9 @@ const styles = StyleSheet.create({
   action: { color: colors.accent, fontSize: 16, padding: 8 },
   hint: { color: colors.textMuted, marginTop: 8, marginBottom: 12 },
   quickActions: { flexDirection: "row", gap: 8, marginBottom: 8 },
-  quickButton: { borderWidth: 1, borderColor: colors.accent, borderRadius: 8, padding: 10 },
+  quickButton: { borderWidth: 1, borderColor: colors.accent, borderRadius: radius.sm, padding: 10 },
   quickButtonText: { color: colors.accent, fontWeight: "600" },
   textView: { flex: 1, minHeight: 0, backgroundColor: colors.bg },
-  copyButton: { backgroundColor: colors.accent, alignItems: "center", padding: 13, borderRadius: 8, marginTop: 12 },
+  copyButton: { backgroundColor: colors.accent, alignItems: "center", padding: 13, borderRadius: radius.sm, marginTop: 12 },
   copyButtonText: { color: colors.text, fontWeight: "600" },
 });

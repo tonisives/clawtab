@@ -1,5 +1,5 @@
 import { useRef, useState } from "react"
-import { Linking, Pressable, StyleSheet, Text, TextInput, View } from "react-native"
+import { Platform, Linking, Pressable, StyleSheet, Text, TextInput, View } from "react-native"
 import { colors } from "../theme/colors"
 
 type Props = { approvePairing: (code: string) => Promise<unknown>; initiallyExpanded?: boolean }
@@ -69,10 +69,10 @@ let styles = StyleSheet.create({
   button: { borderRadius: 999, backgroundColor: colors.accentBg, borderColor: colors.accent, borderWidth: 1, paddingHorizontal: 20, minHeight: 44, alignItems: "center", justifyContent: "center" },
   buttonText: { color: colors.accent, fontSize: 14, fontWeight: "600" },
   disabled: { opacity: 0.4 },
-  input: { color: colors.text, borderColor: colors.borderLight, borderWidth: 1, borderRadius: 12, padding: 12, fontSize: 16 },
+  input: { color: colors.text, borderColor: colors.borderLight, borderWidth: 1, borderRadius: Platform.OS === "ios" ? 20 : 12, padding: 12, fontSize: 16 },
   help: { minHeight: 44, justifyContent: "center" },
   instructions: { gap: 8 },
-  command: { color: colors.text, fontFamily: "monospace", padding: 12, backgroundColor: colors.groupedSurface, borderRadius: 8 },
+  command: { color: colors.text, fontFamily: "monospace", padding: 12, backgroundColor: colors.groupedSurface, borderRadius: Platform.OS === "ios" ? 16 : 8 },
   link: { color: colors.accent, fontSize: 13 },
   error: { color: colors.danger, fontSize: 13 },
 })

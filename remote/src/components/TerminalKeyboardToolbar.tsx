@@ -1,3 +1,4 @@
+import { radius } from "../theme/spacing"
 import { useCallback } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -52,12 +53,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6, borderTopWidth: 1, borderBottomWidth: 1,
     borderColor: colors.border, backgroundColor: colors.surface,
   },
-  button: { width: 36, height: 34, alignItems: "center", justifyContent: "center", borderRadius: 6, backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.border },
-  wideButton: { minWidth: 44, height: 34, paddingHorizontal: 6, alignItems: "center", justifyContent: "center", borderRadius: 6, backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.border },
+  button: { width: 36, height: 34, alignItems: "center", justifyContent: "center", borderRadius: radius.sm, backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.border },
+  wideButton: { minWidth: 44, height: 34, paddingHorizontal: 6, alignItems: "center", justifyContent: "center", borderRadius: radius.sm, backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.border },
   buttonText: { color: colors.text, fontSize: 13, fontWeight: "600" },
   spacer: { flex: 1 },
   menuWrap: { position: "relative", alignSelf: "center", zIndex: 220, elevation: 220 },
-  popover: { position: "absolute", right: 0, bottom: 42, width: 164, padding: 12, alignItems: "center", gap: 8, borderRadius: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, zIndex: 240, elevation: 240 },
-  writeButton: { width: 120, minHeight: 38, alignItems: "center", justifyContent: "center", borderRadius: 6, backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.border },
+  popover: { position: "absolute", right: 0, bottom: 42, width: 164, padding: 12, alignItems: "center", gap: 8, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, zIndex: 240, elevation: 240 },
+  writeButton: { width: 120, minHeight: 38, alignItems: "center", justifyContent: "center", borderRadius: radius.sm, backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.border },
   writeText: { color: colors.text, fontSize: 15, fontWeight: "600" },
 });

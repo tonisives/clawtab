@@ -27,7 +27,7 @@ let harness = (rental, launch, props = {}, rentals = [rental]) => {
   let modules = {
     react,
     'react/jsx-runtime': { jsx: element, jsxs: element },
-    'react-native': { StyleSheet: { create: (value) => value }, ...Object.fromEntries(['View','Text','TextInput','Pressable'].map((name) => [name, name])) },
+    'react-native': { Platform: { OS: 'ios' }, StyleSheet: { create: (value) => value }, ...Object.fromEntries(['View','Text','TextInput','Pressable'].map((name) => [name, name])) },
     './Terminal': { MachineTerminalScreen: 'MachineTerminalScreen' },
     '../theme/colors': { colors: {} },
     './client': { useMachines: () => machines, machineState: () => machines, machineRequest: launch, machineSend: () => {}, resourceKey: (m, p) => `${m}::${p}`, selectMachine: (id) => { machines.selected = id; }, newOperationId: () => `request-${++operation}` },

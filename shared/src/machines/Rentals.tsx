@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
-import { View, Text, TextInput, Pressable, StyleSheet } from "react-native"
+import { Platform, View, Text, TextInput, Pressable, StyleSheet } from "react-native"
 import { machineRequest, machineSend, machineState, resourceKey, newOperationId, selectMachine, useMachines } from "./client"
 import { colors } from "../theme/colors"
 import { MachineTerminalScreen } from "./Terminal"
@@ -296,8 +296,8 @@ let styles = StyleSheet.create({
   text: { color: colors.text, fontSize: 14 },
   detail: { color: colors.textSecondary, fontSize: 13, lineHeight: 20 },
   error: { color: colors.danger, fontSize: 13 },
-  card: { gap: 10, padding: 14, backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border },
-  choice: { gap: 6, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.borderLight },
+  card: { gap: 10, padding: 14, backgroundColor: colors.surface, borderRadius: Platform.OS === "ios" ? 24 : 16, borderWidth: 1, borderColor: colors.border },
+  choice: { gap: 6, padding: 12, borderRadius: Platform.OS === "ios" ? 20 : 12, borderWidth: 1, borderColor: colors.borderLight },
   disclosure: { minHeight: 40, justifyContent: "center", alignSelf: "flex-start" },
   link: { color: colors.accent, fontSize: 13 },
   providerChoice: { flex: 1, paddingHorizontal: 10 },
@@ -312,5 +312,5 @@ let styles = StyleSheet.create({
   primaryButton: { backgroundColor: colors.accentBg, borderColor: colors.accent },
   primaryText: { color: colors.accent },
   disabled: { opacity: 0.5 },
-  input: { color: colors.text, borderWidth: 1, borderColor: colors.borderLight, borderRadius: 12, padding: 10, fontSize: 14 },
+  input: { color: colors.text, borderWidth: 1, borderColor: colors.borderLight, borderRadius: Platform.OS === "ios" ? 20 : 12, padding: 10, fontSize: 14 },
 })
