@@ -1,3 +1,4 @@
+import { geminiBaseModel, geminiModelEffort } from "./agentModels";
 import { defaultAgentEffort } from "../types/process";
 import type { AgentEffort, ProcessProvider } from "../types/process";
 
@@ -22,7 +23,7 @@ export function compactModelLabel(modelId: string | null | undefined): string {
   if (!modelId) return "";
   const flagStart = modelId.search(/\s+(?:-c|--(?:model|effort)|model_reasoning_effort=)/);
   const cleanModelId = flagStart >= 0 ? modelId.slice(0, flagStart) : modelId;
-  const model = cleanModelId.trim().split("/").pop() ?? cleanModelId;
+  const model = geminiBaseModel(cleanModelId.trim().split("/").pop() ?? cleanModelId);
   return model
     .replace(/^gpt-[0-9.]+-/, "")
     .replace(/^claude-/, "")
@@ -48,7 +49,7 @@ const PROVIDER_LABELS: Partial<Record<ProcessProvider, string>> = {
 function abbreviatedModelLabel(modelId: string | null | undefined, maxLength: number): string {
   if (!modelId || maxLength <= 0) return "";
   const flagStart = modelId.search(/\s+(?:-c|--(?:model|effort)|model_reasoning_effort=)/);
-  const cleanModelId = (flagStart >= 0 ? modelId.slice(0, flagStart) : modelId)
+  const cleanModelId = geminiBaseModel(flagStart >= 0 ? modelId.slice(0, flagStart) : modelId)
     .trim()
     .split("/")
     .pop()
@@ -90,7 +91,7 @@ export function agentSelectionLabel(
   const model = compactModelLabel(modelId);
   const base = model || labelForProvider(provider);
   const embeddedEffort = modelId?.match(/(?:model_reasoning_effort=|--effort\s+)(low|medium|high|xhigh|max)\b/)?.[1];
-  const effectiveEffort = effort ?? embeddedEffort ?? defaultAgentEffort(provider, modelId);
+  const effectiveEffort = effort ?? embeddedEffort ?? geminiModelEffort(modelId) ?? defaultAgentEffort(provider, modelId);
   return effectiveEffort ? `${base}-${effectiveEffort}` : base;
 }
 
@@ -100,7 +101,7 @@ export function compactAgentSelectionLabel(
   effort?: AgentEffort | string | null,
 ): string {
   const embeddedEffort = modelId?.match(/(?:model_reasoning_effort=|--effort\s+)(low|medium|high|xhigh|max)\b/)?.[1];
-  const effectiveEffort = effort ?? embeddedEffort ?? defaultAgentEffort(provider, modelId);
+  const effectiveEffort = effort ?? embeddedEffort ?? geminiModelEffort(modelId) ?? defaultAgentEffort(provider, modelId);
   const effortLabel = effectiveEffort ? (EFFORT_LABELS[effectiveEffort] ?? effectiveEffort[0]) : "";
   const suffix = effortLabel ? `-${effortLabel}` : "";
   const model = abbreviatedModelLabel(modelId, 7 - suffix.length);

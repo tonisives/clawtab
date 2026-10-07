@@ -1,5 +1,43 @@
 import { CURRENT_AGENT_MODEL_OPTIONS, isSyntheticAgentModel } from "../types/process";
-import type { ProcessProvider, AgentModelOption } from "../types/process";
+import type { ProcessProvider, AgentModelOption, AgentEffort } from "../types/process";
+
+export let geminiModelEffort = (id: string | null | undefined): AgentEffort | null => {
+  if (!id || !/^gemini[-\s]/i.test(id)) return null;
+  return (id.match(/(?:-(low|medium|high|xhigh|max)|\s+\((low|medium|high|xhigh|max)\))$/i)?.slice(1).find(Boolean)?.toLowerCase() as AgentEffort) ?? null;
+};
+
+export let geminiBaseModel = (id: string): string => geminiModelEffort(id)
+  ? id.replace(/(?:-(?:low|medium|high|xhigh|max)|\s+\((?:low|medium|high|xhigh|max)\))$/i, "")
+  : id;
+
+let modelOrder = (left: AgentModelOption, right: AgentModelOption): number => {
+  let providers = ["codex", "claude", "opencode", "antigravity", "shell"];
+  let providerRank = providers.indexOf(left.provider) - providers.indexOf(right.provider);
+  if (providerRank) return providerRank;
+  let rank = (option: AgentModelOption) => CURRENT_AGENT_MODEL_OPTIONS.findIndex((known) => known.provider === option.provider && known.modelId === option.modelId);
+  let leftRank = rank(left), rightRank = rank(right);
+  if (leftRank >= 0 || rightRank >= 0) return (leftRank < 0 ? Infinity : leftRank) - (rightRank < 0 ? Infinity : rightRank);
+  return geminiBaseModel(right.modelId ?? "").localeCompare(geminiBaseModel(left.modelId ?? ""), undefined, { numeric: true });
+};
+
+/** Gemini catalog variants represent effort choices for one model. */
+export let groupAgentModelOptions = (options: AgentModelOption[]): AgentModelOption[] => {
+  let grouped = new Map<string, AgentModelOption>();
+  for (let option of options) {
+    let effort = option.provider === "antigravity" ? geminiModelEffort(option.modelId) : null;
+    let base = effort ? geminiBaseModel(option.modelId!) : option.modelId;
+    let key = `${option.provider}:${base}`;
+    if (!effort) {
+      if (!grouped.has(key)) grouped.set(key, { ...option });
+      continue;
+    }
+    let entry = grouped.get(key) ?? { ...option, label: geminiBaseModel(/^gemini[-\s]/i.test(option.label) ? option.label : option.modelId!), effortModels: {} };
+    entry.effortModels = { ...entry.effortModels, [effort]: option.modelId! };
+    entry.modelId = entry.effortModels.medium ?? entry.effortModels.high ?? entry.effortModels.low ?? option.modelId;
+    grouped.set(key, entry);
+  }
+  return [...grouped.values()].sort(modelOrder);
+};
 
 let labelForProvider = (provider: ProcessProvider): string => {
   switch (provider) {
@@ -56,7 +94,7 @@ export let resolveEnabledModels = (
       .flatMap((option) => option.modelId ? [option.modelId] : []);
     let excluded = new Set(disabledModels[provider] ?? []);
     result[provider] = [...new Set([...(enabled ?? (detected.length ? [] : fallback)), ...detected])]
-      .filter((id) => !excluded.has(id) && !isSyntheticAgentModel(id));
+      .filter((id) => !excluded.has(id) && !(provider === "antigravity" && excluded.has(geminiBaseModel(id))) && !isSyntheticAgentModel(id));
   }
   return result;
 };
@@ -91,10 +129,5 @@ export let buildModelOptions = (
       options.push({ provider, modelId, label: known?.label ?? labelForProviderModel(provider, modelId) });
     }
   }
-  return options.sort((left, right) => {
-    let leftRank = catalog.findIndex((option) => option.provider === left.provider && option.modelId === left.modelId);
-    let rightRank = catalog.findIndex((option) => option.provider === right.provider && option.modelId === right.modelId);
-    if (leftRank >= 0 || rightRank >= 0) return (leftRank < 0 ? Infinity : leftRank) - (rightRank < 0 ? Infinity : rightRank);
-    return (right.modelId ?? "").localeCompare(left.modelId ?? "", undefined, { numeric: true });
-  });
+  return options.sort(modelOrder);
 };

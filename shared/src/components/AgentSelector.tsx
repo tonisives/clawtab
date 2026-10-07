@@ -5,6 +5,7 @@ import { spacing } from "../theme/spacing";
 import type { AgentEffort, AgentModelOption, AgentSelection, ProcessProvider } from "../types/process";
 import { AGENT_EFFORT_OPTIONS, defaultAgentEffort, isSyntheticAgentModel } from "../types/process";
 import { agentSelectionLabel, labelForProvider, modelPickerLabel } from "../util/agent";
+import { geminiBaseModel, geminiModelEffort, groupAgentModelOptions } from "../util/agentModels";
 import { JobKindIcon } from "./JobKindIcon";
 import { MachineActionButton, MachineSettingsIcon } from "../machines/Onboarding";
 import { PopupMenu, type PopupMenuItem } from "./PopupMenu";
@@ -51,7 +52,7 @@ export function AgentSelector({
   const [menuOpen, setMenuOpen] = useState(false);
   const [stage, setStage] = useState<"model" | "effort" | "edit">("model");
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
-  const [pending, setPending] = useState<{ provider: ProcessProvider; modelId: string | null; defaultEffort: AgentEffort | null } | null>(null);
+  const [pending, setPending] = useState<{ provider: ProcessProvider; modelId: string | null; defaultEffort: AgentEffort | null; effortModels?: AgentModelOption["effortModels"] } | null>(null);
   const buttonRef = useRef<any>(null);
 
   const resetMenu = useCallback(() => {
@@ -88,7 +89,7 @@ export function AgentSelector({
     setMenuOpen(true);
   }, [disabled, menuOpen, mode, onOpen, resetMenu]);
 
-  const chooseModel = useCallback((nextProvider: ProcessProvider, nextModel: string | null) => {
+  const chooseModel = useCallback((nextProvider: ProcessProvider, nextModel: string | null, effortModels?: AgentModelOption["effortModels"]) => {
     if (nextProvider === "shell") {
       resetMenu();
       void onChange({ provider: nextProvider, modelId: nextModel, effort: null });
@@ -97,7 +98,8 @@ export function AgentSelector({
     setPending({
       provider: nextProvider,
       modelId: nextModel,
-      defaultEffort: defaultAgentEffort(nextProvider, nextModel),
+      defaultEffort: effortModels ? geminiModelEffort(nextModel) : defaultAgentEffort(nextProvider, nextModel),
+      effortModels,
     });
     setStage("effort");
     setMenuOpen(true);
@@ -107,7 +109,7 @@ export function AgentSelector({
     if (!pending) return;
     const selection: AgentSelection = {
       provider: pending.provider,
-      modelId: pending.modelId,
+      modelId: pending.effortModels?.[nextEffort] ?? pending.modelId,
       effort: nextEffort,
     };
     resetMenu();
@@ -128,17 +130,17 @@ export function AgentSelector({
     if (modelOptions.length > 0 || includeShell) modelItems.push({ type: "separator" });
   }
 
-  modelOptions
+  groupAgentModelOptions(modelOptions)
     .filter((option) => option.provider !== "shell" && !isSyntheticAgentModel(option.modelId))
     .forEach((option) => {
       modelItems.push({
         type: "item",
-        label: modelPickerLabel(option.modelId, option.label),
+        label: modelPickerLabel(option.effortModels && option.modelId ? geminiBaseModel(option.modelId) : option.modelId, option.label),
         hint: labelForProvider(option.provider),
-        active: provider === option.provider && (model ?? null) === option.modelId,
+        active: provider === option.provider && ((model ?? null) === option.modelId || Object.values(option.effortModels ?? {}).includes(model ?? "")),
         icon: <JobKindIcon kind={option.provider} size={16} compact bare />,
         keepOpen: true,
-        onPress: () => chooseModel(option.provider, option.modelId),
+        onPress: () => chooseModel(option.provider, option.modelId, option.effortModels),
       });
     });
 
@@ -156,7 +158,7 @@ export function AgentSelector({
     });
   }
 
-  const effortItems: PopupMenuItem[] = AGENT_EFFORT_OPTIONS.map((option) => ({
+  const effortItems: PopupMenuItem[] = AGENT_EFFORT_OPTIONS.filter((option) => !pending?.effortModels || pending.effortModels[option.value]).map((option) => ({
     type: "item" as const,
     label: option.label,
     color: option.color,

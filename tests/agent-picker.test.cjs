@@ -266,8 +266,8 @@ test('detected new models join saved choices, use detected labels, and respect r
   let catalog = { codex: [['gpt-6.1-sol', 'GPT-6.1 Sol'], ['gpt-6-astra', 'GPT-6 Astra'], ['codex-high', 'Old display label']] };
   let enabled = { codex: ['gpt-6-astra', 'custom-model'], claude: [] };
   let options = models.buildModelOptions(['codex', 'claude'], enabled, catalog);
-  assert.deepEqual(Array.from(options, (option) => option.modelId), ['gpt-6.1-sol', 'gpt-6-astra', 'custom-model']);
-  assert.equal(options[0].label, 'GPT-6.1 Sol');
+  assert.deepEqual(Array.from(options, (option) => option.modelId), ['gpt-6-astra', 'gpt-6.1-sol', 'custom-model']);
+  assert.equal(options.find((option) => option.modelId === 'gpt-6.1-sol').label, 'GPT-6.1 Sol');
   options = models.buildModelOptions(['codex', 'claude'], enabled, catalog, { codex: ['gpt-6.1-sol'] });
   assert.deepEqual(Array.from(options, (option) => option.modelId), ['gpt-6-astra', 'custom-model']);
   assert.equal(models.buildModelOptions(['codex'], { codex: [] }, catalog).length, 0);
@@ -329,7 +329,7 @@ test('older host model choices include sol 6.1 and still respect explicit remova
   assert.equal(models.buildModelOptions(['codex'], enabled, catalog, { codex: ['gpt-6.1-sol'] }).some((option) => option.modelId === 'gpt-6.1-sol'), false);
   assert.equal(models.buildModelOptions(['codex'], { codex: [] }).length, 0);
   let live = models.hostModelCatalog({ detected_models: { codex: [['future-release', 'Future']] } });
-  assert.deepEqual(Array.from(models.buildModelOptions(['codex'], enabled, live), (option) => option.modelId), ['future-release', 'gpt-5.6-sol']);
+  assert.deepEqual(Array.from(models.buildModelOptions(['codex'], enabled, live), (option) => option.modelId), ['gpt-5.6-sol', 'future-release']);
   assert.equal(Object.keys(models.hostModelCatalog()).length, 0);
   assert.equal(Object.keys(models.hostModelCatalog({ detected_models: {} })).length, 0);
 });
@@ -422,3 +422,58 @@ for (let workDir of [undefined, '/home/user/project']) {
     assert.equal(launched[5], workDir ?? '~');
   });
 }
+
+
+for (let style of ['slug', 'display']) {
+  test(`Gemini ${style} variants appear once and effort selects the exact host model`, () => {
+    let view = harness('../shared/src/components/AgentSelector.tsx');
+    let chosen;
+    let id = (effort) => style === 'slug' ? `gemini-3.5-flash-${effort}` : `Gemini 3.5 Flash (${effort[0].toUpperCase()}${effort.slice(1)})`;
+    let modelOptions = ['high', 'medium', 'low'].map((effort) => ({ provider: 'antigravity', modelId: id(effort), label: `Gemini 3.5 Flash (${effort})` }));
+    let props = { mode: 'plus', modelOptions, onChange: (value) => { chosen = value; } };
+    let render = () => view.render(view.exports.AgentSelector, props);
+    for (let effort of ['low', 'medium', 'high']) {
+      find(render(), (node) => node.type === 'TouchableOpacity').props.onPress({});
+      let popup = find(render(), (node) => Array.isArray(node.props?.items));
+      assert.equal(popup.props.items.length, 1);
+      assert.equal(/low|medium|high/i.test(popup.props.items[0].label), false);
+      popup.props.items[0].onPress();
+      popup = find(render(), (node) => Array.isArray(node.props?.items));
+      assert.deepEqual(Array.from(popup.props.items, (item) => item.label.toLowerCase()), ['low', 'medium', 'high']);
+      popup.props.items.find((item) => item.label.toLowerCase() === effort).onPress();
+      assert.equal(chosen.modelId, id(effort));
+      assert.equal(chosen.effort, effort);
+    }
+  });
+}
+
+test('model order remains the same across reversed machine catalogs', () => {
+  let { buildModelOptions } = harness('../shared/src/util/agentModels.ts').exports;
+  let catalog = { codex: [['future-model-2', 'Two'], ['gpt-6.1-sol', 'Sol'], ['future-model-3', 'Three']], claude: [['opus', 'Opus']] };
+  let reversed = Object.fromEntries(Object.entries(catalog).map(([provider, models]) => [provider, [...models].reverse()]));
+  let first = buildModelOptions(['claude', 'codex'], {}, catalog);
+  let second = buildModelOptions(['codex', 'claude'], {}, reversed);
+  assert.deepEqual(Array.from(first, (model) => model.modelId), Array.from(second, (model) => model.modelId));
+});
+
+test('removing the grouped Gemini model excludes every detected effort', async () => {
+  let detected = ['high', 'medium', 'low'].map((effort) => [`gemini-3.5-flash-${effort}`, `Gemini 3.5 Flash (${effort})`]);
+  let state = { selected: 'a', machines: [{ id: 'a', online: true, owned: true }], snapshots: { a: { settings_response: { detected_models: { antigravity: detected } } } }, agentModels: { enabled_models: { antigravity: detected.map(([id]) => id) }, default_provider: 'antigravity', default_model: 'gemini-3.5-flash-high' } };
+  let saved;
+  let view = harness('../shared/src/machines/Models.tsx', { './client': { useMachines: () => state, saveAgentModelPreferences: async (value) => { saved = value; state.agentModels = value; }, machineErrorMessage: (error) => error.message } });
+  let render = () => view.render(view.exports.ModelManager, { compact: true });
+  find(render(), (node) => node.props?.accessibilityRole === 'tab' && node.props?.children?.props?.children === 'Antigravity').props.onPress();
+  let row = find(render(), (node) => node.props?.onToggle);
+  assert.equal(row.props.id, 'gemini-3.5-flash-medium');
+  row.props.onToggle(row.props.id, false);
+  await new Promise(setImmediate);
+  assert.equal(saved.enabled_models.antigravity.length, 0);
+  assert.ok(saved.disabled_models.antigravity.includes('gemini-3.5-flash'));
+  assert.equal(saved.default_model, null);
+  row = find(render(), (node) => node.props?.onToggle);
+  assert.equal(row.props.enabled, false);
+  row.props.onToggle(row.props.id, true);
+  await new Promise(setImmediate);
+  assert.equal(saved.enabled_models.antigravity.length, 3);
+  assert.equal(saved.disabled_models.antigravity.length, 0);
+});

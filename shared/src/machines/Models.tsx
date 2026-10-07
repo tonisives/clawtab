@@ -4,7 +4,7 @@ import { colors } from "../theme/colors"
 import { spacing } from "../theme/spacing"
 import { CURRENT_AGENT_MODEL_OPTIONS, isSyntheticAgentModel, type ProcessProvider } from "../types/process"
 import { labelForProvider, modelPickerLabel } from "../util/agent"
-import { hostModelCatalog, resolveEnabledModels } from "../util/agentModels"
+import { geminiBaseModel, groupAgentModelOptions, hostModelCatalog, resolveEnabledModels } from "../util/agentModels"
 import {
   machineErrorMessage,
   machineRequest,
@@ -34,7 +34,7 @@ let ModelRow = ({ id, name, enabled, isDefault, busy, compact, onToggle, onDefau
   return (
     <View style={styles.modelRow}>
       <View style={styles.modelName}>
-        <Text style={styles.text}>{compact ? modelPickerLabel(id, name) : name}</Text>
+        <Text style={styles.text}>{compact ? modelPickerLabel(geminiBaseModel(id), name) : name}</Text>
         {!compact && name !== id && <Text style={styles.hint}>{id}</Text>}
       </View>
       {enabled && !compact && <Pressable accessibilityRole="button" accessibilityLabel={`Use ${id} by default`} disabled={busy} onPress={setDefault} style={styles.smallButton}>
@@ -72,7 +72,12 @@ export let ModelManager = ({ machineId, api, compact = false }: { machineId?: st
     if (!known.has(id)) known.set(id, id)
   }
   let query = search.trim().toLowerCase()
-  let models = [...known].filter(([id, name]) => !isSyntheticAgentModel(id) && (!query || `${id} ${name}`.toLowerCase().includes(query)))
+  let models = groupAgentModelOptions([...known].filter(([id]) => !isSyntheticAgentModel(id)).map(([modelId, label]) => ({ provider, modelId, label })))
+    .filter((option) => !query || `${option.modelId} ${option.label}`.toLowerCase().includes(query))
+  let modelIds = (id: string) => {
+    let option = models.find((model) => model.modelId === id)
+    return [id, ...Object.values(option?.effortModels ?? {}), ...(option?.effortModels ? [geminiBaseModel(id)] : [])]
+  }
   let action = async (work: () => Promise<unknown>) => {
     if (saving.current) return
     saving.current = true
@@ -93,18 +98,20 @@ export let ModelManager = ({ machineId, api, compact = false }: { machineId?: st
   let toggleModel = (id: string, enabled: boolean) => void action(async () => {
     let selected = new Set(enabledIds)
     let excluded = new Set(preferences.disabled_models?.[provider] ?? [])
-    if (enabled) {
-      selected.add(id)
-      excluded.delete(id)
-    } else {
-      selected.delete(id)
-      excluded.add(id)
+    for (let value of modelIds(id)) {
+      if (enabled) {
+        if (known.has(value) && (value !== geminiBaseModel(id) || value === id)) selected.add(value)
+        excluded.delete(value)
+      } else {
+        selected.delete(value)
+        excluded.add(value)
+      }
     }
     await save({
       ...preferences,
       enabled_models: { ...preferences.enabled_models, [provider]: [...selected] },
       disabled_models: { ...preferences.disabled_models, [provider]: [...excluded] },
-      default_model: !enabled && preferences.default_provider === provider && preferences.default_model === id ? null : preferences.default_model,
+      default_model: !enabled && preferences.default_provider === provider && modelIds(id).includes(preferences.default_model ?? "") ? null : preferences.default_model,
     })
   })
   let addCustomModel = () => void action(async () => {
@@ -113,7 +120,7 @@ export let ModelManager = ({ machineId, api, compact = false }: { machineId?: st
     await save({
       ...preferences,
       enabled_models: { ...preferences.enabled_models, [provider]: [...new Set([...enabledIds, id])] },
-      disabled_models: { ...preferences.disabled_models, [provider]: (preferences.disabled_models?.[provider] ?? []).filter((value) => value !== id) },
+      disabled_models: { ...preferences.disabled_models, [provider]: (preferences.disabled_models?.[provider] ?? []).filter((value) => value !== id && value !== geminiBaseModel(id)) },
     })
     setCustomModel("")
   })
@@ -144,7 +151,7 @@ export let ModelManager = ({ machineId, api, compact = false }: { machineId?: st
       </View>
       {detectionError && <Text style={styles.hint}>{labelForProvider(provider)} detection: {detectionError}. Saved models remain available.</Text>}
       <TextInput accessibilityLabel="Search models" value={search} onChangeText={setSearch} placeholder="Search models" placeholderTextColor={colors.textSecondary} autoCapitalize="none" autoCorrect={false} style={styles.input} />
-      {models.slice(0, 100).map(([id, name]) => <ModelRow key={id} id={id} name={name} enabled={enabledIds.has(id)} busy={busy} compact={compact} isDefault={preferences.default_provider === provider && preferences.default_model === id} onToggle={toggleModel} onDefault={setDefault} />)}
+      {models.slice(0, 100).map((option) => <ModelRow key={option.modelId} id={option.modelId!} name={option.label} enabled={modelIds(option.modelId!).some((id) => enabledIds.has(id))} busy={busy} compact={compact} isDefault={preferences.default_provider === provider && modelIds(option.modelId!).includes(preferences.default_model ?? "")} onToggle={toggleModel} onDefault={setDefault} />)}
       {models.length > 100 && <Text style={styles.hint}>Showing 100 of {models.length} models. Search to find a model.</Text>}
       {models.length === 0 && <Text style={styles.hint}>{query ? "No matching models." : "No models detected. Add a model below or refresh."}</Text>}
       <View style={styles.addRow}>

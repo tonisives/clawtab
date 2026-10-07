@@ -34,6 +34,7 @@ export interface AgentModelOption {
   provider: ProcessProvider;
   modelId: string | null;
   label: string;
+  effortModels?: Partial<Record<AgentEffort, string>>;
 }
 
 /**

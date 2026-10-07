@@ -153,3 +153,5 @@ Deploy the relay and its database migration before shipping the updated desktop/
 Tests cover machine routing with identical pane IDs, private new hosts, requester-only replies, guest access revocation, terminal control, stale execution IDs, duplicate question answers, durable launch claims, and Git-transfer integrity and traversal rejection. Linux headless tests and a daemon startup smoke check run in an isolated Debian arm64 container. CI builds both Linux architectures. Native device notifications and boot/logout behavior require checks on actual hosts/devices; the container does not run a systemd user manager.
 
 The agent popup uses the saved group folder when opened from a group. The general **+** starts in the selected machine’s home folder. Neither flow asks for a folder. The Settings connection status reports the named machine’s availability, matching **Run on**.
+
+Gemini effort variants share one entry in the agent and model-management popups. Select the model, then choose one of its detected effort levels. Model order is consistent across machine catalogs.
