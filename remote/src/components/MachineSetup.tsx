@@ -2,7 +2,6 @@ import { useEffect, useState } from "react"
 import { Linking, Platform, Pressable, StyleSheet, Text, View } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
 import { MachineNavigationModal } from "./MachineNavigationModal"
-import { GlassView, isGlassEffectAPIAvailable } from "expo-glass-effect"
 import { useRouter } from "expo-router"
 import { openBrowserAsync } from "expo-web-browser"
 import { MachinesPanel, RentalsPanel, ConnectMachine, AddMachineButton, ManageMachinesButton, MachineOnboardingProvider, colors, type MachineActionButtonProps, type MachineOnboardingChrome, type MachineOnboardingContent } from "@clawtab/shared"
@@ -19,45 +18,21 @@ let getStorefront = async () => {
 export let machineOnboardingContent: MachineOnboardingContent = (close) => <MachineSetup onNavigate={close} />
 export let machineManagementContent: MachineOnboardingContent = (close) => <MachineSetup manage onNavigate={close} />
 
-let LiquidMachineActionButton = ({ label, onPress, accessibilityLabel, disabled, tone, icon, appearance, style }: MachineActionButtonProps) => {
-  if (appearance === "settings") return <Pressable
-    accessibilityRole="button"
-    accessibilityLabel={accessibilityLabel ?? label}
-    disabled={disabled}
-    onPress={onPress}
-    style={({ pressed }) => [styles.settingsActionButton, disabled && styles.liquidDisabled, pressed && styles.liquidPressed, style]}
-  >
-    <Text style={styles.settingsActionText}>{label}</Text>
-    <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-  </Pressable>
-  let glassAvailable = Platform.OS === "ios" && (() => {
-    try {
-      return isGlassEffectAPIAvailable()
-    } catch {
-      return false
-    }
-  })()
-  let content = <>
-    {icon === "back" ? <Ionicons name="chevron-back" size={22} color={colors.text} /> : <Text style={[styles.liquidAction, tone === "danger" && styles.dangerText]}>{label}</Text>}
-  </>
-  return <View style={[styles.liquidFrame, icon === "back" && styles.liquidBackFrame, !glassAvailable && styles.liquidFallback, !glassAvailable && tone === "danger" && styles.dangerButton, style]}>
-    {glassAvailable && <GlassView pointerEvents="none" glassEffectStyle="regular" colorScheme="dark" style={[StyleSheet.absoluteFill, styles.liquidGlass]} />}
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel ?? label}
-      disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => [styles.liquidPressable, icon === "back" && styles.liquidBackPressable, disabled && styles.liquidDisabled, pressed && styles.liquidPressed]}
-    >
-      {content}
-    </Pressable>
-  </View>
-}
+let MachineSetupActionButton = ({ label, onPress, accessibilityLabel, disabled, tone, icon, appearance, style }: MachineActionButtonProps) => <Pressable
+  accessibilityRole="button"
+  accessibilityLabel={accessibilityLabel ?? label}
+  disabled={disabled}
+  onPress={onPress}
+  style={({ pressed }) => [appearance === "settings" ? styles.settingsActionButton : styles.actionButton, tone === "danger" && styles.dangerButton, disabled && styles.disabled, pressed && styles.pressed, style]}
+>
+  {icon === "back" ? <Ionicons name="chevron-back" size={22} color={colors.text} /> : <Text style={[appearance === "settings" ? styles.settingsActionText : styles.action, tone === "danger" && styles.dangerText]}>{label}</Text>}
+  {appearance === "settings" && <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />}
+</Pressable>
 
 export let machineOnboardingChrome: MachineOnboardingChrome = {
   renderSettingsIcon: () => <Ionicons name="settings-outline" size={20} color={colors.textSecondary} />,
   Modal: Platform.OS === "web" ? undefined : MachineNavigationModal,
-  renderActionButton: (props) => <LiquidMachineActionButton {...props} />,
+  renderActionButton: (props) => <MachineSetupActionButton {...props} />,
 }
 
 export let MachineSetup = ({ onNavigate, manage = false }: { onNavigate?: () => void; manage?: boolean }) => {
@@ -111,17 +86,11 @@ let styles = StyleSheet.create({
   detail: { color: colors.textSecondary, fontSize: 13, lineHeight: 19 },
   connection: { paddingTop: 16 },
   navigation: { padding: 16 },
-  liquidFrame: { minHeight: 44, borderRadius: 999, overflow: "hidden", alignSelf: "flex-start" },
-  liquidGlass: { borderRadius: 999 },
-  liquidBackFrame: { width: 44, height: 44 },
-  liquidFallback: { backgroundColor: colors.groupedSurface, borderWidth: 1, borderColor: colors.border },
-  liquidPressable: { minHeight: 44, paddingHorizontal: 18, alignItems: "center", justifyContent: "center" },
-  liquidBackPressable: { width: 44, paddingHorizontal: 0 },
-  liquidPressed: { opacity: 0.72, transform: [{ scale: 0.97 }] },
-  liquidDisabled: { opacity: 0.45 },
+  actionButton: { minHeight: 44, paddingHorizontal: 18, borderRadius: 999, backgroundColor: colors.groupedSurface, borderWidth: 1, borderColor: colors.border, alignItems: "center", justifyContent: "center" },
+  pressed: { opacity: 0.65 },
+  disabled: { opacity: 0.45 },
   dangerButton: { backgroundColor: colors.dangerBg, borderColor: colors.danger },
   dangerText: { color: colors.danger },
-  liquidAction: { color: colors.accent, fontSize: 13, fontWeight: "600" },
   settingsActionButton: { minHeight: 56, paddingVertical: 16, paddingHorizontal: 18, borderRadius: 24, borderCurve: "continuous", backgroundColor: colors.surface, flexDirection: "row", gap: 12, justifyContent: "space-between", alignItems: "center" },
   settingsActionText: { flexShrink: 1, color: colors.text, fontSize: 16, fontWeight: "600" },
 })

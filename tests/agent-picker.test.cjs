@@ -25,7 +25,7 @@ let harness = (entry, extras = {}) => {
     react,
     "./JobKindIcon": { JobKindIcon: "JobKindIcon" },
     'react/jsx-runtime': { jsx: element, jsxs: element, Fragment: 'Fragment' },
-    'react-native': { Platform: { OS: 'ios' }, StyleSheet: { create: (value) => value }, useWindowDimensions: () => ({ width: 390, height: 844 }), ...Object.fromEntries(['View', 'Text', 'ScrollView', 'TouchableOpacity', 'Pressable', 'Modal', 'TextInput'].map((name) => [name, name])) },
+    'react-native': { Platform: { OS: 'ios' }, StyleSheet: { create: (value) => value }, useWindowDimensions: () => ({ width: 390, height: 844 }), ...Object.fromEntries(['ActivityIndicator', 'AnimatedView', 'SafeAreaView', 'View', 'Text', 'ScrollView', 'TouchableOpacity', 'Pressable', 'Modal', 'TextInput'].map((name) => [name, name])) },
     ...extras,
   };
   let cache = {};
@@ -476,4 +476,46 @@ test('removing the grouped Gemini model excludes every detected effort', async (
   await new Promise(setImmediate);
   assert.equal(saved.enabled_models.antigravity.length, 3);
   assert.equal(saved.disabled_models.antigravity.length, 0);
+});
+
+
+test('agent launch shows a spinner through folder validation and startup and prevents double launches', async () => {
+  let state = { selected: 'a', machines: [{ id: 'a', owned: true, online: true }], snapshots: {} };
+  let resolveFolder, resolveLaunch, calls = 0;
+  let mocks = machineMock(state);
+  mocks['../machines/client'].machineHostRequest = () => new Promise((resolve) => { resolveFolder = resolve; });
+  let view = harness('../shared/src/components/GroupAgentRow.tsx', mocks);
+  let props = { mode: 'start', onRunAgent: () => { calls++; return new Promise((resolve) => { resolveLaunch = resolve; }); } };
+  let render = () => view.render(view.exports.GroupAgentRow, props);
+  let selection = { provider: 'shell', modelId: null, effort: null };
+  let launch = selector(render()).props.onChange(selection);
+  assert.ok(find(render(), (node) => node.type === 'ActivityIndicator'));
+  assert.equal(selector(render()).props.disabled, true);
+  await selector(render()).props.onChange(selection);
+  resolveFolder({ path: '/home/user' });
+  await new Promise(setImmediate);
+  assert.equal(calls, 1);
+  assert.ok(find(render(), (node) => node.type === 'ActivityIndicator'));
+  resolveLaunch();
+  await launch;
+  assert.equal(find(render(), (node) => node.type === 'ActivityIndicator'), undefined);
+  assert.equal(selector(render()).props.disabled, false);
+});
+
+test('the add agent sheet animates its panel separately from its stationary backdrop', () => {
+  let view = harness('../shared/src/components/PopupMenu.tsx', {
+    'react-native': {
+      Platform: { OS: 'ios' }, StyleSheet: { create: (value) => value, absoluteFill: { position: 'absolute' } },
+      Animated: { Value: function() { this.interpolate = (value) => value; }, View: 'AnimatedView' },
+      useWindowDimensions: () => ({ width: 390, height: 844 }),
+      ...Object.fromEntries(['View', 'Text', 'ScrollView', 'TouchableOpacity', 'Pressable', 'Modal', 'SafeAreaView'].map((name) => [name, name])),
+    },
+  });
+  let tree = view.render(view.exports.PopupMenu, { presentation: 'bottom-sheet', items: [], onClose: () => {} });
+  assert.equal(tree.type, 'Modal');
+  assert.equal(tree.props.animationType, 'none');
+  let backdrop = find(tree, (node) => node.type === 'AnimatedView' && node.props.pointerEvents === 'none');
+  assert.equal(backdrop.props.style.at(-1).transform, undefined);
+  let sheet = find(tree, (node) => node.type === 'AnimatedView' && node !== backdrop);
+  assert.equal(sheet.props.style.at(-1).transform[0].translateY.outputRange[1], 0);
 });

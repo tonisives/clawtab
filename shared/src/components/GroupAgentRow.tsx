@@ -1,6 +1,6 @@
 import { AddMachineButton } from "../machines/Onboarding";
 import { useCallback, useRef, useState } from "react";
-import { Platform, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Platform, StyleSheet, Text, View } from "react-native";
 import { spacing } from "../theme/spacing";
 import type { AgentEffort, AgentModelOption, ProcessProvider } from "../types/process";
 import { useMachines, selectMachine, machineHostRequest, machineRequest, type MachineMessage } from "../machines/client";
@@ -112,7 +112,10 @@ export function GroupAgentRow({
         onChange={(selection) => launch(selection.provider, selection.modelId, selection.effort)}
         nativeBottomInset={88}
       />
-      {busy && <Text style={styles.status}>Starting agent…</Text>}
+      {busy && <View style={styles.launchStatus} accessibilityLiveRegion="polite">
+        <ActivityIndicator size="small" color={colors.accent} />
+        <Text style={styles.loadingText}>Starting agent…</Text>
+      </View>}
       {error && <Text style={styles.error}>{error}</Text>}
     </View>
   );
@@ -126,5 +129,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Platform.OS === "web" ? spacing.xs : spacing.md,
     paddingVertical: Platform.OS === "web" ? 2 : spacing.sm,
   },
-  startRow: { width: "100%", paddingHorizontal: 0, paddingVertical: 0 },
+  startRow: { width: "100%", flexDirection: "column", paddingHorizontal: 0, paddingVertical: 0, gap: spacing.sm },
+  launchStatus: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.sm },
+  loadingText: { color: colors.textSecondary, fontSize: 13 },
 });

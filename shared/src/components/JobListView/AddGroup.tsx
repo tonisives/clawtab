@@ -83,7 +83,7 @@ export let AddGroup = ({ hook }: { hook: JobListViewHook }) => {
 };
 
 let styles = StyleSheet.create({
-  add: { alignSelf: "flex-start", marginHorizontal: spacing.xxl, marginTop: spacing.md, marginBottom: spacing.sm },
+  add: { alignSelf: "stretch", marginHorizontal: spacing.xxl, marginTop: spacing.md, marginBottom: spacing.sm },
   form: { padding: spacing.md, gap: spacing.md },
   input: { color: colors.text, borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: spacing.sm, fontSize: 14 },
   hint: { color: colors.textSecondary, fontSize: 12 },

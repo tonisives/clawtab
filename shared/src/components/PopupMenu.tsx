@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Modal, SafeAreaView, ScrollView, Pressable, View, Text, TouchableOpacity, StyleSheet, Platform, useWindowDimensions } from "react-native";
+import { Animated, Modal, SafeAreaView, ScrollView, Pressable, View, Text, TouchableOpacity, StyleSheet, Platform, useWindowDimensions } from "react-native";
 import { colors } from "../theme/colors";
 import { spacing, radius } from "../theme/spacing";
 
@@ -138,6 +138,13 @@ function HoverableItem({ item, onPress, highlighted = false, onHover, showDivide
 
 export function PopupMenu({ items, content, headerAction, footer, position, onClose, onBack, dropdownRef, triggerRef, autoFocus = false, initialHighlight = true, nativeBottomInset = 8, nativePlacement = "auto", presentation = "popup", title }: PopupMenuProps) {
   let isSheet = presentation === "bottom-sheet";
+  let sheetAnimation = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!isSheet) return;
+    let animation = Animated.timing(sheetAnimation, { toValue: 1, duration: 260, useNativeDriver: !isWeb });
+    animation.start();
+    return () => animation.stop();
+  }, [isSheet, sheetAnimation]);
   const localRef = useRef<View>(null);
   const ref = dropdownRef ?? localRef;
   const windowSize = useWindowDimensions();
@@ -436,12 +443,13 @@ export function PopupMenu({ items, content, headerAction, footer, position, onCl
 
   if (isSheet) {
     return (
-      <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+      <Modal visible transparent animationType="none" onRequestClose={onClose}>
         <View style={styles.sheetBackdrop}>
+          <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.sheetDim, { opacity: sheetAnimation }]} />
           <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityRole="button" accessibilityLabel="Dismiss add agent" />
-          <SafeAreaView style={styles.sheet}>
-            {menu}
-          </SafeAreaView>
+          <Animated.View style={[styles.sheet, { transform: [{ translateY: sheetAnimation.interpolate({ inputRange: [0, 1], outputRange: [windowSize.height, 0] }) }] }]}>
+            <SafeAreaView style={styles.sheetContent}>{menu}</SafeAreaView>
+          </Animated.View>
         </View>
       </Modal>
     );
@@ -470,8 +478,8 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "flex-end",
     alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.62)",
   },
+  sheetDim: { backgroundColor: "rgba(0,0,0,0.62)" },
   sheet: {
     width: "100%",
     maxWidth: 520,

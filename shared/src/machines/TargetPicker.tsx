@@ -31,7 +31,7 @@ let styles = StyleSheet.create({
   footer: { borderTopWidth: 1, borderColor: colors.border, padding: 10, gap: 8 },
   heading: { color: colors.textSecondary, fontSize: 11, fontWeight: "600" },
   row: { gap: 6, alignItems: "center" },
-  addMachine: { flexShrink: 0 },
+  addMachine: { flexShrink: 0, alignSelf: "center" },
   machine: { width: 94, minHeight: 64, padding: 8, gap: 6, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border, borderRadius: Platform.OS === "ios" ? 20 : 8 },
   selected: { borderColor: colors.accent, backgroundColor: colors.groupedSurface },
   offline: { opacity: 0.45 },

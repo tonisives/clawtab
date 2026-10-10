@@ -120,24 +120,32 @@ test('closing and reopening details clears action configuration', () => {
   assert.equal(view.render().props.overlay.props.visible, false);
 });
 
-test('sheet buttons navigate, go back, and close within one native modal touch surface', () => {
-  let closed = 0;
-  let view = harness('../remote/src/components/MachineNavigationModal.tsx');
+test('machine sheets use native push navigation with swipe back and preserve the root form', () => {
+  let closed = 0, pushed = [];
+  let view = harness('../remote/src/components/MachineNavigationModal.tsx', {
+    'expo-router/react-navigation': { NavigationIndependentTree: 'NavigationIndependentTree', NavigationContainer: 'NavigationContainer', DarkTheme: {} },
+    'expo-router/build/react-navigation/native-stack': { createNativeStackNavigator: () => ({ Navigator: 'NativeNavigator', Screen: 'NativeScreen' }) },
+  });
   let props = { title: 'Add group / machine', children: { type: 'GroupForm', props: { version: 1 } }, overlay: { type: 'Overlay', props: {} }, onClose: () => closed++ };
   let render = () => view.render(view.exports.MachineNavigationModal, props);
   let tree = render();
   assert.equal(tree.type, 'Modal');
-  let provider = find(tree, (node) => node.type === 'MachineNavigationProvider');
-  provider.props.value.push({ title: 'Add machine', content: { type: 'MachineForm', props: {} } });
-  tree = render();
-  assert.ok(find(tree, (node) => node.type === 'MachineForm'));
+  let navigator = find(tree, (node) => node.type === 'NativeNavigator');
+  assert.equal(navigator.props.screenOptions.animation, 'slide_from_right');
+  assert.equal(navigator.props.screenOptions.gestureEnabled, true);
+  let screen = find(tree, (node) => node.type === 'NativeScreen');
+  let page = (route) => view.expand(screen.props.children({ navigation: { push: (...args) => pushed.push(args) }, route: { params: route } }));
+  let root = page(screen.props.initialParams);
+  assert.equal(find(root, (node) => node.type === 'GroupForm').props.version, 1);
+  find(root, (node) => node.type === 'MachineNavigationProvider').props.value.push({ title: 'Add machine', content: { type: 'MachineForm', props: {} } });
+  assert.equal(pushed[0][0], 'page');
+  assert.equal(pushed[0][1].title, 'Add machine');
+  assert.ok(find(page(pushed[0][1]), (node) => node.type === 'MachineForm'));
   assert.ok(find(tree, (node) => node.type === 'Overlay'));
-  assert.equal(find(tree, (node) => node.type === 'GroupForm').props.version, 1);
-  labelled(tree, 'Back').props.onPress();
-  assert.equal(find(render(), (node) => node.type === 'MachineForm'), undefined);
   props.children = { type: 'GroupForm', props: { version: 2 } };
-  assert.equal(find(render(), (node) => node.type === 'GroupForm').props.version, 2);
-  labelled(render(), 'Close add group / machine').props.onPress();
+  screen = find(render(), (node) => node.type === 'NativeScreen');
+  assert.equal(find(page(screen.props.initialParams), (node) => node.type === 'GroupForm').props.version, 2);
+  labelled(view.expand(navigator.props.screenOptions.headerRight()), 'Close add group / machine').props.onPress();
   assert.equal(closed, 1);
   render().props.onRequestClose();
   assert.equal(closed, 2);
