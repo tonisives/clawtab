@@ -125,6 +125,7 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification, f
   if (process) lastProcessRef.current = process;
   const lastProcess = lastProcessRef.current;
   const [stopping, setStopping] = useState(false);
+  let [stopError, setStopError] = useState<string | null>(null);
   const [copyModeActive, setCopyModeActive] = useState(false);
   const [terminalMenuOpen, setTerminalMenuOpen] = useState(false);
   const [writeOpen, setWriteOpen] = useState(false);
@@ -301,6 +302,7 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification, f
   const doStop = useCallback(async () => {
     if (stopping) return;
     setStopping(true);
+    setStopError(null);
     try {
       await stopSession(pane_id);
       setShowPaneOverview(false);
@@ -308,7 +310,9 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification, f
       if (router.canGoBack()) router.back();
       else router.replace("/(tabs)");
     } catch (error) {
-      alertError("Could not stop session", error instanceof Error ? error.message : "Please try again.");
+      let message = error instanceof Error ? error.message : "Please try again.";
+      setStopError(message);
+      if (Platform.OS === "web") alertError("Could not stop session", message);
     } finally {
       setStopping(false);
     }
@@ -497,8 +501,9 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification, f
           onToggleAutoYes: handleToggleAutoYes,
           isPinned,
           onTogglePin: handleTogglePin,
-          onStop: handleStop,
+          onStop: Platform.OS === "web" ? handleStop : doStop,
           stopping,
+          stopError,
         }}
       />
     </View>

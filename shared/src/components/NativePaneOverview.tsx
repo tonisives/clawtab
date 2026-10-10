@@ -4,7 +4,7 @@ import { MachineActionButton, MachineModal, MachineSettingsPageButton } from "..
 import { MachineTerminalControls } from "../machines/Terminal";
 import { resourceLabel } from "../machines/client";
 import { colors } from "../theme/colors";
-import { compactPath, formatTime, timeAgo } from "../util/format";
+import { formatTime, timeAgo } from "../util/format";
 import type { AgentActionDescriptor } from "../types/agentPlugin";
 import type { PaneOverviewActions, PaneOverviewData } from "./PaneOverviewModal";
 import { AgentActionFormModal } from "./AgentActionFormModal";
@@ -55,9 +55,25 @@ let AgentActionsPage = () => {
   </View>;
 };
 
+let SessionAction = () => {
+  let { actions } = useDetails();
+  let [confirmStop, setConfirmStop] = useState(false);
+  let requestStop = () => setConfirmStop(true);
+  let cancelStop = () => setConfirmStop(false);
+  let stop = () => { setConfirmStop(false); actions?.onStop?.(); };
+  if (!actions?.onStop) return actions?.onStart ? <MachineActionButton label={actions.starting ? "Starting…" : "Start process"} disabled={actions.starting} onPress={actions.onStart} style={styles.sessionButton} /> : null;
+  return <View style={styles.section}>
+    {confirmStop ? <InsetList>
+      <InsetListRow title="Stop session?" description="Close this terminal session and stop any program running in it." />
+      <InsetListRow title="Cancel" onPress={cancelStop} disabled={actions.stopping} />
+      <InsetListRow title="Confirm stop" onPress={stop} disabled={actions.stopping} danger />
+    </InsetList> : <MachineActionButton label={actions.stopping ? "Stopping…" : "Stop session"} tone="danger" disabled={actions.stopping} onPress={requestStop} style={styles.sessionButton} />}
+    {!!actions.stopError && <Text style={styles.error} accessibilityRole="alert">{actions.stopError}</Text>}
+  </View>;
+};
+
 let PaneDetailsPage = () => {
   let { pane, actions } = useDetails();
-  let latestQuery = pane.lastQuery !== pane.firstQuery ? pane.lastQuery : null;
   let started = pane.startedAt ? `${formatTime(pane.startedAt)} (${timeAgo(pane.startedAt)})` : "-";
   return <View style={styles.page}>
     <MachineTerminalControls paneId={pane.paneId} connectedOnly inset />
@@ -65,13 +81,15 @@ let PaneDetailsPage = () => {
       {actions.onToggleAutoYes && <PaneToggle label="Auto Yes" value={actions.autoYesActive} onChange={actions.onToggleAutoYes} />}
       {actions.onTogglePin && <PaneToggle label="Pin pane" value={actions.isPinned} onChange={actions.onTogglePin} />}
     </InsetList>}
-    {actions?.onStop ? <MachineActionButton label={actions.stopping ? "Stopping…" : "Stop session"} tone="danger" disabled={actions.stopping} onPress={actions.onStop} style={styles.sessionButton} /> : actions?.onStart ? <MachineActionButton label={actions.starting ? "Starting…" : "Start process"} disabled={actions.starting} onPress={actions.onStart} style={styles.sessionButton} /> : null}
+    <SessionAction />
     {!!actions?.agentActions?.length && <View style={styles.actionsLink}>
       <MachineSettingsPageButton title="Agent actions"><AgentActionsPage /></MachineSettingsPageButton>
       {actions.agentActionRun && <Text style={styles.hint}>{actions.agentActionRun.error ?? actions.agentActionRun.progress}</Text>}
     </View>}
+    <QueryCard title="First command" query={pane.firstQuery} />
+    <QueryCard title="Latest command" query={pane.lastQuery?.trim() ? pane.lastQuery : pane.firstQuery} />
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{pane.cwd ? compactPath(pane.cwd) : "Session"}</Text>
+      <Text style={styles.sectionTitle}>Session details</Text>
       <InsetList>
         {!!pane.cwd && <InsetListRow title="Folder" description={pane.cwd} selectable />}
         <InsetListRow title="Started" description={started} selectable />
@@ -80,8 +98,6 @@ let PaneDetailsPage = () => {
         <InsetListRow title="Pane" description={resourceLabel(pane.paneId)} selectable />
       </InsetList>
     </View>
-    <QueryCard title="First query" query={pane.firstQuery} />
-    <QueryCard title="Latest query" query={latestQuery} />
   </View>;
 };
 
@@ -115,6 +131,7 @@ let styles = StyleSheet.create({
   sectionTitle: { color: colors.textSecondary, fontSize: 13, fontWeight: "600", marginHorizontal: 18 },
   actionsLink: { gap: 8 },
   hint: { color: colors.textSecondary, fontSize: 13, marginHorizontal: 18 },
+  error: { color: colors.danger, fontSize: 13, marginHorizontal: 18 },
   queryCard: { paddingVertical: 16, gap: 12, backgroundColor: colors.surface, borderRadius: 24, borderCurve: "continuous" },
   query: { color: colors.text, fontSize: 13, lineHeight: 20, paddingHorizontal: 18, fontFamily: "monospace" },
   sessionButton: { alignSelf: "flex-start" },

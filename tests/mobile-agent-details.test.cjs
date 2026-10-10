@@ -23,7 +23,8 @@ let harness = (entry, extras = {}) => {
     'react-native-safe-area-context': { SafeAreaProvider: 'SafeAreaProvider', SafeAreaView: 'SafeAreaView' },
     '@expo/vector-icons': { Ionicons: 'Ionicons' },
     'expo-glass-effect': { GlassView: 'GlassView', isGlassEffectAPIAvailable: () => true },
-    '@clawtab/shared': { MachineNavigationProvider: 'MachineNavigationProvider', colors: {} },
+    '@clawtab/shared': { colors: {} },
+    '../../../shared/src/machines/Onboarding': { MachineNavigationProvider: 'MachineNavigationProvider' },
     '../machines/Onboarding': Object.fromEntries(['MachineModal', 'MachineActionButton', 'MachineSettingsPageButton'].map((name) => [name, name])),
     '../machines/Terminal': { MachineTerminalControls: 'MachineTerminalControls' },
     '../machines/client': { resourceLabel: (value) => value.split('::').at(-1) },
@@ -80,10 +81,31 @@ test('agent details groups toggles and moves plugin actions into a child page', 
   labelled(tree, 'Auto Yes').props.onValueChange();
   labelled(tree, 'Pin pane').props.onValueChange();
   labelled(tree, 'Stop session').props.onPress();
+  assert.deepEqual(view.calls, [['auto'], ['pin']]);
+  labelled(view.render(), 'Confirm stop').props.onPress();
   assert.deepEqual(view.calls, [['auto'], ['pin'], ['stop']]);
   labelled(view.child(), 'Run Run test').props.onPress();
   assert.deepEqual(view.calls.at(-1), ['Run test']);
   assert.equal(labelled(view.child(), 'Run Unavailable test').props.disabled, true);
+});
+
+test('stop confirmation stays in the details sheet and cancel leaves the session running', () => {
+  let view = details();
+  labelled(view.render(), 'Stop session').props.onPress();
+  let confirmation = view.render();
+  assert.ok(labelled(confirmation, 'Confirm stop'));
+  assert.deepEqual(view.calls, []);
+  labelled(confirmation, 'Cancel').props.onPress();
+  assert.ok(labelled(view.render(), 'Stop session'));
+  assert.deepEqual(view.calls, []);
+  labelled(view.render(), 'Stop session').props.onPress();
+  labelled(view.render(), 'Confirm stop').props.onPress();
+  assert.deepEqual(view.calls, [['stop']]);
+  view.actions.stopping = true;
+  assert.equal(labelled(view.render(), 'Stopping…').props.disabled, true);
+  view.actions.stopping = false;
+  view.actions.stopError = 'Machine is offline';
+  assert.ok(find(view.render(), (node) => node.props?.accessibilityRole === 'alert' && node.props.children === 'Machine is offline'));
 });
 
 test('configured actions submit parameters and use the latest progress and callbacks', () => {
@@ -134,13 +156,27 @@ test('machine sheets use native push navigation with swipe back and preserve the
   assert.equal(navigator.props.screenOptions.animation, 'slide_from_right');
   assert.equal(navigator.props.screenOptions.gestureEnabled, true);
   let screen = find(tree, (node) => node.type === 'NativeScreen');
-  let page = (route) => view.expand(screen.props.children({ navigation: { push: (...args) => pushed.push(args) }, route: { params: route } }));
+  assert.equal(screen.props.name, 'root');
+  let childScreen = find(tree, (node) => node.type === 'NativeScreen' && node.props.name === 'page');
+  let { StackRouter, StackActions } = require('../remote/node_modules/expo-router/build/react-navigation/routers/StackRouter.js');
+  let router = StackRouter({ initialRouteName: 'root' });
+  let options = { routeNames: ['root', 'page'], routeParamList: { root: screen.props.initialParams }, routeGetIdList: { page: childScreen.props.getId } };
+  let state = router.getInitialState(options);
+  let push = (name, params) => { pushed.push([name, params]); state = router.getStateForAction(state, StackActions.push(name, params), options); };
+  let page = (route) => view.expand((route.id === 'root' ? screen : childScreen).props.children({ navigation: { push }, route: { params: route } }));
   let root = page(screen.props.initialParams);
   assert.equal(find(root, (node) => node.type === 'GroupForm').props.version, 1);
   find(root, (node) => node.type === 'MachineNavigationProvider').props.value.push({ title: 'Add machine', content: { type: 'MachineForm', props: {} } });
   assert.equal(pushed[0][0], 'page');
   assert.equal(pushed[0][1].title, 'Add machine');
+  assert.deepEqual(state.routes.map((route) => route.name), ['root', 'page']);
   assert.ok(find(page(pushed[0][1]), (node) => node.type === 'MachineForm'));
+  find(page(pushed[0][1]), (node) => node.type === 'MachineNavigationProvider').props.value.push({ title: 'Machine settings', content: { type: 'MachineSettings', props: {} } });
+  assert.notEqual(pushed[0][1].id, pushed[1][1].id);
+  assert.deepEqual(state.routes.map((route) => route.name), ['root', 'page', 'page']);
+  state = router.getStateForAction(state, { type: 'GO_BACK' }, options);
+  assert.equal(state.routes.at(-1).params.id, pushed[0][1].id);
+  assert.ok(find(page(state.routes.at(-1).params), (node) => node.type === 'MachineForm'));
   assert.ok(find(tree, (node) => node.type === 'Overlay'));
   props.children = { type: 'GroupForm', props: { version: 2 } };
   screen = find(render(), (node) => node.type === 'NativeScreen');

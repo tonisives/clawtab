@@ -219,19 +219,24 @@ export function ProcessDetailPane({ paneId, onClose, embedded = false }: Process
   const transport = useMemo(() => createProcessTransport(paneId, handleStopped), [paneId, handleStopped])
 
   const [stopping, setStopping] = useState(false)
-  const handleStop = useCallback(() => {
+  let [stopError, setStopError] = useState<string | null>(null)
+  let doStop = useCallback(async () => {
     if (stopping) return
-    confirm("Stop session", `Close the terminal session in ${displayName} and stop any program running in it?`, async () => {
-      setStopping(true)
-      try {
-        await transport.stopJob(paneId)
-      } catch (error) {
-        alertError("Could not stop session", error instanceof Error ? error.message : "Please try again.")
-      } finally {
-        setStopping(false)
-      }
-    })
-  }, [displayName, paneId, stopping, transport])
+    setStopping(true)
+    setStopError(null)
+    try {
+      await transport.stopJob(paneId)
+    } catch (error) {
+      let message = error instanceof Error ? error.message : "Please try again."
+      setStopError(message)
+      if (Platform.OS === "web") alertError("Could not stop session", message)
+    } finally {
+      setStopping(false)
+    }
+  }, [paneId, stopping, transport])
+  const handleStop = useCallback(() => {
+    confirm("Stop session", `Close the terminal session in ${displayName} and stop any program running in it?`, doStop)
+  }, [displayName, doStop])
 
   // PTY streaming terminal
   const termRef = useRef<XtermLogHandle | null>(null)
@@ -385,8 +390,9 @@ export function ProcessDetailPane({ paneId, onClose, embedded = false }: Process
           onToggleAutoYes: handleToggleAutoYes,
           isPinned,
           onTogglePin: handleTogglePin,
-          onStop: handleStop,
+          onStop: Platform.OS === "web" ? handleStop : doStop,
           stopping,
+          stopError,
           ...agentActionControls,
         }}
         paneOverviewVisible={showPaneOverview}

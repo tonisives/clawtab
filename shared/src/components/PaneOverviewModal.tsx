@@ -28,6 +28,7 @@ export type PaneOverviewActions = {
   onTogglePin?: () => void;
   onStop?: () => void;
   stopping?: boolean;
+  stopError?: string | null;
   onStart?: () => void;
   starting?: boolean;
   agentActions?: AgentActionDescriptor[];
