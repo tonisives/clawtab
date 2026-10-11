@@ -142,22 +142,23 @@ test('closing and reopening details clears action configuration', () => {
   assert.equal(view.render().props.overlay.props.visible, false);
 });
 
-test('machine sheets use native push navigation with swipe back and preserve the root form', () => {
+test('machine sheets push and swipe back without mounting native screens inside the modal', () => {
   let closed = 0, pushed = [];
   let view = harness('../remote/src/components/MachineNavigationModal.tsx', {
     'expo-router/react-navigation': { NavigationIndependentTree: 'NavigationIndependentTree', NavigationContainer: 'NavigationContainer', DarkTheme: {} },
-    'expo-router/build/react-navigation/native-stack': { createNativeStackNavigator: () => ({ Navigator: 'NativeNavigator', Screen: 'NativeScreen' }) },
+    'expo-router/build/react-navigation/stack': { createStackNavigator: () => ({ Navigator: 'SheetNavigator', Screen: 'SheetScreen' }), TransitionPresets: { SlideFromRightIOS: { gestureDirection: 'horizontal' } } },
   });
   let props = { title: 'Add group / machine', children: { type: 'GroupForm', props: { version: 1 } }, overlay: { type: 'Overlay', props: {} }, onClose: () => closed++ };
   let render = () => view.render(view.exports.MachineNavigationModal, props);
   let tree = render();
   assert.equal(tree.type, 'Modal');
-  let navigator = find(tree, (node) => node.type === 'NativeNavigator');
-  assert.equal(navigator.props.screenOptions.animation, 'slide_from_right');
+  let navigator = find(tree, (node) => node.type === 'SheetNavigator');
+  assert.equal(navigator.props.detachInactiveScreens, false);
+  assert.equal(navigator.props.screenOptions.gestureDirection, 'horizontal');
   assert.equal(navigator.props.screenOptions.gestureEnabled, true);
-  let screen = find(tree, (node) => node.type === 'NativeScreen');
+  let screen = find(tree, (node) => node.type === 'SheetScreen');
   assert.equal(screen.props.name, 'root');
-  let childScreen = find(tree, (node) => node.type === 'NativeScreen' && node.props.name === 'page');
+  let childScreen = find(tree, (node) => node.type === 'SheetScreen' && node.props.name === 'page');
   let { StackRouter, StackActions } = require('../remote/node_modules/expo-router/build/react-navigation/routers/StackRouter.js');
   let router = StackRouter({ initialRouteName: 'root' });
   let options = { routeNames: ['root', 'page'], routeParamList: { root: screen.props.initialParams }, routeGetIdList: { page: childScreen.props.getId } };
@@ -179,7 +180,7 @@ test('machine sheets use native push navigation with swipe back and preserve the
   assert.ok(find(page(state.routes.at(-1).params), (node) => node.type === 'MachineForm'));
   assert.ok(find(tree, (node) => node.type === 'Overlay'));
   props.children = { type: 'GroupForm', props: { version: 2 } };
-  screen = find(render(), (node) => node.type === 'NativeScreen');
+  screen = find(render(), (node) => node.type === 'SheetScreen');
   assert.equal(find(page(screen.props.initialParams), (node) => node.type === 'GroupForm').props.version, 2);
   labelled(view.expand(navigator.props.screenOptions.headerRight()), 'Close add group / machine').props.onPress();
   assert.equal(closed, 1);

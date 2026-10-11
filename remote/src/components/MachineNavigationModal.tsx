@@ -3,13 +3,13 @@ import { Modal, Pressable, ScrollView, StyleSheet, View } from "react-native"
 import { SafeAreaProvider } from "react-native-safe-area-context"
 import { Ionicons } from "@expo/vector-icons"
 import { NavigationContainer, NavigationIndependentTree, DarkTheme } from "expo-router/react-navigation"
-import { createNativeStackNavigator } from "expo-router/build/react-navigation/native-stack"
+import { createStackNavigator, TransitionPresets } from "expo-router/build/react-navigation/stack"
 import { colors } from "@clawtab/shared"
 import { MachineNavigationProvider, type MachineModalProps, type MachineOnboardingContent } from "../../../shared/src/machines/Onboarding"
 
 type PageParams = { id: string; title: string }
 type Routes = { root: PageParams; page: PageParams }
-let Stack = createNativeStackNavigator<Routes>()
+let Stack = createStackNavigator<Routes>()
 
 let SheetCloseButton = ({ title, onClose }: { title: string; onClose: () => void }) => (
   <Pressable accessibilityRole="button" accessibilityLabel={`Close ${title.toLowerCase()}`} onPress={onClose} hitSlop={8} style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}>
@@ -38,7 +38,8 @@ export let MachineNavigationModal = ({ title, children, overlay, onClose }: Mach
       <View style={styles.screen}>
         <NavigationIndependentTree>
           <NavigationContainer theme={DarkTheme}>
-            <Stack.Navigator screenOptions={{ animation: "slide_from_right", gestureEnabled: true, headerStyle: { backgroundColor: colors.bg }, headerTintColor: colors.text, headerBackButtonDisplayMode: "minimal", contentStyle: styles.screen, headerRight: closeButton }}>
+            {/* Native screens attach another touch handler inside an RN Modal, cancelling button presses. */}
+            <Stack.Navigator detachInactiveScreens={false} screenOptions={{ ...TransitionPresets.SlideFromRightIOS, gestureEnabled: true, headerStyle: { backgroundColor: colors.bg }, headerTintColor: colors.text, headerTitleAlign: "center", headerBackTitle: "", headerStatusBarHeight: 0, cardStyle: styles.screen, headerRight: closeButton }}>
               <Stack.Screen name="root" initialParams={{ id: "root", title }} options={{ title }}>{renderPage}</Stack.Screen>
               <Stack.Screen name="page" getId={({ params }) => params.id} options={({ route }) => ({ title: route.params.title })}>{renderPage}</Stack.Screen>
             </Stack.Navigator>
