@@ -104,7 +104,11 @@ cleanup() {
     fi
     lock_pid="$(sed -n '1p' "$LOCK_DIR/pid" 2>/dev/null || true)"
     if [ "$lock_pid" = "$$" ]; then
-        tmux set-option -gq @clawtab-daemon-running 0 2>/dev/null || true
+        # The socket path can already belong to a restarted server. An old
+        # listener must not hide the new generation's activity indicators.
+        if tmux_server_is_alive; then
+            tmux set-option -gq @clawtab-daemon-running 0 2>/dev/null || true
+        fi
         rm -f "$EVENT_PIPE" "$ACTIVITY_TSV" "$PANE_STATE_FILE" "$OPTION_CHANGES_FILE" 2>/dev/null || true
         rm -f "$LOCK_DIR/pid"
         rmdir "$LOCK_DIR" 2>/dev/null || true
@@ -351,7 +355,9 @@ while true; do
 
         # A transient event/request failure must not erase a known-good state.
         # The outer loop handles persistent failures with a grace period.
-        apply_snapshot "$next_snapshot" || true
+        if apply_snapshot "$next_snapshot"; then
+            record_snapshot_success
+        fi
     done <"$EVENT_PIPE"
     kill -TERM "$event_nc_pid" 2>/dev/null || true
     wait "$event_nc_pid" 2>/dev/null || true
