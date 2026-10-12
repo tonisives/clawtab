@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { ClaudeQuestion, NotificationHistoryItem } from "../types/job";
 
-interface NotificationState {
+type NotificationState = {
   questions: ClaudeQuestion[];
   deepLinkQuestionId: string | null;
   // Once the desktop sends authoritative claude_questions, ignore history hydration
@@ -11,6 +11,8 @@ interface NotificationState {
   dismissedIds: Map<string, number>;
   // Pane IDs with "yes to all" enabled - auto-answers questions with "yes"
   autoYesPaneIds: Set<string>;
+  authoritativeAutoYesPaneIds: Set<string>;
+  pendingAutoYes: Map<string, boolean>;
 
   setQuestions: (questions: ClaudeQuestion[]) => void;
   answerQuestion: (questionId: string) => void;
@@ -21,6 +23,8 @@ interface NotificationState {
   enableAutoYes: (paneId: string) => void;
   disableAutoYes: (paneId: string) => void;
   setAutoYesPanes: (paneIds: string[]) => void;
+  beginAutoYes: (paneId: string, enabled: boolean) => void;
+  finishAutoYes: (paneId: string, success: boolean) => void;
   reset: () => void;
 }
 
@@ -30,6 +34,8 @@ export const useNotificationStore = create<NotificationState>((set) => ({
   hasDesktopQuestions: false,
   dismissedIds: new Map(),
   autoYesPaneIds: new Set(),
+  authoritativeAutoYesPaneIds: new Set(),
+  pendingAutoYes: new Map(),
 
   setQuestions: (questions) =>
     set((state) => {
@@ -109,8 +115,11 @@ export const useNotificationStore = create<NotificationState>((set) => ({
     set((state) => {
       const next = new Set(state.autoYesPaneIds);
       next.add(paneId);
+      let authoritativeAutoYesPaneIds = new Set(state.authoritativeAutoYesPaneIds);
+      authoritativeAutoYesPaneIds.add(paneId);
       return {
         autoYesPaneIds: next,
+        authoritativeAutoYesPaneIds,
         questions: state.questions.filter((q) => !next.has(q.pane_id)),
       };
     }),
@@ -119,17 +128,51 @@ export const useNotificationStore = create<NotificationState>((set) => ({
     set((state) => {
       const next = new Set(state.autoYesPaneIds);
       next.delete(paneId);
-      return { autoYesPaneIds: next };
+      let authoritativeAutoYesPaneIds = new Set(state.authoritativeAutoYesPaneIds);
+      authoritativeAutoYesPaneIds.delete(paneId);
+      return { autoYesPaneIds: next, authoritativeAutoYesPaneIds };
     }),
 
   setAutoYesPanes: (paneIds) =>
     set((state) => {
       const autoYesPaneIds = new Set(paneIds);
+      for (let [paneId, enabled] of state.pendingAutoYes) {
+        if (enabled) autoYesPaneIds.add(paneId);
+        else autoYesPaneIds.delete(paneId);
+      }
       return {
         autoYesPaneIds,
+        authoritativeAutoYesPaneIds: new Set(paneIds),
         questions: state.questions.filter((q) => !autoYesPaneIds.has(q.pane_id)),
       };
     }),
 
-  reset: () => set({ questions: [], hasDesktopQuestions: false, dismissedIds: new Map(), autoYesPaneIds: new Set() }),
+  beginAutoYes: (paneId, enabled) => set((state) => {
+    let pendingAutoYes = new Map(state.pendingAutoYes);
+    pendingAutoYes.set(paneId, enabled);
+    let autoYesPaneIds = new Set(state.autoYesPaneIds);
+    if (enabled) autoYesPaneIds.add(paneId);
+    else autoYesPaneIds.delete(paneId);
+    return { pendingAutoYes, autoYesPaneIds };
+  }),
+
+  finishAutoYes: (paneId, success) => set((state) => {
+    let enabled = state.pendingAutoYes.get(paneId);
+    if (enabled === undefined) return state;
+    let pendingAutoYes = new Map(state.pendingAutoYes);
+    pendingAutoYes.delete(paneId);
+    let authoritativeAutoYesPaneIds = new Set(state.authoritativeAutoYesPaneIds);
+    if (success) {
+      if (enabled) authoritativeAutoYesPaneIds.add(paneId);
+      else authoritativeAutoYesPaneIds.delete(paneId);
+    }
+    let autoYesPaneIds = new Set(authoritativeAutoYesPaneIds);
+    for (let [id, value] of pendingAutoYes) {
+      if (value) autoYesPaneIds.add(id);
+      else autoYesPaneIds.delete(id);
+    }
+    return { pendingAutoYes, authoritativeAutoYesPaneIds, autoYesPaneIds };
+  }),
+
+  reset: () => set({ questions: [], hasDesktopQuestions: false, dismissedIds: new Map(), autoYesPaneIds: new Set(), authoritativeAutoYesPaneIds: new Set(), pendingAutoYes: new Map() }),
 }));

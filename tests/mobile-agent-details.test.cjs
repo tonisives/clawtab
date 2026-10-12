@@ -158,7 +158,9 @@ test('machine sheets push and swipe back without mounting native screens inside 
   assert.equal(navigator.props.screenOptions.gestureEnabled, true);
   let screen = find(tree, (node) => node.type === 'SheetScreen');
   assert.equal(screen.props.name, 'root');
+  assert.equal(screen.props.options.headerLeft(), null);
   let childScreen = find(tree, (node) => node.type === 'SheetScreen' && node.props.name === 'page');
+  assert.equal(childScreen.props.options({ route: { params: { title: 'Agent actions' } } }).headerLeft, undefined);
   let { StackRouter, StackActions } = require('../remote/node_modules/expo-router/build/react-navigation/routers/StackRouter.js');
   let router = StackRouter({ initialRouteName: 'root' });
   let options = { routeNames: ['root', 'page'], routeParamList: { root: screen.props.initialParams }, routeGetIdList: { page: childScreen.props.getId } };

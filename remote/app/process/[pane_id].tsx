@@ -1,3 +1,4 @@
+import { toggleAutoYes } from "../../src/lib/autoYes"
 import { NextNotification } from "../../src/components/NextNotification";
 import type { ClaudeQuestion } from "@clawtab/shared";
 import { MachineTerminalControls } from "@clawtab/shared";
@@ -194,42 +195,18 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification, f
 
   const answerQuestion = useNotificationStore((s) => s.answerQuestion);
   const autoYesPaneIds = useNotificationStore((s) => s.autoYesPaneIds);
-  const enableAutoYes = useNotificationStore((s) => s.enableAutoYes);
-  const disableAutoYes = useNotificationStore((s) => s.disableAutoYes);
   const autoYesActive = autoYesPaneIds.has(pane_id);
 
   const handleToggleAutoYes = useCallback(() => {
-    if (autoYesPaneIds.has(pane_id)) {
-      disableAutoYes(pane_id);
-      const send = getWsSend();
-      if (send) {
-        const next = new Set(autoYesPaneIds);
-        next.delete(pane_id);
-        send({ type: "set_auto_yes_panes", id: nextId(), pane_ids: [...next] });
-      }
-      return;
-    }
-    const title = displayName;
-    confirm("Enable auto-yes?", `All future questions for "${title}" will be automatically accepted with "Yes". This stays active until you disable it.`, () => {
-      enableAutoYes(pane_id);
-      const send = getWsSend();
-      if (send) {
-        const next = new Set(autoYesPaneIds);
-        next.add(pane_id);
-        send({ type: "set_auto_yes_panes", id: nextId(), pane_ids: [...next] });
-      }
-      if (paneQuestion) {
-        const yesOpt = findYesOption(paneQuestion);
-        if (yesOpt) {
-          const s = getWsSend();
-          if (s) {
-            s({ type: "send_detected_process_input", id: nextId(), pane_id, text: yesOpt });
-          }
-          setTimeout(() => answerQuestion(paneQuestion.question_id), 1500);
-        }
-      }
-    });
-  }, [pane_id, autoYesPaneIds, enableAutoYes, disableAutoYes, displayName, paneQuestion, answerQuestion]);
+    if (!pane_id) return
+    toggleAutoYes(pane_id, displayName, () => {
+      let yesOpt = paneQuestion ? findYesOption(paneQuestion) : undefined
+      let send = getWsSend()
+      if (!yesOpt || !send) return
+      send({ type: "send_detected_process_input", id: nextId(), pane_id, text: yesOpt })
+      if (paneQuestion) setTimeout(() => answerQuestion(paneQuestion.question_id), 1500)
+    })
+  }, [pane_id, displayName, paneQuestion, answerQuestion])
 
   const handleSend = useCallback(
     (text: string) => {

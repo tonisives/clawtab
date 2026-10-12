@@ -1,3 +1,4 @@
+import { toggleAutoYes } from "../lib/autoYes"
 import { MachineTerminalControls } from "@clawtab/shared";
 import { useCallback, useEffect, useRef, useState, useMemo } from "react"
 import { Platform, View, Text, TextInput, StyleSheet, ActivityIndicator, TouchableOpacity, Keyboard } from "react-native"
@@ -170,42 +171,19 @@ export function ProcessDetailPane({ paneId, onClose, embedded = false }: Process
   }, [hydratePins])
 
   const autoYesPaneIds = useNotificationStore((s) => s.autoYesPaneIds)
-  const enableAutoYes = useNotificationStore((s) => s.enableAutoYes)
-  const disableAutoYes = useNotificationStore((s) => s.disableAutoYes)
   const answerQuestion = useNotificationStore((s) => s.answerQuestion)
   const autoYesActive = autoYesPaneIds.has(paneId)
 
   const handleToggleAutoYes = useCallback(() => {
-    if (autoYesPaneIds.has(paneId)) {
-      disableAutoYes(paneId)
-      const send = getWsSend()
-      if (send) {
-        const next = new Set(autoYesPaneIds)
-        next.delete(paneId)
-        send({ type: "set_auto_yes_panes", id: nextId(), pane_ids: [...next] })
-      }
-      return
-    }
-    confirm("Enable auto-yes?", `All future questions for "${displayName}" will be automatically accepted with "Yes". This stays active until you disable it.`, () => {
-      enableAutoYes(paneId)
-      const send = getWsSend()
-      if (send) {
-        const next = new Set(autoYesPaneIds)
-        next.add(paneId)
-        send({ type: "set_auto_yes_panes", id: nextId(), pane_ids: [...next] })
-      }
-      if (paneQuestion) {
-        const yesOpt = findYesOption(paneQuestion)
-        if (yesOpt) {
-          const s = getWsSend()
-          if (s) {
-            s({ type: "send_detected_process_input", id: nextId(), pane_id: paneId, text: yesOpt })
-          }
-          setTimeout(() => answerQuestion(paneQuestion.question_id), 1500)
-        }
-      }
+    if (!paneId) return
+    toggleAutoYes(paneId, displayName, () => {
+      let yesOpt = paneQuestion ? findYesOption(paneQuestion) : undefined
+      let send = getWsSend()
+      if (!yesOpt || !send) return
+      send({ type: "send_detected_process_input", id: nextId(), pane_id: paneId, text: yesOpt })
+      if (paneQuestion) setTimeout(() => answerQuestion(paneQuestion.question_id), 1500)
     })
-  }, [paneId, autoYesPaneIds, enableAutoYes, disableAutoYes, displayName, paneQuestion, answerQuestion])
+  }, [paneId, displayName, paneQuestion, answerQuestion])
 
   const handleTitlePress = useCallback(() => {
     setShowPaneOverview(true)

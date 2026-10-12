@@ -1,6 +1,7 @@
+import { toggleAutoYes } from "../lib/autoYes"
 import { MachineTerminalControls } from "@clawtab/shared";
 import { useCallback, useEffect, useRef, useState } from "react"
-import { Platform, View, Text, TextInput, StyleSheet, ActivityIndicator, Alert, TouchableOpacity, Keyboard } from "react-native"
+import { Platform, View, Text, TextInput, StyleSheet, ActivityIndicator, TouchableOpacity, Keyboard } from "react-native"
 import { useRouter } from "expo-router"
 import { useLandscapeShellStore } from "../store/landscapeShell"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
@@ -72,8 +73,6 @@ export function JobDetailPane({ jobName, onClose, embedded = false }: JobDetailP
 
   const questions = useNotificationStore((s) => s.questions)
   const autoYesPaneIds = useNotificationStore((s) => s.autoYesPaneIds)
-  const enableAutoYes = useNotificationStore((s) => s.enableAutoYes)
-  const disableAutoYes = useNotificationStore((s) => s.disableAutoYes)
   const answerQuestion = useNotificationStore((s) => s.answerQuestion)
   const jobQuestion = questions.find((q) => q.matched_job === slug)
   const autoYesPaneId = jobQuestion?.pane_id ?? statusPaneId
@@ -104,44 +103,14 @@ export function JobDetailPane({ jobName, onClose, embedded = false }: JobDetailP
 
   const handleToggleAutoYes = useCallback(() => {
     if (!autoYesPaneId) return
-    if (autoYesPaneIds.has(autoYesPaneId)) {
-      disableAutoYes(autoYesPaneId)
-      const send = getWsSend()
-      if (send) {
-        const next = new Set(autoYesPaneIds)
-        next.delete(autoYesPaneId)
-        send({ type: "set_auto_yes_panes", id: nextId(), pane_ids: [...next] })
-      }
-      return
-    }
-    const title = jobQuestion?.matched_job ?? jobQuestion?.cwd.replace(/^\/Users\/[^/]+/, "~") ?? slug
-    Alert.alert(
-      "Enable auto-yes?",
-      `All future questions for "${title}" will be automatically accepted with "Yes". This stays active until you disable it.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Enable",
-          style: "destructive",
-          onPress: () => {
-            enableAutoYes(autoYesPaneId)
-            const send = getWsSend()
-            if (send) {
-              const next = new Set(autoYesPaneIds)
-              next.add(autoYesPaneId)
-              send({ type: "set_auto_yes_panes", id: nextId(), pane_ids: [...next] })
-            }
-            const yesOpt = jobQuestion ? findYesOption(jobQuestion) : undefined
-            if (yesOpt) {
-              const s = getWsSend()
-              if (s) s({ type: "send_input", id: nextId(), name: slug, text: yesOpt })
-              if (jobQuestion) setTimeout(() => answerQuestion(jobQuestion.question_id), 1500)
-            }
-          },
-        },
-      ],
-    )
-  }, [autoYesPaneId, jobQuestion, autoYesPaneIds, enableAutoYes, disableAutoYes, answerQuestion, slug])
+    toggleAutoYes(autoYesPaneId, jobQuestion?.matched_job ?? jobQuestion?.cwd.replace(/^\/Users\/[^/]+/, "~") ?? slug, () => {
+      let yesOpt = jobQuestion ? findYesOption(jobQuestion) : undefined
+      let send = getWsSend()
+      if (!yesOpt || !send) return
+      send({ type: "send_input", id: nextId(), name: slug, text: yesOpt })
+      if (jobQuestion) setTimeout(() => answerQuestion(jobQuestion.question_id), 1500)
+    })
+  }, [autoYesPaneId, jobQuestion, answerQuestion, slug])
 
   const loaded = useJobsStore((s) => s.loaded)
 

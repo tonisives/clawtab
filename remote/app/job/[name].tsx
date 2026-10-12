@@ -1,3 +1,4 @@
+import { toggleAutoYes } from "../../src/lib/autoYes"
 import { NextNotification } from "../../src/components/NextNotification";
 import { notificationProcessRoute } from "../../src/lib/notificationRoutes";
 import type { ClaudeQuestion } from "@clawtab/shared";
@@ -5,7 +6,7 @@ import { MachineTerminalControls } from "@clawtab/shared";
 import { useAgentActions } from "../../src/hooks/useAgentActions";
 import { encodeTerminalInput } from "@clawtab/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, View, Text, StyleSheet, Platform, Keyboard, TouchableOpacity, TextInput } from "react-native";
+import { ActivityIndicator, View, Text, StyleSheet, Platform, Keyboard, TouchableOpacity, TextInput } from "react-native";
 import { useLocalSearchParams, Stack, useRouter } from "expo-router";
 import { TerminalPasteButton } from "../../src/components/TerminalPasteButton";
 import { TerminalWriteDialog } from "../../src/components/TerminalWriteDialog";
@@ -94,8 +95,6 @@ export default function JobDetailScreen() {
   const connected = useWsStore((s) => s.connected);
   const questions = useNotificationStore((s) => s.questions);
   const autoYesPaneIds = useNotificationStore((s) => s.autoYesPaneIds);
-  const enableAutoYes = useNotificationStore((s) => s.enableAutoYes);
-  const disableAutoYes = useNotificationStore((s) => s.disableAutoYes);
   const answerQuestion = useNotificationStore((s) => s.answerQuestion);
   const jobQuestion = questions.find((q) => q.matched_job === slug);
   const autoYesPaneId = jobQuestion?.pane_id ?? statusPaneId;
@@ -125,45 +124,15 @@ export default function JobDetailScreen() {
   }, [connected]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleToggleAutoYes = useCallback(() => {
-    if (!autoYesPaneId) return;
-    if (autoYesPaneIds.has(autoYesPaneId)) {
-      disableAutoYes(autoYesPaneId);
-      const send = getWsSend();
-      if (send) {
-        const next = new Set(autoYesPaneIds);
-        next.delete(autoYesPaneId);
-        send({ type: "set_auto_yes_panes", id: nextId(), pane_ids: [...next] });
-      }
-      return;
-    }
-    const title = jobQuestion?.matched_job ?? jobQuestion?.cwd.replace(/^\/Users\/[^/]+/, "~") ?? slug;
-    Alert.alert(
-      "Enable auto-yes?",
-      `All future questions for "${title}" will be automatically accepted with "Yes". This stays active until you disable it.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Enable",
-          style: "destructive",
-          onPress: () => {
-            enableAutoYes(autoYesPaneId);
-            const send = getWsSend();
-            if (send) {
-              const next = new Set(autoYesPaneIds);
-              next.add(autoYesPaneId);
-              send({ type: "set_auto_yes_panes", id: nextId(), pane_ids: [...next] });
-            }
-            const yesOpt = jobQuestion ? findYesOption(jobQuestion) : undefined;
-            if (yesOpt) {
-              const s = getWsSend();
-              if (s) s({ type: "send_input", id: nextId(), name: slug, text: yesOpt });
-              if (jobQuestion) setTimeout(() => answerQuestion(jobQuestion.question_id), 1500);
-            }
-          },
-        },
-      ],
-    );
-  }, [autoYesPaneId, jobQuestion, autoYesPaneIds, enableAutoYes, disableAutoYes, answerQuestion, slug]);
+    if (!autoYesPaneId) return
+    toggleAutoYes(autoYesPaneId, jobQuestion?.matched_job ?? jobQuestion?.cwd.replace(/^\/Users\/[^/]+/, "~") ?? slug, () => {
+      let yesOpt = jobQuestion ? findYesOption(jobQuestion) : undefined
+      let send = getWsSend()
+      if (!yesOpt || !send) return
+      send({ type: "send_input", id: nextId(), name: slug, text: yesOpt })
+      if (jobQuestion) setTimeout(() => answerQuestion(jobQuestion.question_id), 1500)
+    })
+  }, [autoYesPaneId, jobQuestion, answerQuestion, slug])
 
   const loaded = useJobsStore((s) => s.loaded);
   const statusTmuxSession = status?.state === "running" ? (status as any).tmux_session ?? "" : "";

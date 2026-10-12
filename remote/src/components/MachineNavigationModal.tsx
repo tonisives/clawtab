@@ -40,7 +40,7 @@ export let MachineNavigationModal = ({ title, children, overlay, onClose }: Mach
           <NavigationContainer theme={DarkTheme}>
             {/* Native screens attach another touch handler inside an RN Modal, cancelling button presses. */}
             <Stack.Navigator detachInactiveScreens={false} screenOptions={{ ...TransitionPresets.SlideFromRightIOS, gestureEnabled: true, headerStyle: { backgroundColor: colors.bg }, headerTintColor: colors.text, headerTitleAlign: "center", headerBackTitle: "", headerStatusBarHeight: 0, cardStyle: styles.screen, headerRight: closeButton }}>
-              <Stack.Screen name="root" initialParams={{ id: "root", title }} options={{ title }}>{renderPage}</Stack.Screen>
+              <Stack.Screen name="root" initialParams={{ id: "root", title }} options={{ title, headerLeft: () => null }}>{renderPage}</Stack.Screen>
               <Stack.Screen name="page" getId={({ params }) => params.id} options={({ route }) => ({ title: route.params.title })}>{renderPage}</Stack.Screen>
             </Stack.Navigator>
           </NavigationContainer>
