@@ -753,9 +753,9 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
   )
 }
 let createStyles = (desktop: boolean) => StyleSheet.create({
-  settingsPages: { gap: 8, paddingVertical: 16 },
-  panel: { backgroundColor: desktop ? "transparent" : "#202226", padding: 8, gap: 8 },
-  panelBody: { paddingRight: 8 },
+  settingsPages: { marginVertical: 16, borderRadius: 24, borderCurve: "continuous", overflow: "hidden", backgroundColor: colors.surface },
+  panel: { backgroundColor: desktop ? "transparent" : "#202226", padding: desktop && Platform.OS !== "web" ? 0 : 8, gap: 8 },
+  panelBody: { paddingRight: Platform.OS === "web" ? 8 : 0 },
   body: { maxHeight: 440, paddingRight: 8 },
   row: { flexDirection: "row", flexWrap: "wrap", gap: 6, paddingVertical: 4 },
   tabsScroll: { flexGrow: 0, marginVertical: 8 },

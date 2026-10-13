@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
-import { Platform, View, Text, TextInput, Pressable, StyleSheet } from "react-native"
+import { Platform, View, Text, TextInput, Pressable, StyleSheet, type StyleProp, type ViewStyle } from "react-native"
 import { machineRequest, machineSend, machineState, resourceKey, newOperationId, selectMachine, useMachines } from "./client"
 import { colors } from "../theme/colors"
 import { MachineTerminalScreen } from "./Terminal"
@@ -35,7 +35,7 @@ type Rental = {
   needs_attention: boolean
 }
 type RentalApi = (method: string, path: string, body?: Record<string, unknown>) => Promise<any>
-type Props = { children?: ReactNode; showExistingRentals?: boolean; allowNewRentals?: boolean; onOrderingChange?: (ordering: boolean) => void; api: RentalApi; purchases: boolean; platform?: "web" | "desktop" | "ios" | "android"; storefront?: string; openUrl?: (url: string) => Promise<unknown> }
+type Props = { style?: StyleProp<ViewStyle>; children?: ReactNode; showExistingRentals?: boolean; allowNewRentals?: boolean; onOrderingChange?: (ordering: boolean) => void; api: RentalApi; purchases: boolean; platform?: "web" | "desktop" | "ios" | "android"; storefront?: string; openUrl?: (url: string) => Promise<unknown> }
 type Terminal = { machine: string; pane: string; session: string; command: string }
 let money = (quote: Quote) => new Intl.NumberFormat(undefined, { style: "currency", currency: quote.currency }).format(quote.monthly_cents / 100)
 let date = (value: string) => new Date(value).toLocaleString()
@@ -52,7 +52,7 @@ let Button = ({ label, onPress, disabled = false, primary = false }: { label: st
   </Pressable>
 )
 
-export let RentalsPanel = ({ children, api, purchases, platform = "web", storefront, openUrl, onOrderingChange, allowNewRentals = true, showExistingRentals = true }: Props) => {
+export let RentalsPanel = ({ children, style, api, purchases, platform = "web", storefront, openUrl, onOrderingChange, allowNewRentals = true, showExistingRentals = true }: Props) => {
   let machines = useMachines()
   let [rentals, setRentals] = useState<Rental[]>([])
   let [purchasedRental, setPurchasedRental] = useState<string | null>(null)
@@ -189,7 +189,7 @@ export let RentalsPanel = ({ children, api, purchases, platform = "web", storefr
   let editKeys = (value: string) => { setKeys(value); requestId.current = null }
   if ((!purchases || !allowNewRentals) && visibleRentals.length === 0 && !error && !children) return null
   return (
-    <View style={styles.panel}>
+    <View style={[styles.panel, style]}>
       {!showOrder && (activeRentals.length > 0 || (allowNewRentals && purchases)) && <View style={styles.row}>
         <Text style={styles.heading}>{activeRentals.length ? "Your boxes" : "Rent a machine"}</Text>
         {allowNewRentals && purchases && activeRentals.length > 0 && <Button label="Rent a box" onPress={startOrder} disabled={busy} />}
