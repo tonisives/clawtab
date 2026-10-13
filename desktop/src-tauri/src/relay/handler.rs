@@ -45,7 +45,9 @@ pub async fn handle_incoming(
             incoming["type"].as_str(),
             Some("unsubscribe_pty" | "unsubscribe_logs")
         );
-    let authenticated = if crate::host::security::enabled() && !info_request {
+    let authenticated = if crate::host::security::enabled()
+        && (!info_request || !incoming["auth"].is_null())
+    {
         let verified = crate::host::security::machine_id().and_then(|id| {
             crate::host::security::verify(
                 &incoming["auth"],
@@ -68,12 +70,12 @@ pub async fn handle_incoming(
     let text = signed_text.as_deref().unwrap_or(text);
     if let Some(pane) = authenticated
         .as_ref()
-        .and_then(|auth| auth.message["pane_id"].as_str())
+        .and_then(|auth| command_pane(&auth.message, &ctx.job_status.lock()))
     {
         if !matches!(
             auth_type(authenticated.as_ref()),
             Some("subscribe_pty" | "unsubscribe_pty" | "capture_pane" | "get_pane_stats")
-        ) && crate::host::movement::pane_locked(pane)
+        ) && crate::host::movement::pane_locked(&pane)
         {
             return Some(serde_json::json!({"type":"error","id":incoming["id"],"code":"MOVE_IN_PROGRESS","message":"This conversation is locked while Move verifies the handoff"}).to_string());
         }
@@ -183,6 +185,21 @@ pub async fn handle_incoming(
     serialized.and_then(|value| protected_response(value, authenticated.as_ref()))
 }
 
+fn command_pane(
+    message: &serde_json::Value,
+    statuses: &HashMap<String, JobStatus>,
+) -> Option<String> {
+    if !matches!(
+        message["type"].as_str(),
+        Some("send_input" | "stop_job" | "run_job" | "delete_job")
+    ) {
+        return message["pane_id"].as_str().map(str::to_owned);
+    }
+    match statuses.get(message["name"].as_str()?) {
+        Some(JobStatus::Running { pane_id, .. }) => pane_id.clone(),
+        _ => None,
+    }
+}
 fn auth_type(auth: Option<&crate::host::security::Authenticated>) -> Option<&str> {
     auth.and_then(|auth| auth.message["type"].as_str())
 }
@@ -1302,9 +1319,47 @@ fn parse_process_provider(provider: Option<&str>) -> Result<Option<ProcessProvid
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_process_provider, resolve_launch_options};
+    use super::{command_pane, parse_process_provider, resolve_launch_options};
     use crate::agent_session::ProcessProvider;
+    use crate::config::jobs::JobStatus;
     use clawtab_protocol::JobPolicy;
+    use std::collections::HashMap;
+
+    #[test]
+    fn job_mutations_resolve_the_pane_for_move_locking() {
+        let statuses = HashMap::from([(
+            "fixture".into(),
+            JobStatus::Running {
+                run_id: "fixture-run".into(),
+                started_at: "fixture-start".into(),
+                pane_id: Some("%12".into()),
+                tmux_session: Some("fixture-session".into()),
+            },
+        )]);
+        for kind in ["send_input", "stop_job", "run_job", "delete_job"] {
+            assert_eq!(
+                command_pane(
+                    &serde_json::json!({"type":kind,"name":"fixture"}),
+                    &statuses
+                ),
+                Some("%12".into())
+            );
+            assert_eq!(
+                command_pane(
+                    &serde_json::json!({"type":kind,"name":"fixture","pane_id":"%99"}),
+                    &statuses
+                ),
+                Some("%12".into())
+            );
+        }
+        assert_eq!(
+            command_pane(
+                &serde_json::json!({"type":"subscribe_logs","name":"fixture"}),
+                &statuses
+            ),
+            None
+        );
+    }
 
     #[test]
     fn parses_mobile_agent_providers() {

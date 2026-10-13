@@ -1,4 +1,4 @@
-import { machineState, splitResource } from "@clawtab/shared";
+import { machineRequest, machineSend, machineState, splitResource } from "@clawtab/shared";
 import { terminalCache } from "../lib/terminalCache";
 import { useEffect, useRef, useCallback, useState } from "react";
 import { getWsSend, nextId } from "../lib/wsRuntime";
@@ -109,14 +109,14 @@ function sendSubscribe(paneId: string, subscription: PtySubscription) {
   subscription.released = false;
 
   const ackPromise = registerRequest<{ success?: boolean; error?: string; code?: string; message?: string }>(id);
-  send({
+  const message = {
     type: "subscribe_pty",
     id,
     pane_id: paneId,
     tmux_session: subscription.tmuxSession,
     cols: dims.cols,
     rows: dims.rows,
-  });
+  } as const;
   subscription.pendingAckId = id;
   subscription.ackTimer = setTimeout(() => {
     subscription.ackTimer = undefined;
@@ -142,6 +142,24 @@ function sendSubscribe(paneId: string, subscription: PtySubscription) {
     // An attach acknowledgement does not guarantee a redraw reached us.
     // Keep the watchdog running until actual terminal output arrives.
   });
+  let resource = splitResource(paneId);
+  let subscribe = () => {
+    if (subscription.count <= 0 || subscription.released) {
+      let current = ptySubscriptions.get(paneId);
+      if (resource && (!current || current.count <= 0 || current.released))
+        machineSend(resource.machine, { type: "release_control", pane_id: resource.id });
+      return;
+    }
+    if (subscription.pendingAckId === id) send(message);
+  };
+  if (resource) {
+    void machineRequest(resource.machine, { type: "take_control", pane_id: resource.id, ...dims })
+      .then(subscribe)
+      .catch((error) => {
+        if (subscription.pendingAckId === id && subscription.count > 0 && !subscription.released)
+          scheduleSubscribeRetry(paneId, subscription, error.message ?? "Could not take terminal control.");
+      });
+  } else subscribe();
   return true;
 }
 
@@ -171,6 +189,8 @@ export function releaseActivePtySubscriptions() {
     clearSubscribeWait(subscription);
     clearSubscribeRetry(subscription);
     send({ type: "unsubscribe_pty", pane_id: paneId });
+    let resource = splitResource(paneId);
+    if (resource) machineSend(resource.machine, { type: "release_control", pane_id: resource.id });
     subscription.released = true;
   }
 }
@@ -359,6 +379,8 @@ export function usePty(
               clearSubscribeRetry(current);
               const s = getWsSend();
               if (s) s({ type: "unsubscribe_pty", pane_id: paneId });
+              let resource = splitResource(paneId);
+              if (resource) machineSend(resource.machine, { type: "release_control", pane_id: resource.id });
               ptySubscriptions.delete(paneId);
             }, 1200);
           }

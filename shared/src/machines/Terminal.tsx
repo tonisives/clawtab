@@ -86,14 +86,23 @@ export let MachineTerminal = ({
       if (message.type === "pty_exit") setError("This execution has ended")
     })
     let dimensions = terminal.current?.dimensions() ?? { cols: 80, rows: 24 }
+    let closed = false
     terminal.current?.clear()
     void machineRequest(machineId, {
-      type: "subscribe_pty",
+      type: "take_control",
       pane_id: paneId,
-      tmux_session: tmuxSession,
       ...dimensions,
-    }).catch((e) => setError(e.message))
+    }).then(() => {
+      if (closed) {
+        machineSend(machineId, { type: "release_control", pane_id: paneId })
+        return
+      }
+      return machineRequest(machineId, {
+        type: "subscribe_pty", pane_id: paneId, tmux_session: tmuxSession, ...dimensions,
+      })
+    }).catch((e) => { if (!closed) setError(e.message) })
     return () => {
+      closed = true
       unlisten()
       machineSend(machineId, { type: "unsubscribe_pty", pane_id: paneId })
       machineSend(machineId, { type: "release_control", pane_id: paneId })

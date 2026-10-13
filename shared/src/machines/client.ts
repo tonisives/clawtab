@@ -78,7 +78,8 @@ let pending = new Map<
     timer: ReturnType<typeof setTimeout>
     machine?: string
     secure?: boolean
-    relayControl?: boolean
+    relayAck?: "control_ack" | "sent"
+    secureHost?: boolean
   }
 >()
 let socket: WebSocket | null = null
@@ -166,7 +167,12 @@ export let machineRequest = async (
       pending.delete(requestId)
       reject(new Error("Machine request timed out; check operation status before retrying"))
     }, timeout)
-    pending.set(requestId, { resolve, reject, timer, machine, secure, relayControl: ["take_control", "renew_control", "release_control"].includes(message.type) })
+    // Lease replies and fire-and-forget forwarding receipts belong to the relay.
+    // A "sent" receipt confirms forwarding, not execution on the host.
+    let relayAck: "control_ack" | "sent" | undefined =
+      ["take_control", "renew_control", "release_control"].includes(message.type) ? "control_ack" :
+      ["pty_input", "pty_resize", "unsubscribe_pty", "unsubscribe_logs", "set_auto_yes_panes", "tmux_pane_key"].includes(message.type) ? "sent" : undefined
+    pending.set(requestId, { resolve, reject, timer, machine, secure, relayAck, secureHost: message.type === "host_request" && message.request?.action === "secure" })
     connection.send(
       JSON.stringify({ version: 2, machine_id: machine, request_id: requestId, message: payload }),
     )
@@ -362,7 +368,7 @@ export let connectMachines = (getUrl: () => Promise<string>, preferencesApi?: Pr
         if (request) {
           pending.delete(data.request_id)
           clearTimeout(request.timer)
-          if (request.secure && !(request.relayControl && data.message?.type === "control_ack") && !protectedReply && !data.message?.result?.secure && data.message?.type !== "error" && data.type !== "machine_error")
+          if (request.secure && !(request.relayAck && data.message?.type === request.relayAck) && !protectedReply && !(request.secureHost && data.message?.type === "host_response" && data.message?.result?.secure) && data.message?.type !== "error" && data.type !== "machine_error")
             request.reject(new Error("Machine returned an unauthenticated response"))
           else if (
             data.type === "machine_error" ||

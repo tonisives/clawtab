@@ -13,7 +13,7 @@ let navigate: ((destination: Destination) => void) | null = null
 export let configureMoveLocal = (value: MoveLocal) => { local = value }
 export let configureMoveNavigation = (value: (destination: Destination) => void) => { navigate = value }
 let terminalStates = new Set(["completed", "failed", "cancelled"])
-let irreversibleStates = new Set(["activating", "verifying", "retiring", "stopping_setup", "needs_recovery", "completed"])
+let irreversibleStates = new Set(["activating", "verifying", "retiring", "stopping_setup", "needs_recovery", "restoring", "completed"])
 let monitors = new Map<string, ReturnType<typeof setInterval>>()
 // A stopped source pane can unmount its detail screen. Keep accepted handoffs
 // observable independently of the component that started them.

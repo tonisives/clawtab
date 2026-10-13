@@ -430,7 +430,12 @@ pub async fn execute(request: HostRequest, ctx: &JobContext) -> Result<Value, St
             }
             if matches!(
                 record.state.as_str(),
-                "activating" | "verifying" | "retiring" | "stopping_setup" | "needs_recovery"
+                "activating"
+                    | "verifying"
+                    | "retiring"
+                    | "stopping_setup"
+                    | "needs_recovery"
+                    | "restoring"
             ) {
                 return Err("Remote activation may have occurred; use Check handoff before recovering the source".into());
             }
@@ -471,8 +476,7 @@ pub async fn execute(request: HostRequest, ctx: &JobContext) -> Result<Value, St
                 json!({"action":"abort","operation_id":record.operation_id}),
             )
             .await?;
-            restore(&record)?;
-            state(
+            restore_and_finish(
                 &mut record,
                 "cancelled",
                 "Remote execution stopped; original agent restored",
@@ -503,6 +507,13 @@ fn start(mut record: MoveRecord, ctx: JobContext) {
     tokio::spawn(async move {
         let _guard = RunningGuard(record.operation_id.clone());
         if let Err(error) = run_move(&mut record, &ctx).await {
+            if record.state == "restoring" {
+                record.progress =
+                    "Source restoration requires attention; check the operation again".into();
+                record.error = Some(error);
+                let _ = save(&record);
+                return;
+            }
             let setup_unresolved = record.setup
                 && !record.paused.is_empty()
                 && peer::request(
@@ -521,15 +532,13 @@ fn start(mut record: MoveRecord, ctx: JobContext) {
                 record.state = "needs_recovery".into();
                 record.progress = "Source is paused. Check the remote handoff before resuming either conversation".into();
             } else {
-                match restore(&record) {
+                let final_state = if cancelled(&record.operation_id) {
+                    "cancelled"
+                } else {
+                    "failed"
+                };
+                match restore_and_finish(&mut record, final_state, "Original agent restored") {
                     Ok(()) => {
-                        record.state = if cancelled(&record.operation_id) {
-                            "cancelled"
-                        } else {
-                            "failed"
-                        }
-                        .into();
-                        record.progress = "Original agent restored".into();
                         let _ =
                             worker(json!({"action":"cleanup","operation_id":record.operation_id}))
                                 .await;
@@ -541,7 +550,6 @@ fn start(mut record: MoveRecord, ctx: JobContext) {
                         .await;
                     }
                     Err(_) => {
-                        record.state = "needs_recovery".into();
                         record.progress =
                             "Original execution could not be safely restored; inspect the source"
                                 .into();
@@ -661,6 +669,33 @@ fn restore(record: &MoveRecord) -> Result<(), String> {
     }
     Ok(())
 }
+fn restore_and_finish(
+    record: &mut MoveRecord,
+    final_state: &str,
+    progress: &str,
+) -> Result<(), String> {
+    restore_transaction(record, final_state, progress, save, restore)
+}
+fn restore_transaction(
+    record: &mut MoveRecord,
+    final_state: &str,
+    progress: &str,
+    persist: impl Fn(&MoveRecord) -> Result<(), String>,
+    resume: impl Fn(&MoveRecord) -> Result<(), String>,
+) -> Result<(), String> {
+    record.state = "restoring".into();
+    record.progress = "Restoring the original execution".into();
+    persist(record)?;
+    resume(record)?;
+    record.state = final_state.into();
+    record.progress = progress.into();
+    if let Err(error) = persist(record) {
+        record.state = "restoring".into();
+        record.progress = "Source restored; waiting to persist completion".into();
+        return Err(error);
+    }
+    Ok(())
+}
 fn retire(record: &MoveRecord) -> Result<(), String> {
     // The durable freeze record owns these exact process identities. On retry,
     // some children may already be gone, so session discovery is no longer a
@@ -757,6 +792,14 @@ async fn complete(record: &mut MoveRecord, ctx: &JobContext) -> Result<(), Strin
 }
 
 async fn run_move(record: &mut MoveRecord, ctx: &JobContext) -> Result<(), String> {
+    if record.state == "restoring" {
+        let final_state = if cancelled(&record.operation_id) {
+            "cancelled"
+        } else {
+            "failed"
+        };
+        return restore_and_finish(record, final_state, "Original agent restored");
+    }
     for _ in 0..30 {
         if ctx.relay.lock().is_some() {
             break;
@@ -781,7 +824,7 @@ async fn run_move(record: &mut MoveRecord, ctx: &JobContext) -> Result<(), Strin
             json!({"action":"status","operation_id":record.operation_id}),
         )
         .await?;
-        if remote["state"] == "ready" {
+        if matches!(remote["state"].as_str(), Some("ready" | "committed")) {
             record.remote = Some(remote);
             return complete(record, ctx).await;
         }
@@ -794,8 +837,7 @@ async fn run_move(record: &mut MoveRecord, ctx: &JobContext) -> Result<(), Strin
                 json!({"action":"abort","operation_id":record.operation_id}),
             )
             .await?;
-            restore(record)?;
-            return state(
+            return restore_and_finish(
                 record,
                 "failed",
                 "Remote activation did not occur; original agent restored",
@@ -1108,6 +1150,11 @@ async fn peer_execute(sender: &str, request: Value, ctx: &JobContext) -> Result<
             return Ok(json!({"state":"absent"}));
         }
         let mut launch: Value = security::read_json(&launch)?;
+        if action == "status" {
+            if let Some(committed) = committed_status(&base, &launch)? {
+                return Ok(committed);
+            }
+        }
         let pane = launch["pane_id"]
             .as_str()
             .ok_or("Target launch acknowledgement is incomplete; inspect its tmux session")?
@@ -1167,6 +1214,24 @@ async fn peer_execute(sender: &str, request: Value, ctx: &JobContext) -> Result<
             .map_err(|_| "Target launch worker stopped")?;
     }
     worker(request).await
+}
+fn committed_status(directory: &std::path::Path, launch: &Value) -> Result<Option<Value>, String> {
+    let path = directory.join("move-committed.json");
+    if !path
+        .try_exists()
+        .map_err(|_| "Target commit record unavailable")?
+    {
+        return Ok(None);
+    }
+    let commit: Value = security::read_json(&path)?;
+    if commit["committed"] != true {
+        return Err("Invalid target commit record".into());
+    }
+    // Commit is only requested after the source execution has retired. It is
+    // durable proof of the handoff even if the remote is busy or moved onward.
+    let mut status = launch.clone();
+    status["state"] = json!("committed");
+    Ok(Some(status))
 }
 fn check_secrets(request: &Value, ctx: &JobContext) -> Result<Vec<(String, String)>, String> {
     let keys: Vec<String> =
@@ -1384,6 +1449,84 @@ fn stop_target_in(directory: PathBuf, setup_only: bool) -> Result<Value, String>
 #[cfg(test)]
 mod recovery_tests {
     use super::*;
+
+    #[test]
+    fn restoration_is_durable_before_unfreezing_and_survives_interruption() {
+        let mut record = MoveRecord {
+            created_at: 0,
+            operation_id: uuid::Uuid::new_v4().to_string(),
+            source: Source {
+                pane_id: "%12".into(),
+                execution_id: "fixture".into(),
+                pane_pid: "123".into(),
+                cwd: "/fixture".into(),
+                provider: ProcessProvider::Claude,
+                session_id: "fixture".into(),
+                model: None,
+                effort: None,
+                secret_keys: vec![],
+            },
+            target: "fixture".into(),
+            destination: "/fixture".into(),
+            setup: false,
+            state: "importing".into(),
+            progress: String::new(),
+            paused: vec![],
+            manifest: None,
+            remote: None,
+            error: None,
+        };
+        let persisted = std::cell::RefCell::new(Vec::new());
+        let persist = |record: &MoveRecord| {
+            persisted.borrow_mut().push(record.state.clone());
+            Ok(())
+        };
+        let interrupted = restore_transaction(&mut record, "failed", "restored", persist, |_| {
+            assert_eq!(persisted.borrow().last().unwrap(), "restoring");
+            Err("simulated interruption".into())
+        });
+        assert!(interrupted.is_err());
+        assert_eq!(record.state, "restoring");
+        assert!(active(&record.state));
+        restore_transaction(&mut record, "failed", "restored", persist, |_| Ok(())).unwrap();
+        assert_eq!(persisted.borrow().last().unwrap(), "failed");
+        assert!(!active(&record.state));
+        let result = restore_transaction(
+            &mut record,
+            "failed",
+            "restored",
+            |record| {
+                if record.state == "failed" {
+                    Err("simulated disk failure".into())
+                } else {
+                    Ok(())
+                }
+            },
+            |_| Ok(()),
+        );
+        assert!(result.is_err());
+        assert_eq!(record.state, "restoring");
+    }
+
+    #[test]
+    fn durable_commit_confirms_handoff_without_requiring_remote_idle() {
+        let directory = tempfile::tempdir().unwrap();
+        let launch = json!({"state":"launched","pane_id":"%999999","session_id":"fixture"});
+        assert!(committed_status(directory.path(), &launch)
+            .unwrap()
+            .is_none());
+        security::save_json(
+            &directory.path().join("move-committed.json"),
+            &json!({"committed":true}),
+        )
+        .unwrap();
+        let result = committed_status(directory.path(), &launch)
+            .unwrap()
+            .unwrap();
+        assert_eq!(result["state"], "committed");
+        assert_eq!(result["session_id"], "fixture");
+        assert_eq!(result["pane_id"], "%999999");
+    }
 
     #[test]
     fn setup_shutdown_has_a_separate_durable_barrier() {
