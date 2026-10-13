@@ -66,6 +66,8 @@ The bundled tmux plugin adds agent status, task-based pane names, auto-yes contr
 
 The daemon publishes agent activity to tmux without replacing your theme. Working windows get a cyan activity marker, agents asking for input get a yellow attention marker, and present-but-idle agents get a green check.
 
+ClawTab picks up generated session names from Codex, Claude Code, and OpenCode as they become available, usually on the next five-second scan. The name appears in ClawTab and on the top pane border. A window with exactly one agent also gets that name if tmux's automatic naming is enabled. Windows with multiple agents keep their window name. Explicitly renaming a window stops ClawTab from renaming it again; existing named windows and custom pane names are preserved.
+
 <p align="center">
   <img src="https://cdn.clawtab.cc/assets/articles/daemon-tmux/tmux-agent-working.png?v=20260716" alt="Tmux status bar showing working and idle activity indicators across AI agent windows" width="1000" />
 </p>

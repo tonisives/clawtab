@@ -59,6 +59,11 @@ priority_pane_script="$CURRENT_DIR/scripts/select-priority-pane.sh"
 tmux set-hook -g 'after-select-window[110]' \
     "run-shell '$priority_pane_script \"#{window_id}\"'"
 
+# rename-window disables automatic-rename. Remember explicit renames too,
+# including when the chosen name equals the last generated title.
+tmux set-hook -g 'after-rename-window[111]' \
+    "if-shell -F '#{==:#{@clawtab-title-renaming},1}' 'set-option -wqu @clawtab-title-renaming' 'set-option -wq @clawtab-manual-window-name 1'"
+
 # Append auto-yes indicator to pane-border-format (right-aligned)
 # Uses pane option @clawtab-auto-yes for instant toggle feedback (no shell cache delay)
 current_border=$(tmux show-option -gqv pane-border-format)
@@ -111,10 +116,17 @@ elif [[ "$current_border" != *"clawtab-auto-yes"* ]]; then
     clawtab_part="#[align=right]#{?#{@clawtab-daemon-running},#{?#{==:#{@clawtab-auto-yes},1},#[fg=green#,bold][Y]#[default],#{?#{||:#{m:*.*.*,#{pane_current_command}},#{||:#{m:*codex*,#{pane_current_command}},#{m:*claude*,#{pane_current_command}}}},#[fg=colour240][y]#[default],}},}"
     current_border="${current_border}${clawtab_part}"
 fi
+if [[ "$current_border" != *"@clawtab-agent-title"* ]]; then
+    # Rich pane helpers already include the display name in their cached info.
+    agent_title='#{?#{@clawtab-pane-has-info},,#{?#{@clawtab-agent-title},#{@clawtab-agent-title} ,}}'
+    current_border="${agent_title}${current_border}"
+fi
 tmux set-option -g pane-border-format "$current_border"
+tmux set-option -g pane-border-status top
 
 if [ "$border_cache_enabled" -eq 1 ]; then
     pane_border_cache_script="$CURRENT_DIR/scripts/pane-border-cache.sh"
+    tmux set-option -gq @clawtab-pane-border-cache-command "$(printf '%q' "$pane_border_cache_script")"
     tmux set-hook -g 'pane-focus-in[100]' \
         "run-shell -b '$pane_border_cache_script \"#{pane_id}\" \"#{pane_width}\"'"
     tmux set-hook -g 'after-select-window[100]' \
@@ -126,6 +138,8 @@ if [ "$border_cache_enabled" -eq 1 ]; then
     tmux set-hook -g 'window-layout-changed[100]' \
         "run-shell -b '$pane_border_cache_script --window \"#{window_id}\"'"
     tmux run-shell -b "$pane_border_cache_script"
+else
+    tmux set-option -gqu @clawtab-pane-border-cache-command
 fi
 
 # Append activity indicators without replacing a user's existing window

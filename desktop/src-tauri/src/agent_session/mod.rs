@@ -14,6 +14,7 @@ use std::process::Command;
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct SessionInfo {
     pub session_id: Option<String>,
+    pub title: Option<String>,
     pub model_id: Option<String>,
     pub agent_effort: Option<String>,
     pub first_query: Option<String>,

@@ -138,6 +138,7 @@ clear_agent_pane_title() {
     pane_id="$1"
     tmux set-option -pqu -t "$pane_id" @clawtab-pane-info 2>/dev/null || true
     tmux set-option -pqu -t "$pane_id" @clawtab-pane-has-info 2>/dev/null || true
+    tmux set-option -pqu -t "$pane_id" @clawtab-agent-title 2>/dev/null || true
     display_name="$(tmux show-option -pqv -t "$pane_id" @clawtab-display-name 2>/dev/null || true)"
     [ -n "$display_name" ] || return
 

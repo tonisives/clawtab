@@ -510,11 +510,18 @@ pub async fn question_detection_loop(
     let mut process_snapshot = ProcessSnapshot::capture();
     let mut process_snapshot_at = Instant::now();
     let mut bell_synced_auto_yes_panes = HashSet::new();
+    let mut titles_synced_at: Option<Instant> = None;
 
     loop {
         if process_snapshot_at.elapsed() >= PROCESS_SNAPSHOT_INTERVAL {
             process_snapshot = ProcessSnapshot::capture();
             process_snapshot_at = Instant::now();
+        }
+        if titles_synced_at.is_none_or(|time| time.elapsed() >= PROCESS_SNAPSHOT_INTERVAL) {
+            if let Err(error) = crate::tmux::sync_agent_titles(&process_snapshot) {
+                log::debug!("failed to sync agent titles: {}", error);
+            }
+            titles_synced_at = Some(Instant::now());
         }
         let detection =
             detect_question_processes(&jobs_config, &job_status, &hook_runtime, &process_snapshot);
@@ -1576,8 +1583,8 @@ fn record_pane_capture(process: &mut DetectedAgent, visible: &str, cursor_y: u16
 #[cfg(test)]
 mod tests {
     use super::{
-        collect_q_running_panes, evict_stale_cache_entries, filter_auto_yes_questions, find_yes_option,
-        parse_numbered_options, parse_opencode_buttons, record_pane_capture,
+        collect_q_running_panes, evict_stale_cache_entries, filter_auto_yes_questions,
+        find_yes_option, parse_numbered_options, parse_opencode_buttons, record_pane_capture,
         resolved_hook_activity, should_capture_question_screen, update_question_cache,
         ActivityTracker, DetectedAgent, HookAgentState, ProcessProvider,
     };

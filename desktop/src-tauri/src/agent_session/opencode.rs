@@ -42,11 +42,21 @@ pub(super) fn resolve_session_info(
         .and_then(|pid| snapshot.command_for_pid(pid))
         .and_then(parse_opencode_prompt_from_command);
 
-    let Some(session) = find_opencode_session(&cwd, prompt.as_deref(), process_start_epoch) else {
+    let session_id = opencode_pid
+        .as_deref()
+        .and_then(|pid| snapshot.command_for_pid(pid))
+        .and_then(parse_opencode_session_from_command);
+
+    let Some(session) =
+        find_opencode_session(&cwd, session_id, prompt.as_deref(), process_start_epoch)
+    else {
         return info;
     };
 
     info.session_id = Some(session.id.clone());
+    info.title = normalize_optional_str(&session.title).filter(|title| {
+        !title.starts_with("New session - ") && !title.starts_with("Child session - ")
+    });
 
     let started_secs = session.time_created / 1000;
     info.started_epoch = Some(started_secs as u64);
@@ -95,10 +105,14 @@ fn opencode_db_path() -> PathBuf {
 /// `None` — an empty display is better than a wrong one.
 fn find_opencode_session(
     cwd: &str,
+    session_id: Option<&str>,
     prompt: Option<&str>,
     process_start_epoch: Option<i64>,
 ) -> Option<OpencodeSessionInfo> {
     let conn = Connection::open(opencode_db_path()).ok()?;
+    if let Some(id) = session_id {
+        return read_opencode_session_by_id(&conn, id);
+    }
     let mut stmt = conn
         .prepare(
             "select id, title, time_created
@@ -149,9 +163,37 @@ fn find_opencode_session(
 
     // Fallback: only accept a session created at or after this process started.
     // 2 second slack absorbs fork-to-insert latency and small clock drift.
+    session_by_start(candidates, process_start_epoch)
+}
+
+fn read_opencode_session_by_id(conn: &Connection, id: &str) -> Option<OpencodeSessionInfo> {
+    conn.query_row(
+        "select id, title, time_created from session where id = ?1",
+        [id],
+        |row| {
+            Ok(OpencodeSessionInfo {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                time_created: row.get(2)?,
+            })
+        },
+    )
+    .ok()
+}
+
+fn session_by_start(
+    candidates: Vec<OpencodeSessionInfo>,
+    process_start_epoch: Option<i64>,
+) -> Option<OpencodeSessionInfo> {
     let proc_start = process_start_epoch?;
     let cutoff_ms = (proc_start - 2) * 1000;
-    candidates.into_iter().find(|c| c.time_created >= cutoff_ms)
+    let mut matching = candidates
+        .into_iter()
+        .filter(|c| c.time_created >= cutoff_ms);
+    let session = matching.next()?;
+    // Several interactive panes can create sessions in the same directory.
+    // Never label one pane with another pane's most recent conversation.
+    matching.next().is_none().then_some(session)
 }
 
 fn read_opencode_user_messages(session_id: &str) -> (Option<String>, Option<String>) {
@@ -275,4 +317,58 @@ fn parse_opencode_prompt_from_command(command: &str) -> Option<String> {
     let start = command.find(marker)?;
     let raw = &command[start + marker.len()..];
     normalize_prompt_text(raw)
+}
+
+fn parse_opencode_session_from_command(command: &str) -> Option<&str> {
+    let mut args = command.split_whitespace();
+    while let Some(arg) = args.next() {
+        if let Some(id) = arg.strip_prefix("--session=") {
+            return (!id.is_empty()).then_some(id);
+        }
+        if arg == "--session" || arg == "-s" {
+            return args.next();
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resumed_sessions_have_an_explicit_identity() {
+        for command in [
+            "opencode --session ses_123",
+            "opencode -s ses_123",
+            "opencode --session=ses_123",
+        ] {
+            assert_eq!(
+                parse_opencode_session_from_command(command),
+                Some("ses_123")
+            );
+        }
+        assert_eq!(
+            parse_opencode_session_from_command("opencode --continue"),
+            None
+        );
+    }
+
+    #[test]
+    fn sibling_sessions_are_not_assigned_the_same_title() {
+        let session = |time_created| OpencodeSessionInfo {
+            id: format!("session-{time_created}"),
+            title: "Generated title".to_string(),
+            time_created,
+        };
+        assert!(session_by_start(vec![session(100_000)], None).is_none());
+        assert!(session_by_start(vec![session(50_000)], Some(100)).is_none());
+        assert_eq!(
+            session_by_start(vec![session(100_000)], Some(100))
+                .expect("one session")
+                .id,
+            "session-100000"
+        );
+        assert!(session_by_start(vec![session(100_000), session(110_000)], Some(100)).is_none());
+    }
 }
