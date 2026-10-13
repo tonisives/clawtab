@@ -4,6 +4,7 @@ import { Platform, Text, View } from "react-native"
 import { useAuthStore } from "../../../src/store/auth"
 import { useResponsive } from "../../../src/hooks/useResponsive"
 import { ApiTokensSection } from "../../../src/components/ApiTokensSection"
+import { MachinePageScreen, type MachinePageParams } from "../../../src/components/MachineNavigation"
 import { MachineSetup } from "../../../src/components/MachineSetup"
 import { AccountSettings } from "../../../src/components/settings/AccountSettings"
 import { SharingSettings } from "../../../src/components/settings/SharingSettings"
@@ -13,7 +14,7 @@ import { SettingsPage, SettingsRow, styles } from "../../../src/components/setti
 import { SettingsNavigation, SettingsVisibility, useSettingsNavigation, type SettingsRoute } from "../../../src/components/settings/navigation"
 import { colors } from "../../../src/theme/colors"
 
-type Routes = { [Page in SettingsRoute]: undefined }
+type Routes = { [Page in SettingsRoute]: undefined } & { "machine-page": MachinePageParams }
 let Stack = createNativeStackNavigator<Routes>()
 let SettingsHome = () => {
   let email = useAuthStore((state) => state.email)
@@ -66,6 +67,7 @@ let SettingsScreen = ({ inModal = false }: { inModal?: boolean }) => {
           {({ navigation }) => <SettingsNavigation.Provider value={(page) => navigation.navigate(page)}><Page /></SettingsNavigation.Provider>}
         </Stack.Screen>
       })}
+      <Stack.Screen name="machine-page" component={MachinePageScreen} options={({ route }) => ({ title: route.params.title })} />
     </Stack.Navigator>
   </NavigationContainer></NavigationIndependentTree></SettingsVisibility.Provider>
 }

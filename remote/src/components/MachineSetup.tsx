@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react"
 import { Linking, Platform, Pressable, StyleSheet, Text, View } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
+import { MachineNavigation } from "./MachineNavigation"
+import { styles as settingsStyles } from "./settings/SettingsPage"
 import { MachineNavigationModal } from "./MachineNavigationModal"
 import { useRouter } from "expo-router"
 import { openBrowserAsync } from "expo-web-browser"
@@ -23,9 +25,9 @@ let MachineSetupActionButton = ({ label, onPress, accessibilityLabel, disabled, 
   accessibilityLabel={accessibilityLabel ?? label}
   disabled={disabled}
   onPress={onPress}
-  style={({ pressed }) => [appearance === "settings" ? styles.settingsActionButton : styles.actionButton, tone === "danger" && styles.dangerButton, disabled && styles.disabled, pressed && styles.pressed, style]}
+  style={({ pressed }) => [appearance === "settings" ? settingsStyles.row : styles.actionButton, tone === "danger" && styles.dangerButton, disabled && styles.disabled, pressed && styles.pressed, style]}
 >
-  {icon === "back" ? <Ionicons name="chevron-back" size={22} color={colors.text} /> : <Text style={[appearance === "settings" ? styles.settingsActionText : styles.action, tone === "danger" && styles.dangerText]}>{label}</Text>}
+  {icon === "back" ? <Ionicons name="chevron-back" size={22} color={colors.text} /> : <Text style={[appearance === "settings" ? settingsStyles.rowTitle : styles.action, tone === "danger" && styles.dangerText]}>{label}</Text>}
   {appearance === "settings" && <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />}
 </Pressable>
 
@@ -61,9 +63,9 @@ export let MachineSetup = ({ onNavigate, manage = false }: { onNavigate?: () => 
     <Text style={styles.text}>Sign in to connect your machines and save groups across your ClawTab apps.</Text>
     <Pressable accessibilityRole="button" onPress={signIn} style={styles.button}><Text style={styles.action}>Sign in</Text></Pressable>
   </View>
-  return <MachineOnboardingProvider content={machineOnboardingContent} management={machineManagementContent} chrome={machineOnboardingChrome}>
-    {manage && <View style={styles.navigation}><AddMachineButton /></View>}
-    {(manage || allowNewRentals) && <RentalsPanel showExistingRentals={manage} allowNewRentals={allowNewRentals} onOrderingChange={setOrdering} api={rentalApi} {...checkout} platform={Platform.OS === "ios" ? "ios" : Platform.OS === "android" ? "android" : "web"} openUrl={openCheckout}>
+  return <MachineNavigation><MachineOnboardingProvider content={machineOnboardingContent} management={machineManagementContent} chrome={machineOnboardingChrome}>
+    {manage && <View style={styles.managementNavigation}><AddMachineButton /></View>}
+    {(manage || allowNewRentals) && <RentalsPanel style={manage ? styles.managementPanel : undefined} showExistingRentals={manage} allowNewRentals={allowNewRentals} onOrderingChange={setOrdering} api={rentalApi} {...checkout} platform={Platform.OS === "ios" ? "ios" : Platform.OS === "android" ? "android" : "web"} openUrl={openCheckout}>
       {manage && <MachinesPanel presentation="panel" approvePairing={approveMachinePairing} api={machineApi} />}
     </RentalsPanel>}
     {allowNewRentals && !checkout.purchases && <View style={styles.unavailable}>
@@ -73,7 +75,7 @@ export let MachineSetup = ({ onNavigate, manage = false }: { onNavigate?: () => 
     </View>}
     {!manage && !ordering && <View style={styles.connection}><ConnectMachine approvePairing={approveMachinePairing} /></View>}
     {!manage && !ordering && <View style={styles.navigation}><ManageMachinesButton /></View>}
-  </MachineOnboardingProvider>
+  </MachineOnboardingProvider></MachineNavigation>
 }
 
 let styles = StyleSheet.create({
@@ -86,11 +88,11 @@ let styles = StyleSheet.create({
   detail: { color: colors.textSecondary, fontSize: 13, lineHeight: 19 },
   connection: { paddingTop: 16 },
   navigation: { padding: 16 },
+  managementNavigation: { padding: 0 },
+  managementPanel: { padding: 0 },
   actionButton: { minHeight: 44, paddingHorizontal: 18, borderRadius: 999, backgroundColor: colors.groupedSurface, borderWidth: 1, borderColor: colors.border, alignItems: "center", justifyContent: "center" },
   pressed: { opacity: 0.65 },
   disabled: { opacity: 0.45 },
   dangerButton: { backgroundColor: colors.dangerBg, borderColor: colors.danger },
   dangerText: { color: colors.danger },
-  settingsActionButton: { minHeight: 56, paddingVertical: 16, paddingHorizontal: 18, borderRadius: 24, borderCurve: "continuous", backgroundColor: colors.surface, flexDirection: "row", gap: 12, justifyContent: "space-between", alignItems: "center" },
-  settingsActionText: { flexShrink: 1, color: colors.text, fontSize: 16, fontWeight: "600" },
 })
