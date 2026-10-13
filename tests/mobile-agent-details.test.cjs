@@ -142,24 +142,30 @@ test('closing and reopening details clears action configuration', () => {
   assert.equal(view.render().props.overlay.props.visible, false);
 });
 
-test('machine sheets push and swipe back without mounting native screens inside the modal', () => {
-  let closed = 0, pushed = [];
+test('machine sheets use UIKit presentation and headers without an RN Modal touch wrapper', () => {
+  let closed = 0, pushed = [], focused = true;
   let view = harness('../remote/src/components/MachineNavigationModal.tsx', {
-    'expo-router/react-navigation': { NavigationIndependentTree: 'NavigationIndependentTree', NavigationContainer: 'NavigationContainer', DarkTheme: {} },
-    'expo-router/build/react-navigation/stack': { createStackNavigator: () => ({ Navigator: 'SheetNavigator', Screen: 'SheetScreen' }), TransitionPresets: { SlideFromRightIOS: { gestureDirection: 'horizontal' } } },
+    'expo-router/react-navigation': { NavigationIndependentTree: 'NavigationIndependentTree', NavigationContainer: 'NavigationContainer', DarkTheme: {}, useIsFocused: () => focused },
+    'expo-router/build/react-navigation/native-stack': { createNativeStackNavigator: () => ({ Navigator: 'SheetNavigator', Screen: 'SheetScreen' }) },
   });
   let props = { title: 'Add group / machine', children: { type: 'GroupForm', props: { version: 1 } }, overlay: { type: 'Overlay', props: {} }, onClose: () => closed++ };
   let render = () => view.render(view.exports.MachineNavigationModal, props);
   let tree = render();
-  assert.equal(tree.type, 'Modal');
-  let navigator = find(tree, (node) => node.type === 'SheetNavigator');
-  assert.equal(navigator.props.detachInactiveScreens, false);
-  assert.equal(navigator.props.screenOptions.gestureDirection, 'horizontal');
+  assert.equal(tree.type, 'View');
+  assert.equal(find(tree, (node) => node.type === 'Modal'), undefined);
+  let container = find(tree, (node) => node.type === 'NavigationContainer');
+  assert.equal(container.props.initialState.index, 1);
+  assert.equal(Array.from(container.props.initialState.routes, (route) => route.name).join(','), 'anchor,sheet');
+  let sheet = find(tree, (node) => node.type === 'SheetScreen' && node.props.name === 'sheet');
+  assert.equal(sheet.props.options.presentation, 'modal');
+  let sheetTree = view.expand(sheet.props.children());
+  let navigator = find(sheetTree, (node) => node.type === 'SheetNavigator');
   assert.equal(navigator.props.screenOptions.gestureEnabled, true);
-  let screen = find(tree, (node) => node.type === 'SheetScreen');
+  assert.equal(navigator.props.screenOptions.headerBackButtonDisplayMode, 'minimal');
+  let screen = find(sheetTree, (node) => node.type === 'SheetScreen' && node.props.name === 'root');
   assert.equal(screen.props.name, 'root');
-  assert.equal(screen.props.options.headerLeft(), null);
-  let childScreen = find(tree, (node) => node.type === 'SheetScreen' && node.props.name === 'page');
+  assert.equal(screen.props.options.headerBackVisible, false);
+  let childScreen = find(sheetTree, (node) => node.type === 'SheetScreen' && node.props.name === 'page');
   assert.equal(childScreen.props.options({ route: { params: { title: 'Agent actions' } } }).headerLeft, undefined);
   let { StackRouter, StackActions } = require('../remote/node_modules/expo-router/build/react-navigation/routers/StackRouter.js');
   let router = StackRouter({ initialRouteName: 'root' });
@@ -180,12 +186,21 @@ test('machine sheets push and swipe back without mounting native screens inside 
   state = router.getStateForAction(state, { type: 'GO_BACK' }, options);
   assert.equal(state.routes.at(-1).params.id, pushed[0][1].id);
   assert.ok(find(page(state.routes.at(-1).params), (node) => node.type === 'MachineForm'));
-  assert.ok(find(tree, (node) => node.type === 'Overlay'));
+  assert.ok(find(root, (node) => node.type === 'Overlay'));
+  focused = false;
+  assert.equal(find(page(screen.props.initialParams), (node) => node.type === 'Overlay'), undefined);
+  focused = true;
   props.children = { type: 'GroupForm', props: { version: 2 } };
-  screen = find(render(), (node) => node.type === 'SheetScreen');
+  sheet = find(render(), (node) => node.type === 'SheetScreen' && node.props.name === 'sheet');
+  screen = find(view.expand(sheet.props.children()), (node) => node.type === 'SheetScreen' && node.props.name === 'root');
   assert.equal(find(page(screen.props.initialParams), (node) => node.type === 'GroupForm').props.version, 2);
-  labelled(view.expand(navigator.props.screenOptions.headerRight()), 'Close add group / machine').props.onPress();
+  let closeButton = navigator.props.screenOptions.unstable_headerRightItems()[0];
+  assert.equal(closeButton.icon.name, 'xmark');
+  assert.equal(closeButton.accessibilityLabel, 'Close add group / machine');
+  closeButton.onPress();
   assert.equal(closed, 1);
-  render().props.onRequestClose();
+  container.props.onStateChange({ index: 1, routes: [{ name: 'anchor' }, { name: 'sheet' }] });
+  assert.equal(closed, 1);
+  container.props.onStateChange({ index: 0, routes: [{ name: 'anchor' }] });
   assert.equal(closed, 2);
 });
