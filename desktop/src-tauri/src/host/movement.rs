@@ -1219,11 +1219,14 @@ fn check_secrets(request: &Value, ctx: &JobContext) -> Result<Vec<(String, Strin
 }
 
 fn stop_target(id: &str, setup_only: bool) -> Result<Value, String> {
-    use std::os::{fd::AsRawFd, unix::fs::OpenOptionsExt};
     let directory = crate::config::config_dir()
         .ok_or("Configuration unavailable")?
         .join("operations")
         .join(id);
+    stop_target_in(directory, setup_only)
+}
+fn stop_target_in(directory: PathBuf, setup_only: bool) -> Result<Value, String> {
+    use std::os::{fd::AsRawFd, unix::fs::OpenOptionsExt};
     let lock = std::fs::OpenOptions::new()
         .read(true)
         .write(true)
@@ -1376,4 +1379,43 @@ fn stop_target(id: &str, setup_only: bool) -> Result<Value, String> {
         std::thread::sleep(Duration::from_millis(100));
     }
     Err("Target execution has not stopped; source remains paused".into())
+}
+
+#[cfg(test)]
+mod recovery_tests {
+    use super::*;
+
+    #[test]
+    fn setup_shutdown_has_a_separate_durable_barrier() {
+        let directory = tempfile::tempdir().unwrap();
+        assert_eq!(
+            stop_target_in(directory.path().into(), true).unwrap()["state"],
+            "absent"
+        );
+        assert!(directory.path().join("setup-stopped.json").exists());
+        assert!(!directory.path().join("move-aborted.json").exists());
+        assert_eq!(
+            stop_target_in(directory.path().into(), true).unwrap()["state"],
+            "absent"
+        );
+        assert_eq!(
+            stop_target_in(directory.path().into(), false).unwrap()["state"],
+            "absent"
+        );
+        assert!(directory.path().join("move-aborted.json").exists());
+    }
+
+    #[test]
+    fn recovery_refuses_a_reused_process_id_before_signaling() {
+        let directory = tempfile::tempdir().unwrap();
+        let pid = std::process::id().to_string();
+        let started = ProcessSnapshot::capture()
+            .start_epoch_for_pid(&pid)
+            .unwrap();
+        security::save_json(&directory.path().join("move-launch.json"),
+            &json!({"pane_id":"%999999","pane_pid":pid,"pane_started":started - 1,"tmux_session":"fixture"})).unwrap();
+        let error = stop_target_in(directory.path().into(), false).unwrap_err();
+        assert!(error.contains("reused PID"));
+        assert!(!directory.path().join("move-aborted.json").exists());
+    }
 }
