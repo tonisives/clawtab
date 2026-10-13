@@ -34,6 +34,8 @@ Terminal output continues through the existing relay and is not end-to-end encry
 
 Operations persist independently of the modal, client connection, and daemon restart. Before target activation, cancellation restores the source. After an uncertain activation, the source stays paused until the target is checked. The recovery view can explicitly stop the target and restore the source; it waits for a durable target abort barrier before restoring. If the source has already retired, it cannot be restored through this action.
 
+Source restoration is recorded before processes resume. If interrupted, recovery finishes restoration instead of retrying the old transfer. A durable target commit confirms a successful handoff even when its acknowledgement was lost and the remote has started another turn.
+
 `cwtctl move status <operation-id>` inspects an operation; `check` reconciles the remote handoff. `rollback <operation-id> --confirm-stop-target` explicitly requests target shutdown and source restoration. Do not manually unfreeze a source while its target state is uncertain.
 
 ## Validation scope
