@@ -76,11 +76,20 @@ for helper in '~/.config/tmux/clawtab-pane-info.sh' \
     grep -Fq '#{@clawtab-pane-info}' "$TEST_TMUX_OPTIONS"
     grep -Fq '#{@clawtab-pane-has-info}' "$TEST_TMUX_OPTIONS"
     grep -Fq '#{@clawtab-daemon-running}' "$TEST_TMUX_OPTIONS"
+    grep -Fq '#{@clawtab-agent-title}' "$TEST_TMUX_OPTIONS"
+    grep -Fxq 'top' "$TEST_TMUX_OPTIONS"
+    grep -Fxq '@clawtab-pane-border-cache-command' "$TEST_TMUX_OPTIONS"
     if grep -Fq '#(' "$TEST_TMUX_OPTIONS"; then
         printf 'pane border still invokes a shell helper: %s\n' "$helper" >&2
         exit 1
     fi
 done
+
+# A border already using the generated title must not get a second label.
+export TEST_BORDER_FORMAT='before #{@clawtab-agent-title} after'
+: >"$TEST_TMUX_OPTIONS"
+bash "$PLUGIN_DIR/clawtab.tmux"
+[ "$(grep -o 'clawtab-agent-title' "$TEST_TMUX_OPTIONS" | wc -l | tr -d ' ')" = 1 ]
 
 # Re-sourcing upgrades an existing auto-yes marker in place.
 export TEST_BORDER_FORMAT='#[align=right]#{?#{==:#{@clawtab-auto-yes},1},#[fg=green#,bold][Y]#[default],#{?#{||:#{m:*.*.*,#{pane_current_command}},#{||:#{m:*codex*,#{pane_current_command}},#{m:*claude*,#{pane_current_command}}}},#[fg=colour240][y]#[default],}}'

@@ -1139,13 +1139,7 @@ async fn peer_execute(sender: &str, request: Value, ctx: &JobContext) -> Result<
             let completed = hook.is_some_and(|hook| {
                 hook.state == crate::agent_hooks::HookAgentState::Idle
                     && hook.updated_at_ms > launched
-                    && if provider == ProcessProvider::Opencode {
-                        info.session_id.as_deref() == Some(hook.session_id.as_str())
-                            && crate::agent_session::opencode_completed_turn_at(&hook.session_id)
-                                .is_some_and(|time| time > launched)
-                    } else {
-                        hook.event == "stop"
-                    }
+                    && hook.event == "stop"
             });
             return Ok(json!({"complete":completed}));
         }

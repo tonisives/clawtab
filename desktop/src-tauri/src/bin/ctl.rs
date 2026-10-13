@@ -995,7 +995,8 @@ async fn main() {
             let pane_display_name = resolve_tmux_pane_format(&pane_id, "#{@clawtab-display-name}");
             let display_name = (!pane_display_name.is_empty())
                 .then_some(pane_display_name.as_str())
-                .or_else(|| process_override.and_then(|meta| meta.display_name.as_deref()));
+                .or_else(|| process_override.and_then(|meta| meta.display_name.as_deref()))
+                .or(info.title.as_deref());
             let first_query = process_override
                 .and_then(|meta| meta.first_query.as_ref())
                 .or(info.first_query.as_ref());

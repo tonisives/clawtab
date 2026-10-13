@@ -518,7 +518,9 @@ fn build_detected_process(
         pane_id: row.pane_id.to_string(),
         cwd: row.cwd.to_string(),
         version,
-        display_name: override_meta.and_then(|meta| meta.display_name.clone()),
+        display_name: override_meta
+            .and_then(|meta| meta.display_name.clone())
+            .or(session_info.title),
         pane_title: row.pane_title.clone(),
         provider: provider.as_str().to_string(),
         model_id: session_info.model_id,

@@ -3,7 +3,9 @@ use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::process::{Command, Output};
 
+mod agent_titles;
 mod window_name;
+pub use agent_titles::sync_agent_titles;
 pub use window_name::next_ct_window_name;
 mod group_session;
 pub use group_session::find_group_session;

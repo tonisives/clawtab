@@ -308,7 +308,8 @@ fn build_remote(
         display_name: row
             .display_name
             .clone()
-            .or_else(|| override_meta.and_then(|meta| meta.display_name.clone())),
+            .or_else(|| override_meta.and_then(|meta| meta.display_name.clone()))
+            .or(session_info.title),
         pane_title: row.pane_title.clone(),
         version: if is_semver(row.command) {
             row.command.to_string()

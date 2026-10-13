@@ -14,6 +14,7 @@ use std::time::{Duration, Instant, SystemTime};
 
 struct CodexThreadInfo {
     id: String,
+    name: Option<String>,
     created_at: i64,
     first_user_message: String,
     rollout_path: Option<String>,
@@ -101,6 +102,7 @@ fn resolve_session_info_with_details(
     };
 
     info.session_id = Some(thread.id.clone());
+    info.title = thread.name.and_then(normalize_optional_owned);
     info.first_query = normalize_optional_owned(thread.first_user_message);
     info.last_query = read_codex_last_query(&thread.id);
 
@@ -325,7 +327,7 @@ fn find_codex_thread_id_by_pid(pid: &str, process_start_epoch: Option<i64>) -> O
 
 fn cached_codex_thread_id_by_pid(pid: &str, process_start_epoch: Option<i64>) -> Option<String> {
     const THREAD_ID_HIT_CACHE_TTL: Duration = Duration::from_secs(300);
-    const THREAD_ID_MISS_CACHE_TTL: Duration = Duration::from_secs(30);
+    const THREAD_ID_MISS_CACHE_TTL: Duration = Duration::from_secs(2);
 
     let mut cache = thread_id_cache().lock();
     if let Some(cached) = cache.get(pid) {
@@ -356,13 +358,27 @@ fn cached_codex_thread_id_by_pid(pid: &str, process_start_epoch: Option<i64>) ->
 fn read_codex_thread(thread_id: &str) -> Option<CodexThreadInfo> {
     let db_path = latest_codex_sqlite("state_")?;
     let conn = Connection::open(db_path).ok()?;
+    read_codex_thread_from_db(&conn, thread_id)
+}
+
+fn read_codex_thread_from_db(conn: &Connection, thread_id: &str) -> Option<CodexThreadInfo> {
+    // `name` is the generated label shown in Codex's agents list. Older
+    // schemas only have `title`, which can be the entire initial prompt.
+    let name_column = if conn.prepare("select name from threads limit 0").is_ok() {
+        "name"
+    } else {
+        "null"
+    };
     conn.query_row(
-        "select id, created_at, first_user_message, rollout_path
-         from threads where id = ?1 limit 1",
+        &format!(
+            "select id, created_at, first_user_message, rollout_path, {name_column}
+         from threads where id = ?1 limit 1"
+        ),
         [thread_id],
         |row| {
             Ok(CodexThreadInfo {
                 id: row.get(0)?,
+                name: row.get(4).ok().flatten(),
                 created_at: row.get(1)?,
                 first_user_message: row.get(2)?,
                 rollout_path: row.get(3).ok(),
@@ -770,6 +786,46 @@ fn read_codex_rollout_messages(path: &PathBuf) -> (Option<String>, Option<String
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn generated_names_arrive_after_session_creation_and_older_schemas_still_resolve() {
+        let conn = rusqlite::Connection::open_in_memory().expect("database");
+        conn.execute_batch("create table threads (id text, created_at integer, first_user_message text, rollout_path text);
+            insert into threads values ('thread', 1, 'A very long initial prompt', null);").expect("fixtures");
+        let thread = super::read_codex_thread_from_db(&conn, "thread").expect("thread");
+        assert!(thread.name.is_none());
+        assert_eq!(thread.first_user_message, "A very long initial prompt");
+        conn.execute_batch("alter table threads add column name text;")
+            .expect("schema");
+        assert!(super::read_codex_thread_from_db(&conn, "thread")
+            .expect("thread")
+            .name
+            .is_none());
+        conn.execute(
+            "update threads set name = 'Repair state' where id = 'thread'",
+            [],
+        )
+        .expect("generated name");
+        assert_eq!(
+            super::read_codex_thread_from_db(&conn, "thread")
+                .expect("thread")
+                .name
+                .as_deref(),
+            Some("Repair state")
+        );
+        conn.execute(
+            "update threads set name = 'Updated name' where id = 'thread'",
+            [],
+        )
+        .expect("rename");
+        assert_eq!(
+            super::read_codex_thread_from_db(&conn, "thread")
+                .expect("thread")
+                .name
+                .as_deref(),
+            Some("Updated name")
+        );
+    }
+
     #[test]
     fn daemon_session_titles_require_unique_names_in_the_pane_directory() {
         let conn = rusqlite::Connection::open_in_memory().expect("database");

@@ -43,6 +43,7 @@ struct CachedMessages {
     last: Option<String>,
     token_count: Option<u64>,
     model_id: Option<String>,
+    title: Option<String>,
 }
 
 fn jsonl_cache() -> &'static Mutex<HashMap<PathBuf, CachedMessages>> {
@@ -101,11 +102,12 @@ pub(super) fn resolve_session_info(
         .join(&project_dir);
     let jsonl_path = project_path.join(format!("{}.jsonl", session.session_id));
 
-    let (first, last, token_count, model_id) = read_session_messages(&jsonl_path);
+    let (first, last, token_count, model_id, title) = read_session_messages(&jsonl_path);
     info.first_query = first;
     info.last_query = last;
     info.token_count = token_count;
     info.model_id = model_id;
+    info.title = title;
 
     info
 }
@@ -126,12 +128,18 @@ fn is_claude_command(command: &str) -> bool {
     command.contains("claude") && !command.contains("Claude.app")
 }
 
-fn read_session_messages(
-    path: &PathBuf,
-) -> (Option<String>, Option<String>, Option<u64>, Option<String>) {
+type SessionMessages = (
+    Option<String>,
+    Option<String>,
+    Option<u64>,
+    Option<String>,
+    Option<String>,
+);
+
+fn read_session_messages(path: &PathBuf) -> SessionMessages {
     let metadata = match fs::metadata(path) {
         Ok(metadata) => metadata,
-        Err(_) => return (None, None, None, None),
+        Err(_) => return (None, None, None, None, None),
     };
     let modified = metadata.modified().ok();
     let len = metadata.len();
@@ -145,6 +153,7 @@ fn read_session_messages(
                     cached.last.clone(),
                     cached.token_count,
                     cached.model_id.clone(),
+                    cached.title.clone(),
                 );
             }
         }
@@ -154,6 +163,7 @@ fn read_session_messages(
     let last = read_last_user_message(path);
     let token_count = read_latest_token_count(path);
     let model_id = read_latest_model(path);
+    let title = read_session_title(path);
     let last = if first.is_some() && first == last {
         None
     } else {
@@ -172,12 +182,25 @@ fn read_session_messages(
                 last: last.clone(),
                 token_count,
                 model_id: model_id.clone(),
+                title: title.clone(),
             },
             SESSION_CACHE_MAX_ENTRIES,
         );
     }
 
-    (first, last, token_count, model_id)
+    (first, last, token_count, model_id, title)
+}
+
+fn read_session_title(path: &std::path::Path) -> Option<String> {
+    let read_title = |kind: &str, field: &str| {
+        super::common::read_latest_jsonl(path, |value| {
+            if value.get("type")?.as_str()? != kind {
+                return None;
+            }
+            super::common::normalize_optional_str(value.get(field)?.as_str()?)
+        })
+    };
+    read_title("custom-title", "customTitle").or_else(|| read_title("ai-title", "aiTitle"))
 }
 
 fn read_first_user_message(path: &PathBuf) -> Option<String> {
@@ -378,6 +401,49 @@ fn read_latest_model(path: &std::path::Path) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn generated_titles_refresh_and_custom_names_take_priority() {
+        use std::io::Write;
+        let directory = tempfile::tempdir().expect("tempdir");
+        let path = directory.path().join("session.jsonl");
+        std::fs::write(
+            &path,
+            "{\"type\":\"user\",\"message\":{\"content\":\"initial prompt\"}}\n",
+        )
+        .expect("session");
+        assert!(super::read_session_messages(&path).4.is_none());
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .expect("file");
+        writeln!(
+            file,
+            "{}",
+            r#"{"type":"ai-title","aiTitle":"Generated title"}"#
+        )
+        .expect("append");
+        assert_eq!(
+            super::read_session_messages(&path).4.as_deref(),
+            Some("Generated title")
+        );
+        writeln!(
+            file,
+            "{}",
+            r#"{"type":"custom-title","customTitle":"My chosen name"}"#
+        )
+        .expect("append");
+        writeln!(
+            file,
+            "{}",
+            r#"{"type":"ai-title","aiTitle":"New generated title"}"#
+        )
+        .expect("append");
+        assert_eq!(
+            super::read_session_messages(&path).4.as_deref(),
+            Some("My chosen name")
+        );
+    }
+
     #[test]
     fn reads_latest_assistant_model_and_ignores_synthetic_messages() {
         let directory = tempfile::tempdir().expect("tempdir");
