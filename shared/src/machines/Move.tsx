@@ -191,6 +191,7 @@ export let MovePanel = ({ paneId, onClose }: { paneId: string; onClose: () => vo
   return <View style={styles.page}>
     <Text style={styles.title}>Move from {sourceName}</Text>
     <Text style={styles.hint}>Continue this conversation on another machine. Credentials stay on their current machines. Once the handoff is verified, the original agent stops and the remote waits for your next message.</Text>
+    <Text style={styles.hint}>Job definitions and schedules stay on the source machine. Move transfers the current conversation.</Text>
     <AddMachineButton />
     {!targets.length && <Text style={styles.hint}>Add another machine to choose a destination.</Text>}
     {!running && targets.map((machine) => {

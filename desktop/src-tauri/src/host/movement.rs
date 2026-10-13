@@ -112,7 +112,10 @@ pub fn pane_locked(pane: &str) -> bool {
         let Ok(launch) = security::read_json::<Value>(&path.join("move-launch.json")) else {
             return false;
         };
-        if launch["pane_id"] != pane {
+        if launch["pane_id"] != pane
+            && !tmux(&["display-message", "-p", "-t", pane, "#{session_name}"])
+                .is_ok_and(|name| launch["tmux_session"] == name)
+        {
             return false;
         }
         if security::read_json::<Value>(&path.join("move-committed.json"))
@@ -1064,9 +1067,10 @@ async fn peer_execute(sender: &str, request: Value, ctx: &JobContext) -> Result<
             return Err("Target move has not been accepted".into());
         }
     }
-    if action == "abort" {
+    if matches!(action, "abort" | "stop_setup") {
         let id = id.to_owned();
-        return tokio::task::spawn_blocking(move || abort_target(&id))
+        let setup_only = action == "stop_setup";
+        return tokio::task::spawn_blocking(move || stop_target(&id, setup_only))
             .await
             .map_err(|_| "Target recovery stopped")?;
     }
@@ -1113,7 +1117,8 @@ async fn peer_execute(sender: &str, request: Value, ctx: &JobContext) -> Result<
             .and_then(ProcessProvider::from_name)
             .ok_or("Invalid target provider")?;
         let pid = tmux(&["display-message", "-p", "-t", &pane, "#{pane_pid}"])?;
-        if launch["pane_pid"] != pid
+        if launch["pane_started"].as_i64() != ProcessSnapshot::capture().start_epoch_for_pid(&pid)
+            || launch["pane_pid"] != pid
             || tmux(&["display-message", "-p", "-t", &pane, "#{session_name}"])?
                 != launch["tmux_session"].as_str().unwrap_or_default()
         {
@@ -1213,7 +1218,7 @@ fn check_secrets(request: &Value, ctx: &JobContext) -> Result<Vec<(String, Strin
         .collect()
 }
 
-fn abort_target(id: &str) -> Result<Value, String> {
+fn stop_target(id: &str, setup_only: bool) -> Result<Value, String> {
     use std::os::{fd::AsRawFd, unix::fs::OpenOptionsExt};
     let directory = crate::config::config_dir()
         .ok_or("Configuration unavailable")?
@@ -1231,7 +1236,11 @@ fn abort_target(id: &str) -> Result<Value, String> {
     if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX) } != 0 {
         return Err("Target recovery lock unavailable".into());
     }
-    let marker = directory.join("move-aborted.json");
+    let marker = directory.join(if setup_only {
+        "setup-stopped.json"
+    } else {
+        "move-aborted.json"
+    });
     let mut roots: Vec<String> = Vec::new();
     let mut processes: Vec<PausedProcess> = if marker.exists() {
         let saved: Value = security::read_json(&marker)?;
@@ -1244,7 +1253,12 @@ fn abort_target(id: &str) -> Result<Value, String> {
             .map_err(|_| "Invalid target recovery record")?
     } else {
         let mut processes = Vec::new();
-        for file in ["setup-launch.json", "move-launch.json"] {
+        let files: &[&str] = if setup_only {
+            &["setup-launch.json"]
+        } else {
+            &["setup-launch.json", "move-launch.json"]
+        };
+        for file in files {
             let path = directory.join(file);
             match path.try_exists() {
                 Ok(false) => continue,
@@ -1261,6 +1275,14 @@ fn abort_target(id: &str) -> Result<Value, String> {
             let snapshot = ProcessSnapshot::capture();
             if snapshot.command_for_pid(expected_pid).is_none() {
                 continue;
+            }
+            let expected_start = launch["pane_started"]
+                .as_i64()
+                .ok_or("Target process start identity unavailable")?;
+            if snapshot.start_epoch_for_pid(expected_pid) != Some(expected_start) {
+                return Err(
+                    "Target process identity changed; refusing to stop a reused PID".into(),
+                );
             }
             if tmux(&["display-message", "-p", "-t", pane, "#{pane_pid}"])? != expected_pid
                 || tmux(&["display-message", "-p", "-t", pane, "#{session_name}"])?

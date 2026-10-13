@@ -84,6 +84,26 @@ pub(super) async fn spawn_agent_pane(
             }
         };
 
+    if env_vars
+        .iter()
+        .any(|(key, _)| matches!(key.as_str(), "CLAWTAB_JOB_POLICY" | "CLAWTAB_RESULT_FILE"))
+    {
+        let result = std::process::Command::new("tmux")
+            .args([
+                "set-option",
+                "-p",
+                "-t",
+                &pane_id,
+                "@clawtab-move-restricted",
+                "1",
+            ])
+            .output();
+        if !result.is_ok_and(|result| result.status.success()) {
+            let _ = tmux::kill_pane(&pane_id);
+            remove_prompt_file(prompt_file.as_deref());
+            return Err("Could not mark this run's machine-local restrictions".into());
+        }
+    }
     let send_cmd = build_send_cmd(
         provider,
         &work_dir,

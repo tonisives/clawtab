@@ -22,6 +22,8 @@ The daemon waits for the selected conversation to reach a verified idle boundary
 
 The target imports into an isolated Git worktree, resumes the existing conversation without sending a new prompt, and proves its process, native conversation identity, directory, and idle state. Only then does the source retire its original processes. Target input remains locked until that retirement is confirmed. The target waits for the next user message and does not depend on the source remaining online afterward.
 
+Job definitions and schedules remain on the source. Move transfers the current conversation; it does not migrate recurring jobs or their future runs.
+
 Optional dependency setup runs as a separate target conversation after a separate confirmation. Required project secrets must already exist on the target. No secret container, provider credentials, global agent configuration, or global history database is synchronized. Automatic secret synchronization is deferred.
 
 Ignored files, dependency directories, credential files, environment files, private keys, and known agent configuration directories are excluded from working-file transfer. Review the preview: committed Git history and conversation text can still contain sensitive content. Unsaved input drafts are not transferred. A conflicting native conversation already present on the target is rejected rather than overwritten; moving back to an old source may therefore require resolving that collision first.

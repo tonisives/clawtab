@@ -135,13 +135,13 @@ class WorkerTests(unittest.TestCase):
         session = {'provider': 'codex', 'session_id': self.sid, 'cwd': str(self.repo), 'path': str(self.repo), 'model': None, 'effort': None}
         self.worker['import_session'] = lambda _: session
         calls = []
-        self.worker['run'] = lambda args, *a, **k: calls.append(args) or b'%123 456\n'
+        self.worker['run'] = lambda args, *a, **k: calls.append(args) or (b'Tue Oct 13 10:00:00 2026\n' if args[0] == 'ps' else b'%123 456\n')
         directory = self.home / '.config/clawtab/operations' / self.operation
         directory.mkdir(parents=True)
         request = {'operation_id': self.operation, 'setup': False, 'secret_keys': []}
         first = self.worker['launch'](request)
         self.assertEqual(first, self.worker['launch'](request))
-        self.assertEqual(len(calls), 1)
+        self.assertEqual(len(calls), 2)
         launcher = (directory / 'move-launcher.py').read_text()
         self.assertIn("'resume'", launcher)
         self.assertIn("'--no-daemon'", launcher)
@@ -162,6 +162,15 @@ class WorkerTests(unittest.TestCase):
         self.worker['import_session'] = lambda _: {'provider': 'opencode'}
         with self.assertRaisesRegex(ValueError, 'not verified'):
             self.worker['launch']({'operation_id': self.operation})
+
+    def test_setup_stop_barrier_preserves_original_handoff(self):
+        directory = self.home / '.config/clawtab/operations' / self.operation
+        directory.mkdir(parents=True)
+        (directory / 'setup-stopped.json').write_text('{"state":"stopped"}')
+        self.worker['import_session'] = lambda _: self.fail('Stopped setup must not launch again')
+        with self.assertRaisesRegex(ValueError, 'setup was stopped'):
+            self.worker['launch']({'operation_id': self.operation, 'setup': True})
+        self.assertFalse((directory / 'move-aborted.json').exists())
 
     def test_cleanup_retains_recovery_metadata(self):
         directory = self.home / '.config/clawtab/operations' / self.operation

@@ -1,5 +1,6 @@
 """Provider-scoped snapshots and remote resume. Never reads login credentials."""
 import base64
+import datetime
 import fcntl
 import json
 import os
@@ -325,6 +326,8 @@ def launch(request):
     directory = Path.home() / '.config/clawtab/operations' / operation
     if (directory / 'move-aborted.json').exists():
         raise ValueError('This move was aborted; create a new move instead of launching it again')
+    if request.get('setup') and (directory / 'setup-stopped.json').exists():
+        raise ValueError('Remote setup was stopped; it cannot be launched again')
     state_file = directory / ('setup-launch.json' if request.get('setup') else 'move-launch.json')
     if state_file.exists(): return json.loads(state_file.read_text())
     session = import_session(request)
@@ -361,7 +364,9 @@ def launch(request):
     command = shlex.join(['python3', str(launcher)])
     pane, pid = run(['tmux', 'new-session', '-d', '-s', name, '-c', session['cwd'], '-P', '-F', '#{pane_id} #{pane_pid}', command]).decode().strip().split()
     if not re.fullmatch(r'%[0-9]+', pane) or not pid.isdigit(): raise ValueError('Invalid target pane acknowledgement')
-    value = {'state': 'launched', 'pane_id': pane, 'pane_pid': pid, 'tmux_session': name, 'launched_at': launched_at, **session}
+    started = run(['ps', '-p', pid, '-o', 'lstart='], env={**os.environ, 'LC_ALL': 'C'}).decode().strip()
+    pane_started = int(datetime.datetime.strptime(started, '%a %b %d %H:%M:%S %Y').timestamp())
+    value = {'state': 'launched', 'pane_id': pane, 'pane_pid': pid, 'pane_started': pane_started, 'tmux_session': name, 'launched_at': launched_at, **session}
     persist(state_file, value)
     return value
 
@@ -373,21 +378,6 @@ def dispatch(request):
     if action == 'prepare': return prepare(request)
     if action == 'import': return import_session(request)
     if action == 'launch': return launch(request)
-    if action == 'stop_setup':
-        operation = str(uuid.UUID(request['operation_id']))
-        directory = Path.home() / '.config/clawtab/operations' / operation
-        marker = directory / 'setup-launch.json'
-        if not marker.exists(): return {'stopped': True}
-        name = 'clawtab-setup-' + operation
-        state = json.loads(marker.read_text())
-        if state.get('tmux_session') != name: raise ValueError('Unexpected remote setup identity')
-        exists = subprocess.run(['tmux', 'has-session', '-t', '=' + name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        if exists.returncode == 0:
-            run(['tmux', 'kill-session', '-t', '=' + name])
-            if subprocess.run(['tmux', 'has-session', '-t', '=' + name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
-                raise ValueError('Remote setup has not stopped')
-        (directory / 'setup-launcher.py').unlink(missing_ok=True)
-        return {'stopped': True}
     if action == 'cleanup':
         directory = Path.home() / '.config/clawtab/operations' / str(uuid.UUID(request['operation_id']))
         for name in ('payload.zip', 'incoming.zip', 'payload.partial', 'history.bundle', 'staged.patch', 'unstaged.patch', 'opencode-session.json', 'setup-launcher.py', 'move-launcher.py'):
