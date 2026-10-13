@@ -1225,6 +1225,24 @@ fn codex_working_status(screen: &str) -> bool {
         && status.join(" ").contains("esc to interrupt")
 }
 
+/// Claude's bordered composer separates its live footer from transcript output.
+/// The interrupt hint remains visible during tools and thinking, even when the
+/// spinner does not repaint. A recognized idle footer also clears recent activity.
+fn claude_working_status(screen: &str) -> Option<bool> {
+    let plain = strip_ansi(screen);
+    let lines: Vec<&str> = plain.lines().map(str::trim).collect();
+    let composer = lines
+        .iter()
+        .rposition(|line| line.starts_with('\u{276f}'))?;
+    let is_border =
+        |line: &&str| line.chars().count() >= 3 && line.chars().all(|ch| ch == '\u{2500}');
+    if !lines[..composer].last().is_some_and(is_border) {
+        return None;
+    }
+    let footer = composer + 1 + lines[composer + 1..].iter().position(is_border)? + 1;
+    Some(lines[footer..].join(" ").contains("esc to interrupt"))
+}
+
 impl ActivityTracker {
     #[cfg(test)]
     fn update(
@@ -1330,11 +1348,14 @@ impl ActivityTracker {
                 now.duration_since(*changed_at) <= RECENT_ACTIVITY_WINDOW
             });
             let asking = asking_panes.contains(pane_id);
+            let working = match provider {
+                ProcessProvider::Claude => claude_working_status(screen).unwrap_or(recently_active),
+                ProcessProvider::Codex => recently_active || codex_working_status(screen),
+                _ => recently_active,
+            };
             activity.push(AgentActivity {
                 pane_id: pane_id.clone(),
-                working: (recently_active
-                    || (*provider == ProcessProvider::Codex && codex_working_status(screen)))
-                    && !asking,
+                working: working && !asking,
                 asking,
             });
         }
@@ -1721,6 +1742,72 @@ mod tests {
             now + Duration::from_secs(11),
         );
         assert!(!expired[0].working);
+    }
+
+    #[test]
+    fn claude_live_footer_tracks_busy_idle_and_questions() {
+        let now = Instant::now();
+        let mut tracker = ActivityTracker::default();
+        let busy = "Tool output\n\nReticulating (4m 46s)\n\n\u{2500}\u{2500}\u{2500}\n\u{276f} \n\u{2500}\u{2500}\u{2500}\n  auto mode on (shift+tab to cycle) / esc to interrupt / agents";
+        let mut process = agent_with_layout("%165", "", "", 100, 80, 24);
+        record_pane_capture(&mut process, busy, 5);
+        for elapsed in [0, 2, 60, 1_500] {
+            let activity = tracker.update(
+                std::slice::from_ref(&process),
+                &HashSet::new(),
+                now + Duration::from_secs(elapsed),
+            );
+            assert!(activity[0].working);
+            assert!(!activity[0].asking);
+        }
+
+        let activity = tracker.update(
+            std::slice::from_ref(&process),
+            &HashSet::from(["%165".to_string()]),
+            now + Duration::from_secs(1_501),
+        );
+        assert!(!activity[0].working);
+        assert!(activity[0].asking);
+
+        // Finishing a tool can grow scrollback just as Claude becomes idle.
+        // The footer must take precedence over the recent-output heuristic.
+        process.9 += 1;
+        record_pane_capture(
+            &mut process,
+            "Task finished\n\n\u{2500}\u{2500}\u{2500}\n\u{276f} \n\u{2500}\u{2500}\u{2500}\n  auto mode on (shift+tab to cycle) / agents",
+            3,
+        );
+        let activity = tracker.update(
+            &[process],
+            &HashSet::new(),
+            now + Duration::from_secs(1_502),
+        );
+        assert!(!activity[0].working);
+        assert!(!activity[0].asking);
+    }
+
+    #[test]
+    fn claude_live_footer_handles_wrapping_and_ignores_input_and_transcript() {
+        assert_eq!(
+            super::claude_working_status(
+                "Thinking\n\u{2500}\u{2500}\u{2500}\n\u{276f} queued follow-up\n  second input row\n\u{2500}\u{2500}\u{2500}\n\x1b[2m  auto mode on / esc to\ninterrupt / agents\x1b[0m"
+            ),
+            Some(true)
+        );
+        assert_eq!(
+            super::claude_working_status(
+                "Previously: esc to interrupt\n\u{2500}\u{2500}\u{2500}\n\u{276f} explain esc to interrupt\n\u{2500}\u{2500}\u{2500}\n  auto mode on"
+            ),
+            Some(false)
+        );
+        for screen in [
+            "Reticulating (4m 46s) / esc to interrupt",
+            "Transcript\n\u{276f} example prompt\nesc to interrupt",
+            "\u{2500}\u{2500}\u{2500}\n\u{276f} truncated input box",
+            "\u{2500}\u{2500}\u{2500}\n\u{276f} prompt\n\u{2500}\u{2500}\u{2500}\n  auto mode on\n\nQuoted example:\n\u{276f} esc to interrupt",
+        ] {
+            assert_eq!(super::claude_working_status(screen), None);
+        }
     }
 
     #[test]
