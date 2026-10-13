@@ -2,6 +2,7 @@ import type { SavedJobGroup } from "../util/jobGroups"
 import { useSyncExternalStore } from "react"
 import type { DetectedProcess } from "../types/process"
 import type { RemoteJob, JobStatus } from "../types/job"
+import { machineSecurity, signedCommand } from "./Security"
 
 export type Machine = {
   connection_id?: string
@@ -75,6 +76,9 @@ let pending = new Map<
     resolve: (value: MachineMessage) => void
     reject: (error: Error) => void
     timer: ReturnType<typeof setTimeout>
+    machine?: string
+    secure?: boolean
+    relayControl?: boolean
   }
 >()
 let socket: WebSocket | null = null
@@ -135,7 +139,7 @@ export let executionFor = (machine: string, pane: string) =>
     (p: MachineMessage) => p.pane_id === pane,
   )?.execution_id
 
-export let machineRequest = (
+export let machineRequest = async (
   machine: string,
   message: MachineMessage,
   timeout = 30_000,
@@ -146,29 +150,45 @@ export let machineRequest = (
     !state.machines.some((m) => m.id === machine && m.online)
   )
     return Promise.reject(new Error("Machine is offline"))
-  let requestId = newOperationId()
+  let connection = socket
+  let secure = message.request?.action === "secure" || state.machines.some((m) => m.id === machine && m.capabilities?.includes("signed_commands_v1"))
+  let requestId = secure ? machineSecurity().randomId() : newOperationId()
   let payload: MachineMessage = { ...message, id: requestId }
   if (typeof payload.pane_id === "string")
     payload.execution_id = executionFor(machine, payload.pane_id)
   if (["run_agent", "run_job", "create_job"].includes(payload.type))
     payload.operation_id ??= newOperationId()
+  if (secure) payload = await signedCommand(machine, payload)
+  if (socket !== connection || connection.readyState !== WebSocket.OPEN)
+    throw new Error("Connection changed; reopen Move or check operation status")
   return new Promise((resolve, reject) => {
     let timer = setTimeout(() => {
       pending.delete(requestId)
       reject(new Error("Machine request timed out; check operation status before retrying"))
     }, timeout)
-    pending.set(requestId, { resolve, reject, timer })
-    socket?.send(
+    pending.set(requestId, { resolve, reject, timer, machine, secure, relayControl: ["take_control", "renew_control", "release_control"].includes(message.type) })
+    connection.send(
       JSON.stringify({ version: 2, machine_id: machine, request_id: requestId, message: payload }),
     )
   })
+}
+export let secureHostRequest = async (machine: string, request: MachineMessage) => {
+  let security = machineSecurity()
+  let requestId = security.randomId()
+  let envelope = await security.seal(machine, { machine_id: machine, request_id: requestId, request })
+  let response = await machineHostRequest(machine, { action: "secure", envelope })
+  if (!response?.secure) throw new Error("Machine did not return an encrypted response; Secure Move cannot continue")
+  let value = await security.open(machine, response.secure)
+  if (value.request_id !== requestId) throw new Error("Encrypted response belongs to another request")
+  if (value.response?.error) throw new Error(value.response.error)
+  return value.response.result as MachineMessage
 }
 export let machineHostRequest = async (
   machine: string,
   request: MachineMessage,
   timeout = 30_000,
 ) => {
-  let response = request.action?.startsWith("transfer_")
+  let response = request.action?.startsWith("transfer_") && !state.machines.some((item) => item.id === machine && item.capabilities?.includes("signed_commands_v1"))
     ? await transferRequest(machine, request, timeout)
     : await machineRequest(machine, { type: "host_request", request }, timeout)
   if (response.error) throw new Error(response.error)
@@ -281,7 +301,7 @@ export let connectMachines = (getUrl: () => Promise<string>, preferencesApi?: Pr
         update({ connected: true, error: null })
         void refreshPreferences()
       }
-      ws.onmessage = (event) => {
+      ws.onmessage = async (event) => {
         if (socket !== ws) return
         lastReceived = Date.now()
         let data: MachineMessage
@@ -289,6 +309,20 @@ export let connectMachines = (getUrl: () => Promise<string>, preferencesApi?: Pr
           data = JSON.parse(event.data)
         } catch {
           return
+        }
+        let expected = data.request_id ? pending.get(data.request_id) : undefined
+        if (expected?.machine && expected.machine !== data.machine_id) return
+        let protectedReply = data.message?.type === "secure_response"
+        if (protectedReply) {
+          try {
+            let value = await machineSecurity().open(data.machine_id, data.message.envelope)
+            if (socket !== ws || value.request_id !== data.request_id || !pending.has(data.request_id)) return
+            data.message = value.response
+          } catch {
+            let waiter = pending.get(data.request_id)
+            if (waiter) { clearTimeout(waiter.timer); pending.delete(data.request_id); waiter.reject(new Error("Encrypted response authentication failed; verify the machine identity")) }
+            return
+          }
         }
         if (data.type === "machines") {
           clearTimeout(watchdog)
@@ -328,7 +362,9 @@ export let connectMachines = (getUrl: () => Promise<string>, preferencesApi?: Pr
         if (request) {
           pending.delete(data.request_id)
           clearTimeout(request.timer)
-          if (
+          if (request.secure && !(request.relayControl && data.message?.type === "control_ack") && !protectedReply && !data.message?.result?.secure && data.message?.type !== "error" && data.type !== "machine_error")
+            request.reject(new Error("Machine returned an unauthenticated response"))
+          else if (
             data.type === "machine_error" ||
             data.message?.error ||
             data.message?.success === false ||

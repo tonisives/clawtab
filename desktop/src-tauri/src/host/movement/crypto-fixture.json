@@ -1,0 +1,15 @@
+{
+  "identity": {
+    "signing_key": "6kpsY+KcUgq+9VB7Ey7F+ZVHdq6+vnuSQh7qaRRG0iw=",
+    "box_key": "pOCSkrZRwni5dyxWn1+puxPZBrRqtoyd+dwrRAn4ogk="
+  },
+  "fingerprint": "2897ac739df948b7c62ad4fffe96ab3b74906ae9ec193564722d4f4beb2aa346",
+  "nonce": "AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMD",
+  "ciphertext": "q+e2Ug9WM/uS3y1+pWLX9pgJDWpaY1/dUF9PE1iQ4p2jItTAGnEoyHQp1jcHAAlHMKC/lmOL1cY0W2clPrJBk3XFp5dWNDvgBC/y",
+  "plaintext": {
+    "request_id": "fixture",
+    "request": {
+      "action": "move_status"
+    }
+  }
+}

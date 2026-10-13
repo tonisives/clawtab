@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react"
-import { BackHandler, Modal, SafeAreaView, Pressable, ScrollView, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native"
+import { Animated, BackHandler, Modal, SafeAreaView, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions, type StyleProp, type ViewStyle } from "react-native"
 import { colors } from "../theme/colors"
 
 export type MachineOnboardingContent = ReactNode | ((close: () => void) => ReactNode)
@@ -10,6 +10,7 @@ type Page = { id: number; title: string; content: MachineOnboardingContent }
 let OnboardingContext = createContext<{ content?: MachineOnboardingContent; management?: MachineOnboardingContent; chrome?: MachineOnboardingChrome }>({})
 let StackContext = createContext<{ push: (page: Omit<Page, "id">) => void } | null>(null)
 export let MachineNavigationProvider = StackContext.Provider
+export let useMachineNavigation = () => useContext(StackContext)
 
 export let MachineOnboardingProvider = ({ content, management, chrome, children }: { content?: MachineOnboardingContent; management?: MachineOnboardingContent; chrome?: MachineOnboardingChrome; children: ReactNode }) => {
   let parent = useContext(OnboardingContext)
@@ -34,6 +35,12 @@ export let MachineModal = (props: MachineModalProps) => {
 
 let FallbackMachineModal = ({ title, children, overlay, onClose }: MachineModalProps) => {
   let [pages, setPages] = useState<Page[]>([])
+  let width = useWindowDimensions().width
+  let slide = useRef(new Animated.Value(width)).current
+  useEffect(() => {
+    slide.setValue(width)
+    Animated.timing(slide, { toValue: 0, duration: 180, useNativeDriver: true }).start()
+  }, [pages.length, slide])
   let nextPage = useRef(0)
   let push = (page: Omit<Page, "id">) => {
     let entry = { ...page, id: ++nextPage.current }
@@ -45,8 +52,9 @@ let FallbackMachineModal = ({ title, children, overlay, onClose }: MachineModalP
     let subscription = BackHandler.addEventListener("hardwareBackPress", () => { dismiss(); return true })
     return () => subscription.remove()
   }, [dismiss])
-  return <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={dismiss}>
+  return <Modal visible animationType="none" presentationStyle="pageSheet" onRequestClose={dismiss}>
     <StackContext.Provider value={{ push }}>
+      <Animated.View style={[styles.screen, { transform: [{ translateX: slide }] }]}>
       <SafeAreaView style={styles.screen}>
         <View style={styles.header}>
           {pages.length > 0 ? <MachineActionButton label="Back" accessibilityLabel="Back" icon="back" onPress={back} /> : <View style={styles.headerSpacer} />}
@@ -61,6 +69,7 @@ let FallbackMachineModal = ({ title, children, overlay, onClose }: MachineModalP
         </View>
         {overlay}
       </SafeAreaView>
+      </Animated.View>
     </StackContext.Provider>
   </Modal>
 }

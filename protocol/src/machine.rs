@@ -16,6 +16,43 @@ pub struct MachineCommand {
 #[serde(tag = "action", rename_all = "snake_case")]
 pub enum HostRequest {
     Info,
+    Secure {
+        envelope: Value,
+    },
+    MoveSource {
+        pane_id: String,
+    },
+    MoveTargets,
+    MovePreflight {
+        pane_id: String,
+        execution_id: String,
+        target: String,
+        destination: String,
+    },
+    MoveStart {
+        operation_id: String,
+        pane_id: String,
+        execution_id: String,
+        target: String,
+        destination: String,
+        #[serde(default)]
+        setup: bool,
+    },
+    MoveStatus {
+        #[serde(default)]
+        operation_id: Option<String>,
+        #[serde(default)]
+        pane_id: Option<String>,
+    },
+    MoveCancel {
+        operation_id: String,
+    },
+    MoveRecover {
+        operation_id: String,
+    },
+    MoveRollback {
+        operation_id: String,
+    },
     JournalContext {
         query: JournalQuery,
     },

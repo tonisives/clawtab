@@ -8,6 +8,7 @@ use tokio::sync::Semaphore;
 
 const MAX_CONCURRENT_IPC_CONNECTIONS: usize = 64;
 const IPC_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+const HOST_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(660);
 const PLUGIN_HOST_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(65);
 const IPC_ACCEPT_ERROR_BACKOFF: std::time::Duration = std::time::Duration::from_millis(100);
 use tokio::sync::Mutex as AsyncMutex;
@@ -30,6 +31,13 @@ pub fn desktop_socket_path() -> PathBuf {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum IpcCommand {
+    HostRequest {
+        request: clawtab_protocol::HostRequest,
+    },
+    MoveTrust {
+        action: String,
+        value: serde_json::Value,
+    },
     Ping,
     ListJobs,
     RunJob {
@@ -244,6 +252,7 @@ pub enum PaneDirection {
 /// daemon never deserializes UI variants.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum DesktopIpcCommand {
+    OpenMachines,
     FocusPane {
         direction: PaneDirection,
     },
@@ -273,6 +282,7 @@ pub struct IpcRelayStatus {
 /// big response match regardless of which socket it talked to.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum IpcResponse {
+    HostResult(serde_json::Value),
     Pong,
     Ok,
     Jobs(Vec<JobSummary>),
@@ -463,7 +473,7 @@ where
     F: Fn(IpcCommand) -> Fut + Send + Sync + 'static,
     Fut: std::future::Future<Output = IpcResponse> + Send + 'static,
 {
-    run_server::<IpcCommand, IpcResponse, _, _>(daemon_socket_path(), IPC_REQUEST_TIMEOUT, handler)
+    run_server::<IpcCommand, IpcResponse, _, _>(daemon_socket_path(), HOST_REQUEST_TIMEOUT, handler)
         .await
 }
 
@@ -618,6 +628,13 @@ where
 }
 
 pub async fn send_command(cmd: IpcCommand) -> Result<IpcResponse, String> {
+    if matches!(cmd, IpcCommand::HostRequest { .. }) {
+        return tokio::time::timeout(HOST_REQUEST_TIMEOUT, send_inner(daemon_socket_path(), cmd))
+            .await
+            .map_err(|_| {
+                "Host request timed out; inspect operation status before retrying".to_string()
+            })?;
+    }
     send(daemon_socket_path(), cmd).await
 }
 

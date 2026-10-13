@@ -74,6 +74,18 @@ struct PollState {
 }
 
 pub async fn monitor_pane(params: MonitorParams) {
+    if params.resource_lease.is_some() || params.trigger_id.is_some() {
+        let _ = std::process::Command::new("tmux")
+            .args([
+                "set-option",
+                "-p",
+                "-t",
+                &params.pane_id,
+                "@clawtab-move-restricted",
+                "1",
+            ])
+            .output();
+    }
     let use_telegram = params.notify_target == NotifyTarget::Telegram;
     let use_app = params.notify_target == NotifyTarget::App;
     let started_at = std::time::Instant::now();
@@ -116,6 +128,25 @@ pub async fn monitor_pane(params: MonitorParams) {
     ) {
         let h = params.history.lock();
         let _ = h.update_log_path(&params.run_id, &path.to_string_lossy());
+    }
+    if crate::host::movement::retiring_pane(&params.pane_id) {
+        let finished_at = Utc::now().to_rfc3339();
+        let output =
+            format!("{full_output}\nConversation moved to another machine; continue there.");
+        let _ =
+            params
+                .history
+                .lock()
+                .update_finished(&params.run_id, &finished_at, None, &output, "");
+        params
+            .job_status
+            .lock()
+            .insert(params.slug.clone(), JobStatus::Idle);
+        crate::relay::push_status_update(&params.relay, &params.slug, &JobStatus::Idle);
+        if let Some(path) = params.agent_prompt_path.as_deref() {
+            crate::agent::remove_agent_prompt(path);
+        }
+        return;
     }
     let trigger_result = params
         .trigger_id

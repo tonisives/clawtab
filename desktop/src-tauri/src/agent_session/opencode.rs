@@ -42,7 +42,16 @@ pub(super) fn resolve_session_info(
         .and_then(|pid| snapshot.command_for_pid(pid))
         .and_then(parse_opencode_prompt_from_command);
 
-    let Some(session) = find_opencode_session(&cwd, prompt.as_deref(), process_start_epoch) else {
+    let explicit = opencode_pid
+        .as_deref()
+        .and_then(|pid| snapshot.command_for_pid(pid))
+        .and_then(parse_opencode_session_from_command);
+    let resolved = if let Some(id) = explicit {
+        find_explicit_session(&id, &cwd)
+    } else {
+        find_opencode_session(&cwd, prompt.as_deref(), process_start_epoch)
+    };
+    let Some(session) = resolved else {
         return info;
     };
 
@@ -78,9 +87,61 @@ pub(super) fn resolve_session_info(
 }
 
 fn opencode_db_path() -> PathBuf {
-    dirs::home_dir()
-        .unwrap_or_default()
-        .join(".local/share/opencode/opencode.db")
+    std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".local/share"))
+        .join("opencode/opencode.db")
+}
+
+fn parse_opencode_session_from_command(command: &str) -> Option<String> {
+    let words: Vec<&str> = command.split_whitespace().collect();
+    words.iter().enumerate().find_map(|(index, word)| {
+        let value = if matches!(*word, "--session" | "-s") {
+            words.get(index + 1).copied()
+        } else {
+            word.strip_prefix("--session=")
+        }?;
+        (value.starts_with("ses_")
+            && value.len() <= 256
+            && value
+                .bytes()
+                .all(|ch| ch.is_ascii_alphanumeric() || ch == b'_'))
+        .then(|| value.into())
+    })
+}
+fn find_explicit_session(id: &str, cwd: &str) -> Option<OpencodeSessionInfo> {
+    let conn = Connection::open(opencode_db_path()).ok()?;
+    conn.query_row("select id,title,time_created from session where id=?1 and (?2=directory or ?2 like directory || '/%')", [id,cwd], |row| Ok(OpencodeSessionInfo { id:row.get(0)?,title:row.get(1)?,time_created:row.get(2)? })).ok()
+}
+
+#[cfg(test)]
+mod move_tests {
+    use super::*;
+    #[test]
+    fn resumed_session_is_selected_explicitly_instead_of_by_creation_time() {
+        assert_eq!(
+            parse_opencode_session_from_command(
+                "opencode --session ses_fixture --model provider/model"
+            ),
+            Some("ses_fixture".into())
+        );
+        assert_eq!(
+            parse_opencode_session_from_command("opencode --session=ses_fixture"),
+            Some("ses_fixture".into())
+        );
+        assert_eq!(
+            parse_opencode_session_from_command("opencode -s ses_fixture"),
+            Some("ses_fixture".into())
+        );
+        assert_eq!(
+            parse_opencode_session_from_command("opencode --session ../../other"),
+            None
+        );
+        assert_eq!(
+            parse_opencode_session_from_command("opencode --prompt fixture"),
+            None
+        );
+    }
 }
 
 /// Find the opencode session belonging to a running process.
@@ -245,6 +306,11 @@ fn read_opencode_token_count(session_id: &str) -> Option<u64> {
     }
 
     None
+}
+
+pub(crate) fn completed_turn_at(session_id: &str) -> Option<u64> {
+    let conn = Connection::open(opencode_db_path()).ok()?;
+    conn.query_row("select max(json_extract(data,'$.time.completed')) from message where session_id=?1 and json_extract(data,'$.role')='assistant'", [session_id], |row| row.get(0)).ok()
 }
 
 fn find_opencode_child(parent_pid: &str, snapshot: Option<&ProcessSnapshot>) -> Option<String> {

@@ -46,6 +46,7 @@
     "react-native-screens": "~4.26.2",
     "react-native-web": "^0.21.0",
     "react-native-webview": "^13.16.1",
+    "tweetnacl": "1.0.3",
     "zustand": "^5.0.14"
   },
   "devDependencies": {

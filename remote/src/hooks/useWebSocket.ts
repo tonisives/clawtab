@@ -196,3 +196,4 @@ export let useWebSocket = () => {
   let send = useCallback((message: ClientMessage) => sendResource(message), [])
   return { send }
 }
+import "../lib/machineSecurity"

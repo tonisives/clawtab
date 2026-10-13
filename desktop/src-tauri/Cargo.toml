@@ -85,6 +85,9 @@ tokio-util = "0.7"
 gethostname = "1"
 base64 = "0.22"
 sha2 = "0.10"
+snow = "0.10"
+crypto_box = "0.9"
+ed25519-dalek = "2"
 libc = "0.2"
 notify = { version = "7", default-features = false, features = ["macos_fsevent"] }
 portable-pty = "0.8"
@@ -92,6 +95,7 @@ parking_lot = "0.12"
 rpassword = "7"
 
 [target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "3.6"
 objc2 = "0.5"
 objc2-app-kit = { version = "0.2", features = ["NSWindow", "NSResponder"] }
 objc2-foundation = { version = "0.2", features = ["NSString", "NSError", "NSDate", "NSBundle"] }

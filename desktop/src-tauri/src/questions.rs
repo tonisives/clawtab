@@ -1576,8 +1576,8 @@ fn record_pane_capture(process: &mut DetectedAgent, visible: &str, cursor_y: u16
 #[cfg(test)]
 mod tests {
     use super::{
-        collect_q_running_panes, evict_stale_cache_entries, filter_auto_yes_questions, find_yes_option,
-        parse_numbered_options, parse_opencode_buttons, record_pane_capture,
+        collect_q_running_panes, evict_stale_cache_entries, filter_auto_yes_questions,
+        find_yes_option, parse_numbered_options, parse_opencode_buttons, record_pane_capture,
         resolved_hook_activity, should_capture_question_screen, update_question_cache,
         ActivityTracker, DetectedAgent, HookAgentState, ProcessProvider,
     };
@@ -2143,11 +2143,15 @@ $ curl -s https://boards-api.greenhouse.io/v1/boards/slack/jobs | sed -n '1,40p'
     #[test]
     fn captures_codex_for_terminal_only_questions() {
         let idle = HookPaneState {
+            event: "stop".into(),
+            session_id: "fixture".into(),
             state: HookAgentState::Idle,
             attention: None,
             updated_at_ms: 1,
         };
         let working = HookPaneState {
+            event: "user_prompt_submit".into(),
+            session_id: "fixture".into(),
             state: HookAgentState::Working,
             attention: None,
             updated_at_ms: 2,

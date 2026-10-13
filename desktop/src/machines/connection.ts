@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { invoke } from "@tauri-apps/api/core"
 import { listen } from "@tauri-apps/api/event"
-import { connectMachines, machineErrorMessage, saveAccountPreferences } from "@clawtab/shared"
+import { configureMachineSecurity, configureMoveLocal, configureMoveNavigation, connectMachines, machineErrorMessage, saveAccountPreferences, resourceKey } from "@clawtab/shared"
 import type { AppSettings } from "../types"
 import { checkRemoteConnection, useRemoteConnection, watchRemoteConnection } from "./remoteConnection"
 let machineInvoke = async <T,>(command: string, args?: Record<string, unknown>): Promise<T> => {
@@ -17,6 +17,15 @@ let machineInvoke = async <T,>(command: string, args?: Record<string, unknown>):
   }
 }
 let localMachine: string | undefined
+configureMachineSecurity({
+  randomId: () => crypto.randomUUID(),
+  publicIdentity: () => invoke("machine_security", { action: "public", value: null }),
+  machines: () => invoke("machine_security", { action: "machines", value: null }),
+  pin: async (value) => { await invoke("machine_security", { action: "pin", value }) },
+  sign: (machine, message) => invoke("machine_security", { action: "sign", value: { machine, message } }),
+  seal: (machine, value) => invoke("machine_security", { action: "seal", value: { machine, value } }),
+  open: (machine, value) => invoke("machine_security", { action: "open", value: { machine, value } }),
+})
 export let localMachineId = () => localMachine
 export let resetDesktopAccount = () => window.dispatchEvent(new Event("desktop-account-changed"))
 export let useDesktopMachines = () => {
@@ -75,6 +84,8 @@ let modelPreferences = (settings: AppSettings) => ({
 export let approveDesktopMachine = (code: string) => machineInvoke("machine_pair_approve", { code })
 export let localHostRequest = (request: Record<string, unknown>) =>
   invoke<Record<string, any>>("machine_local_request", { request })
+configureMoveLocal({ machineId: localMachineId, request: localHostRequest })
+configureMoveNavigation(({ machine, pane }) => window.dispatchEvent(new CustomEvent("clawtab-move-completed", { detail: resourceKey(machine, pane) })))
 
 export let desktopMachineApi = (method: string, path: string, body?: Record<string, unknown>) =>
   machineInvoke<Record<string, any>>("machine_api", { method, path, body })

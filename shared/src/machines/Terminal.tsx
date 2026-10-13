@@ -1,6 +1,7 @@
 import { TerminalKeyBar } from "./TerminalKeyBar"
 import { encodeTerminalInput } from "../util/terminalInput"
 import { MachineActions } from "./Actions"
+import { MoveButton } from "./Move"
 import { useEffect, useRef, useState } from "react"
 import { View, Text, Pressable, StyleSheet, Modal, SafeAreaView, KeyboardAvoidingView, Platform } from "react-native"
 import { XtermLog, type XtermLogHandle } from "../components/XtermLog"
@@ -20,7 +21,6 @@ import {
 
 export let MachineTerminalControls = ({ paneId, connectedOnly = false, inset = false }: { paneId: string; connectedOnly?: boolean; inset?: boolean }) => {
   let state = useMachines()
-  let [showControlInfo, setShowControlInfo] = useState(false)
   let resource = splitResource(paneId)
   if (!resource) return null
   let machine = state.machines.find((m) => m.id === resource.machine)
@@ -28,8 +28,6 @@ export let MachineTerminalControls = ({ paneId, connectedOnly = false, inset = f
   if (connectedOnly && (!state.connected || !machine?.online)) return null
   let controlled = !!state.connectionId && state.controllers[paneId] === state.connectionId
   let take = () => machineSend(resource.machine, { type: "take_control", pane_id: resource.id })
-  let release = () =>
-    machineSend(resource.machine, { type: "release_control", pane_id: resource.id })
   return (
     <View style={[styles.controlSection, inset && styles.insetControls]}>
       <View style={styles.bar}>
@@ -40,31 +38,17 @@ export let MachineTerminalControls = ({ paneId, connectedOnly = false, inset = f
             {machine?.online ? (controlled ? "You have control" : "Watching") : "Offline"}
           </Text>
         </View>
-        <Pressable
+        <MoveButton paneId={paneId} />
+        {!controlled && <Pressable
           accessibilityRole="button"
           accessibilityState={{ disabled: !machine?.online }}
           disabled={!machine?.online}
-          onPress={controlled ? release : take}
+          onPress={take}
           style={[styles.button, !machine?.online && styles.disabledButton]}
         >
-          <Text style={styles.buttonText}>{controlled ? "Release control" : "Take control"}</Text>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="About terminal control"
-          aria-expanded={showControlInfo}
-          onPress={() => setShowControlInfo((visible) => !visible)}
-          hitSlop={6}
-          style={styles.infoButton}
-        >
-          <View style={styles.infoIcon}><Text style={styles.infoIconText}>i</Text></View>
-        </Pressable>
+          <Text style={styles.buttonText}>Take control</Text>
+        </Pressable>}
       </View>
-      {showControlInfo && (
-        <Text style={styles.controlHelp}>
-          Release control switches this device to Watching. The agent keeps running and you can still watch its output. Select Take control to send terminal input or resize it again. Only one connected device controls the terminal at a time.
-        </Text>
-      )}
     </View>
   )
 }

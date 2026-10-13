@@ -149,7 +149,11 @@ fn build_send_cmd(
         .unwrap_or_default();
 
     match provider {
-        ProcessProvider::Claude | ProcessProvider::Codex => format!(
+        ProcessProvider::Codex => format!(
+            "cd {} && {} --no-daemon{}{} {}{}",
+            work_dir, agent_command, model_flag, effort_flag, prompt_arg, cleanup
+        ),
+        ProcessProvider::Claude => format!(
             "cd {} && {}{}{} {}{}",
             work_dir, agent_command, model_flag, effort_flag, prompt_arg, cleanup
         ),

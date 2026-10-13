@@ -156,3 +156,6 @@ export * from "./machines/Connect";
 export * from "./machines/Onboarding";
 
 export { ModelManager } from "./machines/Models";
+export * from "./machines/Security";
+export { MoveButton, MovePanel, LocalMoveHeader, configureMoveLocal, configureMoveNavigation } from "./machines/Move";
+export { secureHostRequest } from "./machines/client";

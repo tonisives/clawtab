@@ -1,6 +1,8 @@
 pub mod git;
 pub mod journal;
+pub mod movement;
 mod operations;
+pub mod security;
 mod transfer;
 pub mod work_journal;
 use clawtab_protocol::HostRequest;
@@ -9,6 +11,17 @@ use std::path::{Path, PathBuf};
 
 pub async fn execute(request: HostRequest) -> Result<Value, String> {
     match request {
+        HostRequest::Secure { .. }
+        | HostRequest::MoveSource { .. }
+        | HostRequest::MoveTargets
+        | HostRequest::MovePreflight { .. }
+        | HostRequest::MoveStart { .. }
+        | HostRequest::MoveStatus { .. }
+        | HostRequest::MoveCancel { .. }
+        | HostRequest::MoveRecover { .. }
+        | HostRequest::MoveRollback { .. } => {
+            Err("Move requires the running daemon and authenticated transport".into())
+        }
         HostRequest::DeleteJob { name } => {
             match crate::ipc::send_command(crate::ipc::IpcCommand::DeleteJob { name }).await? {
                 crate::ipc::IpcResponse::Ok => Ok(json!({"removed":true})),
@@ -72,7 +85,7 @@ pub async fn execute(request: HostRequest) -> Result<Value, String> {
             .map_err(|e| e.to_string())?,
     }
 }
-fn info() -> Value {
+pub fn info() -> Value {
     let settings = crate::config::settings::AppSettings::load();
     let tools = [
         "tmux", "git", "claude", "codex", "opencode", "agy", "python3",
@@ -86,7 +99,16 @@ fn info() -> Value {
         (name, available)
     })
     .collect::<std::collections::HashMap<_, _>>();
-    json!({"platform":std::env::consts::OS,"architecture":std::env::consts::ARCH,"version":env!("CARGO_PKG_VERSION"),"capabilities":["machine_v2","host_management","transfer_v1","journal_query_v1"],"home":dirs::home_dir(),"tools":tools,"models":settings.enabled_models,"machine_id":settings.relay.as_ref().map(|r|&r.device_id)})
+    let mut capabilities = vec![
+        "machine_v2",
+        "host_management",
+        "transfer_v1",
+        "journal_query_v1",
+    ];
+    if security::enabled() {
+        capabilities.extend(["signed_commands_v1", "secure_move_v1"]);
+    }
+    json!({"platform":std::env::consts::OS,"architecture":std::env::consts::ARCH,"version":env!("CARGO_PKG_VERSION"),"capabilities":capabilities,"home":dirs::home_dir(),"tools":tools,"models":settings.enabled_models,"machine_id":settings.relay.as_ref().map(|r|&r.device_id)})
 }
 
 pub fn resolve_path(value: &str) -> Result<PathBuf, String> {

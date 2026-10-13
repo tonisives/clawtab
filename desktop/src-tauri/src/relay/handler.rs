@@ -26,6 +26,58 @@ pub async fn handle_incoming(
     pty_manager: &SharedPtyManager,
     event_sink: &dyn EventSink,
 ) -> Option<String> {
+    let incoming: serde_json::Value = serde_json::from_str(text).ok()?;
+    if matches!(
+        incoming["type"].as_str(),
+        Some("secure_peer" | "secure_roster_result")
+    ) {
+        if crate::host::movement::receive_peer(&incoming, ctx)
+            .await
+            .is_err()
+        {
+            log::debug!("Secure peer frame rejected");
+        }
+        return None;
+    }
+    let info_request = (incoming["type"] == "host_request"
+        && incoming["request"]["action"] == "info")
+        || matches!(
+            incoming["type"].as_str(),
+            Some("unsubscribe_pty" | "unsubscribe_logs")
+        );
+    let authenticated = if crate::host::security::enabled() && !info_request {
+        let verified = crate::host::security::machine_id().and_then(|id| {
+            crate::host::security::verify(
+                &incoming["auth"],
+                &id,
+                chrono::Utc::now().timestamp_millis(),
+            )
+        });
+        match verified {
+            Ok(mut verified) => {
+                // Transport IDs are assigned by the relay; execution fields come exclusively from signed bytes.
+                verified.message["id"] = incoming["id"].clone();
+                Some(verified)
+            }
+            Err(_) => return Some(serde_json::json!({"type":"error","id":incoming["id"],"code":"SECURE_COMMAND_REQUIRED","message":"Verify this client's identity on the machine before issuing secure commands"}).to_string()),
+        }
+    } else {
+        None
+    };
+    let signed_text = authenticated.as_ref().map(|auth| auth.message.to_string());
+    let text = signed_text.as_deref().unwrap_or(text);
+    if let Some(pane) = authenticated
+        .as_ref()
+        .and_then(|auth| auth.message["pane_id"].as_str())
+    {
+        if !matches!(
+            auth_type(authenticated.as_ref()),
+            Some("subscribe_pty" | "unsubscribe_pty" | "capture_pane" | "get_pane_stats")
+        ) && crate::host::movement::pane_locked(pane)
+        {
+            return Some(serde_json::json!({"type":"error","id":incoming["id"],"code":"MOVE_IN_PROGRESS","message":"This conversation is locked while Move verifies the handoff"}).to_string());
+        }
+    }
     if let Ok(value) = serde_json::from_str::<serde_json::Value>(text) {
         if let (Some(pane), Some(execution)) =
             (value["pane_id"].as_str(), value["execution_id"].as_str())
@@ -37,6 +89,47 @@ pub async fn handle_incoming(
     }
     if let Ok(command) = serde_json::from_str::<clawtab_protocol::HostCommand>(text) {
         if command.r#type == "host_request" {
+            if let clawtab_protocol::HostRequest::Secure { envelope } = command.request {
+                let result = async {
+                    let auth = authenticated
+                        .as_ref()
+                        .ok_or("Authenticated encrypted command required")?;
+                    let client = crate::host::security::trusted_client(&auth.client)?;
+                    let identity = crate::host::security::Identity::load()?;
+                    let plaintext = identity.open(&envelope, &client)?;
+                    if plaintext["machine_id"] != crate::host::security::machine_id()? {
+                        return Err("Encrypted command addressed to another machine".to_string());
+                    }
+                    let request: clawtab_protocol::HostRequest =
+                        serde_json::from_value(plaintext["request"].clone())
+                            .map_err(|_| "Invalid secure request")?;
+                    let value = match crate::host::movement::execute(request, ctx).await {
+                        Ok(value) => serde_json::json!({"result":value}),
+                        Err(error) => serde_json::json!({"error":error}),
+                    };
+                    identity.seal(
+                        &serde_json::json!({"request_id":plaintext["request_id"],"response":value}),
+                        &client,
+                    )
+                }
+                .await;
+                return Some(match result {
+                    Ok(value) => serde_json::json!({"type":"host_response","id":command.id,"result":{"secure":value}}),
+                    Err(error) => serde_json::json!({"type":"host_response","id":command.id,"error":error}),
+                }.to_string());
+            }
+            if matches!(
+                command.request,
+                clawtab_protocol::HostRequest::MoveSource { .. }
+                    | clawtab_protocol::HostRequest::MovePreflight { .. }
+                    | clawtab_protocol::HostRequest::MoveStart { .. }
+                    | clawtab_protocol::HostRequest::MoveStatus { .. }
+                    | clawtab_protocol::HostRequest::MoveCancel { .. }
+                    | clawtab_protocol::HostRequest::MoveRecover { .. }
+                    | clawtab_protocol::HostRequest::MoveRollback { .. }
+            ) {
+                return Some(serde_json::json!({"type":"host_response","id":command.id,"error":"Move requires encrypted commands"}).to_string());
+            }
             let models = match &command.request {
                 clawtab_protocol::HostRequest::SetModels { models } => Some(models.clone()),
                 _ => None,
@@ -47,17 +140,15 @@ pub async fn handle_incoming(
                     ctx.settings.lock().enabled_models = models;
                 }
             }
-            return Some(
-                match result {
-                    Ok(value) => {
-                        serde_json::json!({"type":"host_response","id":command.id,"result":value})
-                    }
-                    Err(error) => {
-                        serde_json::json!({"type":"host_response","id":command.id,"error":error})
-                    }
+            let value = match result {
+                Ok(value) => {
+                    serde_json::json!({"type":"host_response","id":command.id,"result":value})
                 }
-                .to_string(),
-            );
+                Err(error) => {
+                    serde_json::json!({"type":"host_response","id":command.id,"error":error})
+                }
+            };
+            return protected_response(value.to_string(), authenticated.as_ref());
         }
     }
     let raw: serde_json::Value = serde_json::from_str(text).ok()?;
@@ -69,7 +160,7 @@ pub async fn handle_incoming(
         if let Some(operation_id) = raw["operation_id"].as_str() {
             match crate::host::journal::claim(operation_id, &raw) {
                 Ok(crate::host::journal::Claim::New(path)) => operation_result = Some(path),
-                Ok(crate::host::journal::Claim::Existing(mut response)) => { response["id"] = raw["id"].clone(); return Some(response.to_string()); },
+                Ok(crate::host::journal::Claim::Existing(mut response)) => { response["id"] = raw["id"].clone(); return protected_response(response.to_string(), authenticated.as_ref()); },
                 Err(error) => return Some(serde_json::json!({"type":"error","id":raw["id"],"code":"OPERATION_CONFLICT","message":error}).to_string()),
             }
         }
@@ -89,7 +180,30 @@ pub async fn handle_incoming(
             log::error!("Could not persist launch acknowledgement: {error}");
         }
     }
-    serialized
+    serialized.and_then(|value| protected_response(value, authenticated.as_ref()))
+}
+
+fn auth_type(auth: Option<&crate::host::security::Authenticated>) -> Option<&str> {
+    auth.and_then(|auth| auth.message["type"].as_str())
+}
+fn protected_response(
+    text: String,
+    auth: Option<&crate::host::security::Authenticated>,
+) -> Option<String> {
+    let Some(auth) = auth else {
+        return Some(text);
+    };
+    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let envelope = crate::host::security::trusted_client(&auth.client).and_then(|client| {
+        crate::host::security::Identity::load()?.seal(
+            &serde_json::json!({"request_id":auth.request_id,"response":value}),
+            &client,
+        )
+    });
+    Some(match envelope {
+        Ok(envelope) => serde_json::json!({"type":"secure_response","id":value["id"],"envelope":envelope}),
+        Err(_) => serde_json::json!({"type":"error","id":value["id"],"message":"Could not encrypt command response"}),
+    }.to_string())
 }
 
 fn serialize_response(response: Option<DesktopMessage>) -> Option<String> {
@@ -1324,14 +1438,17 @@ fn update_job(
         job.schedule = schedule.clone();
     }
     if let Some(run_once) = &update.run_once {
-        job.run_once = run_once.as_ref().map(|once| {
-            chrono::DateTime::parse_from_rfc3339(&once.at)
-                .map(|at| crate::config::jobs::RunOnceSchedule {
-                    at,
-                    remove_after_start: once.remove_after_start,
-                })
-                .map_err(|error| format!("invalid one-time date: {error}"))
-        }).transpose()?;
+        job.run_once = run_once
+            .as_ref()
+            .map(|once| {
+                chrono::DateTime::parse_from_rfc3339(&once.at)
+                    .map(|at| crate::config::jobs::RunOnceSchedule {
+                        at,
+                        remove_after_start: once.remove_after_start,
+                    })
+                    .map_err(|error| format!("invalid one-time date: {error}"))
+            })
+            .transpose()?;
     }
     if let Some(group) = &update.group {
         job.group = if group.trim().is_empty() {

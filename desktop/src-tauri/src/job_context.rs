@@ -15,6 +15,7 @@ use crate::telegram::ActiveAgent;
 /// Every field is an `Arc`, so `.clone()` is cheap and refcount-bumps only.
 #[derive(Clone)]
 pub struct JobContext {
+    pub hook_runtime: crate::agent_hooks::HookRuntime,
     pub secrets: Arc<Mutex<SecretsManager>>,
     pub history: Arc<Mutex<HistoryStore>>,
     pub settings: Arc<Mutex<AppSettings>>,

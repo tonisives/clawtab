@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { useCallback, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { ClaudeQuestion, DetectedProcess, RemoteJob, ShellPane, Transport, JobStatus } from "@clawtab/shared";
-import { JobDetailView, processDisplayTitle, shortenPath } from "@clawtab/shared";
+import { JobDetailView, LocalMoveHeader, processDisplayTitle, shortenPath } from "@clawtab/shared";
 import { XtermPane } from "./XtermPane";
 
 type TmuxPaneTarget =
@@ -220,7 +220,7 @@ export function TmuxPaneDetail({
       autoYesActive={autoYesActive}
       onToggleAutoYes={onToggleAutoYes}
       autoYesShortcut={autoYesShortcut}
-      renderTerminal={renderTerminal}
+      renderTerminal={() => <><LocalMoveHeader paneId={paneId} />{renderTerminal()}</>}
       hideMessageInput
       firstQuery={process?.first_query ?? undefined}
       lastQuery={process?.last_query ?? undefined}

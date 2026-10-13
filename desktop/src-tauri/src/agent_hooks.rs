@@ -149,6 +149,8 @@ impl HookEventV1 {
 
 #[derive(Debug, Clone)]
 pub struct HookPaneState {
+    pub event: String,
+    pub session_id: String,
     pub state: HookAgentState,
     pub attention: Option<HookAttention>,
     pub updated_at_ms: u64,
@@ -196,6 +198,8 @@ impl HookRuntime {
                 (priority, event.occurred_at_ms)
             })
             .map(|event| HookPaneState {
+                event: event.event.clone(),
+                session_id: event.session_id.clone(),
                 state: event.state,
                 attention: event.attention,
                 updated_at_ms: event.occurred_at_ms,

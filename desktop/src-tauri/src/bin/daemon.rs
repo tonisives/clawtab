@@ -166,6 +166,7 @@ fn main() {
     let hook_runtime = clawtab_lib::agent_hooks::HookRuntime::default();
 
     let ctx = clawtab_lib::job_context::JobContext {
+        hook_runtime: hook_runtime.clone(),
         secrets: Arc::clone(&secrets),
         history: Arc::clone(&history),
         settings: Arc::clone(&settings),
@@ -474,6 +475,7 @@ fn main() {
         log::info!("clawtab-daemon running, waiting for signals");
 
         // Wait for SIGTERM/SIGINT
+        clawtab_lib::host::movement::recover_pending(ctx.clone());
         tokio::signal::ctrl_c()
             .await
             .expect("failed to listen for ctrl+c");
@@ -499,6 +501,23 @@ async fn handle_ipc_command(
     let auto_yes_panes = &ctx.auto_yes_panes;
     let protected_panes = &ctx.protected_panes;
     match cmd {
+        IpcCommand::HostRequest { request } => {
+            match clawtab_lib::host::movement::execute(request, ctx).await {
+                Ok(value) => IpcResponse::HostResult(value),
+                Err(error) => IpcResponse::Error(error),
+            }
+        }
+        IpcCommand::MoveTrust { action, value } => {
+            match clawtab_lib::host::security::enroll(&action, value) {
+                Ok(value) => {
+                    if let Some(handle) = ctx.relay.lock().as_ref() {
+                        let _ = handle.send_raw(serde_json::json!({"type":"host_response","id":"machine_info","result":clawtab_lib::host::info()}).to_string());
+                    }
+                    IpcResponse::HostResult(value)
+                }
+                Err(error) => IpcResponse::Error(error),
+            }
+        }
         IpcCommand::Ping => IpcResponse::Pong,
         IpcCommand::ApprovedJournalContext { days } => {
             match clawtab_lib::host::work_journal::approved_context(days).await {

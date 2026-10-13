@@ -306,7 +306,7 @@ draw_search_bar() {
 
 # Shortcuts tab items and cursor
 SHORTCUT_CURSOR=0
-SHORTCUT_ITEMS=("Rename title" "Toggle auto-yes" "Pin across ClawTab" "Fork session")
+SHORTCUT_ITEMS=("Rename title" "Toggle auto-yes" "Pin across ClawTab" "Fork session" "Move")
 
 append_agent_action() {
     local action_id="$1"
@@ -1218,6 +1218,7 @@ draw_shortcuts() {
         if [ $i -eq 1 ]; then hint="Y"; fi
         if [ $i -eq 2 ]; then hint="p"; fi
         if [ $i -eq 3 ]; then hint="f"; fi
+        if [ $i -eq 4 ]; then hint="m"; fi
 
         if [ $i -eq $SHORTCUT_CURSOR ]; then
             printf "${C_SELECTED} > %s ${C_RESET}" "$label" >&3
@@ -1932,8 +1933,15 @@ do_enter() {
                     "$CURRENT_DIR/fork-session.sh" "$PANE_ID"
                     return 1
                     ;;
+                4)
+                    python3 "$CURRENT_DIR/move.py" "$PANE_ID" >&3
+                    printf '\033[?1049h' >&3
+                    tput civis 2>/dev/null >&3
+                    draw
+                    return 0
+                    ;;
                 *)
-                    local action_index=$((SHORTCUT_CURSOR - 4))
+                    local action_index=$((SHORTCUT_CURSOR - 5))
                     local action_id="${AGENT_ACTION_IDS[$action_index]:-}"
                     if [ -n "$action_id" ]; then
                         cwtctl agent action run "$action_id" "$PANE_ID" >/dev/null 2>&1 || true
@@ -2147,6 +2155,7 @@ read_key() {
         "p") echo "shortcut_pin" ;;
         "y") read_yank_key ;;
         "f") echo "shortcut_f" ;;
+        "m") echo "shortcut_move" ;;
         "/") echo "search" ;;
         $'\x7f') echo "backspace" ;;
         *) echo "char:$key" ;;
@@ -2391,6 +2400,12 @@ while true; do
         shortcut_f)
             "$CURRENT_DIR/fork-session.sh" "$PANE_ID"
             break
+            ;;
+        shortcut_move)
+            python3 "$CURRENT_DIR/move.py" "$PANE_ID" >&3
+            printf '\033[?1049h' >&3
+            tput civis 2>/dev/null >&3
+            draw
             ;;
         char:*)
             # Auto-search: typing on secrets/skills tabs enters search mode

@@ -530,7 +530,8 @@ async fn relay_request(
             let mut secrets = state.secrets.lock();
             secrets.reload_keys(&[KEYCHAIN_ACCESS_TOKEN_KEY, KEYCHAIN_REFRESH_TOKEN_KEY]);
             if secrets.get(KEYCHAIN_ACCESS_TOKEN_KEY).map(String::as_str) != Some(access_token)
-                || secrets.get(KEYCHAIN_REFRESH_TOKEN_KEY).map(String::as_str) != Some(refresh_token)
+                || secrets.get(KEYCHAIN_REFRESH_TOKEN_KEY).map(String::as_str)
+                    != Some(refresh_token)
             {
                 return Err("Account session changed. Please retry.".into());
             }
@@ -727,10 +728,22 @@ pub async fn machine_pair_approve(
     .await
 }
 #[tauri::command]
+pub fn machine_security(
+    action: String,
+    value: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    crate::host::security::client_operation(&action, value)
+}
+
+#[tauri::command]
 pub async fn machine_local_request(
     request: clawtab_protocol::HostRequest,
 ) -> Result<serde_json::Value, String> {
-    crate::host::execute(request).await
+    match crate::ipc::send_command(crate::ipc::IpcCommand::HostRequest { request }).await? {
+        crate::ipc::IpcResponse::HostResult(value) => Ok(value),
+        crate::ipc::IpcResponse::Error(error) => Err(error),
+        _ => Err("Unexpected host response".into()),
+    }
 }
 
 #[tauri::command]

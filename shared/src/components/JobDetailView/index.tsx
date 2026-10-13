@@ -138,7 +138,6 @@ export interface JobDetailViewProps {
   onInjectSecrets?: () => void;
   onSearchSkills?: () => void;
   // Release the captured tmux pane (desktop only, when viewing a live pane)
-  onRelease?: () => void;
   // Reveal the current item in the sidebar and scroll to it
   onRevealInSidebar?: () => void;
   // Notify parent that a stop was requested (for sidebar "Stopping..." state)
@@ -222,7 +221,6 @@ export function JobDetailView({
   onZoomPane,
   onInjectSecrets,
   onSearchSkills,
-  onRelease,
   onRevealInSidebar,
   onStopping,
   onStopFailed,
@@ -733,7 +731,7 @@ export function JobDetailView({
                       { type: "item" as const, label: autoYesActive ? "Disable auto-yes" : "Enable auto-yes", onPress: onToggleAutoYes!, color: autoYesActive ? colors.warning : colors.accent },
                       { type: "separator" as const },
                     ] : []),
-                    ...((onFork || onSplitPane || onZoomPane || onInjectSecrets || onSearchSkills || onRelease) && onDuplicate ? [{ type: "separator" as const }] : []),
+                    ...((onFork || onSplitPane || onZoomPane || onInjectSecrets || onSearchSkills) && onDuplicate ? [{ type: "separator" as const }] : []),
                     ...(onFork ? [{ type: "submenu" as const, label: "Fork Session", items: [
                       { type: "item" as const, label: "Right", onPress: () => onFork("right") },
                       { type: "item" as const, label: "Down", onPress: () => onFork("down") },
@@ -745,7 +743,6 @@ export function JobDetailView({
                     ...(onZoomPane ? [{ type: "item" as const, label: "Zoom Pane", hint: "Prefix Z", onPress: () => onZoomPane() }] : []),
                     ...(onInjectSecrets ? [{ type: "item" as const, label: "Inject Secrets", onPress: () => onInjectSecrets() }] : []),
                     ...(onSearchSkills ? [{ type: "item" as const, label: "Send Skill", onPress: () => onSearchSkills() }] : []),
-                    ...(onRelease ? [{ type: "item" as const, label: "Release", onPress: () => onRelease() }] : []),
                     ...(onRevealInSidebar ? [{ type: "item" as const, label: "Reveal in Sidebar", onPress: () => onRevealInSidebar() }] : []),
                     ...(paneOverview ? [{ type: "item" as const, label: "Agent actions and pane details", onPress: () => setShowPaneOverview(true) }] : []),
                     ...(extraMenuItems?.length ? [{ type: "separator" as const }, ...extraMenuItems.map((it) => ({ type: "item" as const, ...it }))] : []),

@@ -151,6 +151,31 @@ pub fn filtered(value: &Value, groups: Option<&[String]>) -> Option<Value> {
     Some(out)
 }
 
+fn route_peer(hub: &MachineHub, machine: Uuid, connection: Uuid, message: &mut Value) -> bool {
+    let Some(target) = message["to"]
+        .as_str()
+        .and_then(|id| Uuid::parse_str(id).ok())
+    else {
+        return false;
+    };
+    let Some(source) = hub
+        .hosts
+        .get(&machine)
+        .filter(|host| host.connection == connection)
+    else {
+        return false;
+    };
+    let Some(destination) = hub
+        .hosts
+        .get(&target)
+        .filter(|host| host.owner == source.owner && target != machine)
+    else {
+        return false;
+    };
+    message["from"] = json!(machine);
+    destination.tx.try_send(message.to_string()).is_ok()
+}
+
 pub async fn host_event(state: &AppState, machine: Uuid, connection: Uuid, text: &str) {
     if !state
         .machines
@@ -168,6 +193,54 @@ pub async fn host_event(state: &AppState, machine: Uuid, connection: Uuid, text:
     let Some(kind) = message["type"].as_str().map(str::to_owned) else {
         return;
     };
+    if kind == "secure_roster" {
+        let Some(id) = message["id"]
+            .as_str()
+            .filter(|id| Uuid::parse_str(id).is_ok())
+        else {
+            return;
+        };
+        let owner = state
+            .machines
+            .read()
+            .await
+            .hosts
+            .get(&machine)
+            .map(|host| host.owner);
+        let Some(owner) = owner else {
+            return;
+        };
+        if let Ok(machines) = super::api::list_for(state, owner).await {
+            let machines: Vec<Value> = machines
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|entry| entry["owned"] == true && entry["id"] != machine.to_string())
+                .cloned()
+                .collect();
+            if let Some(host) = state
+                .machines
+                .read()
+                .await
+                .hosts
+                .get(&machine)
+                .filter(|host| host.connection == connection)
+            {
+                let _ = host.tx.try_send(
+                    json!({"type":"secure_roster_result","id":id,"machines":machines}).to_string(),
+                );
+            }
+        }
+        return;
+    }
+    if kind == "secure_peer" {
+        if text.len() > 96 * 1024 {
+            return;
+        }
+        let hub = state.machines.read().await;
+        route_peer(&hub, machine, connection, &mut message);
+        return;
+    }
     // Journal responses are private RPC results, never event broadcasts.
     if message["id"]
         .as_str()
@@ -367,6 +440,47 @@ pub async fn host_event(state: &AppState, machine: Uuid, connection: Uuid, text:
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn peer_frames_require_current_connection_same_owner_and_online_target() {
+        let mut hub = MachineHub::default();
+        let owner = Uuid::new_v4();
+        let source = Uuid::new_v4();
+        let target = Uuid::new_v4();
+        let connection = Uuid::new_v4();
+        let (tx, _source_rx) = mpsc::channel(4);
+        let (target_tx, mut target_rx) = mpsc::channel(4);
+        hub.register(
+            source,
+            Host {
+                connection,
+                owner,
+                tx,
+            },
+        );
+        hub.register(
+            target,
+            Host {
+                connection: Uuid::new_v4(),
+                owner,
+                tx: target_tx,
+            },
+        );
+        let mut frame = json!({"type":"secure_peer","to":target,"from":"forged","data":"opaque"});
+        assert!(!route_peer(&hub, source, Uuid::new_v4(), &mut frame));
+        assert!(route_peer(&hub, source, connection, &mut frame));
+        let forwarded: Value =
+            serde_json::from_str(&target_rx.try_recv().unwrap_or_default()).unwrap_or_default();
+        assert_eq!(forwarded["from"], json!(source));
+        assert_eq!(forwarded["data"], "opaque");
+        if let Some(host) = hub.hosts.get_mut(&target) {
+            host.owner = Uuid::new_v4();
+        }
+        assert!(!route_peer(&hub, source, connection, &mut frame));
+        hub.hosts.remove(&target);
+        assert!(!route_peer(&hub, source, connection, &mut frame));
+        frame["to"] = json!(source);
+        assert!(!route_peer(&hub, source, connection, &mut frame));
+    }
     #[test]
     fn replaced_host_cannot_remove_new_connection() {
         let mut hub = MachineHub::default();

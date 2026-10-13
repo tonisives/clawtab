@@ -5,8 +5,8 @@
 
 mod aerospace;
 pub mod agent;
-pub mod agent_models;
 pub mod agent_hooks;
+pub mod agent_models;
 pub mod agent_plugins;
 pub mod agent_session;
 #[cfg(feature = "desktop")]
@@ -541,6 +541,10 @@ fn dispatch_desktop_ipc(
     cmd: ipc::DesktopIpcCommand,
 ) -> ipc::IpcResponse {
     match cmd {
+        ipc::DesktopIpcCommand::OpenMachines => {
+            let _ = app_handle.emit("open-machines", ());
+            ipc::IpcResponse::Ok
+        }
         ipc::DesktopIpcCommand::FocusPane { direction } => {
             let action = match direction {
                 ipc::PaneDirection::Left => "move_pane_left",
@@ -907,6 +911,7 @@ pub fn run() {
             commands::relay::relay_save_tokens,
             commands::relay::relay_restore_account,
             commands::relay::machine_connection,
+            commands::relay::machine_security,
             commands::relay::machine_api,
             commands::relay::machine_pair_approve,
             commands::relay::machine_local_request,

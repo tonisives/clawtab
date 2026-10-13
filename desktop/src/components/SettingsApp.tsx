@@ -5,6 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { onOpenUrl, getCurrent } from "@tauri-apps/plugin-deep-link";
 import { DesktopMachinesPanel } from "./DesktopMachinesPanel";
+import { MachineOnboardingProvider } from "@clawtab/shared";
 import { JobsTab } from "./JobsTab";
 import { MindMapPanel } from "./MindMap";
 import { GeneralSettings, readStoredSettingsSubTab } from "./GeneralSettings";
@@ -198,6 +199,18 @@ export function SettingsApp() {
       setPendingPaneId(event.payload);
     });
     return () => { unlistenPromise.then((fn) => fn()); };
+  }, []);
+  useEffect(() => {
+    let subscription = listen("open-machines", () => setActiveTab("machines"));
+    return () => { void subscription.then((off) => off()); };
+  }, []);
+  useEffect(() => {
+    let moved = (event: Event) => {
+      setActiveTab("jobs");
+      setPendingPaneId((event as CustomEvent<string>).detail);
+    };
+    window.addEventListener("clawtab-move-completed", moved);
+    return () => window.removeEventListener("clawtab-move-completed", moved);
   }, []);
 
   const handleDeepLinks = (urls: string[]) => {
@@ -404,6 +417,7 @@ export function SettingsApp() {
   );
 
   return (
+    <MachineOnboardingProvider content={(close) => <DesktopMachinesPanel manage={false} onOpenAccount={() => { close(); openMachineAccount(); }} />}>
     <div className="settings-container">
       <div className="tab-content">
         <JobsTab
@@ -432,5 +446,6 @@ export function SettingsApp() {
         />
       </div>
     </div>
+    </MachineOnboardingProvider>
   );
 }

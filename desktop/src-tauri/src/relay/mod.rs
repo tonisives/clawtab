@@ -30,6 +30,11 @@ pub struct RelayHandle {
 }
 
 impl RelayHandle {
+    pub fn send_raw(&self, message: String) -> Result<(), String> {
+        self.tx
+            .try_send(message)
+            .map_err(|_| "Relay connection is unavailable or busy".into())
+    }
     /// Send a protocol message to the relay server.
     pub fn send_message(&self, msg: &DesktopMessage) {
         if let Ok(json) = serde_json::to_string(msg) {
@@ -609,10 +614,13 @@ fn job_to_remote(job: &Job) -> RemoteJob {
         enabled: job.enabled,
         cron: job.cron.clone(),
         schedule: job.schedule.clone(),
-        run_once: job.run_once.as_ref().map(|once| clawtab_protocol::RunOnceSchedule {
-            at: once.at.to_rfc3339(),
-            remove_after_start: once.remove_after_start,
-        }),
+        run_once: job
+            .run_once
+            .as_ref()
+            .map(|once| clawtab_protocol::RunOnceSchedule {
+                at: once.at.to_rfc3339(),
+                remove_after_start: once.remove_after_start,
+            }),
         group: job.group.clone(),
         slug: job.slug.clone(),
         work_dir,

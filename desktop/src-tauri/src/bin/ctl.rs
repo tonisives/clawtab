@@ -26,6 +26,7 @@ fn print_usage() {
     eprintln!("  setup [--relay URL] [--name NAME] [--linger | --no-service] [--replace]  Pair and install the Linux host");
     eprintln!("Commands (require daemon):");
     eprintln!("  jobs              Manage configured jobs");
+    eprintln!("  move help         Move a conversation or verify machine/client identities");
     eprintln!(
         "  usage <provider>  Show local provider quota usage (claude, codex, antigravity, zai)"
     );
@@ -776,6 +777,16 @@ async fn main() {
         }
         return;
     }
+    if command == "move" {
+        match handle_move_command(&args).await {
+            Ok(value) => println!(
+                "{}",
+                serde_json::to_string_pretty(&value).unwrap_or_default()
+            ),
+            Err(error) => exit_error(&error),
+        }
+        return;
+    }
     // Handle daemon subcommands locally (no IPC needed)
     if command == "daemon" {
         handle_daemon_command(&args);
@@ -1158,6 +1169,7 @@ async fn main() {
 
     match response_result {
         Ok(response) => match response {
+            IpcResponse::HostResult(value) => println!("{}", value),
             IpcResponse::Pong => {
                 println!("pong");
             }
@@ -2045,6 +2057,105 @@ fn restore_command_for_provider(
             Some(format!("agy --conversation {}", session_id))
         }
         clawtab_lib::agent_session::ProcessProvider::Shell => None,
+    }
+}
+
+async fn handle_move_command(args: &[String]) -> Result<serde_json::Value, String> {
+    use clawtab_protocol::HostRequest;
+    use serde_json::{json, Value};
+    let action = args.get(2).map(String::as_str).unwrap_or("help");
+    let parameter = |index: usize| {
+        args.get(index)
+            .cloned()
+            .ok_or("Missing move argument".to_string())
+    };
+    if matches!(action, "help" | "--help" | "-h") {
+        return Ok(json!({"usage":[
+            "cwtctl move identity",
+            "cwtctl move trust-client <public-identity-json-or-file> --fingerprint <sha256>",
+            "cwtctl move trust-machine <public-identity-json-or-file> --fingerprint <sha256>",
+            "cwtctl move revoke-client <fingerprint> | revoke-machine <machine-id>",
+            "cwtctl move enable",
+            "cwtctl move targets | source <pane-id> | add-machine",
+            "cwtctl move preflight <pane-id> <execution-id> <target-machine-id> <destination>",
+            "cwtctl move start <operation-id> <pane-id> <execution-id> <target-machine-id> <destination> [--setup]",
+            "cwtctl move status <operation-id> | cancel <operation-id> | check <operation-id>",
+            "cwtctl move rollback <operation-id> --confirm-stop-target"
+        ],"trust":"Verify fingerprints through a local console or trusted SSH connection. Enabling secure commands disables unsigned remote commands."}));
+    }
+    if action == "add-machine" {
+        return match ipc::send_desktop_command(DesktopIpcCommand::OpenMachines).await {
+            Ok(IpcResponse::Ok) => Ok(json!({"opened":true})),
+            _ => Ok(
+                json!({"instructions":"Open Machines > Add machine in your desktop or mobile app, then refresh this list."}),
+            ),
+        };
+    }
+    let command = if matches!(
+        action,
+        "identity"
+            | "enable"
+            | "trust-client"
+            | "trust-machine"
+            | "revoke-client"
+            | "revoke-machine"
+    ) {
+        let value = if action.starts_with("trust-") {
+            let input = parameter(3)?;
+            let bytes = if input.trim_start().starts_with('{') {
+                input
+            } else {
+                std::fs::read_to_string(input).map_err(|_| "Public identity file unavailable")?
+            };
+            let mut public: Value =
+                serde_json::from_str(&bytes).map_err(|_| "Invalid public identity JSON")?;
+            if public.get("identity").is_some() {
+                public = public["identity"].clone();
+            }
+            let supplied = args.windows(2).find(|pair| pair[0] == "--fingerprint").map(|pair| pair[1].as_str()).ok_or("Specify --fingerprint with the fingerprint checked through the trusted console")?;
+            let actual = if action == "trust-client" {
+                let key: clawtab_lib::host::security::ClientKey =
+                    serde_json::from_value(public.clone())
+                        .map_err(|_| "Invalid client identity")?;
+                clawtab_lib::host::security::fingerprint(&key)?
+            } else {
+                let key: clawtab_lib::host::security::MachineKey =
+                    serde_json::from_value(public.clone())
+                        .map_err(|_| "Invalid machine identity")?;
+                clawtab_lib::host::security::fingerprint(&key)?
+            };
+            if supplied != actual {
+                return Err("Identity fingerprint does not match the verified fingerprint".into());
+            }
+            public
+        } else if action.starts_with("revoke-") {
+            json!(parameter(3)?)
+        } else {
+            Value::Null
+        };
+        IpcCommand::MoveTrust {
+            action: action.replace('-', "_"),
+            value,
+        }
+    } else {
+        let request = match action {
+            "targets" => HostRequest::MoveTargets,
+            "source" => HostRequest::MoveSource { pane_id: parameter(3)? },
+            "preflight" => HostRequest::MovePreflight { pane_id:parameter(3)?, execution_id:parameter(4)?, target:parameter(5)?, destination:parameter(6)? },
+            "start" => HostRequest::MoveStart { operation_id:parameter(3)?, pane_id:parameter(4)?, execution_id:parameter(5)?, target:parameter(6)?, destination:parameter(7)?, setup:args.iter().any(|arg| arg == "--setup") },
+            "status" => HostRequest::MoveStatus { operation_id:Some(parameter(3)?), pane_id:None },
+            "cancel" => HostRequest::MoveCancel { operation_id:parameter(3)? },
+            "check" => HostRequest::MoveRecover { operation_id:parameter(3)? },
+            "rollback" if args.iter().any(|argument| argument == "--confirm-stop-target") => HostRequest::MoveRollback { operation_id:parameter(3)? },
+            "rollback" => return Err("Rollback stops the remote execution before restoring the source. Add --confirm-stop-target to confirm".into()),
+            _ => return Err("Unknown Move command; use cwtctl move help".into()),
+        };
+        IpcCommand::HostRequest { request }
+    };
+    match ipc::send_command(command).await? {
+        IpcResponse::HostResult(value) => Ok(value),
+        IpcResponse::Error(error) => Err(error),
+        _ => Err("Unexpected Move response".into()),
     }
 }
 

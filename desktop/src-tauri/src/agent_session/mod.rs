@@ -6,6 +6,7 @@ mod opencode;
 
 pub(crate) use codex::completed_turn_after as codex_completed_turn_after;
 pub(crate) use codex::thread_id_for_pane as codex_thread_id_for_pane;
+pub(crate) use opencode::completed_turn_at as opencode_completed_turn_at;
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
