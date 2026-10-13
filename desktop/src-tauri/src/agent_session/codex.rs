@@ -91,7 +91,10 @@ fn resolve_session_info_with_details(
     snapshot: Option<&ProcessSnapshot>,
     include_details: bool,
 ) -> SessionInfo {
-    let mut info = SessionInfo::default();
+    let mut info = SessionInfo {
+        title: session_from_pane_title(pane_pid).map(|session| session.name),
+        ..SessionInfo::default()
+    };
 
     let Some(thread_id) = thread_id_for_pane(pane_pid, snapshot) else {
         return info;
@@ -102,7 +105,9 @@ fn resolve_session_info_with_details(
     };
 
     info.session_id = Some(thread.id.clone());
-    info.title = thread.name.and_then(normalize_optional_owned);
+    info.title = info
+        .title
+        .or_else(|| thread.name.and_then(normalize_optional_owned));
     info.first_query = normalize_optional_owned(thread.first_user_message);
     info.last_query = read_codex_last_query(&thread.id);
 
@@ -159,10 +164,20 @@ pub(crate) fn thread_id_for_pane(
 #[derive(Default)]
 struct PaneTitleCache {
     checked_at: Option<Instant>,
-    sessions: HashMap<String, String>,
+    sessions: HashMap<String, PaneTitleSession>,
+}
+
+#[derive(Clone)]
+struct PaneTitleSession {
+    name: String,
+    thread_id: Option<String>,
 }
 
 fn thread_id_from_pane_title(pane_pid: &str) -> Option<String> {
+    session_from_pane_title(pane_pid)?.thread_id
+}
+
+fn session_from_pane_title(pane_pid: &str) -> Option<PaneTitleSession> {
     static CACHE: OnceLock<Mutex<PaneTitleCache>> = OnceLock::new();
     let mut cache = CACHE.get_or_init(Default::default).lock();
     if cache
@@ -175,7 +190,7 @@ fn thread_id_from_pane_title(pane_pid: &str) -> Option<String> {
     cache.sessions.get(pane_pid).cloned()
 }
 
-fn read_pane_title_sessions() -> Option<HashMap<String, String>> {
+fn read_pane_title_sessions() -> Option<HashMap<String, PaneTitleSession>> {
     let output = std::process::Command::new("tmux")
         .args([
             "list-panes",
@@ -199,14 +214,14 @@ fn read_pane_title_sessions() -> Option<HashMap<String, String>> {
         let (Some(pid), Some(cwd), Some(title)) = (parts.next(), parts.next(), parts.next()) else {
             continue;
         };
-        if let Some(id) = unique_thread_for_title(&conn, title, cwd) {
-            sessions.insert(pid.to_string(), id);
+        if let Some(session) = session_for_title(&conn, title, cwd) {
+            sessions.insert(pid.to_string(), session);
         }
     }
     Some(sessions)
 }
 
-fn unique_thread_for_title(conn: &Connection, title: &str, cwd: &str) -> Option<String> {
+fn session_for_title(conn: &Connection, title: &str, cwd: &str) -> Option<PaneTitleSession> {
     let (name, _) = title.rsplit_once(" | ")?;
     // Codex prefixes an active task with a Braille spinner, but idle titles
     // start directly with the session name. Preserve non-ASCII user text.
@@ -223,11 +238,14 @@ fn unique_thread_for_title(conn: &Connection, title: &str, cwd: &str) -> Option<
         .prepare("select id from threads where name = ?1 and cwd = ?2 and archived = 0 limit 2")
         .ok()?;
     let mut rows = query.query(params![name, cwd]).ok()?;
-    let id = rows.next().ok()??.get(0).ok()?;
-    if rows.next().ok()?.is_some() {
-        return None;
-    }
-    Some(id)
+    let id: String = rows.next().ok()??.get(0).ok()?;
+    // Duplicate names still identify the visible label, but do not identify
+    // a conversation. Never expose another session's prompts or history.
+    let thread_id = rows.next().ok()?.is_none().then_some(id);
+    Some(PaneTitleSession {
+        name: name.to_string(),
+        thread_id,
+    })
 }
 
 fn find_codex_child(parent_pid: &str, snapshot: Option<&ProcessSnapshot>) -> Option<String> {
@@ -786,6 +804,34 @@ fn read_codex_rollout_messages(path: &PathBuf) -> (Option<String>, Option<String
 
 #[cfg(test)]
 mod tests {
+    fn unique_thread_for_title(
+        conn: &rusqlite::Connection,
+        title: &str,
+        cwd: &str,
+    ) -> Option<String> {
+        super::session_for_title(conn, title, cwd)?.thread_id
+    }
+
+    #[test]
+    fn duplicate_session_names_keep_the_visible_title_without_guessing_identity() {
+        let conn = rusqlite::Connection::open_in_memory().expect("database");
+        conn.execute_batch(
+            "create table threads (id text, name text, cwd text, archived integer);
+            insert into threads values ('old', 'Test title', '/project', 0),
+                ('new', 'Test title', '/project', 0);",
+        )
+        .expect("fixtures");
+        for title in ["Test title | project", "\u{2839} Test title | project"] {
+            let session =
+                super::session_for_title(&conn, title, "/project").expect("visible session name");
+            assert_eq!(session.name, "Test title");
+            assert!(session.thread_id.is_none());
+        }
+        assert!(
+            super::session_for_title(&conn, "Test title | project", "/another-project").is_none()
+        );
+    }
+
     #[test]
     fn generated_names_arrive_after_session_creation_and_older_schemas_still_resolve() {
         let conn = rusqlite::Connection::open_in_memory().expect("database");
@@ -842,24 +888,21 @@ mod tests {
             "\u{2839} Fix state | details | project",
         ] {
             assert_eq!(
-                super::unique_thread_for_title(&conn, title, "/project").as_deref(),
+                unique_thread_for_title(&conn, title, "/project").as_deref(),
                 Some("first")
             );
         }
         assert_eq!(
-            super::unique_thread_for_title(&conn, "修正 state | project", "/project").as_deref(),
+            unique_thread_for_title(&conn, "修正 state | project", "/project").as_deref(),
             Some("unicode")
         );
         assert_eq!(
-            super::unique_thread_for_title(&conn, "Fix state | details | project", "/missing"),
+            unique_thread_for_title(&conn, "Fix state | details | project", "/missing"),
             None
         );
+        assert_eq!(unique_thread_for_title(&conn, "hostname", "/project"), None);
         assert_eq!(
-            super::unique_thread_for_title(&conn, "hostname", "/project"),
-            None
-        );
-        assert_eq!(
-            super::unique_thread_for_title(&conn, "Fix state | project", "/project"),
+            unique_thread_for_title(&conn, "Fix state | project", "/project"),
             None
         );
         conn.execute(
@@ -868,7 +911,7 @@ mod tests {
         )
         .expect("duplicate");
         assert_eq!(
-            super::unique_thread_for_title(&conn, "Fix state | details | project", "/project"),
+            unique_thread_for_title(&conn, "Fix state | details | project", "/project"),
             None
         );
     }
