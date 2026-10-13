@@ -1226,8 +1226,9 @@ fn codex_working_status(screen: &str) -> bool {
 }
 
 /// Claude's bordered composer separates its live footer from transcript output.
-/// The interrupt hint remains visible during tools and thinking, even when the
-/// spinner does not repaint. A recognized idle footer also clears recent activity.
+/// Vim mode can hide the interrupt hint, so also inspect the live spinner block
+/// immediately above the composer. Completed-turn summaries have no ellipsis.
+/// A recognized idle screen also clears recent activity.
 fn claude_working_status(screen: &str) -> Option<bool> {
     let plain = strip_ansi(screen);
     let lines: Vec<&str> = plain.lines().map(str::trim).collect();
@@ -1240,7 +1241,23 @@ fn claude_working_status(screen: &str) -> Option<bool> {
         return None;
     }
     let footer = composer + 1 + lines[composer + 1..].iter().position(is_border)? + 1;
-    Some(lines[footer..].join(" ").contains("esc to interrupt"))
+    let spinner = lines[..composer - 1]
+        .rsplit(|line| line.is_empty())
+        .find(|block| !block.is_empty())
+        .is_some_and(|block| {
+            let status = block.join(" ");
+            block
+                .first()
+                .and_then(|line| line.chars().next())
+                .is_some_and(|ch| {
+                    matches!(
+                        ch,
+                        '\u{00b7}' | '\u{2722}' | '\u{2733}' | '\u{2736}' | '\u{273b}' | '\u{273d}'
+                    )
+                })
+                && (status.contains('\u{2026}') || status.contains("..."))
+        });
+    Some(spinner || lines[footer..].join(" ").contains("esc to interrupt"))
 }
 
 impl ActivityTracker {
@@ -1807,6 +1824,59 @@ mod tests {
             "\u{2500}\u{2500}\u{2500}\n\u{276f} prompt\n\u{2500}\u{2500}\u{2500}\n  auto mode on\n\nQuoted example:\n\u{276f} esc to interrupt",
         ] {
             assert_eq!(super::claude_working_status(screen), None);
+        }
+    }
+
+    #[test]
+    fn claude_live_spinner_stays_working_when_vim_mode_hides_interrupt_hint() {
+        let screen = "Tool still running\n\n\u{2722} Beboppin'\u{2026} (4m 23s / 10.2k tokens)\n  Tip: Ask a side question without interrupting\n\n\u{2500}\u{2500}\u{2500}\n\u{276f} \n\u{2500}\u{2500}\u{2500}\n  -- INSERT -- auto mode on (shift+tab to cycle) / agents";
+        let mut process = agent_with_layout("%165", "", "", 100, 80, 24);
+        record_pane_capture(&mut process, screen, 6);
+        let now = Instant::now();
+        let mut tracker = ActivityTracker::default();
+        for elapsed in [0, 2, 60, 1_500] {
+            let activity = tracker.update(
+                std::slice::from_ref(&process),
+                &HashSet::new(),
+                now + Duration::from_secs(elapsed),
+            );
+            assert!(activity[0].working);
+            assert!(!activity[0].asking);
+        }
+
+        process.9 += 1;
+        record_pane_capture(
+            &mut process,
+            "Task finished\n\n\u{273b} Cooked for 10m 50s / done 6:36 PM\n\n\u{2500}\u{2500}\u{2500}\n\u{276f} \n\u{2500}\u{2500}\u{2500}\n  -- INSERT -- auto mode on",
+            5,
+        );
+        let activity = tracker.update(
+            &[process],
+            &HashSet::new(),
+            now + Duration::from_secs(1_501),
+        );
+        assert!(!activity[0].working);
+    }
+
+    #[test]
+    fn claude_live_spinner_uses_only_the_current_status_block() {
+        for marker in [
+            '\u{00b7}', '\u{2722}', '\u{2733}', '\u{2736}', '\u{273b}', '\u{273d}',
+        ] {
+            let screen = format!(
+                "Tool output\n\n{marker} Thinking... (1m\n30s / 1k tokens)\n\n\u{2500}\u{2500}\u{2500}\n\u{276f} \n\u{2500}\u{2500}\u{2500}\n  -- NORMAL -- auto mode on"
+            );
+            assert_eq!(super::claude_working_status(&screen), Some(true));
+        }
+        for transcript in [
+            "\u{2722} Thinking\u{2026} (2s)\n\nTask finished",
+            "Example: \u{2722} Thinking\u{2026} (2s)",
+            "\u{273b} Cooked for 10m 50s / done 6:36 PM",
+        ] {
+            let screen = format!(
+                "{transcript}\n\n\u{2500}\u{2500}\u{2500}\n\u{276f} explain \u{2722} Thinking\u{2026}\n\u{2500}\u{2500}\u{2500}\n  -- INSERT -- auto mode on"
+            );
+            assert_eq!(super::claude_working_status(&screen), Some(false));
         }
     }
 
