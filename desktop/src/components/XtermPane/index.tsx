@@ -1,4 +1,5 @@
-import { memo, useEffect, useRef } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { memo, useEffect, useRef, useState } from "react";
 import { acquirePane, releasePane } from "./paneInstance";
 import { debugXtermPane, isFocusPending, requestXtermPaneFocus } from "./paneRegistry";
 import { fitAndSyncPty } from "./paneResize";
@@ -7,6 +8,14 @@ import type { XtermPaneProps } from "./types";
 export { requestXtermPaneFocus } from "./paneRegistry";
 
 export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, onExit }: XtermPaneProps) {
+  let [remoteControl, setRemoteControl] = useState(false);
+  useEffect(() => {
+    if (!paneId.startsWith("managed:")) return;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void listen<{ controller: string | null }>(`terminal-control-${paneId}`, ({ payload }) => setRemoteControl(!!payload.controller)).then((fn) => { if (disposed) fn(); else unlisten = fn; });
+    return () => { disposed = true; unlisten?.(); };
+  }, [paneId]);
   const slotRef = useRef<HTMLDivElement>(null);
   const onExitRef = useRef(onExit);
   onExitRef.current = onExit;
@@ -59,6 +68,8 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
   }, [paneId, tmuxSession, resolvedGroup]);
 
   return (
+    <>
+    {remoteControl && <div role="status" className="managed-control-notice">Mobile has control. Press a key in the terminal to reclaim.</div>}
     <div
       ref={slotRef}
       style={{
@@ -68,5 +79,6 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
         display: "flex",
       }}
     />
+    </>
   );
 });

@@ -598,14 +598,14 @@ impl AgentPluginRuntime {
                 require_capability(&stored.host, "pane.input")?;
                 validate_bound_pane(&stored.host)?;
                 validate_input(&text)?;
-                crate::tmux::send_literal_to_pane(&stored.host.pane_id, &text)?;
+                crate::terminal_backend::send_literal_to_pane(&stored.host.pane_id, &text)?;
                 Ok(PluginHostResponse::Ok)
             }
             PluginHostRequest::PaneSendKey { key } => {
                 require_capability(&stored.host, "pane.input")?;
                 validate_bound_pane(&stored.host)?;
                 validate_key(&key)?;
-                crate::tmux::send_key_to_pane(&stored.host.pane_id, &key)?;
+                crate::terminal_backend::send_key_to_pane(&stored.host.pane_id, &key)?;
                 Ok(PluginHostResponse::Ok)
             }
             PluginHostRequest::PaneSubmitText { text } => {
@@ -1337,6 +1337,7 @@ async fn run_plugin_process(
             crate::ipc::plugin_host_socket_path(),
         )
         .env("CLAWTAB_CLI", cwtctl_path());
+    #[cfg(unix)]
     unsafe {
         command.pre_exec(|| {
             if libc::setpgid(0, 0) == 0 {
@@ -1411,6 +1412,12 @@ fn run_id_for_token(token: &str) -> Option<String> {
 }
 
 fn resolve_program(root: &Path, value: &str) -> Result<PathBuf, String> {
+    #[cfg(windows)]
+    if value == "python3" {
+        return which::which("python")
+            .or_else(|_| which::which("python3"))
+            .map_err(|_| "Install Python to use this plugin".into());
+    }
     if value.contains('/') {
         resolve_plugin_path(root, value)
     } else {
@@ -1419,7 +1426,22 @@ fn resolve_program(root: &Path, value: &str) -> Result<PathBuf, String> {
 }
 
 fn copy_safe_environment(command: &mut Command) {
-    for key in ["PATH", "HOME", "USER", "SHELL", "LANG", "TMPDIR"] {
+    for key in [
+        "PATH",
+        "HOME",
+        "USER",
+        "SHELL",
+        "LANG",
+        "TMPDIR",
+        "USERPROFILE",
+        "APPDATA",
+        "LOCALAPPDATA",
+        "SYSTEMROOT",
+        "COMSPEC",
+        "PATHEXT",
+        "TEMP",
+        "TMP",
+    ] {
         if let Ok(value) = std::env::var(key) {
             command.env(key, value);
         }
@@ -1432,7 +1454,15 @@ fn copy_safe_environment(command: &mut Command) {
 fn cwtctl_path() -> PathBuf {
     std::env::current_exe()
         .ok()
-        .and_then(|path| path.parent().map(|parent| parent.join("cwtctl")))
+        .and_then(|path| {
+            path.parent().map(|parent| {
+                parent.join(if cfg!(windows) {
+                    "cwtctl.exe"
+                } else {
+                    "cwtctl"
+                })
+            })
+        })
         .filter(|path| path.is_file())
         .unwrap_or_else(|| PathBuf::from("cwtctl"))
 }
@@ -1461,6 +1491,14 @@ async fn join_capture(task: Option<tokio::task::JoinHandle<Vec<u8>>>) -> String 
 }
 
 async fn terminate_process_group(process_id: u32, child: &mut tokio::process::Child) {
+    #[cfg(windows)]
+    {
+        let _ = tokio::process::Command::new("taskkill.exe")
+            .args(["/PID", &process_id.to_string(), "/T", "/F"])
+            .output()
+            .await;
+    }
+    #[cfg(unix)]
     unsafe {
         libc::kill(-(process_id as i32), libc::SIGTERM);
     }
@@ -1468,6 +1506,7 @@ async fn terminate_process_group(process_id: u32, child: &mut tokio::process::Ch
         .await
         .is_err()
     {
+        #[cfg(unix)]
         unsafe {
             libc::kill(-(process_id as i32), libc::SIGKILL);
         }
@@ -1476,14 +1515,14 @@ async fn terminate_process_group(process_id: u32, child: &mut tokio::process::Ch
 }
 
 fn pane_context(pane_id: &str) -> Option<(ProcessProvider, String)> {
-    let pane_pid = crate::tmux::pane_pid(pane_id).ok()?;
+    let pane_pid = crate::terminal_backend::pane_pid(pane_id).ok()?;
     let snapshot = agent_session::ProcessSnapshot::capture();
     let provider = agent_session::detect_process_provider(&pane_pid, Some(&snapshot))?;
     Some((provider, pane_pid))
 }
 
 fn pane_working_directory(pane_id: &str) -> Option<String> {
-    crate::tmux::get_pane_path(pane_id).ok()
+    crate::terminal_backend::get_pane_path(pane_id).ok()
 }
 
 fn session_data(provider: ProcessProvider, pane_pid: &str) -> AgentSessionData {
@@ -1668,12 +1707,12 @@ fn agent_state(host: &HostRun) -> Result<PluginAgentState, String> {
 
 fn submit_text(pane_id: &str, provider: ProcessProvider, text: &str) -> Result<(), String> {
     if provider == ProcessProvider::Codex && codex_vim_normal_mode(&capture_plain(pane_id)?) {
-        crate::tmux::send_key_to_pane(pane_id, "i")?;
+        crate::terminal_backend::send_key_to_pane(pane_id, "i")?;
         std::thread::sleep(Duration::from_millis(100));
     }
-    crate::tmux::send_literal_to_pane(pane_id, text)?;
+    crate::terminal_backend::send_literal_to_pane(pane_id, text)?;
     std::thread::sleep(Duration::from_millis(100));
-    crate::tmux::send_key_to_pane(pane_id, "Enter")
+    crate::terminal_backend::send_key_to_pane(pane_id, "Enter")
 }
 
 async fn submit_codex_command(
@@ -1683,10 +1722,10 @@ async fn submit_codex_command(
 ) -> Result<(), String> {
     let screen = capture_plain(pane_id)?;
     if codex_vim_normal_mode(&screen) {
-        crate::tmux::send_key_to_pane(pane_id, "i")?;
+        crate::terminal_backend::send_key_to_pane(pane_id, "i")?;
         wait_for_codex_vim_insert(pane_id, cancel).await?;
     }
-    crate::tmux::send_literal_to_pane(pane_id, text)?;
+    crate::terminal_backend::send_literal_to_pane(pane_id, text)?;
 
     let started = Instant::now();
     loop {
@@ -1696,7 +1735,7 @@ async fn submit_codex_command(
         let state = codex_screen_state(pane_id)?;
         match state.draft.as_deref() {
             Some(draft) if draft == text => {
-                return crate::tmux::send_key_to_pane(pane_id, "Enter");
+                return crate::terminal_backend::send_key_to_pane(pane_id, "Enter");
             }
             Some(draft) if !draft.is_empty() => {
                 return Err("Codex composer changed while entering the model command".into());
@@ -1832,7 +1871,7 @@ async fn confirm_max_effort_if_requested(
             || lower.contains("consumes usage limits faster")
             || lower.contains("press enter to confirm")
         {
-            crate::tmux::send_key_to_pane(pane_id, "Enter")?;
+            crate::terminal_backend::send_key_to_pane(pane_id, "Enter")?;
             return Ok(());
         }
         if live_model_selection(&screen)
@@ -1868,7 +1907,7 @@ async fn choose_codex_option(
             .lines()
             .any(|line| selected_option_matches(line, &target_lower))
         {
-            crate::tmux::send_key_to_pane(pane_id, "Enter")?;
+            crate::terminal_backend::send_key_to_pane(pane_id, "Enter")?;
             return Ok(());
         }
         break;
@@ -1891,10 +1930,10 @@ async fn choose_codex_option(
             .lines()
             .any(|line| selected_option_matches(line, &target_lower))
         {
-            crate::tmux::send_key_to_pane(pane_id, "Enter")?;
+            crate::terminal_backend::send_key_to_pane(pane_id, "Enter")?;
             return Ok(());
         }
-        crate::tmux::send_key_to_pane(pane_id, "Down")?;
+        crate::terminal_backend::send_key_to_pane(pane_id, "Down")?;
         tokio::time::sleep(CODEX_MENU_POLL_INTERVAL).await;
     }
     Err("Could not safely select the requested Codex option".into())
@@ -2200,18 +2239,22 @@ async fn clear_stashed_draft(host: &HostRun, cancel: &CancellationToken) -> Resu
     let screen = capture_plain(&host.pane_id)?;
     if host.stashed_vim_mode.is_some() {
         if codex_vim_insert_mode(&screen) {
-            crate::tmux::send_key_to_pane(&host.pane_id, "Escape")?;
+            crate::terminal_backend::send_key_to_pane(&host.pane_id, "Escape")?;
             wait_for_codex_vim_normal(&host.pane_id, cancel).await?;
         } else if !codex_vim_normal_mode(&screen) {
             return Err("Codex Vim mode changed before clearing its draft".into());
         }
         for key in ["g", "g", "d", "G"] {
-            crate::tmux::send_key_to_pane(&host.pane_id, key)?;
+            crate::terminal_backend::send_key_to_pane(&host.pane_id, key)?;
         }
     } else {
         // Codex's non-Vim multiline editor does not consistently handle
         // Ctrl-U, so clear it with one atomic tmux key batch.
-        crate::tmux::send_key_to_pane_repeated(&host.pane_id, "BSpace", draft.chars().count())?;
+        crate::terminal_backend::send_key_to_pane_repeated(
+            &host.pane_id,
+            "BSpace",
+            draft.chars().count(),
+        )?;
     }
     wait_for_codex_draft(&host.pane_id, "", cancel, "clear its draft").await?;
     Ok(())
@@ -2228,26 +2271,26 @@ async fn restore_stashed_draft(host: &HostRun, cancel: &CancellationToken) -> Re
     if let Some(original_mode) = host.stashed_vim_mode {
         let screen = capture_plain(&host.pane_id)?;
         if codex_vim_insert_mode(&screen) {
-            crate::tmux::send_key_to_pane(&host.pane_id, "Escape")?;
+            crate::terminal_backend::send_key_to_pane(&host.pane_id, "Escape")?;
             wait_for_codex_vim_normal(&host.pane_id, cancel).await?;
         } else if !codex_vim_normal_mode(&screen) {
             return Err("Codex Vim mode changed before restoring its draft".into());
         }
-        crate::tmux::send_key_to_pane(&host.pane_id, "p")?;
+        crate::terminal_backend::send_key_to_pane(&host.pane_id, "p")?;
         wait_for_codex_draft(&host.pane_id, draft, cancel, "restore its draft").await?;
         // `dG` fills Vim's register linewise. Pasting it into Codex's empty
         // one-line buffer creates a synthetic blank line before the draft;
         // remove only that editor-created line after the register is restored.
         for key in ["g", "g", "d", "d"] {
-            crate::tmux::send_key_to_pane(&host.pane_id, key)?;
+            crate::terminal_backend::send_key_to_pane(&host.pane_id, key)?;
         }
         wait_for_codex_draft(&host.pane_id, draft, cancel, "normalize its restored draft").await?;
         if original_mode == CodexVimMode::Insert {
-            crate::tmux::send_key_to_pane(&host.pane_id, "a")?;
+            crate::terminal_backend::send_key_to_pane(&host.pane_id, "a")?;
             wait_for_codex_vim_insert(&host.pane_id, cancel).await?;
         }
     } else {
-        crate::tmux::send_literal_to_pane(&host.pane_id, draft)?;
+        crate::terminal_backend::send_literal_to_pane(&host.pane_id, draft)?;
         wait_for_codex_draft(&host.pane_id, draft, cancel, "restore its draft").await?;
     }
     Ok(())
@@ -2314,11 +2357,11 @@ async fn prepare_codex_model_recovery(
         }
         let screen = capture_plain(&host.pane_id)?;
         if codex_active_model_dialog(&screen) {
-            crate::tmux::send_key_to_pane(&host.pane_id, "Escape")?;
+            crate::terminal_backend::send_key_to_pane(&host.pane_id, "Escape")?;
         } else {
             match codex_composer_draft(&screen).as_deref() {
                 Some("/model") => {
-                    crate::tmux::send_key_to_pane_repeated(
+                    crate::terminal_backend::send_key_to_pane_repeated(
                         &host.pane_id,
                         "BSpace",
                         "/model".chars().count(),
@@ -2388,7 +2431,7 @@ async fn wait_for_codex_vim_normal(
 }
 
 fn capture_plain(pane_id: &str) -> Result<String, String> {
-    let captured = crate::tmux::capture_pane_visible_text(pane_id)?;
+    let captured = crate::terminal_backend::capture_pane_visible_text(pane_id)?;
     Ok(strip_ansi(&captured))
 }
 

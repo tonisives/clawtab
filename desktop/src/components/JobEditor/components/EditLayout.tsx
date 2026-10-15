@@ -169,12 +169,19 @@ export function EditLayout({
         />
         {(form.job_type === "claude" || form.job_type === "job") && (
           <CollapsibleFieldGroup
-            title="Tmux Session"
+            title="Terminal"
             expanded={tmuxExpanded}
             onToggle={() => setTmuxExpanded(!tmuxExpanded)}
             badge={form.tmux_session ? <span style={{ fontSize: 11, color: "var(--text-secondary)", fontWeight: "normal" }}>{form.tmux_session}</span> : null}
           >
             <div className="form-group">
+              <label>Terminal backend</label>
+              <select value={form.terminal_backend ?? ""} onChange={(e) => setForm((prev) => ({ ...prev, terminal_backend: (e.target.value || null) as "tmux" | "managed" | null }))}>
+                <option value="">Use host default</option>
+                <option value="tmux">Tmux</option>
+                <option value="managed">ClawTab managed session</option>
+              </select>
+              <label>Tmux session name</label>
               <input
                 type="text"
                 value={form.tmux_session ?? ""}

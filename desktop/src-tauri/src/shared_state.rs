@@ -18,10 +18,10 @@ pub fn set_pinned_item(
         None
     };
     if let Some(pane_id) = key.strip_prefix("pane:") {
-        if !crate::tmux::pane_exists(pane_id) {
+        if !crate::terminal_backend::pane_exists(pane_id) {
             return Err(format!("tmux pane {pane_id} does not exist"));
         }
-        crate::tmux::set_pane_pinned(pane_id, pinned)?;
+        crate::terminal_backend::set_pane_pinned(pane_id, pinned)?;
     }
 
     let mut guard = settings.lock();
@@ -34,7 +34,9 @@ pub fn set_pinned_item(
     }
     if let Some(pane_id) = key.strip_prefix("pane:") {
         if let Some(identity) = pane_identity {
-            guard.pinned_pane_identities.insert(pane_id.to_string(), identity);
+            guard
+                .pinned_pane_identities
+                .insert(pane_id.to_string(), identity);
         } else {
             guard.pinned_pane_identities.remove(pane_id);
         }
@@ -52,12 +54,14 @@ pub fn merge_pinned_items(
     guard.pinned_items = normalize_pinned_items(std::mem::take(&mut guard.pinned_items));
     for key in incoming {
         if let Some(pane_id) = key.strip_prefix("pane:") {
-            if !crate::tmux::pane_exists(pane_id) {
+            if !crate::terminal_backend::pane_exists(pane_id) {
                 continue;
             }
-            crate::tmux::set_pane_pinned(pane_id, true)?;
+            crate::terminal_backend::set_pane_pinned(pane_id, true)?;
             let identity = resolve_pane_pin_identity(pane_id)?;
-            guard.pinned_pane_identities.insert(pane_id.to_string(), identity);
+            guard
+                .pinned_pane_identities
+                .insert(pane_id.to_string(), identity);
         }
         if !guard.pinned_items.contains(&key) {
             guard.pinned_items.push(key);
@@ -102,7 +106,9 @@ pub fn get_pinned_items(settings: &Arc<Mutex<AppSettings>>) -> Vec<String> {
         .iter()
         .filter_map(|key| key.strip_prefix("pane:").map(str::to_string))
         .collect();
-    guard.pinned_pane_identities.retain(|pane_id, _| active_panes.contains(pane_id));
+    guard
+        .pinned_pane_identities
+        .retain(|pane_id, _| active_panes.contains(pane_id));
     if changed {
         let _ = guard.save();
     }
@@ -110,6 +116,9 @@ pub fn get_pinned_items(settings: &Arc<Mutex<AppSettings>>) -> Vec<String> {
 }
 
 fn resolve_pane_pin_identity(pane_id: &str) -> Result<String, String> {
+    if crate::managed::is_managed(pane_id) {
+        return Ok(crate::terminal_backend::info(pane_id)?.id);
+    }
     let output = crate::debug_spawn::run_logged(
         "tmux",
         &["display-message", "-t", pane_id, "-p", "#{pid}:#{pane_pid}"],
@@ -134,18 +143,21 @@ pub fn set_pane_display_name(
     pane_id: &str,
     display_name: Option<String>,
 ) -> Result<Option<String>, String> {
-    if !crate::tmux::pane_exists(pane_id) {
+    if !crate::terminal_backend::pane_exists(pane_id) {
         return Err(format!("tmux pane {pane_id} does not exist"));
     }
     let display_name = display_name.and_then(normalize_optional_text);
-    crate::tmux::set_pane_display_name(pane_id, display_name.as_deref())?;
+    crate::terminal_backend::set_pane_display_name(pane_id, display_name.as_deref())?;
 
     let identity = display_name
         .as_ref()
         .map(|_| resolve_process_override_identity(pane_id))
         .transpose()?;
     let mut guard = settings.lock();
-    let entry = guard.process_overrides.entry(pane_id.to_string()).or_default();
+    let entry = guard
+        .process_overrides
+        .entry(pane_id.to_string())
+        .or_default();
     entry.display_name = display_name.clone();
     if let Some((pane_pid, session_id)) = identity {
         entry.set_identity(pane_pid, session_id);
@@ -166,6 +178,10 @@ fn normalize_optional_text(value: String) -> Option<String> {
 }
 
 fn resolve_process_override_identity(pane_id: &str) -> Result<(String, Option<String>), String> {
+    if crate::managed::is_managed(pane_id) {
+        let info = crate::terminal_backend::info(pane_id)?;
+        return Ok((info.child_pid.to_string(), info.launch.conversation_id));
+    }
     let output = crate::debug_spawn::run_logged(
         "tmux",
         &[

@@ -100,7 +100,7 @@ fn flush_pending(
         OutputSink::Tauri(app_handle) => {
             let _ = app_handle.emit(&format!("pty-output-{}", event_key), bytes);
         }
-        OutputSink::Channel(tx) => {
+        OutputSink::Channel(tx) | OutputSink::Relay(tx, _) => {
             let _ = tx.send((pane_id.to_string(), bytes));
         }
     }
@@ -113,7 +113,7 @@ fn emit_exit(sink: &OutputSink, event_key: &str) {
         OutputSink::Tauri(app_handle) => {
             let _ = app_handle.emit(&format!("pty-exit-{}", event_key), ());
         }
-        OutputSink::Channel(_) => {}
+        OutputSink::Channel(_) | OutputSink::Relay(_, _) => {}
     }
     let _ = event_key;
 }

@@ -6,7 +6,7 @@ use crate::config::jobs::{JobStatus, JobType, JobsConfig, NotifyTarget};
 use crate::events::EventSink;
 use crate::job_context::JobContext;
 use crate::telegram;
-use crate::tmux;
+use crate::terminal_backend as tmux;
 use chrono::Utc;
 
 use super::monitor::{MonitorParams, TelegramStream};
@@ -19,9 +19,6 @@ pub fn reattach_running_jobs(
     jobs_config: &Arc<Mutex<JobsConfig>>,
     ctx: &JobContext,
 ) {
-    if !tmux::is_available() {
-        return;
-    }
     let (jobs, default_session, telegram_config) = load_reattach_inputs(jobs_config, &ctx.settings);
     let slug_to_job: HashMap<&str, &crate::config::jobs::Job> = jobs
         .iter()
@@ -39,8 +36,12 @@ pub fn reattach_running_jobs(
     let mut seen_panes = HashSet::new();
     for run in &unfinished {
         if run.trigger == "once" && !slug_to_job.contains_key(run.job_id.as_str()) {
-            let Some(pane_id) = run.pane_id.as_deref() else { continue };
-            if !seen_panes.insert(pane_id.to_string()) { continue; }
+            let Some(pane_id) = run.pane_id.as_deref() else {
+                continue;
+            };
+            if !seen_panes.insert(pane_id.to_string()) {
+                continue;
+            }
             if reattach_retired_one_shot(run, pane_id, &default_session, ctx) {
                 reattached += 1;
             }
@@ -91,8 +92,18 @@ fn reattach_retired_one_shot(
 ) -> bool {
     match tmux::pane_process_state(pane_id) {
         Ok(tmux::PaneProcessState::Running) => {
-            let (group, name) = run.job_id.split_once('/').unwrap_or(("default", &run.job_id));
-            mark_running(&run.job_id, &run.id, &run.started_at, pane_id, default_session, &ctx.job_status);
+            let (group, name) = run
+                .job_id
+                .split_once('/')
+                .unwrap_or(("default", &run.job_id));
+            mark_running(
+                &run.job_id,
+                &run.id,
+                &run.started_at,
+                pane_id,
+                default_session,
+                &ctx.job_status,
+            );
             let params = MonitorParams {
                 tmux_session: default_session.to_string(),
                 pane_id: pane_id.to_string(),
@@ -130,8 +141,11 @@ fn reattach_retired_one_shot(
             };
             let output = tmux::capture_pane_full(pane_id).unwrap_or_default();
             let history = ctx.history.lock();
-            let _ = history.update_finished(&run.id, &Utc::now().to_rfc3339(), exit_code, &output, "");
-            if let Some(path) = super::monitor::save_log_file(&run.job_id, &run.id, &output, None, true) {
+            let _ =
+                history.update_finished(&run.id, &Utc::now().to_rfc3339(), exit_code, &output, "");
+            if let Some(path) =
+                super::monitor::save_log_file(&run.job_id, &run.id, &output, None, true)
+            {
                 let _ = history.update_log_path(&run.id, &path.to_string_lossy());
             }
             drop(history);
@@ -144,17 +158,31 @@ fn reattach_retired_one_shot(
                     exit_code,
                 );
                 let config = ctx.settings.lock().telegram.clone();
-                let (group, job_id) = run.job_id.split_once('/').unwrap_or(("default", &run.job_id));
+                let (group, job_id) = run
+                    .job_id
+                    .split_once('/')
+                    .unwrap_or(("default", &run.job_id));
                 crate::telegram::failure::enqueue(
-                    &ctx.history.lock(), config.as_ref(), crate::telegram::failure::JobFailure {
-                        run_id: &run.id, group, job_id, slug: &run.job_id, chat_id: None, exit_code,
+                    &ctx.history.lock(),
+                    config.as_ref(),
+                    crate::telegram::failure::JobFailure {
+                        run_id: &run.id,
+                        group,
+                        job_id,
+                        slug: &run.job_id,
+                        chat_id: None,
+                        exit_code,
                     },
                 );
             }
             false
         }
         Err(error) => {
-            log::warn!("Could not inspect retired one-time pane {}: {}", pane_id, error);
+            log::warn!(
+                "Could not inspect retired one-time pane {}: {}",
+                pane_id,
+                error
+            );
             false
         }
     }
@@ -233,7 +261,10 @@ fn queue_orphan_failure(
     }
     let local_enabled = ctx.settings.lock().notify_job_failures_local;
     crate::notifications::notify_job_failure(
-        ctx.notifier.as_deref(), local_enabled, &job.slug, exit_code,
+        ctx.notifier.as_deref(),
+        local_enabled,
+        &job.slug,
+        exit_code,
     );
     let config = ctx.settings.lock().telegram.clone();
     crate::telegram::failure::enqueue(
@@ -279,7 +310,9 @@ fn finalize_idle_pane(
             (job.group == "agent")
                 .then(|| crate::agent::agent_group_from_slug(&job.slug))
                 .as_deref(),
-            job.run_once.as_ref().is_some_and(|once| once.remove_after_start),
+            job.run_once
+                .as_ref()
+                .is_some_and(|once| once.remove_after_start),
         ) {
             let _ = h.update_log_path(&run.id, &path.to_string_lossy());
         }
@@ -371,7 +404,7 @@ fn restore_auto_yes(
     panes.insert(pane_id.to_string());
     let pane_set = panes.clone();
     drop(panes);
-    if let Err(error) = crate::tmux::sync_auto_yes_bell_monitoring(&pane_set) {
+    if let Err(error) = crate::terminal_backend::sync_auto_yes_bell_monitoring(&pane_set) {
         log::warn!(
             "failed to sync auto-yes terminal bell suppression: {}",
             error
@@ -429,7 +462,10 @@ fn spawn_reattach_monitor(
         slug: job.slug.clone(),
         agent_group: (job.group == "agent").then(|| crate::agent::agent_group_from_slug(&job.slug)),
         agent_prompt_path: (job.group == "agent").then(|| std::path::PathBuf::from(&job.path)),
-        retired_one_shot: job.run_once.as_ref().is_some_and(|once| once.remove_after_start),
+        retired_one_shot: job
+            .run_once
+            .as_ref()
+            .is_some_and(|once| once.remove_after_start),
         kill_on_end: job.kill_on_end,
         telegram,
         telegram_notify: job.telegram_notify.clone(),

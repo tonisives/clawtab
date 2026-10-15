@@ -12,6 +12,7 @@ export interface XtermLogHandle {
   clear(): void;
   /** Get current terminal dimensions */
   dimensions(): { cols: number; rows: number };
+  setScreenSize(size: { cols: number; rows: number } | null): void;
   /** Visually offset terminal contents without resizing the WebView */
   setVisualOffset(px: number): void;
   /** Blur the terminal input so native keyboards close */
@@ -294,25 +295,29 @@ document.getElementById('terminal').addEventListener('dblclick', function(e) {
   showPasteTarget(e.clientX, e.clientY);
 });
 
+var fixedScreenSize = null;
+window.setScreenSize = function(size) { fixedScreenSize = size; fitScreen(); };
+function fitScreen() { if (fixedScreenSize) term.resize(fixedScreenSize.cols, fixedScreenSize.rows); else fit.fit(); }
 var lastReportedCols = 0;
 var lastReportedRows = 0;
 function reportResize() {
-  if (!term.cols || !term.rows) return;
-  if (term.cols === lastReportedCols && term.rows === lastReportedRows) return;
-  lastReportedCols = term.cols;
-  lastReportedRows = term.rows;
-  window.ReactNativeWebView.postMessage(JSON.stringify({type:'resize',cols:term.cols,rows:term.rows}));
+  var size = fit.proposeDimensions();
+  if (!size || !size.cols || !size.rows) return;
+  if (size.cols === lastReportedCols && size.rows === lastReportedRows) return;
+  lastReportedCols = size.cols;
+  lastReportedRows = size.rows;
+  window.ReactNativeWebView.postMessage(JSON.stringify({type:'resize',cols:size.cols,rows:size.rows}));
 }
 window.setTerminalFontSize = function(size) {
   var next = Math.max(9, Math.min(22, Math.round(size)));
   if (term.options.fontSize === next) return;
   term.options.fontSize = next;
-  fit.fit();
+  fitScreen();
   reportResize();
   if (window.applyVisualOffset) window.applyVisualOffset();
 };
 var ro = new ResizeObserver(function() {
-  fit.fit();
+  fitScreen();
   reportResize();
   if (window.applyVisualOffset) window.applyVisualOffset();
 });
@@ -536,6 +541,9 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
       },
       clear() {
         injectOperation(`window.enqueueTerminalReset();true;`);
+      },
+      setScreenSize(size) {
+        injectOperation(`window.setScreenSize(${JSON.stringify(size)});true;`);
       },
       dimensions() {
         return dimsRef.current;

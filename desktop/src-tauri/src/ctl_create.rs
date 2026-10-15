@@ -315,6 +315,7 @@ fn prepare_job(input: CreateInput, config: &JobsConfig, cwd: &Path) -> Result<Jo
         env: Default::default(),
         work_dir: None,
         tmux_session: None,
+        terminal_backend: None,
         aerospace_workspace: None,
         folder_path: Some(folder_path),
         job_id: Some(job_id),

@@ -625,6 +625,7 @@ fn job_to_remote(job: &Job) -> RemoteJob {
         slug: job.slug.clone(),
         work_dir,
         tmux_session: job.tmux_session.clone(),
+        terminal_backend: job.terminal_backend,
         aerospace_workspace: job.aerospace_workspace.clone(),
         notify_target: Some(
             match job.notify_target {

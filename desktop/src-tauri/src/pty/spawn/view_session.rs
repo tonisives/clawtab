@@ -11,7 +11,7 @@ pub(super) fn create_view_session(
     spawn_started: Instant,
 ) -> Result<String, String> {
     let view_session = next_view_session_name();
-    crate::tmux::new_window_view_session(&view_session, window_id).map_err(|e| {
+    crate::terminal_backend::new_window_view_session(&view_session, window_id).map_err(|e| {
         log::warn!(
             "[pty {}] new-session failed after {}ms: {}",
             pane_id,
@@ -20,17 +20,19 @@ pub(super) fn create_view_session(
         );
         e
     })?;
-    let _ = crate::tmux::set_session_status_off(&view_session);
-    crate::tmux::select_window(&format!("{}:{}", view_session, window_id)).map_err(|e| {
-        log::warn!(
-            "[pty {}] select-window failed after {}ms: {}",
-            pane_id,
-            spawn_started.elapsed().as_millis(),
+    let _ = crate::terminal_backend::set_session_status_off(&view_session);
+    crate::terminal_backend::select_window(&format!("{}:{}", view_session, window_id)).map_err(
+        |e| {
+            log::warn!(
+                "[pty {}] select-window failed after {}ms: {}",
+                pane_id,
+                spawn_started.elapsed().as_millis(),
+                e
+            );
+            let _ = crate::terminal_backend::kill_session(&view_session);
             e
-        );
-        let _ = crate::tmux::kill_session(&view_session);
-        e
-    })?;
+        },
+    )?;
     log::info!(
         "[pty {}] view session {} ready after {}ms",
         pane_id,
@@ -59,9 +61,10 @@ mod tests {
 
         let mut manager = PtyManager::new();
         let base = "pty-test-base";
-        crate::tmux::new_session_with_placeholder(base).unwrap();
-        let pane = crate::tmux::create_window_with_cwd(base, "agent", None, &[]).unwrap();
-        let window = crate::tmux::display_pane_window_id(&pane).unwrap();
+        crate::terminal_backend::new_session_with_placeholder(base).unwrap();
+        let pane =
+            crate::terminal_backend::create_window_with_cwd(base, "agent", None, &[]).unwrap();
+        let window = crate::terminal_backend::display_pane_window_id(&pane).unwrap();
         let (tx, _rx) = std::sync::mpsc::sync_channel(64);
         manager
             .spawn(
@@ -74,8 +77,9 @@ mod tests {
             )
             .unwrap();
         let view = manager.sessions.get(&pane).unwrap().view_session.clone();
-        let unrelated = crate::tmux::create_window_with_cwd(base, "unrelated", None, &[]).unwrap();
-        let windows: Vec<_> = crate::tmux::list_all_windows_with_session()
+        let unrelated =
+            crate::terminal_backend::create_window_with_cwd(base, "unrelated", None, &[]).unwrap();
+        let windows: Vec<_> = crate::terminal_backend::list_all_windows_with_session()
             .unwrap()
             .into_iter()
             .filter(|(session, _)| session == &view)
@@ -83,12 +87,12 @@ mod tests {
             .collect();
         assert_eq!(windows, vec![window]);
 
-        crate::tmux::kill_pane(&pane).unwrap();
-        assert!(!crate::tmux::session_exists(&view));
-        assert!(crate::tmux::pane_exists(&unrelated));
+        crate::terminal_backend::kill_pane(&pane).unwrap();
+        assert!(!crate::terminal_backend::session_exists(&view));
+        assert!(crate::terminal_backend::pane_exists(&unrelated));
         assert!(manager
             .spawn(&pane, base, 80, 24, "default", OutputSink::Channel(tx))
             .is_err());
-        crate::tmux::kill_session(base).unwrap();
+        crate::terminal_backend::kill_session(base).unwrap();
     }
 }

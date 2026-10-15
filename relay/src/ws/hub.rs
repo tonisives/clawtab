@@ -533,6 +533,7 @@ mod tests {
 
     fn mk_process(pane: &str, group: &str) -> DetectedProcess {
         DetectedProcess {
+            backend: Default::default(),
             display_name: None,
             pane_title: None,
             execution_id: None,

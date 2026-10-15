@@ -6,7 +6,7 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 
 use crate::telegram::ActiveAgent;
-use crate::tmux;
+use crate::terminal_backend as tmux;
 
 use super::lock_or_log;
 

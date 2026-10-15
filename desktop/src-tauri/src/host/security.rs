@@ -12,7 +12,6 @@ use std::{
     collections::BTreeMap,
     fs::OpenOptions,
     io::{Read, Write},
-    os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
     sync::LazyLock,
 };
@@ -25,26 +24,16 @@ struct StoreGuard {
     _file: std::fs::File,
 }
 fn file_lock(name: &str) -> Result<std::fs::File, String> {
-    use std::os::fd::AsRawFd;
-    let file = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .mode(0o600)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(directory()?.join(name))
-        .map_err(|_| "Secure storage lock unavailable")?;
-    let meta = file
-        .metadata()
-        .map_err(|_| "Secure storage lock unavailable")?;
-    if !meta.is_file()
-        || meta.uid() != unsafe { libc::geteuid() }
-        || meta.mode() & 0o077 != 0
-        || unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) } != 0
-    {
-        return Err("Unsafe secure storage lock".into());
-    }
+    let file = crate::local_transport::open_private(
+        &directory()?.join(name),
+        OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false),
+    )
+    .map_err(|_| "Secure storage lock unavailable")?;
+    fs2::FileExt::lock_exclusive(&file).map_err(|_| "Secure storage lock unavailable")?;
     Ok(file)
 }
 fn store_lock() -> Result<StoreGuard, String> {
@@ -112,26 +101,17 @@ pub fn directory() -> Result<PathBuf, String> {
     let path = crate::config::config_dir()
         .ok_or("Configuration directory unavailable")?
         .join("secure-move");
-    std::fs::create_dir_all(&path).map_err(|_| "Secure storage unavailable")?;
-    let meta = std::fs::symlink_metadata(&path).map_err(|_| "Secure storage unavailable")?;
-    if !meta.is_dir() || meta.uid() != unsafe { libc::geteuid() } {
-        return Err("Unsafe secure storage directory".into());
-    }
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700))
-        .map_err(|_| "Secure storage permissions unavailable")?;
+    crate::local_transport::private_directory(&path)?;
     Ok(path)
 }
 pub fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, String> {
-    let mut file = OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(path)
+    let mut file = crate::local_transport::open_private(path, OpenOptions::new().read(true))
         .map_err(|_| "Secure record unavailable")?;
-    let meta = file.metadata().map_err(|_| "Secure record unavailable")?;
-    if !meta.is_file()
-        || meta.uid() != unsafe { libc::geteuid() }
-        || meta.mode() & 0o077 != 0
-        || meta.len() > 8 * 1024 * 1024
+    if file
+        .metadata()
+        .map_err(|_| "Secure record unavailable")?
+        .len()
+        > 8 * 1024 * 1024
     {
         return Err("Unsafe secure record".into());
     }
@@ -143,22 +123,15 @@ pub fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, Strin
 pub fn save_json(path: &Path, value: &impl Serialize) -> Result<(), String> {
     let parent = path.parent().ok_or("Invalid secure record path")?;
     let temporary = parent.join(format!(".{}.tmp", uuid::Uuid::new_v4()));
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(&temporary)
-        .map_err(|_| "Secure record unavailable")?;
+    let mut file = crate::local_transport::private_file(&temporary)?;
     let result = (|| {
         file.write_all(&serde_json::to_vec(value).map_err(|_| "Invalid secure record")?)
             .map_err(|_| "Could not save secure record")?;
         file.sync_all()
             .map_err(|_| "Could not persist secure record")?;
-        std::fs::rename(&temporary, path).map_err(|_| "Could not commit secure record")?;
-        std::fs::File::open(parent)
-            .and_then(|f| f.sync_all())
-            .map_err(|_| "Could not persist secure record")
+        drop(file);
+        crate::local_transport::atomic_replace(&temporary, path)
+            .map_err(|_| "Could not commit secure record")
     })();
     if result.is_err() {
         let _ = std::fs::remove_file(temporary);
@@ -598,15 +571,25 @@ mod tests {
         assert!(machine.open(&envelope, &client).is_err());
     }
     #[test]
+    #[cfg(unix)]
     fn secure_records_reject_symlinks_and_world_readable_storage() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("record.json");
         save_json(&path, &json!({"fixture":true})).unwrap();
         assert_eq!(read_json::<Value>(&path).unwrap(), json!({"fixture":true}));
-        assert_eq!(std::fs::metadata(&path).unwrap().mode() & 0o777, 0o600);
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        #[cfg(unix)]
+        assert_eq!(
+            std::os::unix::fs::MetadataExt::mode(&std::fs::metadata(&path).unwrap()) & 0o777,
+            0o600
+        );
+        std::fs::set_permissions(
+            &path,
+            <std::fs::Permissions as std::os::unix::fs::PermissionsExt>::from_mode(0o644),
+        )
+        .unwrap();
         assert!(read_json::<Value>(&path).is_err());
         let link = directory.path().join("link.json");
+        #[cfg(unix)]
         std::os::unix::fs::symlink(&path, &link).unwrap();
         assert!(read_json::<Value>(&link).is_err());
     }

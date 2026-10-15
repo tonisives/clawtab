@@ -4,7 +4,7 @@ use tauri::State;
 
 use crate::debug_spawn;
 use crate::terminal;
-use crate::tmux;
+use crate::terminal_backend as tmux;
 use crate::AppState;
 
 #[derive(serde::Serialize)]
@@ -353,7 +353,7 @@ pub async fn fork_pane(
     direction: String,
     secret_keys: Option<Vec<String>>,
 ) -> Result<String, String> {
-    if !tmux::is_available() {
+    if !crate::managed::is_managed(&pane_id) && !tmux::is_available() {
         return Err("tmux is not installed".to_string());
     }
     let _ = direction;
@@ -374,6 +374,21 @@ pub async fn fork_pane(
         vars
     };
 
+    if crate::managed::is_managed(&pane_id) {
+        let info = crate::terminal_backend::info(&pane_id)?;
+        if info.launch.provider != "claude" {
+            return Err("This provider does not support this fork action".into());
+        }
+        let conversation = info.launch.conversation_id.clone().ok_or(
+            "Conversation identity is not available yet; enable agent hooks before forking",
+        )?;
+        let mut launch = info.launch;
+        launch.args = vec!["--resume".into(), conversation, "--fork-session".into()];
+        launch.conversation_id = None;
+        launch.close_with_terminal = false;
+        launch.metadata.remove("slug");
+        return crate::managed::launch(launch, &env_vars).map(|info| info.id);
+    }
     let pane_path = tmux::get_pane_path(&pane_id)?;
     let target_session = tmux::resolve_fork_session(&pane_id)?;
 

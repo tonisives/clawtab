@@ -163,6 +163,8 @@ pub struct RemoteJob {
     pub work_dir: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tmux_session: Option<String>,
+    #[serde(default)]
+    pub terminal_backend: Option<TerminalBackend>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub aerospace_workspace: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -214,6 +216,8 @@ pub struct JobUpdate {
     #[serde(default, deserialize_with = "deserialize_optional_optional")]
     pub tmux_session: Option<Option<String>>,
     #[serde(default, deserialize_with = "deserialize_optional_optional")]
+    pub terminal_backend: Option<Option<TerminalBackend>>,
+    #[serde(default, deserialize_with = "deserialize_optional_optional")]
     pub aerospace_workspace: Option<Option<String>>,
     #[serde(default, deserialize_with = "deserialize_optional_optional")]
     pub notify_target: Option<Option<String>>,
@@ -262,8 +266,18 @@ pub enum JobStatus {
     Paused,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TerminalBackend {
+    #[default]
+    Tmux,
+    Managed,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DetectedProcess {
+    #[serde(default)]
+    pub backend: TerminalBackend,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub execution_id: Option<String>,
     pub pane_id: String,

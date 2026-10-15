@@ -38,7 +38,7 @@ pub async fn get_running_job_logs(
             tmux_session: Some(session),
             ..
         } => {
-            let capture = crate::tmux::capture_pane(&session, &pane_id, 200)?;
+            let capture = crate::terminal_backend::capture_pane(&session, &pane_id, 200)?;
             Ok(capture.trim().to_string())
         }
         // Binary jobs have no tmux pane. Fall back to the streaming log file
@@ -77,11 +77,11 @@ pub async fn send_job_input(
             ..
         } => {
             if let (Some(c), Some(r)) = (col, row) {
-                crate::tmux::send_mouse_click_to_pane(&pane_id, c, r)
+                crate::terminal_backend::send_mouse_click_to_pane(&pane_id, c, r)
             } else if let Some(ref ft) = freetext {
-                crate::tmux::send_keys_to_tui_pane_freetext(&pane_id, &text, ft)
+                crate::terminal_backend::send_keys_to_tui_pane_freetext(&pane_id, &text, ft)
             } else {
-                crate::tmux::send_keys_to_tui_pane(&pane_id, &text)
+                crate::terminal_backend::send_keys_to_tui_pane(&pane_id, &text)
             }
         }
         JobStatus::Running { .. } => Err("Job has no tmux pane".to_string()),

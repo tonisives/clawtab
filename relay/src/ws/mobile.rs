@@ -511,7 +511,10 @@ async fn handle_get_notification_history(state: &AppState, user_id: Uuid, id: &s
 
 fn extract_id(msg: &ClientMessage) -> Option<String> {
     match msg {
-        ClientMessage::ListJobs { id, .. }
+        ClientMessage::TakeControl { id, .. }
+        | ClientMessage::RenewControl { id, .. }
+        | ClientMessage::ReleaseControl { id, .. }
+        | ClientMessage::ListJobs { id, .. }
         | ClientMessage::RunJob { id, .. }
         | ClientMessage::PauseJob { id, .. }
         | ClientMessage::ResumeJob { id, .. }

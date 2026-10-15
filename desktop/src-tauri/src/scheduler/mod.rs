@@ -154,7 +154,12 @@ fn run_due_jobs(
         }
         if job.run_once.is_some() {
             if one_shot_due(job, ctx, now) {
-                spawn_one_shot(job.clone(), jobs_config.clone(), ctx.clone(), launching_once.clone());
+                spawn_one_shot(
+                    job.clone(),
+                    jobs_config.clone(),
+                    ctx.clone(),
+                    launching_once.clone(),
+                );
             }
             continue;
         }
@@ -183,18 +188,40 @@ fn run_due_one_shots(
     now: chrono::DateTime<Local>,
 ) {
     let jobs = jobs_config.lock().jobs.clone();
-    for job in jobs.into_iter().filter(|job| job.enabled && one_shot_due(job, ctx, now)) {
-        spawn_one_shot(job, jobs_config.clone(), ctx.clone(), launching_once.clone());
+    for job in jobs
+        .into_iter()
+        .filter(|job| job.enabled && one_shot_due(job, ctx, now))
+    {
+        spawn_one_shot(
+            job,
+            jobs_config.clone(),
+            ctx.clone(),
+            launching_once.clone(),
+        );
     }
 }
 
-fn one_shot_due(job: &crate::config::jobs::Job, ctx: &JobContext, now: chrono::DateTime<Local>) -> bool {
-    let Some(schedule) = &job.run_once else { return false };
+fn one_shot_due(
+    job: &crate::config::jobs::Job,
+    ctx: &JobContext,
+    now: chrono::DateTime<Local>,
+) -> bool {
+    let Some(schedule) = &job.run_once else {
+        return false;
+    };
     if schedule.at > now || !job.enabled {
         return false;
     }
-    !ctx.history.lock().get_by_job_id(&job.slug, 20).unwrap_or_default().iter()
-        .any(|run| run.trigger == "once" && (run.pane_id.is_some() || (run.finished_at.is_some() && run.exit_code == Some(0))))
+    !ctx.history
+        .lock()
+        .get_by_job_id(&job.slug, 20)
+        .unwrap_or_default()
+        .iter()
+        .any(|run| {
+            run.trigger == "once"
+                && (run.pane_id.is_some()
+                    || (run.finished_at.is_some() && run.exit_code == Some(0)))
+        })
 }
 
 fn spawn_one_shot(
@@ -208,12 +235,23 @@ fn spawn_one_shot(
     }
     tokio::spawn(async move {
         let started = executor::execute_job(
-            &job, &ctx, "once", &std::collections::HashMap::new(),
-            executor::ExecuteOpts { use_auto_yes: true, ..Default::default() },
-        ).await;
+            &job,
+            &ctx,
+            "once",
+            &std::collections::HashMap::new(),
+            executor::ExecuteOpts {
+                use_auto_yes: true,
+                ..Default::default()
+            },
+        )
+        .await;
         if started {
             let mut config = jobs_config.lock();
-            let result = if job.run_once.as_ref().is_some_and(|once| once.remove_after_start) {
+            let result = if job
+                .run_once
+                .as_ref()
+                .is_some_and(|once| once.remove_after_start)
+            {
                 config.delete_job(&job.slug)
             } else {
                 let mut disabled = job.clone();
@@ -342,7 +380,7 @@ fn cleanup_stale_running(
                     pane_id: Some(pid), ..
                 } = status
                 {
-                    if !crate::tmux::pane_exists(pid) {
+                    if !crate::terminal_backend::pane_exists(pid) {
                         return Some((slug.clone(), pid.clone()));
                     }
                 } else if matches!(status, JobStatus::Running { .. })
@@ -474,9 +512,15 @@ mod tests {
     fn one_time_schedule_fires_only_across_its_timestamp() {
         let yaml = "name: review\njob_type: job\nenabled: true\npath: ''\ncron: ''\nrun_once:\n  at: '2026-10-02T09:00:00+07:00'\n  remove_after_start: true\n";
         let job = serde_yml::from_str(yaml).unwrap();
-        let before = chrono::DateTime::parse_from_rfc3339("2026-10-02T08:59:00+07:00").unwrap().with_timezone(&chrono::Local);
-        let at = chrono::DateTime::parse_from_rfc3339("2026-10-02T09:00:00+07:00").unwrap().with_timezone(&chrono::Local);
-        let after = chrono::DateTime::parse_from_rfc3339("2026-10-02T09:01:00+07:00").unwrap().with_timezone(&chrono::Local);
+        let before = chrono::DateTime::parse_from_rfc3339("2026-10-02T08:59:00+07:00")
+            .unwrap()
+            .with_timezone(&chrono::Local);
+        let at = chrono::DateTime::parse_from_rfc3339("2026-10-02T09:00:00+07:00")
+            .unwrap()
+            .with_timezone(&chrono::Local);
+        let after = chrono::DateTime::parse_from_rfc3339("2026-10-02T09:01:00+07:00")
+            .unwrap()
+            .with_timezone(&chrono::Local);
         assert!(job_due_between(&job, before, at).unwrap());
         assert!(!job_due_between(&job, at, after).unwrap());
     }

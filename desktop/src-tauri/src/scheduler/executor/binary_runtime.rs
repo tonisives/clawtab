@@ -256,6 +256,7 @@ fn take_token(input: &str) -> Option<(&str, &str)> {
     Some((token, rest.trim_start()))
 }
 
+#[cfg(unix)]
 fn process_alive(pid: u32) -> bool {
     if pid == 0 {
         return false;
@@ -264,6 +265,7 @@ fn process_alive(pid: u32) -> bool {
     result == 0
 }
 
+#[cfg(unix)]
 fn kill_process_group(state: &BinaryRuntimeState) -> Result<(), String> {
     let pgid = state.pgid;
     if pgid <= 0 {
@@ -320,4 +322,38 @@ mod tests {
             "/opt/clawtab/jobs/example/run.sh"
         ));
     }
+}
+
+#[cfg(windows)]
+fn process_alive(pid: u32) -> bool {
+    use windows_sys::Win32::{
+        Foundation::CloseHandle,
+        System::Threading::{GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION},
+    };
+    let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+    if process.is_null() {
+        return false;
+    }
+    let mut code = 0;
+    let running = unsafe { GetExitCodeProcess(process, &mut code) } != 0 && code == 259;
+    unsafe {
+        CloseHandle(process);
+    }
+    running
+}
+#[cfg(windows)]
+fn kill_process_group(state: &BinaryRuntimeState) -> Result<(), String> {
+    if !process_alive(state.pid) {
+        unregister(&state.slug);
+        return Ok(());
+    }
+    let status = std::process::Command::new("taskkill.exe")
+        .args(["/PID", &state.pid.to_string(), "/T", "/F"])
+        .status()
+        .map_err(|e| e.to_string())?;
+    if !status.success() {
+        return Err("Failed to stop binary process tree".into());
+    }
+    unregister(&state.slug);
+    Ok(())
 }

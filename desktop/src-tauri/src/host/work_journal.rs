@@ -37,10 +37,10 @@ async fn request_value(request: Value) -> Result<Value, String> {
         .map(std::path::PathBuf::from)
         .or_else(|| dirs::data_local_dir().map(|p| p.join("Work Journal/control.sock")))
         .ok_or("Journal socket directory unavailable")?;
-    let stream = tokio::net::UnixStream::connect(path)
+    let stream = crate::local_transport::connect_async(&path)
         .await
         .map_err(|_| "Work Journal service is unavailable".to_owned())?;
-    let (reader, mut writer) = stream.into_split();
+    let (reader, mut writer) = tokio::io::split(stream);
     let body = format!("{request}\n");
     writer
         .write_all(body.as_bytes())

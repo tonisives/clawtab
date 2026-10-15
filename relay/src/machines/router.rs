@@ -14,6 +14,7 @@ pub struct Host {
     pub tx: mpsc::Sender<String>,
 }
 pub struct Client {
+    pub managed_sessions: bool,
     pub cancel: std::sync::Arc<tokio::sync::Notify>,
     pub transfers_only: bool,
     pub user: Uuid,
@@ -105,6 +106,11 @@ impl MachineHub {
     }
     pub fn send(&self, client: Uuid, value: &Value) {
         if let Some(c) = self.clients.get(&client) {
+            let value = if c.managed_sessions {
+                value.clone()
+            } else {
+                without_managed_sessions(value)
+            };
             if c.tx.try_send(value.to_string()).is_err() {
                 c.cancel.notify_one();
             }
@@ -193,6 +199,43 @@ pub async fn host_event(state: &AppState, machine: Uuid, connection: Uuid, text:
     let Some(kind) = message["type"].as_str().map(str::to_owned) else {
         return;
     };
+    if kind == "terminal_control"
+        && message["pane_id"]
+            .as_str()
+            .is_some_and(|pane| pane.starts_with("managed:"))
+    {
+        let Some(pane) = message["pane_id"].as_str() else {
+            return;
+        };
+        let key = (machine, pane.to_owned());
+        let mut hub = state.machines.write().await;
+        let previous = hub.controllers.get(&key).map(|lease| lease.client);
+        let controller = message["controller"]
+            .as_str()
+            .and_then(|id| Uuid::parse_str(id).ok())
+            .filter(|id| hub.clients.contains_key(id));
+        if let Some(client) = controller {
+            hub.controllers.insert(
+                key.clone(),
+                Lease {
+                    client,
+                    renewed: Instant::now(),
+                    cols: message["cols"].as_u64().unwrap_or(80) as u32,
+                    rows: message["rows"].as_u64().unwrap_or(24) as u32,
+                },
+            );
+        } else {
+            hub.controllers.remove(&key);
+        }
+        message["machine_id"] = json!(machine);
+        let mut recipients = hub.viewers.get(&key).cloned().unwrap_or_default();
+        recipients.extend(previous);
+        recipients.extend(controller);
+        for client in recipients {
+            hub.send(client, &message);
+        }
+        return;
+    }
     if kind == "secure_roster" {
         let Some(id) = message["id"]
             .as_str()
@@ -526,4 +569,32 @@ mod tests {
         assert_eq!(result["jobs"].as_array().unwrap().len(), 1);
         assert!(result["statuses"].get("b").is_none());
     }
+}
+
+fn without_managed_sessions(value: &Value) -> Value {
+    let mut value = value.clone();
+    let payload = if value.get("message").is_some() {
+        &mut value["message"]
+    } else {
+        &mut value
+    };
+    for field in ["processes", "questions", "activity"] {
+        if let Some(items) = payload[field].as_array_mut() {
+            items.retain(|item| {
+                !item["pane_id"]
+                    .as_str()
+                    .is_some_and(|id| id.starts_with("managed:"))
+            });
+        }
+    }
+    for field in ["pane_ids", "items"] {
+        if let Some(items) = payload[field].as_array_mut() {
+            items.retain(|item| {
+                !item
+                    .as_str()
+                    .is_some_and(|id| id.starts_with("managed:") || id.starts_with("pane:managed:"))
+            });
+        }
+    }
+    value
 }

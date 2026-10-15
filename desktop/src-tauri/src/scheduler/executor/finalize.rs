@@ -82,7 +82,7 @@ fn register_auto_yes(rc: &RunCtx<'_>, handle: &TmuxHandle) {
     panes.insert(handle.pane_id.clone());
     let pane_set = panes.clone();
     drop(panes);
-    if let Err(error) = crate::tmux::sync_auto_yes_bell_monitoring(&pane_set) {
+    if let Err(error) = crate::terminal_backend::sync_auto_yes_bell_monitoring(&pane_set) {
         log::warn!(
             "failed to sync auto-yes terminal bell suppression: {}",
             error
@@ -149,7 +149,10 @@ fn build_monitor_params(
         slug: job.slug.clone(),
         agent_group: (job.group == "agent").then(|| crate::agent::agent_group_from_slug(&job.slug)),
         agent_prompt_path: (job.group == "agent").then(|| std::path::PathBuf::from(&job.path)),
-        retired_one_shot: job.run_once.as_ref().is_some_and(|once| once.remove_after_start),
+        retired_one_shot: job
+            .run_once
+            .as_ref()
+            .is_some_and(|once| once.remove_after_start),
         kill_on_end: job.kill_on_end,
         telegram,
         telegram_notify: job.telegram_notify.clone(),

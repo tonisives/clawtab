@@ -467,6 +467,18 @@ let GeneralSettingsContent = ({ onAddJob }: { onAddJob: () => void }) => {
       <div className="field-group">
         <span className="field-group-title">Runtime</span>
         <div className="form-group">
+          <label>Default terminal</label>
+          <select value={settings.default_terminal_backend ?? "tmux"} onChange={(e) => update({ default_terminal_backend: e.target.value as "tmux" | "managed" })}>
+            <option value="tmux">Tmux</option>
+            <option value="managed">ClawTab managed session</option>
+          </select>
+          <span className="hint">Used for new agents and scheduled runs. Existing sessions keep their terminal.</span>
+        </div>
+        <label className="checkbox-label">
+          <input type="checkbox" checked={settings.managed_close_with_terminal ?? false} onChange={(e) => update({ managed_close_with_terminal: e.target.checked })} />
+          Stop managed agents when their originating terminal closes
+        </label>
+        <div className="form-group">
           <label>Default Tmux Session</label>
           <input
             type="text"

@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::agent_session::{detect_process_provider, detect_version_from_command, ProcessProvider};
@@ -18,7 +18,7 @@ struct PaneJobMatch {
 
 pub use crate::config::settings::DetectedProcessOverride;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DetectedProcess {
     pub pane_id: String,
     pub cwd: String,
@@ -92,7 +92,7 @@ fn resolve_non_view_session_for_window(window_id: &str, fallback: &str) -> Strin
 }
 
 fn non_view_sessions_by_window() -> HashMap<String, String> {
-    let Ok(rows) = crate::tmux::list_all_windows_with_session() else {
+    let Ok(rows) = crate::terminal_backend::list_all_windows_with_session() else {
         return HashMap::new();
     };
     let mut out = HashMap::new();
@@ -159,7 +159,7 @@ pub async fn detect_processes(state: State<'_, AppState>) -> Result<Vec<Detected
     let running_panes = collect_running_panes(&state).await;
     let overrides = state.process_overrides.lock().clone();
 
-    let snapshot = tokio::task::spawn_blocking(move || {
+    let mut snapshot = tokio::task::spawn_blocking(move || {
         detect_processes_blocking(
             live_viewer_panes,
             match_entries,
@@ -172,6 +172,20 @@ pub async fn detect_processes(state: State<'_, AppState>) -> Result<Vec<Detected
     .await
     .map_err(|e| format!("spawn_blocking failed: {}", e))??;
 
+    let managed = crate::process_snapshot::detect_processes_snapshot(
+        &state.jobs_config,
+        &state.job_status,
+        &state.pty_manager,
+    )
+    .await;
+    for process in managed
+        .into_iter()
+        .filter(|process| crate::managed::is_managed(&process.pane_id))
+    {
+        if let Ok(process) = serde_json::to_value(process).and_then(serde_json::from_value) {
+            snapshot.processes.push(process);
+        }
+    }
     let detected_pane_ids: HashSet<String> = snapshot
         .processes
         .iter()
@@ -312,7 +326,7 @@ fn detect_processes_blocking(
     overrides: HashMap<String, DetectedProcessOverride>,
 ) -> Result<DetectionSnapshot, String> {
     let process_snapshot = crate::agent_session::ProcessSnapshot::capture();
-    let stdout = match list_tmux_panes()? {
+    let stdout = match list_tmux_panes().unwrap_or_default() {
         Some(s) => s,
         None => {
             return Ok(DetectionSnapshot {
@@ -438,7 +452,7 @@ fn resolve_group_and_job(
     }
     if let Some((group, slug)) = ctx.running_panes.get(row.pane_id) {
         if row.pane_slug_tag.as_deref() != Some(slug.as_str()) {
-            let _ = crate::tmux::set_pane_slug(row.pane_id, slug);
+            let _ = crate::terminal_backend::set_pane_slug(row.pane_id, slug);
         }
         return (Some(group.clone()), Some(slug.clone()));
     }
@@ -461,7 +475,7 @@ fn resolve_group_and_job(
         // refer to a different session that reused the same ID. Only trust
         // the job slug if the run started recently; otherwise group-only.
         if is_recent_history(&job_match.started_at) {
-            let _ = crate::tmux::set_pane_slug(row.pane_id, &job_match.slug);
+            let _ = crate::terminal_backend::set_pane_slug(row.pane_id, &job_match.slug);
             return (Some(job_match.group.clone()), Some(job_match.slug.clone()));
         }
         return (Some(job_match.group.clone()), None);
@@ -570,7 +584,7 @@ pub async fn set_detected_process_display_name(
 
 #[tauri::command]
 pub fn clear_agent_pane_title(state: State<'_, AppState>, pane_id: String) -> Result<(), String> {
-    crate::tmux::clear_pane_display_name(&pane_id)?;
+    crate::terminal_backend::clear_pane_display_name(&pane_id)?;
     set_process_display_name(&state, pane_id, None)
 }
 
@@ -728,15 +742,15 @@ fn persist_process_overrides(
 
 #[tauri::command]
 pub fn focus_detected_process(tmux_session: String, window_name: String) -> Result<(), String> {
-    if !crate::tmux::is_available() {
+    if !crate::terminal_backend::is_available() {
         return Err("tmux is not installed".to_string());
     }
-    crate::tmux::focus_window(&tmux_session, &window_name)
+    crate::terminal_backend::focus_window(&tmux_session, &window_name)
 }
 
 #[tauri::command]
 pub fn get_detected_process_logs(tmux_session: String, pane_id: String) -> Result<String, String> {
-    crate::tmux::capture_pane(&tmux_session, &pane_id, 200)
+    crate::terminal_backend::capture_pane(&tmux_session, &pane_id, 200)
 }
 
 #[tauri::command]
@@ -747,9 +761,9 @@ pub fn send_detected_process_input(
     row: Option<u16>,
 ) -> Result<(), String> {
     if let (Some(c), Some(r)) = (col, row) {
-        crate::tmux::send_mouse_click_to_pane(&pane_id, c, r)
+        crate::terminal_backend::send_mouse_click_to_pane(&pane_id, c, r)
     } else {
-        crate::tmux::send_keys_to_tui_pane(&pane_id, &text)
+        crate::terminal_backend::send_keys_to_tui_pane(&pane_id, &text)
     }
 }
 
@@ -902,14 +916,14 @@ pub async fn revoke_plugin(plugin_id: String) -> Result<(), String> {
 
 #[tauri::command]
 pub fn sigint_detected_process(pane_id: String) -> Result<(), String> {
-    crate::tmux::send_sigint_to_pane(&pane_id)?;
+    crate::terminal_backend::send_sigint_to_pane(&pane_id)?;
     std::thread::sleep(std::time::Duration::from_millis(200));
-    crate::tmux::send_sigint_to_pane(&pane_id)
+    crate::terminal_backend::send_sigint_to_pane(&pane_id)
 }
 
 #[tauri::command]
 pub fn stop_detected_process(state: State<'_, AppState>, pane_id: String) -> Result<(), String> {
-    crate::tmux::kill_pane(&pane_id)?;
+    crate::terminal_backend::kill_pane(&pane_id)?;
     let mut overrides = state.process_overrides.lock();
     if overrides.remove(&pane_id).is_none() {
         return Ok(());
@@ -924,7 +938,7 @@ pub fn get_existing_pane_info(
     state: State<'_, AppState>,
     pane_id: String,
 ) -> Result<Option<ExistingPaneInfo>, String> {
-    if !crate::tmux::pane_exists(&pane_id) {
+    if !crate::terminal_backend::pane_exists(&pane_id) {
         return Ok(None);
     }
 

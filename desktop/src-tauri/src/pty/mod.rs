@@ -2,6 +2,7 @@ mod cache;
 mod capture;
 mod cleanup;
 mod emit;
+mod managed;
 mod spawn;
 mod viewer;
 
@@ -22,6 +23,7 @@ use viewer::PaneViewer;
 pub use viewer::{OutputSink, SpawnResult};
 
 pub struct PtyManager {
+    managed: HashMap<String, managed::Viewer>,
     sessions: HashMap<String, PaneViewer>,
     /// Window-local `window-size` values from before the first active viewer.
     /// tmux changes this option to `manual` whenever `resize-window` runs.
@@ -38,7 +40,7 @@ impl PtyManager {
         if self.window_size_options.contains_key(window_id) {
             return;
         }
-        let value = match crate::tmux::get_window_size_option(window_id) {
+        let value = match crate::terminal_backend::get_window_size_option(window_id) {
             Ok(value) => value,
             Err(error) => {
                 log::warn!(
@@ -59,9 +61,9 @@ impl PtyManager {
 
     fn stop_viewer(&mut self, viewer: PaneViewer) {
         viewer.stop.store(true, Ordering::Relaxed);
-        let _ = crate::tmux::kill_session(&viewer.view_session);
+        let _ = crate::terminal_backend::kill_session(&viewer.view_session);
         if !viewer.moved {
-            let _ = crate::tmux::resize_window(
+            let _ = crate::terminal_backend::resize_window(
                 &viewer.window_id,
                 viewer.native_cols,
                 viewer.native_rows,
@@ -80,10 +82,11 @@ impl PtyManager {
                 // restoring the previous option so the terminal is full-sized
                 // immediately, even when Alacritty changed size while the
                 // viewer was active.
-                let _ = crate::tmux::resize_window_to_largest_session(&window_id);
-                if let Err(error) =
-                    crate::tmux::restore_window_size_option(&window_id, original.as_deref())
-                {
+                let _ = crate::terminal_backend::resize_window_to_largest_session(&window_id);
+                if let Err(error) = crate::terminal_backend::restore_window_size_option(
+                    &window_id,
+                    original.as_deref(),
+                ) {
                     log::warn!(
                         "failed to restore tmux window {} window-size option: {}",
                         window_id,
@@ -117,6 +120,7 @@ impl PtyManager {
         let protected = crate::config::protected_panes::load_set();
         cleanup_orphaned_ct_windows(&protected);
         Self {
+            managed: HashMap::new(),
             sessions: HashMap::new(),
             window_size_options: HashMap::new(),
             recent: Arc::new(Mutex::new(RecentPaneCache::new())),
@@ -125,7 +129,11 @@ impl PtyManager {
 
     pub fn active_pane_ids(&mut self) -> std::collections::HashSet<String> {
         self.reap_dead_viewers();
-        self.sessions.keys().cloned().collect()
+        self.sessions
+            .keys()
+            .chain(self.managed.keys())
+            .cloned()
+            .collect()
     }
 
     /// Remove viewers whose PTY reader has exited. Process discovery calls this
@@ -155,7 +163,7 @@ impl PtyManager {
     pub fn restore_view_session_windows(&self) {
         for (pane_id, viewer) in &self.sessions {
             let target = format!("{}:{}", viewer.view_session, viewer.window_id);
-            if let Err(e) = crate::tmux::select_window(&target) {
+            if let Err(e) = crate::terminal_backend::select_window(&target) {
                 log::warn!(
                     "[pty {}] restore select-window {} failed: {}",
                     pane_id,
@@ -183,7 +191,8 @@ impl PtyManager {
             .map(|d| d.as_millis())
             .unwrap_or(0);
         let window_name = format!("{}-{}", name_prefix, suffix);
-        let pane = crate::tmux::create_window_with_cwd(session, &window_name, cwd, env)?;
+        let pane =
+            crate::terminal_backend::create_window_with_cwd(session, &window_name, cwd, env)?;
         self.restore_view_session_windows();
         Ok((pane, window_name))
     }
@@ -197,6 +206,20 @@ impl PtyManager {
         _group: &str,
         sink: OutputSink,
     ) -> Result<SpawnResult, String> {
+        if crate::managed::is_managed(pane_id) {
+            if let Some(viewer) = self.managed.get(pane_id) {
+                viewer.refresh();
+                let size = crate::terminal_backend::snapshot(pane_id)?.size;
+                return Ok(SpawnResult {
+                    native_cols: size.cols,
+                    native_rows: size.rows,
+                    attach_generation: viewer.generation,
+                });
+            }
+            let (viewer, result) = managed::Viewer::spawn(pane_id, cols, rows, sink)?;
+            self.managed.insert(pane_id.into(), viewer);
+            return Ok(result);
+        }
         spawn::run(self, pane_id, tmux_session, cols, rows, sink)
     }
 
@@ -207,6 +230,10 @@ impl PtyManager {
     /// Request a full redraw for a pane that already has an active viewer.
     /// Used as a fallback when the frontend's initial snapshot delivery was lost.
     pub fn refresh_snapshot(&self, pane_id: &str, _sink: &OutputSink) -> Result<(), String> {
+        if let Some(viewer) = self.managed.get(pane_id) {
+            viewer.refresh();
+            return Ok(());
+        }
         let viewer = self
             .sessions
             .get(pane_id)
@@ -215,6 +242,9 @@ impl PtyManager {
     }
 
     pub fn write(&mut self, pane_id: &str, data: &[u8]) -> Result<(), String> {
+        if let Some(viewer) = self.managed.get(pane_id) {
+            return viewer.write(data);
+        }
         let viewer = self
             .sessions
             .get(pane_id)
@@ -228,6 +258,9 @@ impl PtyManager {
     }
 
     pub fn resize(&mut self, pane_id: &str, cols: u16, rows: u16) -> Result<(), String> {
+        if let Some(viewer) = self.managed.get(pane_id) {
+            return viewer.resize(cols, rows);
+        }
         if cols == 0 || rows == 0 {
             return Ok(());
         }
@@ -258,7 +291,7 @@ impl PtyManager {
             })
             .map_err(|e| format!("pty resize: {}", e))?;
 
-        let _ = crate::tmux::resize_window(&viewer.window_id, cols, rows);
+        let _ = crate::terminal_backend::resize_window(&viewer.window_id, cols, rows);
 
         Ok(())
     }
@@ -268,6 +301,12 @@ impl PtyManager {
         pane_id: &str,
         expected_generation: Option<u64>,
     ) -> Result<(), String> {
+        if let Some(viewer) = self.managed.get(pane_id) {
+            if expected_generation.is_none_or(|generation| generation == viewer.generation) {
+                self.managed.remove(pane_id);
+            }
+            return Ok(());
+        }
         if let Some(expected) = expected_generation {
             if let Some(viewer) = self.sessions.get(pane_id) {
                 if viewer.attach_generation != expected {
@@ -287,6 +326,10 @@ impl PtyManager {
     }
 
     pub fn release(&mut self, pane_id: &str) -> Result<(), String> {
+        if crate::managed::is_managed(pane_id) {
+            self.managed.remove(pane_id);
+            return Ok(());
+        }
         let moved = self.sessions.get(pane_id).map(|viewer| viewer.moved);
         let _ = self.destroy(pane_id, None);
         if moved == Some(false) || (moved.is_none() && find_captured_window(pane_id).is_none()) {
@@ -298,6 +341,7 @@ impl PtyManager {
     }
 
     pub fn destroy_all(&mut self) {
+        self.managed.clear();
         let pane_ids: Vec<String> = self.sessions.keys().cloned().collect();
         for pane_id in pane_ids {
             let _ = self.destroy(&pane_id, None);
@@ -307,7 +351,12 @@ impl PtyManager {
     /// Release every captured pane back to its origin tmux window.
     /// Returns the pane IDs that were released so callers can log or report.
     pub fn suspend_all(&mut self) -> Vec<String> {
-        let pane_ids: Vec<String> = self.sessions.keys().cloned().collect();
+        let pane_ids: Vec<String> = self
+            .sessions
+            .keys()
+            .chain(self.managed.keys())
+            .cloned()
+            .collect();
         let mut released = Vec::new();
         for pane_id in &pane_ids {
             if let Err(e) = self.release(pane_id) {

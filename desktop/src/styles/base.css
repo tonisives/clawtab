@@ -43,3 +43,10 @@ a:hover {
   height: 100vh;
   overflow: hidden;
 }
+
+.managed-control-notice {
+  padding: 6px 10px;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  font-size: 12px;
+}

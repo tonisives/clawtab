@@ -30,7 +30,7 @@ jobs:
       - name: Build and test headless runtime
         working-directory: desktop/src-tauri
         run: |
-          cargo test -j4 --no-default-features --lib --bins
+          cargo test -j4 --no-default-features --lib --bins --test managed_sessions
           cargo build -j4 --release --no-default-features --bin clawtab-daemon --bin cwtctl --bin clawtab-hook
       - name: Package
         run: |

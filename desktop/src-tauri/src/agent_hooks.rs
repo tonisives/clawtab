@@ -517,6 +517,19 @@ pub fn write_event(event: &HookEventV1) -> Result<(), String> {
     if !event.valid() {
         return Err("invalid hook event".to_string());
     }
+    if let Some(id) = event
+        .pane_id
+        .as_deref()
+        .filter(|id| crate::managed::is_managed(id))
+    {
+        let _ = crate::managed::request(
+            id,
+            crate::managed::Request::Metadata {
+                values: Default::default(),
+                conversation_id: Some(event.session_id.clone()),
+            },
+        );
+    }
     let dir = inbox_dir();
     create_private_dir(&dir)?;
     let file_name = format!("{}-{}.json", event.occurred_at_ms, uuid::Uuid::new_v4());
@@ -708,7 +721,11 @@ pub fn helper_path() -> PathBuf {
     crate::config::config_dir()
         .unwrap_or_else(|| PathBuf::from(".clawtab"))
         .join("hooks")
-        .join("clawtab-hook")
+        .join(if cfg!(windows) {
+            "clawtab-hook.exe"
+        } else {
+            "clawtab-hook"
+        })
 }
 
 fn inbox_dir() -> PathBuf {
@@ -1103,6 +1120,9 @@ fn helper_command(provider: ProcessProvider) -> String {
 }
 
 fn shell_quote_path(path: &Path) -> String {
+    #[cfg(windows)]
+    return format!("\"{}\"", path.to_string_lossy());
+    #[cfg(unix)]
     format!("'{}'", path.to_string_lossy().replace('\'', "'\\''"))
 }
 
@@ -1153,7 +1173,7 @@ fn atomic_write_json_value(path: &Path, value: &Value) -> Result<(), String> {
     atomic_write(path, &bytes, 0o600)
 }
 
-fn atomic_write(path: &Path, contents: &[u8], mode: u32) -> Result<(), String> {
+fn atomic_write(path: &Path, contents: &[u8], _mode: u32) -> Result<(), String> {
     let parent = path
         .parent()
         .ok_or_else(|| format!("{} has no parent directory", path.display()))?;
@@ -1163,7 +1183,7 @@ fn atomic_write(path: &Path, contents: &[u8], mode: u32) -> Result<(), String> {
     let mut options = OpenOptions::new();
     options.create_new(true).write(true);
     #[cfg(unix)]
-    options.mode(mode);
+    options.mode(_mode);
     let mut file = options
         .open(&temp)
         .map_err(|error| format!("Failed to create {}: {}", temp.display(), error))?;
@@ -1225,6 +1245,9 @@ fn opencode_legacy_plugin_path() -> PathBuf {
 }
 
 fn valid_pane_id(value: &str) -> bool {
+    if crate::managed::is_managed(value) {
+        return true;
+    }
     value.strip_prefix('%').is_some_and(|rest| {
         !rest.is_empty() && rest.chars().all(|character| character.is_ascii_digit())
     })
@@ -1261,7 +1284,7 @@ const emit = async (event, state, attention = null, ended = false) => {{
   const properties = event?.properties ?? {{}}
   const sessionId = properties.sessionID ?? properties.sessionId ?? properties.id
   if (!sessionId) return
-  const paneId = /^%\d+$/.test(process.env.TMUX_PANE ?? "") ? process.env.TMUX_PANE : null
+  const paneId = /^managed:[0-9a-f-]{{36}}$/.test(process.env.CLAWTAB_SESSION_ID ?? "") ? process.env.CLAWTAB_SESSION_ID : (/^%\d+$/.test(process.env.TMUX_PANE ?? "") ? process.env.TMUX_PANE : null)
   const payload = {{
     version: 1,
     provider: "opencode",

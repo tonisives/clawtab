@@ -31,6 +31,7 @@ export interface Job {
   env: Record<string, string>;
   work_dir: string | null;
   tmux_session: string | null;
+  terminal_backend?: "tmux" | "managed" | null;
   aerospace_workspace: string | null;
   folder_path: string | null;
   job_id: string | null;
@@ -135,6 +136,8 @@ export interface ShortcutSettings {
 
 export interface AppSettings {
   default_tmux_session: string;
+  default_terminal_backend?: "tmux" | "managed";
+  managed_close_with_terminal?: boolean;
   default_work_dir: string;
   default_provider: ProcessProvider;
   default_model: string | null;

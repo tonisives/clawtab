@@ -13,6 +13,7 @@ use uuid::Uuid;
 pub struct Auth {
     token: String,
     channel: Option<String>,
+    managed_sessions: Option<String>,
 }
 pub async fn connect(
     State(state): State<AppState>,
@@ -31,10 +32,17 @@ pub async fn connect(
                 socket,
                 claims.sub,
                 auth.channel.as_deref() == Some("transfer"),
+                auth.managed_sessions.as_deref() == Some("1"),
             )
         }))
 }
-async fn run(state: AppState, socket: WebSocket, user: Uuid, transfers_only: bool) {
+async fn run(
+    state: AppState,
+    socket: WebSocket,
+    user: Uuid,
+    transfers_only: bool,
+    managed_sessions: bool,
+) {
     let client = Uuid::new_v4();
     let (tx, rx) = mpsc::channel(512);
     let cancel = std::sync::Arc::new(tokio::sync::Notify::new());
@@ -51,6 +59,7 @@ async fn run(state: AppState, socket: WebSocket, user: Uuid, transfers_only: boo
                 user,
                 tx,
                 transfers_only,
+                managed_sessions,
                 cancel: cancel.clone(),
             },
         );
@@ -155,6 +164,33 @@ async fn handle(state: &AppState, user: Uuid, client: Uuid, text: &str) -> Resul
     if !hub.online(machine) {
         return Err(AppError::Conflict("machine is offline".into()));
     }
+    let managed = pane
+        .as_deref()
+        .is_some_and(|pane| pane.starts_with("managed:"));
+    if managed
+        && !hub
+            .clients
+            .get(&client)
+            .is_some_and(|client| client.managed_sessions)
+    {
+        return Err(AppError::BadRequest(
+            "update the client to use managed terminals".into(),
+        ));
+    }
+    if managed
+        && !matches!(
+            kind.as_str(),
+            "unsubscribe_pty"
+                | "subscribe_pty"
+                | "get_detected_process_logs"
+                | "stop_detected_process"
+                | "answer_question"
+                | "list_agent_actions"
+        )
+        && message["holder"].as_str() != Some(client.to_string().as_str())
+    {
+        return Err(AppError::Forbidden);
+    }
     if let Some(ref pane) = pane {
         let process = hub
             .snapshots
@@ -171,10 +207,12 @@ async fn handle(state: &AppState, user: Uuid, client: Uuid, text: &str) -> Resul
             ));
         }
         let key = (machine, pane.clone());
-        if matches!(
-            kind.as_str(),
-            "take_control" | "renew_control" | "release_control"
-        ) {
+        if !managed
+            && matches!(
+                kind.as_str(),
+                "take_control" | "renew_control" | "release_control"
+            )
+        {
             match kind.as_str() {
                 "take_control" => {
                     hub.controllers.insert(
@@ -204,7 +242,9 @@ async fn handle(state: &AppState, user: Uuid, client: Uuid, text: &str) -> Resul
                 }
             }
             let controller = hub.controllers.get(&key).map(|l| l.client);
-            hub.send(client,&json!({"type":"terminal_control","machine_id":machine,"pane_id":pane,"controller":controller}));
+            if !managed {
+                hub.send(client,&json!({"type":"terminal_control","machine_id":machine,"pane_id":pane,"controller":controller}));
+            }
             for recipient in hub.viewers.get(&key).into_iter().flatten() {
                 hub.send(*recipient,&json!({"type":"terminal_control","machine_id":machine,"pane_id":pane,"controller":controller}));
             }
@@ -213,10 +253,11 @@ async fn handle(state: &AppState, user: Uuid, client: Uuid, text: &str) -> Resul
         }
         if kind == "subscribe_pty" {
             hub.viewers.entry(key.clone()).or_default().insert(client);
-            if !hub
-                .controllers
-                .get(&key)
-                .is_some_and(|l| l.renewed.elapsed() < Duration::from_secs(30))
+            if !managed
+                && !hub
+                    .controllers
+                    .get(&key)
+                    .is_some_and(|l| l.renewed.elapsed() < Duration::from_secs(30))
             {
                 hub.controllers.insert(
                     key.clone(),
@@ -229,7 +270,9 @@ async fn handle(state: &AppState, user: Uuid, client: Uuid, text: &str) -> Resul
                 );
             }
             let controller = hub.controllers.get(&key).map(|l| l.client);
-            hub.send(client,&json!({"type":"terminal_control","machine_id":machine,"pane_id":pane,"controller":controller}));
+            if !managed {
+                hub.send(client,&json!({"type":"terminal_control","machine_id":machine,"pane_id":pane,"controller":controller}));
+            }
             if !hub.controls(machine, pane, client) {
                 // Existing observers reuse the controller's dimensions; never resize it.
                 if let Some(lease) = hub.controllers.get(&key) {
@@ -312,15 +355,16 @@ async fn handle(state: &AppState, user: Uuid, client: Uuid, text: &str) -> Resul
     }
     let id = format!("v2:{}", Uuid::new_v4());
     message["id"] = json!(id);
-    let no_ack = matches!(
-        kind.as_str(),
-        "pty_input"
-            | "pty_resize"
-            | "unsubscribe_pty"
-            | "unsubscribe_logs"
-            | "set_auto_yes_panes"
-            | "tmux_pane_key"
-    );
+    let no_ack = !managed
+        && matches!(
+            kind.as_str(),
+            "pty_input"
+                | "pty_resize"
+                | "unsubscribe_pty"
+                | "unsubscribe_logs"
+                | "set_auto_yes_panes"
+                | "tmux_pane_key"
+        );
     if no_ack {
         hub.send(client,&json!({"type":"machine_event","machine_id":machine,"request_id":command.request_id,"message":{"type":"sent"}}));
     } else {

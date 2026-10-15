@@ -1,7 +1,7 @@
 //! A persisted claim prevents a retry from executing a mutation twice, even if
 //! the daemon crashes between executing it and writing its acknowledgement.
 use serde_json::{json, Value};
-use std::{fs::OpenOptions, io::Write, os::unix::fs::OpenOptionsExt, path::PathBuf};
+use std::{fs::OpenOptions, io::Write, path::PathBuf};
 
 pub enum Claim {
     New(PathBuf),
@@ -18,12 +18,10 @@ fn claim_in(directory: PathBuf, request: &Value) -> Result<Claim, String> {
         object.remove("operation_id");
     }
     let path = directory.join("launch-request.json");
-    match OpenOptions::new()
-        .create_new(true)
-        .write(true)
-        .mode(0o600)
-        .open(&path)
-    {
+    match crate::local_transport::open_private(
+        &path,
+        OpenOptions::new().create_new(true).write(true),
+    ) {
         Ok(mut file) => {
             file.write_all(canonical.to_string().as_bytes())
                 .map_err(|e| e.to_string())?;
@@ -45,16 +43,12 @@ fn claim_in(directory: PathBuf, request: &Value) -> Result<Claim, String> {
 }
 pub fn complete(path: &std::path::Path, response: &str) -> Result<(), String> {
     let temporary = path.with_extension("tmp");
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(&temporary)
-        .map_err(|e| e.to_string())?;
+    let mut file = crate::local_transport::private_file(&temporary)?;
     file.write_all(response.as_bytes())
         .map_err(|e| e.to_string())?;
     file.sync_all().map_err(|e| e.to_string())?;
-    std::fs::rename(temporary, path).map_err(|e| e.to_string())
+    drop(file);
+    crate::local_transport::atomic_replace(&temporary, path).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

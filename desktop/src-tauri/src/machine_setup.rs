@@ -37,15 +37,6 @@ async fn pair_machine(args: &[String]) -> Result<(), String> {
     {
         return Err("machine is already paired; use --replace to deliberately pair again".into());
     }
-    for tool in ["tmux", "git", "python3"] {
-        if !std::process::Command::new(tool)
-            .arg(if tool != "tmux" { "--version" } else { "-V" })
-            .output()
-            .is_ok_and(|o| o.status.success())
-        {
-            return Err(format!("install {tool} before running setup"));
-        }
-    }
     let name =
         flag("--name").unwrap_or_else(|| gethostname::gethostname().to_string_lossy().into_owned());
     let client = reqwest::Client::builder()
@@ -184,6 +175,10 @@ async fn save_pairing(
     });
     settings.save()?;
     println!("Machine paired. Provider credentials stay on this machine.");
+    #[cfg(windows)]
+    if !_args.iter().any(|arg| arg == "--no-service") {
+        println!("{}", crate::daemon::install()?);
+    }
     #[cfg(target_os = "linux")]
     {
         if _args.iter().any(|arg| arg == "--no-service") {

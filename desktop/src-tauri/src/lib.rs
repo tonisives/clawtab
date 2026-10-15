@@ -16,7 +16,10 @@ mod claude_usage;
 mod commands;
 pub mod config;
 mod cwt;
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "macos")]
+pub mod daemon;
+#[cfg(windows)]
+#[path = "daemon_windows.rs"]
 pub mod daemon;
 #[cfg(target_os = "linux")]
 #[path = "daemon_linux.rs"]
@@ -29,9 +32,11 @@ pub mod history;
 pub mod host;
 pub mod ipc;
 pub mod job_context;
+pub mod local_transport;
 pub mod machine_setup;
 #[cfg(all(feature = "desktop", target_os = "macos"))]
 mod macos_window;
+pub mod managed;
 #[cfg(target_os = "macos")]
 pub mod native_notifications;
 pub mod notifications;
@@ -46,6 +51,7 @@ pub mod secrets;
 pub mod shared_state;
 pub mod telegram;
 mod terminal;
+pub mod terminal_backend;
 pub mod tmux;
 mod tools;
 #[cfg(feature = "desktop")]

@@ -518,7 +518,7 @@ pub async fn question_detection_loop(
             process_snapshot_at = Instant::now();
         }
         if titles_synced_at.is_none_or(|time| time.elapsed() >= PROCESS_SNAPSHOT_INTERVAL) {
-            if let Err(error) = crate::tmux::sync_agent_titles(&process_snapshot) {
+            if let Err(error) = crate::terminal_backend::sync_agent_titles(&process_snapshot) {
                 log::debug!("failed to sync agent titles: {}", error);
             }
             titles_synced_at = Some(Instant::now());
@@ -549,7 +549,7 @@ pub async fn question_detection_loop(
 
         let yes_panes = auto_yes_panes.lock().clone();
         if yes_panes != bell_synced_auto_yes_panes {
-            match crate::tmux::sync_auto_yes_bell_monitoring(&yes_panes) {
+            match crate::terminal_backend::sync_auto_yes_bell_monitoring(&yes_panes) {
                 Ok(()) => bell_synced_auto_yes_panes = yes_panes.clone(),
                 Err(error) => {
                     log::warn!(
@@ -670,7 +670,7 @@ fn should_suppress_question_notification(question: &ClaudeQuestion) -> bool {
         return true;
     }
 
-    match crate::tmux::is_active_attached_pane(&question.pane_id) {
+    match crate::terminal_backend::is_active_attached_pane(&question.pane_id) {
         Ok(true) => {
             log::debug!(
                 "[questions] suppressing notification for {} because pane {} is active in tmux",
@@ -880,7 +880,7 @@ fn try_opencode_question(
     if !has_opencode_prompt_indicator(&stripped_log) {
         return;
     }
-    let (full_text, _pane_height) = match crate::tmux::capture_pane_visible(pane_id) {
+    let (full_text, _pane_height) = match crate::terminal_backend::capture_pane_visible(pane_id) {
         Ok(v) => v,
         Err(e) => {
             log::warn!("[questions] failed to capture full pane {}: {}", pane_id, e);
@@ -1015,12 +1015,16 @@ fn try_send_auto_answer(q: &ClaudeQuestion, auto_answered_ids: &mut HashMap<Stri
     );
     let send_result = if q.input_mode == "select" {
         if let Some(target_opt) = q.options.iter().find(|o| o.number == opt) {
-            crate::tmux::send_mouse_click_to_pane(&q.pane_id, target_opt.col, q.button_row)
+            crate::terminal_backend::send_mouse_click_to_pane(
+                &q.pane_id,
+                target_opt.col,
+                q.button_row,
+            )
         } else {
             Err("option not found".to_string())
         }
     } else {
-        crate::tmux::send_keys_to_tui_pane(&q.pane_id, &opt)
+        crate::terminal_backend::send_keys_to_tui_pane(&q.pane_id, &opt)
     };
     match send_result {
         Ok(()) => {
@@ -1491,12 +1495,7 @@ fn detect_question_processes(
     hook_runtime: &HookRuntime,
     process_snapshot: &ProcessSnapshot,
 ) -> DetectionResult {
-    let Some(stdout) = list_panes_for_questions() else {
-        return DetectionResult {
-            processes: vec![],
-            all_pane_ids: HashSet::new(),
-        };
-    };
+    let stdout = list_panes_for_questions().unwrap_or_default();
 
     let running_panes = collect_q_running_panes(jobs_config, job_status);
     let match_entries = collect_q_match_entries(jobs_config);
@@ -1579,19 +1578,69 @@ fn detect_question_processes(
         ));
     }
 
+    for info in crate::managed::list()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|info| info.status == crate::managed::Status::Running)
+    {
+        all_pane_ids.insert(info.id.clone());
+        let Some(provider) =
+            crate::agent_session::ProcessProvider::from_name(&info.launch.provider)
+                .filter(|provider| *provider != ProcessProvider::Shell)
+        else {
+            continue;
+        };
+        let Ok(screen) = crate::terminal_backend::snapshot(&info.id) else {
+            continue;
+        };
+        hook_runtime.bind_process_to_pane(
+            &info.id,
+            &info.child_pid.to_string(),
+            provider,
+            process_snapshot,
+        );
+        let (group, job) =
+            resolve_q_group_job(&info.id, &info.launch.cwd, &running_panes, &match_entries);
+        capture_requests.push((
+            results.len(),
+            info.id.clone(),
+            screen.size.rows,
+            screen.cursor_row,
+        ));
+        let hook_backed = hook_runtime.pane_state(&info.id, provider).is_some();
+        results.push((
+            info.id.clone(),
+            info.launch.cwd,
+            String::new(),
+            info.id,
+            String::new(),
+            group,
+            job,
+            String::new(),
+            String::new(),
+            screen.output_revision,
+            screen.size.cols,
+            screen.size.rows,
+            provider,
+            hook_backed,
+        ));
+    }
+
     let tmux_requests: Vec<(&str, u16)> = capture_requests
         .iter()
         .map(|(_, pane_id, pane_height, _)| (pane_id.as_str(), *pane_height))
         .collect();
-    let captures = crate::tmux::capture_pane_screens(&tmux_requests).unwrap_or_else(|error| {
-        log::debug!("[questions] batched pane capture failed: {}", error);
-        tmux_requests
-            .iter()
-            .map(|(pane_id, pane_height)| {
-                crate::tmux::capture_pane_screen(pane_id, *pane_height).unwrap_or_default()
-            })
-            .collect()
-    });
+    let captures =
+        crate::terminal_backend::capture_pane_screens(&tmux_requests).unwrap_or_else(|error| {
+            log::debug!("[questions] batched pane capture failed: {}", error);
+            tmux_requests
+                .iter()
+                .map(|(pane_id, pane_height)| {
+                    crate::terminal_backend::capture_pane_screen(pane_id, *pane_height)
+                        .unwrap_or_default()
+                })
+                .collect()
+        });
     for ((result_index, _, _, cursor_y), visible) in capture_requests.into_iter().zip(captures) {
         // The visible screen contains interactive prompts and TUI repaint
         // activity. Scrollback growth is already available through

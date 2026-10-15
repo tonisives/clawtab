@@ -22,6 +22,7 @@ export interface XtermLogHandle {
   clear(): void;
   /** Get current terminal dimensions */
   dimensions(): { cols: number; rows: number };
+  setScreenSize(size: { cols: number; rows: number } | null): void;
   /** Visually offset terminal contents without resizing the container */
   setVisualOffset(px: number): void;
   /** Blur the terminal input so native keyboards close */
@@ -48,6 +49,8 @@ interface XtermLogProps {
 export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
   function XtermLog({ onData, onResize, interactive = true, forceDarkTheme = false }, ref) {
     const containerRef = useRef<HTMLDivElement>(null);
+    let screenSizeRef = useRef<{ cols: number; rows: number } | null>(null);
+    let fitRef = useRef<FitAddon | null>(null);
     const termRef = useRef<Terminal | null>(null);
     const onDataRef = useRef(onData);
     const onResizeRef = useRef(onResize);
@@ -104,7 +107,14 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
       clear() {
         termRef.current?.reset();
       },
+      setScreenSize(size) {
+        screenSizeRef.current = size;
+        if (size) termRef.current?.resize(size.cols, size.rows);
+        else fitRef.current?.fit();
+      },
       dimensions() {
+        let physical = fitRef.current?.proposeDimensions();
+        if (physical) return physical;
         const t = termRef.current;
         return { cols: t?.cols ?? 80, rows: t?.rows ?? 24 };
       },
@@ -143,6 +153,7 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
       el.style.backgroundColor = initialTheme.background ?? "";
 
       const fit = new FitAddon();
+      fitRef.current = fit;
       t.loadAddon(fit);
       t.open(el);
 
@@ -163,6 +174,13 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
         if (width === prevWidth && height === prevHeight) return;
         prevWidth = width;
         prevHeight = height;
+        let physical = fit.proposeDimensions();
+        let fixed = screenSizeRef.current;
+        if (fixed) {
+          t.resize(fixed.cols, fixed.rows);
+          if (physical) onResizeRef.current?.(physical.cols, physical.rows);
+          return;
+        }
         fit.fit();
         if (t.cols !== prevCols || t.rows !== prevRows) {
           prevCols = t.cols;

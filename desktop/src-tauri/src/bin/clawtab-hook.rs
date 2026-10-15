@@ -21,7 +21,9 @@ fn main() {
             && input.len() as u64 <= MAX_INPUT_BYTES
         {
             if let Ok(payload) = serde_json::from_slice::<Value>(&input) {
-                let pane_id = std::env::var("TMUX_PANE").ok();
+                let pane_id = std::env::var("CLAWTAB_SESSION_ID")
+                    .or_else(|_| std::env::var("TMUX_PANE"))
+                    .ok();
                 #[cfg(unix)]
                 let process_id = Some(unsafe { libc::getppid() as u32 });
                 #[cfg(not(unix))]

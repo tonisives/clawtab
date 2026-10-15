@@ -23,7 +23,7 @@ fn print_usage() {
     eprintln!();
     eprintln!("Usage: cwtctl <command> [args]");
     eprintln!();
-    eprintln!("  setup [--relay URL] [--name NAME] [--linger | --no-service] [--replace]  Pair and install the Linux host");
+    eprintln!("  setup [--relay URL] [--name NAME] [--linger | --no-service] [--replace]  Pair and install the host");
     eprintln!("Commands (require daemon):");
     eprintln!("  jobs              Manage configured jobs");
     eprintln!("  move help         Move a conversation or verify machine/client identities");
@@ -68,9 +68,10 @@ fn print_usage() {
     eprintln!("  pane focus <left|right|up|down>  Move focus between ClawTab panes");
     eprintln!();
     eprintln!("Daemon:");
-    eprintln!("  daemon install    Install launchd service (auto-start on login)");
-    eprintln!("  daemon stop       Stop daemon but keep launchd service installed");
-    eprintln!("  daemon uninstall  Remove launchd service");
+    eprintln!("  session <start|list|attach|capture|stop|resume>  Manage durable CLI sessions");
+    eprintln!("  daemon install    Install host startup (auto-start on login)");
+    eprintln!("  daemon stop       Stop the host; keep startup installed");
+    eprintln!("  daemon uninstall  Remove host startup");
     eprintln!("  daemon ping       Check if daemon is running");
     eprintln!("  daemon status     Check if daemon is running");
     eprintln!("  daemon restart    Restart the daemon");
@@ -677,6 +678,17 @@ fn require_job_reference(args: &[String], command: &str) -> String {
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     let raw_args: Vec<String> = env::args().collect();
+    if raw_args.get(1).is_some_and(|arg| arg == "--version") {
+        println!("{}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
+    if raw_args.get(1).is_some_and(|arg| arg == "session") {
+        if let Err(error) = clawtab_lib::managed::run_cli(&raw_args[2..]) {
+            eprintln!("{error}");
+            std::process::exit(1);
+        }
+        return;
+    }
 
     if raw_args.len() < 2 {
         print_usage();
@@ -2239,7 +2251,7 @@ fn daemon_status() {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "macos")]
 fn daemon_restart() {
     let uid = std::process::Command::new("id")
         .args(["-u"])
@@ -2275,7 +2287,7 @@ fn daemon_restart() {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "macos")]
 fn daemon_logs() {
     let stderr_log = "/tmp/clawtab/daemon.stderr.log";
     if std::path::Path::new(stderr_log).exists() {
@@ -2319,5 +2331,20 @@ fn daemon_restart() {
 fn daemon_logs() {
     if let Err(error) = daemon::logs() {
         exit_error(&error);
+    }
+}
+
+#[cfg(windows)]
+fn daemon_restart() {
+    if let Err(error) = daemon::restart() {
+        eprintln!("{error}");
+        std::process::exit(1);
+    }
+    println!("Daemon restarted");
+}
+#[cfg(windows)]
+fn daemon_logs() {
+    if let Err(error) = daemon::logs() {
+        eprintln!("{error}");
     }
 }

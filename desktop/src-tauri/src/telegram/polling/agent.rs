@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use crate::telegram::{self, TelegramConfig};
-use crate::tmux;
+use crate::terminal_backend as tmux;
 
 use super::{lock_or_log, AgentState};
 

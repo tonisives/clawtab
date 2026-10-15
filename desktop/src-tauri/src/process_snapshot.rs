@@ -35,9 +35,7 @@ fn detect_processes(
     job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
     _live_viewer_panes: HashSet<String>,
 ) -> Vec<DetectedProcess> {
-    let Some(stdout) = list_panes() else {
-        return vec![];
-    };
+    let stdout = list_panes().unwrap_or_default();
     let pane_lines = stdout.lines().count();
     if pane_lines > 0 {
         let first = stdout.lines().next().unwrap_or("");
@@ -93,6 +91,41 @@ fn detect_processes(
             matched_job,
             &process_snapshot,
             overrides.get(row.pane_id),
+        ));
+    }
+
+    for info in crate::managed::list()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|info| info.status == crate::managed::Status::Running)
+    {
+        let pid = info.child_pid.to_string();
+        let row = ProcessRow {
+            pane_id: &info.id,
+            command: &info.launch.program,
+            cwd: &info.launch.cwd,
+            session: "",
+            window: &info.id,
+            pane_pid: &pid,
+            pane_title: info.launch.metadata.get("title").cloned(),
+            display_name: info
+                .launch
+                .metadata
+                .get("display_name")
+                .cloned()
+                .filter(|name| !name.is_empty()),
+            pane_slug_tag: info.launch.metadata.get("slug").cloned(),
+        };
+        let provider = crate::agent_session::ProcessProvider::from_name(&info.launch.provider)
+            .unwrap_or(crate::agent_session::ProcessProvider::Shell);
+        let (group, job) = resolve_group_job(&row, &running_panes, &slug_to_group, &match_entries);
+        results.push(build_remote(
+            &row,
+            provider,
+            group,
+            job,
+            &process_snapshot,
+            overrides.get(&info.id),
         ));
     }
 
@@ -291,6 +324,19 @@ fn build_remote(
         Some(snapshot),
         Some(row.cwd),
     );
+    if crate::managed::is_managed(row.pane_id) && session_info.session_id.is_some() {
+        if let Ok(info) = crate::terminal_backend::info(row.pane_id) {
+            if info.launch.conversation_id != session_info.session_id {
+                let _ = crate::managed::request(
+                    row.pane_id,
+                    crate::managed::Request::Metadata {
+                        values: Default::default(),
+                        conversation_id: session_info.session_id.clone(),
+                    },
+                );
+            }
+        }
+    }
     let override_meta = override_meta
         .filter(|meta| meta.matches_identity(row.pane_pid, session_info.session_id.as_deref()));
     let (can_fork_session, can_send_skills, can_inject_secrets) = match provider {
@@ -298,6 +344,11 @@ fn build_remote(
         _ => (false, false, false),
     };
     DetectedProcess {
+        backend: if crate::managed::is_managed(row.pane_id) {
+            clawtab_protocol::TerminalBackend::Managed
+        } else {
+            clawtab_protocol::TerminalBackend::Tmux
+        },
         execution_id: crate::host::execution_id(
             row.pane_id,
             row.pane_pid,

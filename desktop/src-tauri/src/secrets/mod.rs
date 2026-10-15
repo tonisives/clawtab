@@ -1,5 +1,8 @@
 pub mod gopass;
-#[cfg(not(target_os = "linux"))]
+#[cfg(windows)]
+#[path = "windows.rs"]
+pub mod keychain;
+#[cfg(target_os = "macos")]
 pub mod keychain;
 #[cfg(target_os = "linux")]
 #[path = "file.rs"]

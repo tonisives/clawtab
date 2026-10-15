@@ -44,6 +44,7 @@ export interface RemoteJob {
   slug: string;
   work_dir?: string;
   tmux_session?: string | null;
+  terminal_backend?: "tmux" | "managed" | null;
   aerospace_workspace?: string | null;
   notify_target?: "none" | "app" | "telegram" | string | null;
   kill_on_end?: boolean;
@@ -67,6 +68,7 @@ export interface JobUpdate {
   group?: string;
   work_dir?: string | null;
   tmux_session?: string | null;
+  terminal_backend?: "tmux" | "managed" | null;
   aerospace_workspace?: string | null;
   notify_target?: "none" | "app" | "telegram" | string | null;
   telegram_chat_id?: number | null;
@@ -94,6 +96,7 @@ export interface DesktopJob extends RemoteJob {
   secret_keys: string[];
   env: Record<string, string>;
   tmux_session: string | null;
+  terminal_backend?: "tmux" | "managed" | null;
   aerospace_workspace: string | null;
   folder_path: string | undefined;
   job_id: string | null;

@@ -1,3 +1,4 @@
+import { onMachineEvent } from "@clawtab/shared";
 import { machineRequest, machineSend, machineState, splitResource } from "@clawtab/shared";
 import { terminalCache } from "../lib/terminalCache";
 import { useEffect, useRef, useCallback, useState } from "react";
@@ -267,7 +268,7 @@ export function usePty(
   useEffect(() => {
     const send = getWsSend();
     const activeTmuxSession = tmuxSessionRef.current;
-    if (!paneId || !activeTmuxSession) return;
+    if (!paneId || (!activeTmuxSession && !(splitResource(paneId)?.id ?? paneId).startsWith("managed:"))) return;
 
     gotDataRef.current = false;
     pendingOutputRef.current = [];
@@ -276,6 +277,12 @@ export function usePty(
     else pendingOutputRef.current.push(TERMINAL_RESET_B64);
     setError(undefined);
     let stateListener: ((state: PtyConnectionState, error?: string) => void) | undefined;
+
+    let unlistenControl = onMachineEvent((machine, message) => {
+      let resource = splitResource(paneId);
+      if (resource?.machine !== machine || resource.id !== message.pane_id || !resource.id.startsWith("managed:") || message.type !== "terminal_control") return;
+      termRef.current?.setScreenSize(message.controller === machineState().connectionId ? null : { cols: message.cols, rows: message.rows });
+    });
 
     const onOutput = (data: string) => {
       if (!gotDataRef.current && data && !isTerminalReset(data)) {
@@ -362,6 +369,8 @@ export function usePty(
     const flushInterval = setInterval(flushPendingOutput, 50);
 
     return () => {
+      unlistenControl();
+      termRef.current?.setScreenSize(null);
       const activeSubscription = ptySubscriptions.get(paneId);
       clearInterval(flushInterval);
       ptyListeners.get(paneId)?.delete(onOutput);

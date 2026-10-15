@@ -39,6 +39,10 @@ pub enum OutputSink {
     Tauri(AppHandle),
     /// Send via channel (relay forwarding to remote clients)
     Channel(std::sync::mpsc::SyncSender<(String, Vec<u8>)>),
+    Relay(
+        std::sync::mpsc::SyncSender<(String, Vec<u8>)>,
+        Arc<Mutex<Option<crate::relay::RelayHandle>>>,
+    ),
 }
 
 /// Returned from spawn so the frontend knows the pane's native size at capture time.

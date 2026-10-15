@@ -70,7 +70,11 @@ pub(super) async fn execute_claude_job(
     };
     let prompt_content = super::apply_policy_prompt(prompt_content, policy, provider);
 
+    let backend = job
+        .terminal_backend
+        .unwrap_or(settings.lock().default_terminal_backend);
     spawn_agent_pane(SpawnArgs {
+        backend,
         tmux_session,
         window_name: project_window_name(job),
         work_dir,

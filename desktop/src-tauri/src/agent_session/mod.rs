@@ -102,9 +102,69 @@ pub struct ProcessSnapshot {
     commands: HashMap<String, String>,
     children: HashMap<String, Vec<String>>,
     start_epoch: HashMap<String, i64>,
+    managed: HashMap<String, crate::managed::Launch>,
 }
 
 impl ProcessSnapshot {
+    fn add_managed(&mut self) {
+        for info in crate::managed::list()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|info| info.status == crate::managed::Status::Running)
+        {
+            let pid = info.child_pid.to_string();
+            self.commands.insert(
+                pid.clone(),
+                std::iter::once(info.launch.program.as_str())
+                    .chain(info.launch.args.iter().map(String::as_str))
+                    .map(shell_quote)
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
+            self.start_epoch.insert(pid.clone(), info.started_at as i64);
+            self.managed.insert(pid, info.launch);
+        }
+    }
+    #[cfg(windows)]
+    pub fn capture() -> Self {
+        use windows_sys::Win32::{
+            Foundation::{CloseHandle, INVALID_HANDLE_VALUE},
+            System::Diagnostics::ToolHelp::{
+                CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+                TH32CS_SNAPPROCESS,
+            },
+        };
+        let mut snapshot = Self::default();
+        let handle = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
+        if handle != INVALID_HANDLE_VALUE {
+            let mut entry: PROCESSENTRY32W = unsafe { std::mem::zeroed() };
+            entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+            let mut found = unsafe { Process32FirstW(handle, &mut entry) } != 0;
+            while found {
+                let end = entry
+                    .szExeFile
+                    .iter()
+                    .position(|c| *c == 0)
+                    .unwrap_or(entry.szExeFile.len());
+                snapshot.commands.insert(
+                    entry.th32ProcessID.to_string(),
+                    String::from_utf16_lossy(&entry.szExeFile[..end]),
+                );
+                snapshot
+                    .children
+                    .entry(entry.th32ParentProcessID.to_string())
+                    .or_default()
+                    .push(entry.th32ProcessID.to_string());
+                found = unsafe { Process32NextW(handle, &mut entry) } != 0;
+            }
+            unsafe {
+                CloseHandle(handle);
+            }
+        }
+        snapshot.add_managed();
+        snapshot
+    }
+    #[cfg(unix)]
     pub fn capture() -> Self {
         let output = match Command::new("ps")
             .args(["-Ao", "pid=,ppid=,lstart=,command="])
@@ -145,6 +205,7 @@ impl ProcessSnapshot {
                 snapshot.start_epoch.insert(pid.to_string(), epoch);
             }
         }
+        snapshot.add_managed();
         snapshot
     }
 
@@ -247,6 +308,11 @@ fn resolve_session_info_for_provider_with_cwd_mode(
         Some(ProcessProvider::Antigravity) => antigravity::resolve_session_info(pane_pid, snapshot),
         Some(ProcessProvider::Shell) | None => SessionInfo::default(),
     };
+    if info.session_id.is_none() {
+        info.session_id = snapshot
+            .and_then(|snapshot| snapshot.managed.get(pane_pid))
+            .and_then(|launch| launch.conversation_id.clone());
+    }
     if include_details {
         if info.model_id.is_none() {
             info.model_id = provider
@@ -350,6 +416,13 @@ pub fn detect_process_provider(
         }
     };
 
+    if let Some(provider) = snapshot
+        .managed
+        .get(pane_pid)
+        .and_then(|launch| ProcessProvider::from_name(&launch.provider))
+    {
+        return Some(provider);
+    }
     if let Some(provider) = provider_for_command(snapshot.command_for_pid(pane_pid)) {
         return Some(provider);
     }

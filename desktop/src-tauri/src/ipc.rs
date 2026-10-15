@@ -1,9 +1,9 @@
+use crate::local_transport::{AsyncListener, AsyncStream};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::Semaphore;
 
 const MAX_CONCURRENT_IPC_CONNECTIONS: usize = 64;
@@ -351,7 +351,7 @@ pub enum IpcEvent {
 
 /// Registry of connected event subscribers. Each entry is a write half of a
 /// Unix stream. Dropped on send failure.
-pub type EventSubscribers = Arc<AsyncMutex<Vec<tokio::net::unix::OwnedWriteHalf>>>;
+pub type EventSubscribers = Arc<AsyncMutex<Vec<crate::local_transport::AsyncWriteHalf>>>;
 
 pub fn new_event_subscribers() -> EventSubscribers {
     Arc::new(AsyncMutex::new(Vec::new()))
@@ -411,7 +411,7 @@ where
     let _ = std::fs::remove_file(&path);
 
     let listener =
-        UnixListener::bind(&path).map_err(|e| format!("Failed to bind socket: {}", e))?;
+        AsyncListener::bind(&path).map_err(|e| format!("Failed to bind socket: {}", e))?;
     #[cfg(unix)]
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
         .map_err(|e| format!("Failed to secure socket: {}", e))?;
@@ -429,12 +429,6 @@ where
             .map_err(|_| "IPC connection limiter closed".to_string())?;
         match listener.accept().await {
             Ok((stream, _)) => {
-                if !stream
-                    .peer_cred()
-                    .is_ok_and(|peer| peer.uid() == unsafe { libc::geteuid() })
-                {
-                    continue;
-                }
                 let handler = handler.clone();
                 tokio::spawn(async move {
                     let result = tokio::time::timeout(
@@ -516,20 +510,14 @@ pub async fn start_event_server(subs: EventSubscribers) -> Result<(), String> {
     let _ = std::fs::remove_file(&path);
 
     let listener =
-        UnixListener::bind(&path).map_err(|e| format!("Failed to bind event socket: {}", e))?;
+        AsyncListener::bind(&path).map_err(|e| format!("Failed to bind event socket: {}", e))?;
 
     log::info!("IPC event server listening on {:?}", path);
 
     loop {
         match listener.accept().await {
             Ok((stream, _)) => {
-                if !stream
-                    .peer_cred()
-                    .is_ok_and(|peer| peer.uid() == unsafe { libc::geteuid() })
-                {
-                    continue;
-                }
-                let (_read, write) = stream.into_split();
+                let (_read, write) = tokio::io::split(stream);
                 let mut guard = subs.lock().await;
                 guard.push(write);
                 log::debug!("IPC event subscriber connected ({} total)", guard.len());
@@ -542,7 +530,7 @@ pub async fn start_event_server(subs: EventSubscribers) -> Result<(), String> {
 }
 
 async fn handle_client<C, R, F, Fut>(
-    stream: UnixStream,
+    stream: AsyncStream,
     handler: std::sync::Arc<F>,
 ) -> Result<(), String>
 where
@@ -551,7 +539,7 @@ where
     F: Fn(C) -> Fut,
     Fut: std::future::Future<Output = R>,
 {
-    let (reader, mut writer) = stream.into_split();
+    let (reader, mut writer) = tokio::io::split(stream);
     let mut reader = BufReader::new(reader);
     let mut line = String::new();
 
@@ -599,11 +587,11 @@ where
     C: serde::Serialize,
     R: serde::de::DeserializeOwned,
 {
-    let stream = UnixStream::connect(&path)
+    let stream = crate::local_transport::connect_async(&path)
         .await
         .map_err(|e| format!("Failed to connect (is clawtab running?): {}", e))?;
 
-    let (reader, mut writer) = stream.into_split();
+    let (reader, mut writer) = tokio::io::split(stream);
     let mut reader = BufReader::new(reader);
 
     let cmd_str = serde_json::to_string(&cmd).map_err(|e| e.to_string())?;
@@ -661,12 +649,13 @@ pub async fn send_plugin_host_command(
 
 /// Connect to the daemon's event server. Returns a reader yielding newline-
 /// delimited `IpcEvent` JSON. Caller parses each line and dispatches.
-pub async fn subscribe_events() -> Result<BufReader<tokio::net::unix::OwnedReadHalf>, String> {
+pub async fn subscribe_events() -> Result<BufReader<crate::local_transport::AsyncReadHalf>, String>
+{
     let path = daemon_event_socket_path();
-    let stream = UnixStream::connect(&path)
+    let stream = crate::local_transport::connect_async(&path)
         .await
         .map_err(|e| format!("Failed to connect to event server: {}", e))?;
-    let (read, _write) = stream.into_split();
+    let (read, _write) = tokio::io::split(stream);
     Ok(BufReader::new(read))
 }
 

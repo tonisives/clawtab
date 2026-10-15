@@ -7,7 +7,8 @@ use super::super::viewer::is_view_session;
 /// pane's size, so this reads the "original" dimensions the user expected
 /// before clawtab touched it.
 pub(super) fn read_native_size(pane_id: &str, spawn_started: Instant) -> (u16, u16) {
-    let (native_cols, native_rows) = crate::tmux::display_pane_size(pane_id).unwrap_or((80, 24));
+    let (native_cols, native_rows) =
+        crate::terminal_backend::display_pane_size(pane_id).unwrap_or((80, 24));
     log::debug!(
         "[pty {}] native size {}x{} read after {}ms",
         pane_id,
@@ -23,10 +24,11 @@ pub(super) fn read_native_size(pane_id: &str, spawn_started: Instant) -> (u16, u
 /// pane's current window before passing it to capture_pane, which needs a live
 /// session for break-pane.
 pub(super) fn resolve_real_session(pane_id: &str, tmux_session: &str) -> String {
-    if !is_view_session(tmux_session) && crate::tmux::session_exists(tmux_session) {
+    if !is_view_session(tmux_session) && crate::terminal_backend::session_exists(tmux_session) {
         return tmux_session.to_string();
     }
-    let window_id_raw = crate::tmux::display_pane_window_id(pane_id).unwrap_or_default();
+    let window_id_raw =
+        crate::terminal_backend::display_pane_window_id(pane_id).unwrap_or_default();
     let resolved = resolve_non_view_session_for_window(&window_id_raw, tmux_session);
     if resolved != tmux_session {
         log::info!(

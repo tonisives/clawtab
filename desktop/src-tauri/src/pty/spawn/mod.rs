@@ -23,7 +23,7 @@ pub(super) fn run(
     rows: u16,
     sink: OutputSink,
 ) -> Result<SpawnResult, String> {
-    if !crate::tmux::pane_exists(pane_id) {
+    if !crate::terminal_backend::pane_exists(pane_id) {
         return Err("This terminal session has closed.".to_string());
     }
     let spawn_started = Instant::now();
@@ -83,7 +83,7 @@ pub(super) fn run(
 
     // Resize the captured window to match the viewport so content reflows.
     if cols > 0 && rows > 0 {
-        let _ = crate::tmux::resize_window(&captured.window_id, cols, rows);
+        let _ = crate::terminal_backend::resize_window(&captured.window_id, cols, rows);
     }
 
     // Reset only before a new attach stream, which establishes all terminal

@@ -443,7 +443,7 @@ pub(super) fn enforce_live_pane_retention(job: &Job, ctx: &JobContext, keep: usi
         let h = ctx.history.lock();
         h.pane_started_at_for_job(&job.slug).unwrap_or_default()
     };
-    let panes = match crate::tmux::list_panes_by_slug(&job.slug) {
+    let panes = match crate::terminal_backend::list_panes_by_slug(&job.slug) {
         Ok(p) => p,
         Err(e) => {
             log::warn!("Failed to list panes for slug {}: {}", job.slug, e);
@@ -469,7 +469,7 @@ pub(super) fn enforce_live_pane_retention(job: &Job, ctx: &JobContext, keep: usi
 
 fn close_pane_for_retention(pane_id: String) {
     tokio::spawn(async move {
-        if let Err(e) = crate::tmux::close_pane_gracefully(&pane_id).await {
+        if let Err(e) = crate::terminal_backend::close_pane_gracefully(&pane_id).await {
             log::warn!("Failed to close retained pane {}: {}", pane_id, e);
         }
     });

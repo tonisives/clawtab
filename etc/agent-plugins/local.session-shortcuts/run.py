@@ -15,8 +15,11 @@ def host(*arguments):
 
 
 def screen():
+    pane = os.environ["CLAWTAB_PANE_ID"]
+    command = ([os.environ["CLAWTAB_CLI"], "session", "capture", pane]
+               if pane.startswith("managed:") else ["tmux", "capture-pane", "-p", "-t", pane])
     return subprocess.run(
-        ["tmux", "capture-pane", "-p", "-t", os.environ["CLAWTAB_PANE_ID"]],
+        command,
         capture_output=True, text=True, check=True, timeout=3,
     ).stdout
 

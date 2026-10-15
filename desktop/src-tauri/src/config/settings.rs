@@ -239,6 +239,10 @@ pub struct AppSettings {
     /// the ClawTab app loses focus, and re-capture when it regains focus.
     #[serde(default)]
     pub auto_release_on_blur: bool,
+    #[serde(default)]
+    pub managed_close_with_terminal: bool,
+    #[serde(default = "default_terminal_backend")]
+    pub default_terminal_backend: clawtab_protocol::TerminalBackend,
 }
 
 fn default_true() -> bool {
@@ -284,6 +288,8 @@ impl Default for AppSettings {
             notify_job_failures_local: true,
             notify_questions_remote: true,
             auto_release_on_blur: false,
+            managed_close_with_terminal: false,
+            default_terminal_backend: default_terminal_backend(),
         }
     }
 }
@@ -385,5 +391,13 @@ mod tests {
             ]),
             vec!["pane:%4", "job:build"]
         );
+    }
+}
+
+fn default_terminal_backend() -> clawtab_protocol::TerminalBackend {
+    if cfg!(windows) {
+        clawtab_protocol::TerminalBackend::Managed
+    } else {
+        clawtab_protocol::TerminalBackend::Tmux
     }
 }

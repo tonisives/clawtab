@@ -82,6 +82,9 @@ export let MachineTerminal = ({
     if (!online) return
     let unlisten = onMachineEvent((machine, message) => {
       if (machine !== machineId || message.pane_id !== paneId) return
+      if (message.type === "terminal_control" && paneId.startsWith("managed:")) {
+        terminal.current?.setScreenSize(message.controller === state.connectionId ? null : { cols: message.cols, rows: message.rows })
+      }
       if (message.type === "pty_output") terminal.current?.write(message.data)
       if (message.type === "pty_exit") setError("This execution has ended")
     })

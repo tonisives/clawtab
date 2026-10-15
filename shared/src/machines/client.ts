@@ -34,6 +34,8 @@ export type MachineState = {
   connectionId: string | null
   snapshots: Record<string, Record<string, MachineMessage>>
   controllers: Record<string, string | null>
+  controlEpochs: Record<string, number>
+  terminalSizes: Record<string, { cols: number; rows: number }>
   error: string | null
   agentModels: AgentModelPreferences | null
   jobGroups: Record<string, SavedJobGroup>
@@ -59,6 +61,8 @@ let initialState = (): MachineState => ({
   connectionId: null,
   snapshots: {},
   controllers: {},
+  controlEpochs: {},
+  terminalSizes: {},
   error: null,
   agentModels: null,
   machineAppearance: {},
@@ -153,8 +157,12 @@ export let machineRequest = async (
     return Promise.reject(new Error("Machine is offline"))
   let connection = socket
   let secure = message.request?.action === "secure" || state.machines.some((m) => m.id === machine && m.capabilities?.includes("signed_commands_v1"))
+  let managedPane = typeof message.pane_id === "string" && message.pane_id.startsWith("managed:") ? message.pane_id : state.snapshots[machine]?.jobs_changed?.statuses?.[message.name]?.pane_id
+  let managed = typeof managedPane === "string" && managedPane.startsWith("managed:")
   let requestId = secure ? machineSecurity().randomId() : newOperationId()
   let payload: MachineMessage = { ...message, id: requestId }
+  if (managed && message.type === "take_control") { payload.cols ??= 80; payload.rows ??= 24 }
+  if (managed) { payload.holder = state.connectionId; payload.control_epoch = state.controlEpochs[resourceKey(machine, managedPane)] }
   if (typeof payload.pane_id === "string")
     payload.execution_id = executionFor(machine, payload.pane_id)
   if (["run_agent", "run_job", "create_job"].includes(payload.type))
@@ -170,7 +178,7 @@ export let machineRequest = async (
     // Lease replies and fire-and-forget forwarding receipts belong to the relay.
     // A "sent" receipt confirms forwarding, not execution on the host.
     let relayAck: "control_ack" | "sent" | undefined =
-      ["take_control", "renew_control", "release_control"].includes(message.type) ? "control_ack" :
+      managed ? undefined : ["take_control", "renew_control", "release_control"].includes(message.type) ? "control_ack" :
       ["pty_input", "pty_resize", "unsubscribe_pty", "unsubscribe_logs", "set_auto_yes_panes", "tmux_pane_key"].includes(message.type) ? "sent" : undefined
     pending.set(requestId, { resolve, reject, timer, machine, secure, relayAck, secureHost: message.type === "host_request" && message.request?.action === "secure" })
     connection.send(
@@ -296,7 +304,7 @@ export let connectMachines = (getUrl: () => Promise<string>, preferencesApi?: Pr
     try {
       let url = await getUrl()
       if (stopped) return
-      let ws = new WebSocket(url.replace(/\/(?:v2\/)?ws\?/, "/v2/ws?"))
+      let ws = new WebSocket(url.replace(/\/(?:v2\/)?ws\?/, "/v2/ws?") + "&managed_sessions=1")
       socket = ws
       lastReceived = Date.now()
       let watchdog = setTimeout(() => {
@@ -357,11 +365,14 @@ export let connectMachines = (getUrl: () => Promise<string>, preferencesApi?: Pr
         }
         if (data.type === "terminal_control") {
           update({
+            terminalSizes: { ...state.terminalSizes, [resourceKey(data.machine_id, data.pane_id)]: { cols: data.cols, rows: data.rows } },
+            controlEpochs: { ...state.controlEpochs, [resourceKey(data.machine_id, data.pane_id)]: data.control_epoch },
             controllers: {
               ...state.controllers,
               [resourceKey(data.machine_id, data.pane_id)]: data.controller,
             },
           })
+          events.forEach((listener) => listener(data.machine_id, data))
           return
         }
         let request = data.request_id ? pending.get(data.request_id) : null
@@ -452,6 +463,8 @@ export let connectMachines = (getUrl: () => Promise<string>, preferencesApi?: Pr
           error: "Connection to the machine service was lost. Retrying…",
           machines: state.machines.map((m) => ({ ...m, online: false })),
           controllers: {},
+  controlEpochs: {},
+  terminalSizes: {},
         })
         if (!stopped) {
           reconnect = setTimeout(connect, backoff)

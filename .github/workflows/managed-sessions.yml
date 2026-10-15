@@ -1,0 +1,47 @@
+name: Managed terminals
+on:
+  pull_request:
+  push:
+    branches: [main, feat/managed-sessions]
+    tags: ["v*"]
+  workflow_dispatch:
+jobs:
+  terminal:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: desktop/src-tauri
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+      - run: cargo check -j4 --locked --no-default-features --lib --bins
+      - run: cargo test -j4 --locked --no-default-features --lib managed::
+      - run: cargo test -j4 --locked --no-default-features --test managed_sessions -- --nocapture
+      - name: Build Windows host
+        if: runner.os == 'Windows'
+        run: cargo build -j4 --locked --release --no-default-features --bin cwtctl --bin clawtab-daemon --bin clawtab-hook
+      - name: Package Windows host
+        if: runner.os == 'Windows'
+        shell: pwsh
+        working-directory: .
+        run: |
+          New-Item -ItemType Directory -Force package/bin, package/plugins | Out-Null
+          Copy-Item desktop/src-tauri/target/release/cwtctl.exe, desktop/src-tauri/target/release/clawtab-daemon.exe, desktop/src-tauri/target/release/clawtab-hook.exe package/bin/
+          Copy-Item -Recurse etc/agent-plugins/local.session-shortcuts package/plugins/
+          Copy-Item etc/install-windows.ps1 package/install.ps1
+          Compress-Archive -Path package/* -DestinationPath clawtab-windows-x86_64.zip
+          (Get-FileHash clawtab-windows-x86_64.zip -Algorithm SHA256).Hash.ToLower() + '  clawtab-windows-x86_64.zip' | Set-Content clawtab-windows-x86_64.zip.sha256
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows'
+        with:
+          name: clawtab-windows-x86_64
+          path: clawtab-windows-*.zip*

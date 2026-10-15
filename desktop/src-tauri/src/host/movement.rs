@@ -61,15 +61,7 @@ struct MoveRecord {
 fn operation_dir(id: &str) -> Result<PathBuf, String> {
     uuid::Uuid::parse_str(id).map_err(|_| "Move operation ID must be a UUID")?;
     let directory = security::directory()?.join(id);
-    std::fs::create_dir_all(&directory).map_err(|_| "Move record storage unavailable")?;
-    use std::os::unix::fs::{MetadataExt, PermissionsExt};
-    let meta =
-        std::fs::symlink_metadata(&directory).map_err(|_| "Move record storage unavailable")?;
-    if !meta.is_dir() || meta.uid() != unsafe { libc::geteuid() } {
-        return Err("Unsafe move record directory".into());
-    }
-    std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700))
-        .map_err(|_| "Move record permissions unavailable")?;
+    crate::local_transport::private_directory(&directory)?;
     Ok(directory)
 }
 fn read(id: &str) -> Result<MoveRecord, String> {
@@ -289,8 +281,8 @@ async fn read_chunk(id: &str, offset: u64, size: u64) -> Result<Value, String> {
         .join(id)
         .join("payload.zip");
     tokio::task::spawn_blocking(move || {
-        use std::{io::{Read, Seek, SeekFrom}, os::unix::fs::OpenOptionsExt};
-        let mut file = std::fs::OpenOptions::new().read(true).custom_flags(libc::O_NOFOLLOW).open(path).map_err(|_| "Source archive unavailable")?;
+        use std::io::{Read, Seek, SeekFrom};
+        let mut file = crate::local_transport::open_private(&path, std::fs::OpenOptions::new().read(true)).map_err(|_| "Source archive unavailable")?;
         if offset >= size || file.metadata().map_err(|_| "Source archive unavailable")?.len() != size { return Err("Source archive changed".into()); }
         file.seek(SeekFrom::Start(offset)).map_err(|_| "Source archive unavailable")?;
         let mut bytes = vec![0; ((size - offset).min(32 * 1024)) as usize];
@@ -579,7 +571,17 @@ fn command_hash(command: &str) -> String {
         .map(|b| format!("{b:02x}"))
         .collect()
 }
-fn signal(process: &PausedProcess, value: i32) -> Result<(), String> {
+enum Signal {
+    Stop,
+    Continue,
+    Kill,
+}
+#[cfg(windows)]
+fn signal(_process: &PausedProcess, _value: Signal) -> Result<(), String> {
+    Err("Moving running sessions is only supported for Unix tmux sessions".into())
+}
+#[cfg(unix)]
+fn signal(process: &PausedProcess, value: Signal) -> Result<(), String> {
     let snapshot = ProcessSnapshot::capture();
     if !process_matches(process, &snapshot) {
         return Err("Source process identity changed; refusing to signal it".into());
@@ -588,7 +590,18 @@ fn signal(process: &PausedProcess, value: i32) -> Result<(), String> {
         .pid
         .parse()
         .map_err(|_| "Invalid source process ID")?;
-    if pid <= 1 || unsafe { libc::kill(pid, value) } != 0 {
+    if pid <= 1
+        || unsafe {
+            libc::kill(
+                pid,
+                match value {
+                    Signal::Stop => libc::SIGSTOP,
+                    Signal::Continue => libc::SIGCONT,
+                    Signal::Kill => libc::SIGKILL,
+                },
+            )
+        } != 0
+    {
         return Err("Could not signal the source process safely".into());
     }
     Ok(())
@@ -597,7 +610,7 @@ fn freeze(record: &mut MoveRecord) -> Result<(), String> {
     if !record.paused.is_empty() {
         for process in &record.paused {
             if !process.already_stopped {
-                signal(process, libc::SIGSTOP)?;
+                signal(process, Signal::Stop)?;
             }
         }
         return Ok(());
@@ -633,7 +646,7 @@ fn freeze(record: &mut MoveRecord) -> Result<(), String> {
     save(record)?;
     for process in &record.paused {
         if !process.already_stopped {
-            signal(process, libc::SIGSTOP)?;
+            signal(process, Signal::Stop)?;
         }
     }
     // A child spawned between discovery and stopping must not escape the snapshot boundary.
@@ -664,7 +677,7 @@ fn restore(record: &MoveRecord) -> Result<(), String> {
         .filter(|process| !process.already_stopped)
     {
         if snapshot.command_for_pid(&process.pid).is_some() {
-            signal(process, libc::SIGCONT)?;
+            signal(process, Signal::Continue)?;
         }
     }
     Ok(())
@@ -734,7 +747,7 @@ fn retire(record: &MoveRecord) -> Result<(), String> {
         if process_matches(process, &ProcessSnapshot::capture()) {
             // The snapshot was captured at an idle boundary. Do not unfreeze a process
             // to terminate it: queued terminal input could start another turn.
-            signal(process, libc::SIGKILL)?;
+            signal(process, Signal::Kill)?;
         }
     }
     Ok(())
@@ -1291,19 +1304,16 @@ fn stop_target(id: &str, setup_only: bool) -> Result<Value, String> {
     stop_target_in(directory, setup_only)
 }
 fn stop_target_in(directory: PathBuf, setup_only: bool) -> Result<Value, String> {
-    use std::os::{fd::AsRawFd, unix::fs::OpenOptionsExt};
-    let lock = std::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .mode(0o600)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(directory.join("move-worker.lock"))
-        .map_err(|_| "Target recovery lock unavailable")?;
-    if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX) } != 0 {
-        return Err("Target recovery lock unavailable".into());
-    }
+    let lock = crate::local_transport::open_private(
+        &directory.join("move-worker.lock"),
+        std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false),
+    )
+    .map_err(|_| "Target recovery lock unavailable")?;
+    fs2::FileExt::lock_exclusive(&lock).map_err(|_| "Target recovery lock unavailable")?;
     let marker = directory.join(if setup_only {
         "setup-stopped.json"
     } else {
@@ -1386,7 +1396,7 @@ fn stop_target_in(directory: PathBuf, setup_only: bool) -> Result<Value, String>
         )?;
         for process in &processes {
             if process_matches(process, &ProcessSnapshot::capture()) {
-                signal(process, libc::SIGSTOP)?;
+                signal(process, Signal::Stop)?;
             }
         }
         let snapshot = ProcessSnapshot::capture();
@@ -1427,7 +1437,7 @@ fn stop_target_in(directory: PathBuf, setup_only: bool) -> Result<Value, String>
     }
     for process in processes.iter().rev() {
         if process_matches(process, &ProcessSnapshot::capture()) {
-            signal(process, libc::SIGKILL)?;
+            signal(process, Signal::Kill)?;
         }
     }
     for _ in 0..50 {

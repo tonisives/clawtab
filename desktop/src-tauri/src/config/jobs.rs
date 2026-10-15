@@ -111,6 +111,8 @@ pub struct Job {
     pub env: HashMap<String, String>,
     pub work_dir: Option<String>,
     pub tmux_session: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal_backend: Option<clawtab_protocol::TerminalBackend>,
     pub aerospace_workspace: Option<String>,
     pub folder_path: Option<String>,
     #[serde(alias = "job_name")]

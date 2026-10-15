@@ -392,6 +392,7 @@ pub fn build_agent_job(
         env: std::collections::HashMap::new(),
         work_dir: Some(work_dir),
         tmux_session: None,
+        terminal_backend: None,
         aerospace_workspace: None,
         folder_path: None,
         job_id: Some("default".to_string()),

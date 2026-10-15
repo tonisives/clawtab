@@ -154,6 +154,9 @@ pub async fn handle_incoming(
         }
     }
     let raw: serde_json::Value = serde_json::from_str(text).ok()?;
+    if let Some(result) = handle_managed_terminal(&raw, ctx) {
+        return protected_response(result, authenticated.as_ref());
+    }
     let mut operation_result = None;
     if matches!(
         raw["type"].as_str(),
@@ -198,6 +201,107 @@ fn command_pane(
     match statuses.get(message["name"].as_str()?) {
         Some(JobStatus::Running { pane_id, .. }) => pane_id.clone(),
         _ => None,
+    }
+}
+
+fn handle_managed_terminal(raw: &serde_json::Value, ctx: &JobContext) -> Option<String> {
+    use crate::managed::{self, Request, Response, Size};
+    let pane = command_pane(raw, &ctx.job_status.lock())?;
+    if !managed::is_managed(&pane) {
+        return None;
+    }
+    let kind = raw["type"].as_str()?;
+    if !matches!(
+        kind,
+        "take_control"
+            | "renew_control"
+            | "release_control"
+            | "pty_input"
+            | "pty_resize"
+            | "tmux_pane_key"
+            | "send_detected_process_input"
+            | "send_input"
+            | "start_agent_action"
+    ) {
+        return None;
+    }
+    let result = (|| -> Result<serde_json::Value, String> {
+        let holder = raw["holder"]
+            .as_str()
+            .filter(|value| uuid::Uuid::parse_str(value).is_ok())
+            .ok_or("terminal holder is missing")?
+            .to_owned();
+        let epoch = || {
+            raw["control_epoch"]
+                .as_u64()
+                .ok_or_else(|| "terminal control changed; take control again".to_string())
+        };
+        let size = Size::new(
+            raw["cols"].as_u64().unwrap_or(80).min(500) as u16,
+            raw["rows"].as_u64().unwrap_or(24).min(300) as u16,
+        );
+        let request = match kind {
+            "take_control" => Request::TakeControl { holder, size },
+            "renew_control" => Request::RenewControl {
+                holder,
+                epoch: epoch()?,
+            },
+            "release_control" => Request::ReleaseControl {
+                holder,
+                epoch: epoch()?,
+            },
+            "pty_resize" => Request::RemoteResize {
+                holder,
+                epoch: epoch()?,
+                size,
+            },
+            "pty_input" => Request::RemoteInput {
+                holder,
+                epoch: epoch()?,
+                data: base64::engine::general_purpose::STANDARD
+                    .decode(raw["data"].as_str().ok_or("missing input")?)
+                    .map_err(|_| "invalid input")?,
+            },
+            "tmux_pane_key" => Request::RemoteInput {
+                holder,
+                epoch: epoch()?,
+                data: crate::terminal_backend::key_bytes(
+                    raw["key"].as_str().ok_or("missing key")?,
+                )?,
+            },
+            _ => {
+                // Other agent actions still use their existing handlers after the owner validates authority.
+                managed::request(
+                    &pane,
+                    Request::RenewControl {
+                        holder,
+                        epoch: epoch()?,
+                    },
+                )?;
+                return Ok(serde_json::Value::Null);
+            }
+        };
+        let result = managed::request(&pane, request)?;
+        if matches!(kind, "take_control" | "renew_control" | "release_control") {
+            let snapshot = crate::terminal_backend::snapshot(&pane)?;
+            let control = match result {
+                Response::Control { control } => control,
+                _ => snapshot.control,
+            };
+            if let Some(relay) = ctx.relay.lock().as_ref() {
+                let _ = relay.send_raw(serde_json::json!({"type":"terminal_control","pane_id":pane,"controller":control.holder,"control_epoch":control.epoch,"cols":snapshot.size.cols,"rows":snapshot.size.rows}).to_string());
+            }
+            Ok(
+                serde_json::json!({"type":"control_ack","id":raw["id"],"controller":control.holder,"control_epoch":control.epoch}),
+            )
+        } else {
+            Ok(serde_json::json!({"type":"sent","id":raw["id"]}))
+        }
+    })();
+    match result {
+        Ok(value) if value.is_null() => None,
+        Ok(value) => Some(value.to_string()),
+        Err(error) => Some(serde_json::json!({"type":"error","id":raw["id"],"message":error,"code":"TERMINAL_CONTROL_CHANGED"}).to_string()),
     }
 }
 fn auth_type(auth: Option<&crate::host::security::Authenticated>) -> Option<&str> {
@@ -580,21 +684,22 @@ fn dispatch_process_msg(
             tmux_session,
             pane_id,
         } => {
-            let logs = crate::tmux::capture_pane(tmux_session, pane_id, 200).unwrap_or_default();
+            let logs = crate::terminal_backend::capture_pane(tmux_session, pane_id, 200)
+                .unwrap_or_default();
             Some(DesktopMessage::DetectedProcessLogs {
                 id: id.clone(),
                 logs,
             })
         }
         ClientMessage::SendDetectedProcessInput { id, pane_id, text } => {
-            let result = crate::tmux::send_keys_to_tui_pane(pane_id, text);
+            let result = crate::terminal_backend::send_keys_to_tui_pane(pane_id, text);
             Some(DesktopMessage::SendDetectedProcessInputAck {
                 id: id.clone(),
                 success: result.is_ok(),
             })
         }
         ClientMessage::StopDetectedProcess { id, pane_id } => {
-            let result = crate::tmux::kill_pane(pane_id);
+            let result = crate::terminal_backend::kill_pane(pane_id);
             Some(DesktopMessage::StopDetectedProcessAck {
                 id: id.clone(),
                 success: result.is_ok(),
@@ -666,9 +771,9 @@ fn dispatch_process_msg(
             ..
         } => {
             let result = if let Some(text) = freetext {
-                crate::tmux::send_keys_to_tui_pane_freetext(pane_id, answer, text)
+                crate::terminal_backend::send_keys_to_tui_pane_freetext(pane_id, answer, text)
             } else {
-                crate::tmux::send_keys_to_tui_pane(pane_id, answer)
+                crate::terminal_backend::send_keys_to_tui_pane(pane_id, answer)
             };
             Some(DesktopMessage::SendDetectedProcessInputAck {
                 id: id.clone(),
@@ -707,22 +812,22 @@ fn dispatch_pty_msg(
             None
         }
         ClientMessage::TmuxPaneKey { pane_id, key } => {
-            let result = if key == "copy-halfpage-up"
-                || key == "copy-halfpage-down"
-                || key == "copy-cancel"
-            {
-                let command = match key.as_str() {
-                    "copy-halfpage-up" => "halfpage-up",
-                    "copy-halfpage-down" => "halfpage-down",
-                    _ => "cancel",
+            let result =
+                if key == "copy-halfpage-up" || key == "copy-halfpage-down" || key == "copy-cancel"
+                {
+                    let command = match key.as_str() {
+                        "copy-halfpage-up" => "halfpage-up",
+                        "copy-halfpage-down" => "halfpage-down",
+                        _ => "cancel",
+                    };
+                    crate::terminal_backend::enter_copy_mode(&pane_id).and_then(|_| {
+                        crate::terminal_backend::send_copy_mode_command_to_pane(&pane_id, command)
+                    })
+                } else if key == "copy-mode" {
+                    crate::terminal_backend::enter_copy_mode(&pane_id)
+                } else {
+                    crate::terminal_backend::send_key_to_pane(&pane_id, &key)
                 };
-                crate::tmux::enter_copy_mode(&pane_id)
-                    .and_then(|_| crate::tmux::send_copy_mode_command_to_pane(&pane_id, command))
-            } else if key == "copy-mode" {
-                crate::tmux::enter_copy_mode(&pane_id)
-            } else {
-                crate::tmux::send_key_to_pane(&pane_id, &key)
-            };
             if let Err(e) = result {
                 log::warn!(
                     "Relay: failed to send tmux pane key {} to {}: {}",
@@ -795,7 +900,7 @@ fn handle_subscribe_logs(
         ..
     }) = statuses.get(name)
     {
-        if let Ok(content) = crate::tmux::capture_pane(session, pane_id, 200) {
+        if let Ok(content) = crate::terminal_backend::capture_pane(session, pane_id, 200) {
             let content = content.trim().to_string();
             if !content.is_empty() {
                 super::push_log_chunk(relay, name, &content);
@@ -837,7 +942,7 @@ fn handle_set_auto_yes_panes(
     log::info!("[handler] SetAutoYesPanes received: {:?}", pane_ids);
     let pane_set: std::collections::HashSet<String> = pane_ids.iter().cloned().collect();
     *auto_yes_panes.lock() = pane_set.clone();
-    if let Err(error) = crate::tmux::sync_auto_yes_bell_monitoring(&pane_set) {
+    if let Err(error) = crate::terminal_backend::sync_auto_yes_bell_monitoring(&pane_set) {
         log::warn!(
             "failed to sync auto-yes terminal bell suppression: {}",
             error
@@ -869,7 +974,7 @@ fn handle_subscribe_pty(
         cols,
         rows,
         "default",
-        OutputSink::Channel(tx),
+        OutputSink::Relay(tx, Arc::clone(relay)),
     );
     if result.is_ok() {
         let pane_id_clone = pane_id.clone();
@@ -1125,7 +1230,7 @@ fn stop_job(
             pane_id: Some(pane_id),
             ..
         }) => {
-            let _ = crate::tmux::kill_pane(&pane_id);
+            let _ = crate::terminal_backend::kill_pane(&pane_id);
             let next_status = JobStatus::Idle;
             status.insert(name.to_string(), next_status.clone());
             drop(status);
@@ -1168,7 +1273,7 @@ fn send_input(
         Some(JobStatus::Running {
             pane_id: Some(pane_id),
             ..
-        }) => crate::tmux::send_keys_to_tui_pane(pane_id, text),
+        }) => crate::terminal_backend::send_keys_to_tui_pane(pane_id, text),
         Some(JobStatus::Running { .. }) => Err("job has no tmux pane".to_string()),
         _ => Err("job is not running".to_string()),
     }
@@ -1185,7 +1290,7 @@ fn send_input_freetext(
         Some(JobStatus::Running {
             pane_id: Some(pane_id),
             ..
-        }) => crate::tmux::send_keys_to_tui_pane_freetext(pane_id, keystroke, freetext),
+        }) => crate::terminal_backend::send_keys_to_tui_pane_freetext(pane_id, keystroke, freetext),
         Some(JobStatus::Running { .. }) => Err("job has no tmux pane".to_string()),
         _ => Err("job is not running".to_string()),
     }
@@ -1514,6 +1619,9 @@ fn update_job(
     }
     if let Some(work_dir) = &update.work_dir {
         job.work_dir = work_dir.clone();
+    }
+    if let Some(backend) = update.terminal_backend {
+        job.terminal_backend = backend;
     }
     if let Some(tmux_session) = &update.tmux_session {
         job.tmux_session = tmux_session.clone();

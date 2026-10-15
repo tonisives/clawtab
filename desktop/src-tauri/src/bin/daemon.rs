@@ -1,8 +1,8 @@
+#![cfg_attr(windows, windows_subsystem = "windows")]
 use parking_lot::Mutex;
 use std::collections::{HashMap, HashSet};
 use std::fs::{File, OpenOptions};
 use std::io::Write;
-use std::os::fd::AsRawFd;
 use std::sync::Arc;
 
 use clawtab_lib::config::jobs::{JobStatus, JobsConfig};
@@ -31,8 +31,8 @@ fn acquire_daemon_instance_guard() -> Result<Option<DaemonInstanceGuard>, String
         .open(clawtab_lib::runtime_paths::lock())
         .map_err(|e| format!("failed to open daemon lock: {}", e))?;
 
-    let lock_result = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
-    if lock_result == 0 {
+    let lock_result = fs2::FileExt::try_lock_exclusive(&file);
+    if lock_result.is_ok() {
         file.set_len(0)
             .map_err(|e| format!("failed to clear daemon lock: {}", e))?;
         writeln!(file, "{}", std::process::id())
@@ -40,8 +40,13 @@ fn acquire_daemon_instance_guard() -> Result<Option<DaemonInstanceGuard>, String
         return Ok(Some(DaemonInstanceGuard { _file: file }));
     }
 
-    let err = std::io::Error::last_os_error();
-    if err.raw_os_error() == Some(libc::EWOULDBLOCK) || err.raw_os_error() == Some(libc::EAGAIN) {
+    let err = match lock_result {
+        Err(error) => error,
+        Ok(()) => return Ok(None),
+    };
+    if err.kind() == std::io::ErrorKind::WouldBlock
+        || err.raw_os_error() == fs2::lock_contended_error().raw_os_error()
+    {
         Ok(None)
     } else {
         Err(format!("failed to lock daemon instance: {}", err))
@@ -114,14 +119,17 @@ fn main() {
         Arc::new(Mutex::new(Vec::new()));
     let agent_activity: Arc<Mutex<Vec<clawtab_lib::ipc::AgentActivity>>> =
         Arc::new(Mutex::new(Vec::new()));
-    let restored_auto_yes_panes = match clawtab_lib::tmux::auto_yes_panes_from_options() {
+    let restored_auto_yes_panes = match clawtab_lib::terminal_backend::auto_yes_panes_from_options()
+    {
         Ok(panes) => panes,
         Err(error) => {
             log::warn!("failed to restore auto-yes pane state: {}", error);
             HashSet::new()
         }
     };
-    if let Err(error) = clawtab_lib::tmux::sync_auto_yes_bell_monitoring(&restored_auto_yes_panes) {
+    if let Err(error) =
+        clawtab_lib::terminal_backend::sync_auto_yes_bell_monitoring(&restored_auto_yes_panes)
+    {
         log::warn!(
             "failed to restore auto-yes terminal bell suppression: {}",
             error
@@ -578,7 +586,15 @@ async fn handle_ipc_command(
         IpcCommand::InstallAgentIntegration { provider } => {
             let helper = std::env::current_exe()
                 .ok()
-                .and_then(|path| path.parent().map(|parent| parent.join("clawtab-hook")))
+                .and_then(|path| {
+                    path.parent().map(|parent| {
+                        parent.join(if cfg!(windows) {
+                            "clawtab-hook.exe"
+                        } else {
+                            "clawtab-hook"
+                        })
+                    })
+                })
                 .filter(|path| path.is_file());
             match clawtab_lib::agent_hooks::install_provider(provider, helper.as_deref()) {
                 Ok(()) => match clawtab_lib::agent_hooks::integration_statuses()
@@ -694,7 +710,9 @@ async fn handle_ipc_command(
         IpcCommand::SetAutoYesPanes { pane_ids } => {
             let pane_set: HashSet<String> = pane_ids.iter().cloned().collect();
             *auto_yes_panes.lock() = pane_set.clone();
-            if let Err(error) = clawtab_lib::tmux::sync_auto_yes_bell_monitoring(&pane_set) {
+            if let Err(error) =
+                clawtab_lib::terminal_backend::sync_auto_yes_bell_monitoring(&pane_set)
+            {
                 log::warn!(
                     "failed to sync auto-yes terminal bell suppression: {}",
                     error
@@ -722,7 +740,9 @@ async fn handle_ipc_command(
             let pane_ids: Vec<String> = panes.iter().cloned().collect();
             let pane_set = panes.clone();
             drop(panes);
-            if let Err(error) = clawtab_lib::tmux::sync_auto_yes_bell_monitoring(&pane_set) {
+            if let Err(error) =
+                clawtab_lib::terminal_backend::sync_auto_yes_bell_monitoring(&pane_set)
+            {
                 log::warn!(
                     "failed to sync auto-yes terminal bell suppression: {}",
                     error
@@ -985,7 +1005,7 @@ async fn handle_ipc_command(
                     pane_id: Some(pane_id),
                     ..
                 }) => {
-                    if let Err(e) = clawtab_lib::tmux::kill_pane(&pane_id) {
+                    if let Err(e) = clawtab_lib::terminal_backend::kill_pane(&pane_id) {
                         log::warn!("Failed to kill pane {} for {}: {}", pane_id, name, e);
                     }
                     status.insert(name.clone(), JobStatus::Idle);
@@ -1160,11 +1180,11 @@ async fn handle_ipc_command(
             let Some(pane_id) = pane else {
                 return IpcResponse::Error("Job is not running or has no pane".to_string());
             };
-            if let Err(e) = clawtab_lib::tmux::send_sigint_to_pane(&pane_id) {
+            if let Err(e) = clawtab_lib::terminal_backend::send_sigint_to_pane(&pane_id) {
                 return IpcResponse::Error(e);
             }
             tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-            match clawtab_lib::tmux::send_sigint_to_pane(&pane_id) {
+            match clawtab_lib::terminal_backend::send_sigint_to_pane(&pane_id) {
                 Ok(()) => IpcResponse::Ok,
                 Err(e) => IpcResponse::Error(e),
             }
@@ -1225,25 +1245,27 @@ async fn handle_ipc_command(
                 },
             }
         }
-        IpcCommand::ListAllPanes => match clawtab_lib::tmux::list_panes_all_with_commands() {
-            Ok(raw) => {
-                let entries = raw
-                    .lines()
-                    .filter_map(|line| {
-                        let mut parts = line.split('\x1e');
-                        Some(clawtab_lib::ipc::PaneEntry {
-                            session: parts.next()?.to_string(),
-                            window_id: parts.next()?.to_string(),
-                            window_name: parts.next()?.to_string(),
-                            pane_id: parts.next()?.to_string(),
-                            current_command: parts.next().unwrap_or("").to_string(),
+        IpcCommand::ListAllPanes => {
+            match clawtab_lib::terminal_backend::list_panes_all_with_commands() {
+                Ok(raw) => {
+                    let entries = raw
+                        .lines()
+                        .filter_map(|line| {
+                            let mut parts = line.split('\x1e');
+                            Some(clawtab_lib::ipc::PaneEntry {
+                                session: parts.next()?.to_string(),
+                                window_id: parts.next()?.to_string(),
+                                window_name: parts.next()?.to_string(),
+                                pane_id: parts.next()?.to_string(),
+                                current_command: parts.next().unwrap_or("").to_string(),
+                            })
                         })
-                    })
-                    .collect();
-                IpcResponse::AllPanes(entries)
+                        .collect();
+                    IpcResponse::AllPanes(entries)
+                }
+                Err(e) => IpcResponse::Error(e),
             }
-            Err(e) => IpcResponse::Error(e),
-        },
+        }
         IpcCommand::OpenJobFolder { name } => {
             let dir = {
                 let jobs = jobs_config.lock();

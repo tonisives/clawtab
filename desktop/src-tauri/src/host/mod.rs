@@ -92,21 +92,22 @@ pub fn info() -> Value {
     ]
     .into_iter()
     .map(|name| {
-        let available = std::process::Command::new("which")
-            .arg(name)
-            .output()
-            .is_ok_and(|o| o.status.success());
+        let available = which::which(name).is_ok();
         (name, available)
     })
     .collect::<std::collections::HashMap<_, _>>();
     let mut capabilities = vec![
         "machine_v2",
+        "managed_terminal_v1",
         "host_management",
         "transfer_v1",
         "journal_query_v1",
     ];
     if security::enabled() {
-        capabilities.extend(["signed_commands_v1", "secure_move_v1"]);
+        capabilities.push("signed_commands_v1");
+        if cfg!(unix) {
+            capabilities.push("secure_move_v1");
+        }
     }
     json!({"platform":std::env::consts::OS,"architecture":std::env::consts::ARCH,"version":env!("CARGO_PKG_VERSION"),"capabilities":capabilities,"home":dirs::home_dir(),"tools":tools,"models":settings.enabled_models,"machine_id":settings.relay.as_ref().map(|r|&r.device_id)})
 }
@@ -133,6 +134,11 @@ pub fn resolve_path(value: &str) -> Result<PathBuf, String> {
 /// Persist execution identity in tmux so daemon restarts retain it, while a new
 /// pane or agent session receives a new identity.
 pub fn execution_id(pane: &str, pid: &str, session: Option<&str>) -> Option<String> {
+    if crate::managed::is_managed(pane) {
+        return crate::terminal_backend::info(pane)
+            .ok()
+            .map(|info| info.execution_id);
+    }
     let owner = format!("{}:{}", pid, session.unwrap_or_default());
     let output = std::process::Command::new("tmux")
         .args(["show-options", "-p", "-v", "-t", pane, "@clawtab-execution"])
@@ -153,6 +159,11 @@ pub fn execution_id(pane: &str, pid: &str, session: Option<&str>) -> Option<Stri
     status.success().then_some(id)
 }
 pub fn validate_execution(pane: &str, expected: &str) -> bool {
+    if crate::managed::is_managed(pane) {
+        return crate::terminal_backend::info(pane).is_ok_and(|info| {
+            info.status == crate::managed::Status::Running && info.execution_id == expected
+        });
+    }
     let output = std::process::Command::new("tmux")
         .args([
             "display-message",

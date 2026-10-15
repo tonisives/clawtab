@@ -8,7 +8,7 @@ use chrono::Utc;
 use crate::config::jobs::{JobStatus, NotifyTarget, TelegramNotify};
 use crate::history::HistoryStore;
 use crate::relay::RelayHandle;
-use crate::tmux;
+use crate::terminal_backend as tmux;
 
 const POLL_INTERVAL_SECS: u64 = 2;
 const CAPTURE_LINES: u32 = 80;

@@ -249,6 +249,7 @@ export let MovePanel = ({ paneId, onClose }: { paneId: string; onClose: () => vo
 export let MoveButton = ({ paneId }: { paneId: string }) => {
   let navigation = useMachineNavigation()
   let [open, setOpen] = useState(false)
+  if ((splitResource(paneId)?.id ?? paneId).startsWith("managed:")) return null
   let close = () => setOpen(false)
   let show = () => navigation ? navigation.push({ title: "Move", content: (dismiss) => <MovePanel paneId={paneId} onClose={dismiss} /> }) : setOpen(true)
   return <>

@@ -1,5 +1,5 @@
 use crate::agent_session::ProcessProvider;
-use crate::tmux;
+use crate::terminal_backend as tmux;
 
 use super::TmuxHandle;
 use std::io::Write;
@@ -10,6 +10,7 @@ use std::os::unix::fs::OpenOptionsExt;
 
 /// Args for spawning an agent pane via tmux. Shared by Claude and Folder job types.
 pub(super) struct SpawnArgs<'a> {
+    pub backend: clawtab_protocol::TerminalBackend,
     pub tmux_session: String,
     pub window_name: String,
     pub work_dir: String,
@@ -30,7 +31,11 @@ pub(super) struct SpawnArgs<'a> {
 pub(super) async fn spawn_agent_pane(
     args: SpawnArgs<'_>,
 ) -> Result<(Option<i32>, String, String, Option<TmuxHandle>), String> {
+    if args.backend == clawtab_protocol::TerminalBackend::Managed {
+        return spawn_managed(args);
+    }
     let SpawnArgs {
+        backend: _,
         tmux_session,
         window_name,
         work_dir,
@@ -323,4 +328,82 @@ async fn move_to_aerospace_workspace(tmux_session: &str, window_name: &str, work
             e
         );
     }
+}
+
+fn spawn_managed(
+    args: SpawnArgs<'_>,
+) -> Result<(Option<i32>, String, String, Option<TmuxHandle>), String> {
+    let mut argv = Vec::new();
+    let program = if args.provider == ProcessProvider::Shell {
+        #[cfg(unix)]
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
+        #[cfg(windows)]
+        let shell = which::which("pwsh")
+            .unwrap_or_else(|_| std::path::PathBuf::from("powershell.exe"))
+            .to_string_lossy()
+            .into_owned();
+        if !args.prompt_content.is_empty() {
+            argv.push(if cfg!(windows) { "-Command" } else { "-c" }.into());
+            argv.push(args.prompt_content);
+        }
+        shell
+    } else {
+        if args.provider == ProcessProvider::Codex {
+            argv.push("--no-daemon".into());
+        }
+        if let Some(model) = args.model {
+            argv.extend([
+                if args.provider == ProcessProvider::Opencode {
+                    "-m"
+                } else {
+                    "--model"
+                }
+                .into(),
+                model,
+            ]);
+        }
+        if let Some(effort) = args.effort {
+            match args.provider {
+                ProcessProvider::Claude => argv.extend(["--effort".into(), effort]),
+                ProcessProvider::Codex => {
+                    argv.extend(["-c".into(), format!("model_reasoning_effort={effort}")])
+                }
+                _ => {}
+            }
+        }
+        match args.provider {
+            ProcessProvider::Opencode => argv.push("--prompt".into()),
+            ProcessProvider::Antigravity => argv.push("--prompt-interactive".into()),
+            _ => {}
+        }
+        if !args.prompt_content.is_empty() {
+            argv.push(args.prompt_content);
+        }
+        args.agent_command
+    };
+    let info = crate::managed::launch(
+        crate::managed::Launch {
+            program,
+            args: argv,
+            cwd: args.work_dir,
+            size: Default::default(),
+            close_with_terminal: false,
+            provider: args.provider.as_str().into(),
+            conversation_id: None,
+            metadata: std::collections::BTreeMap::from([
+                ("slug".into(), args.slug.into()),
+                ("title".into(), args.window_name),
+            ]),
+        },
+        &args.env_vars,
+    )?;
+    Ok((
+        Some(0),
+        String::new(),
+        String::new(),
+        Some(TmuxHandle {
+            tmux_session: String::new(),
+            pane_id: info.id,
+        }),
+    ))
 }

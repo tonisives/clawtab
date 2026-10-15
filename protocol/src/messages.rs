@@ -13,6 +13,25 @@ use crate::usage::UsageSnapshot;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientMessage {
+    TakeControl {
+        id: String,
+        pane_id: String,
+        holder: String,
+        cols: u32,
+        rows: u32,
+    },
+    RenewControl {
+        id: String,
+        pane_id: String,
+        holder: String,
+        control_epoch: u64,
+    },
+    ReleaseControl {
+        id: String,
+        pane_id: String,
+        holder: String,
+        control_epoch: u64,
+    },
     ListJobs {
         id: String,
     },

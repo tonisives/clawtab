@@ -1,5 +1,4 @@
 use serde_json::{json, Value};
-use std::os::unix::fs::PermissionsExt;
 use std::{
     fs::OpenOptions,
     io::Write,
@@ -23,8 +22,7 @@ pub fn directory(id: &str) -> Result<PathBuf, String> {
     {
         return Err("unsafe operation directory".into());
     }
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700))
-        .map_err(|e| e.to_string())?;
+    crate::local_transport::private_directory(&path)?;
     Ok(path)
 }
 pub fn get(id: &str) -> Result<Value, String> {
