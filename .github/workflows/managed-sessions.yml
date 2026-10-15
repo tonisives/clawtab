@@ -53,8 +53,23 @@ jobs:
           $shim = Join-Path $root 'bin/cwtctl.cmd'
           & $shim --version
           if ($LASTEXITCODE -ne 0) { throw 'Installed CLI did not run' }
+          $env:CLAWTAB_SESSION_DIR = Join-Path $root 'sessions'
+          & $shim session start --detached --keep-running -- powershell.exe -NoProfile -Command 'Write-Output INSTALL_READY; Start-Sleep -Seconds 120'
+          if ($LASTEXITCODE -ne 0) { throw 'Installed CLI could not launch a session' }
+          $session = @((& $shim session list --json | ConvertFrom-Json))[0].id
           & ./package/install.ps1 -InstallRoot $root
           if ((Get-ChildItem (Join-Path $root 'versions')).Count -ne 2) { throw 'Upgrade replaced the previous launcher' }
+          $ready = $false
+          for ($attempt = 0; $attempt -lt 30; $attempt++) {
+            & $shim daemon ping
+            if ($LASTEXITCODE -eq 0) { $ready = $true; break }
+            Start-Sleep -Milliseconds 200
+          }
+          if (!$ready) { throw 'Installed Windows host did not answer IPC' }
+          $capture = & $shim session capture $session
+          if ($LASTEXITCODE -ne 0 -or ($capture -join "`n") -notmatch 'INSTALL_READY') { throw 'Upgrade lost the running terminal' }
+          & $shim session stop $session
+          if ($LASTEXITCODE -ne 0) { throw 'New launcher could not stop the old session' }
           & $shim daemon uninstall
           if ($LASTEXITCODE -ne 0) { throw 'Host startup cleanup failed' }
       - uses: actions/upload-artifact@v4
