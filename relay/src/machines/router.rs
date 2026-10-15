@@ -589,17 +589,27 @@ mod tests {
         assert_eq!(filtered["message"]["statuses"]["job"]["run_id"], "run");
         assert_eq!(value["message"]["processes"].as_array().unwrap().len(), 2);
     }
+    #[test]
+    fn capability_filter_preserves_unrelated_envelopes_and_errors() {
+        for value in [
+            json!({"type":"error","message":"machine is offline"}),
+            json!({"type":"secure_message","ciphertext":"opaque","signature":"signature"}),
+            json!({"type":"machine_event","message":{"type":"pty_exit","pane_id":"%1"}}),
+        ] {
+            assert_eq!(without_managed_sessions(&value), value);
+        }
+    }
 }
 
 fn without_managed_sessions(value: &Value) -> Value {
     let mut value = value.clone();
-    let payload = if value.get("message").is_some() {
+    let payload = if value.get("message").is_some_and(Value::is_object) {
         &mut value["message"]
     } else {
         &mut value
     };
     for field in ["processes", "questions", "activity"] {
-        if let Some(items) = payload[field].as_array_mut() {
+        if let Some(items) = payload.get_mut(field).and_then(Value::as_array_mut) {
             items.retain(|item| {
                 !item["pane_id"]
                     .as_str()
@@ -608,7 +618,7 @@ fn without_managed_sessions(value: &Value) -> Value {
         }
     }
     for field in ["pane_ids", "items"] {
-        if let Some(items) = payload[field].as_array_mut() {
+        if let Some(items) = payload.get_mut(field).and_then(Value::as_array_mut) {
             items.retain(|item| {
                 !item
                     .as_str()
@@ -616,7 +626,7 @@ fn without_managed_sessions(value: &Value) -> Value {
             });
         }
     }
-    if let Some(statuses) = payload["statuses"].as_object_mut() {
+    if let Some(statuses) = payload.get_mut("statuses").and_then(Value::as_object_mut) {
         for status in statuses.values_mut() {
             if status["pane_id"]
                 .as_str()
