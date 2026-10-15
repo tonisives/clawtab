@@ -1,9 +1,36 @@
 use clawtab_lib::managed::{self, Client, Request, Response, SessionInfo, Size, Snapshot, Status};
 use std::{
-    io::{BufRead, Write},
+    io::{BufRead, Read, Write},
     process::Command,
     time::{Duration, Instant},
 };
+
+#[test]
+fn local_transport_round_trip_and_disconnect() {
+    let path = clawtab_lib::runtime_paths::ensure()
+        .unwrap()
+        .join(format!("test-{}.sock", uuid::Uuid::new_v4()));
+    let listener = clawtab_lib::local_transport::listen(&path).unwrap();
+    let server = std::thread::spawn(move || {
+        let mut stream = clawtab_lib::local_transport::accept(&listener).unwrap();
+        let mut message = [0; 4];
+        stream.read_exact(&mut message).unwrap();
+        assert_eq!(&message, b"ping");
+        std::thread::sleep(Duration::from_millis(50));
+        stream.write_all(b"pong").unwrap();
+        // Closing the client must unblock the owner connection reader.
+        assert!(matches!(stream.read(&mut message), Ok(0) | Err(_)));
+    });
+    let mut client = clawtab_lib::local_transport::connect(&path).unwrap();
+    client.write_all(b"ping").unwrap();
+    let mut response = [0; 4];
+    client.read_exact(&mut response).unwrap();
+    assert_eq!(&response, b"pong");
+    drop(client);
+    server.join().unwrap();
+    #[cfg(unix)]
+    std::fs::remove_file(path).unwrap();
+}
 
 // Run inside a real PTY on every supported OS, without an agent account.
 #[test]

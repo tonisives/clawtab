@@ -24,7 +24,7 @@
 | --- | --- |
 | macOS | [Desktop app for Apple Silicon and Intel](https://github.com/tonisives/clawtab/releases/latest), or `brew install --cask tonisives/tap/clawtab` |
 | Linux | Local daemon or remote agent host: [x86_64](https://github.com/tonisives/clawtab/releases/latest/download/clawtab-linux-x86_64.tar.gz) / [ARM64](https://github.com/tonisives/clawtab/releases/latest/download/clawtab-linux-aarch64.tar.gz) |
-| Windows | No native Windows build yet |
+| Windows | Native host and CLI: build from source or use the [Managed terminals CI artifact](https://github.com/tonisives/clawtab/actions/workflows/managed-sessions.yml). No WSL required. |
 | iPhone / iPad | [App Store](https://apps.apple.com/us/app/clawtab/id6759683841) |
 | Android | Google Play build workflow added; store release pending signing and submission |
 | Web | [Remote](https://remote.clawtab.cc) |
@@ -145,11 +145,50 @@ a daemon restart. Plugin names can use a unique action suffix, with dashes in
 place of underscores. See [Local Executable Plugins](./docs/agent-plugins.md)
 for the package format, host commands, and approval flow.
 
-For an interactive agent job, `cwtctl jobs run` waits for the daemon to publish the tmux pane and then attaches your terminal to it. If you are already inside tmux, it selects the new pane in the current client.
+For an interactive agent job, `cwtctl jobs run` waits for the daemon to publish its terminal and then attaches your terminal to it. If you are already inside tmux, it selects the new pane in the current client.
 
 <p align="center">
   <img src="https://cdn.clawtab.cc/assets/articles/daemon-tmux/cwtctl-command-groups.png?v=20260716" alt="cwtctl command groups for agents, jobs, panes, secrets, Telegram, and the daemon" width="1000" />
 </p>
+
+## Managed CLI sessions
+
+ClawTab also supports agents without tmux. Launch the command through ClawTab so a separate owner process can keep its terminal alive:
+
+```sh
+cwtctl session start -- codex
+cwtctl session start -- claude
+cwtctl session start --detached -- opencode
+cwtctl session list
+cwtctl session attach managed:<session-id>
+cwtctl session capture managed:<session-id> --history
+cwtctl session stop managed:<session-id>
+```
+
+These sessions use a Unix PTY on macOS/Linux and ConPTY on Windows. They appear beside tmux sessions in ClawTab. The owner keeps the process, terminal screen, and up to 10,000 history rows while the desktop app or daemon restarts. Existing commands started outside ClawTab cannot be adopted; launch them through `cwtctl session start`.
+
+Closing the originating terminal keeps its agent running by default. Use `--close-with-terminal` to stop it when that terminal closes, or `--keep-running` to override the global preference. In an attached terminal, press Ctrl+] then d to detach deliberately; explicit detach keeps the process running with either policy.
+
+Taking control on mobile resizes the agent to the mobile terminal. The first local key reclaims control and is consumed. ClawTab restores the latest local terminal dimensions, including any desktop resize while mobile had control. Remote control has a renewable 30-second lease; losing the host connection also releases it. Watching clients cannot resize or type without taking control.
+
+After an owner crash or computer restart, the session is marked interrupted. `cwtctl session resume <id>` explicitly resumes its saved provider conversation when available. It never automatically replays the original prompt. Enable the provider's ClawTab hooks to retain conversation identity and immediate question/activity events.
+
+Choose the default under Settings > Runtime, or set `terminal_backend: managed` / `terminal_backend: tmux` in an individual job's YAML. Windows defaults to managed sessions; existing Unix installations retain tmux as their default. Scheduling, captured output, notifications, question detection, auto-yes, and compatible agent plugins use either backend. Tmux layouts, copy mode, and Move remain tmux features. Use History or `session capture --history` for managed scrollback.
+
+### Native Windows host
+
+Windows 10 version 1809 or newer is required. Install your agent CLI, extract the Windows host package, verify its SHA-256 checksum, and run `powershell -ExecutionPolicy Bypass -File .\install.ps1` from that extracted package. Then run `cwtctl setup` and approve its pairing code in the mobile app. Setup registers per-user startup at login; it does not require administrator privileges. Python is needed only for Python plugins, and Git for repository operations.
+
+For a source build:
+
+```powershell
+cd desktop/src-tauri
+cargo build -j4 --release --no-default-features --bin cwtctl --bin clawtab-daemon --bin clawtab-hook
+.\target\release\cwtctl.exe setup
+.\target\release\cwtctl.exe session start -- codex
+```
+
+The installer puts each version in a separate directory and updates the CLI shim and startup path. Updating the host leaves existing owners on their original executable until their sessions end. Keep those older directories while their sessions are running. This package provides the Windows host and CLI; the Tauri desktop UI remains a separate platform target.
 
 ## Optional GUI and Mind Map
 

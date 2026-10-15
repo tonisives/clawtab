@@ -195,7 +195,7 @@ async fn handle_codex_command(args: &[String]) {
     let pane_id = args
         .get(5)
         .cloned()
-        .or_else(|| env::var("TMUX_PANE").ok())
+        .or_else(|| env::var("CLAWTAB_SESSION_ID").or_else(|_| env::var("TMUX_PANE")).ok())
         .unwrap_or_else(|| {
             eprintln!("Error: pass pane_id or run this command inside tmux");
             std::process::exit(1);
@@ -319,7 +319,7 @@ async fn handle_agent_action_command(args: &[String]) {
             .skip(2)
             .find(|arg| !arg.starts_with('-'))
             .cloned()
-            .or_else(|| env::var("TMUX_PANE").ok())
+            .or_else(|| env::var("CLAWTAB_SESSION_ID").or_else(|_| env::var("TMUX_PANE")).ok())
             .unwrap_or_else(|| {
                 eprintln!("Error: pass pane_id or run this command inside tmux");
                 std::process::exit(1);
@@ -336,7 +336,7 @@ async fn handle_agent_action_command(args: &[String]) {
                 let explicit_pane = args.get(4).filter(|value| !value.contains('='));
                 let pane_id = explicit_pane
                     .cloned()
-                    .or_else(|| env::var("TMUX_PANE").ok())
+                    .or_else(|| env::var("CLAWTAB_SESSION_ID").or_else(|_| env::var("TMUX_PANE")).ok())
                     .unwrap_or_else(|| {
                         eprintln!("Error: pass pane_id or run this command inside tmux");
                         std::process::exit(1);
@@ -498,7 +498,7 @@ async fn handle_plugin_command(args: &[String]) {
             let explicit_pane = args.get(4).filter(|value| !value.contains('='));
             let pane_id = explicit_pane
                 .cloned()
-                .or_else(|| env::var("TMUX_PANE").ok())
+                .or_else(|| env::var("CLAWTAB_SESSION_ID").or_else(|_| env::var("TMUX_PANE")).ok())
                 .unwrap_or_else(|| {
                     eprintln!("Error: pass pane_id or run this command inside tmux");
                     std::process::exit(1);
@@ -862,7 +862,7 @@ async fn main() {
                     let pane_id = if args.len() >= 4 {
                         args[3].clone()
                     } else {
-                        env::var("TMUX_PANE").unwrap_or_else(|_| {
+                        env::var("CLAWTAB_SESSION_ID").or_else(|_| env::var("TMUX_PANE")).unwrap_or_else(|_| {
                             eprintln!(
                                 "Error: not in a tmux pane (no $TMUX_PANE). Pass pane_id explicitly."
                             );
@@ -926,7 +926,7 @@ async fn main() {
             let pane_id = if args.len() > pane_arg_index {
                 args[pane_arg_index].clone()
             } else {
-                env::var("TMUX_PANE").unwrap_or_else(|_| {
+                env::var("CLAWTAB_SESSION_ID").or_else(|_| env::var("TMUX_PANE")).unwrap_or_else(|_| {
                     eprintln!(
                         "Error: not in a tmux pane (no $TMUX_PANE). Pass pane_id explicitly."
                     );
@@ -1056,7 +1056,7 @@ async fn main() {
                 std::process::exit(1);
             }
             let pane_id = args.get(2).cloned().unwrap_or_else(|| {
-                env::var("TMUX_PANE").unwrap_or_else(|_| {
+                env::var("CLAWTAB_SESSION_ID").or_else(|_| env::var("TMUX_PANE")).unwrap_or_else(|_| {
                     eprintln!(
                         "Error: not in a tmux pane (no $TMUX_PANE). Pass pane_id explicitly."
                     );
@@ -1142,7 +1142,7 @@ async fn main() {
                 let pane_id = if args.len() >= 4 {
                     args[3].clone()
                 } else {
-                    env::var("TMUX_PANE").unwrap_or_else(|_| {
+                    env::var("CLAWTAB_SESSION_ID").or_else(|_| env::var("TMUX_PANE")).unwrap_or_else(|_| {
                         eprintln!(
                             "Error: not in a tmux pane (no $TMUX_PANE). Pass pane_id explicitly."
                         );
@@ -1169,7 +1169,7 @@ async fn main() {
         Some(if args.len() >= 4 {
             args[3].clone()
         } else {
-            env::var("TMUX_PANE").unwrap_or_default()
+            env::var("CLAWTAB_SESSION_ID").or_else(|_| env::var("TMUX_PANE")).unwrap_or_default()
         })
     } else {
         None
@@ -1510,6 +1510,7 @@ fn print_terminal_status(status: &JobStatus) {
 }
 
 fn attach_to_tmux(session: &str, pane: &str) -> Result<(), String> {
+    if clawtab_lib::managed::is_managed(pane) { return clawtab_lib::managed::run_cli(&["attach".into(), pane.into()]); }
     if env::var_os("TMUX").is_some() {
         let status = Command::new("tmux")
             .args(["switch-client", "-t", session])
@@ -1750,6 +1751,10 @@ fn exit_error(msg: &str) -> ! {
 
 async fn save_pane_display_name(pane_id: &str, display_name: Option<String>) -> Result<(), String> {
     let title = display_name.as_deref().unwrap_or("");
+    if clawtab_lib::managed::is_managed(pane_id) {
+        clawtab_lib::terminal_backend::set_pane_title(pane_id, title)?;
+        return clawtab_lib::terminal_backend::set_pane_display_name(pane_id, display_name.as_deref());
+    }
     let pane_title_output = std::process::Command::new("tmux")
         .args(["select-pane", "-t", pane_id, "-T", title])
         .output()
@@ -2024,6 +2029,14 @@ Do not use tools.\n\n",
 }
 
 fn resolve_tmux_pane_format(pane_id: &str, format: &str) -> String {
+    if clawtab_lib::managed::is_managed(pane_id) {
+        return clawtab_lib::terminal_backend::info(pane_id).map(|info| match format {
+            "#{pane_pid}" => info.child_pid.to_string(),
+            "#{pane_current_path}" => info.launch.cwd,
+            "#{@clawtab-display-name}" => info.launch.metadata.get("display_name").cloned().unwrap_or_default(),
+            _ => String::new(),
+        }).unwrap_or_default();
+    }
     let list_format = format!("#{{pane_id}}\x1e{}", format);
     let from_list_panes = std::process::Command::new("tmux")
         .args(["list-panes", "-a", "-F", &list_format])

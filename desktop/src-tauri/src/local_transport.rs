@@ -253,7 +253,7 @@ pub mod windows {
             GetSecurityDescriptorDacl, DACL_SECURITY_INFORMATION,
             PROTECTED_DACL_SECURITY_INFORMATION, SECURITY_ATTRIBUTES,
         },
-        Storage::FileSystem::{FILE_FLAG_FIRST_PIPE_INSTANCE, PIPE_ACCESS_DUPLEX},
+        Storage::FileSystem::{ReadFile, FILE_FLAG_FIRST_PIPE_INSTANCE, PIPE_ACCESS_DUPLEX},
         System::Pipes::{
             ConnectNamedPipe, CreateNamedPipeW, SetNamedPipeHandleState, PIPE_NOWAIT,
             PIPE_READMODE_BYTE, PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE,
@@ -269,7 +269,22 @@ pub mod windows {
         fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
             loop {
-                match io::Read::read(&mut self.file, buffer) {
+                let mut count = 0;
+                let success = unsafe {
+                    ReadFile(
+                        self.file.as_raw_handle(),
+                        buffer.as_mut_ptr(),
+                        buffer.len().min(u32::MAX as usize) as u32,
+                        &mut count,
+                        std::ptr::null_mut(),
+                    )
+                };
+                let result = if success != 0 {
+                    Ok(count as usize)
+                } else {
+                    Err(io::Error::last_os_error())
+                };
+                match result {
                     Err(error) if self.nonblocking && error.raw_os_error() == Some(232) => {
                         if std::time::Instant::now() >= deadline {
                             return Err(io::Error::new(
@@ -286,7 +301,21 @@ pub mod windows {
     }
     impl io::Write for Stream {
         fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
-            io::Write::write(&mut self.file, buffer)
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            loop {
+                match io::Write::write(&mut self.file, buffer) {
+                    Ok(0) if self.nonblocking && !buffer.is_empty() => {
+                        if std::time::Instant::now() >= deadline {
+                            return Err(io::Error::new(
+                                io::ErrorKind::TimedOut,
+                                "session owner did not read input",
+                            ));
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(2));
+                    }
+                    result => return result,
+                }
+            }
         }
         fn flush(&mut self) -> io::Result<()> {
             Ok(())

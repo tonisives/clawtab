@@ -672,6 +672,10 @@ fn normalize_optional_text(value: String) -> Option<String> {
 }
 
 fn resolve_process_override_identity(pane_id: &str) -> Result<(String, Option<String>), String> {
+    if crate::managed::is_managed(pane_id) {
+        let info = crate::terminal_backend::info(pane_id)?;
+        return Ok((info.child_pid.to_string(), info.launch.conversation_id));
+    }
     let output = debug_spawn::run_logged(
         "tmux",
         &[
@@ -942,6 +946,11 @@ pub fn get_existing_pane_info(
         return Ok(None);
     }
 
+    if crate::managed::is_managed(&pane_id) {
+        let info = crate::terminal_backend::info(&pane_id)?;
+        let matched_group = info.launch.metadata.get("slug").and_then(|slug| state.jobs_config.lock().jobs.iter().find(|job| &job.slug == slug).map(|job| job.group.clone()));
+        return Ok(Some(ExistingPaneInfo { pane_id: pane_id.clone(), cwd: info.launch.cwd, tmux_session: String::new(), window_name: pane_id, pane_title: info.launch.metadata.get("title").cloned(), matched_group }));
+    }
     let output = debug_spawn::run_logged(
         "tmux",
         &[

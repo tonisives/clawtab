@@ -191,11 +191,18 @@ pub(super) fn launch_with_id(
     drop(stdin);
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
-        if let Ok(mut client) = connect(id) {
-            if let Response::Info { session } = client.request(Request::Info)? {
-                return Ok(session);
-            }
-        }
+        let error = match connect(id) {
+            Ok(mut client) => match client.request(Request::Info)? {
+                Response::Info { session } => {
+                    std::thread::spawn(move || {
+                        let _ = child.wait();
+                    });
+                    return Ok(session);
+                }
+                _ => "unexpected owner response".into(),
+            },
+            Err(error) => error,
+        };
         if let Some(exit) = child.try_wait().map_err(|e| e.to_string())? {
             let message = store::read::<String>(&directory.join("error.json"))
                 .unwrap_or_else(|_| format!("launcher exited: {exit}"));
@@ -203,7 +210,8 @@ pub(super) fn launch_with_id(
         }
         if Instant::now() > deadline {
             let _ = child.kill();
-            return Err("launcher did not become ready".into());
+            let _ = child.wait();
+            return Err(format!("launcher did not become ready: {error}"));
         }
         std::thread::sleep(Duration::from_millis(25));
     }
