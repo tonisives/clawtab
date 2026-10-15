@@ -7,6 +7,12 @@ pub struct KeychainBackend {
     cache: HashMap<String, String>,
 }
 
+impl Default for KeychainBackend {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 fn wide(value: &str) -> Vec<u16> {
     value.encode_utf16().chain(Some(0)).collect()
 }

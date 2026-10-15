@@ -58,20 +58,7 @@ pub fn run_cli(args: &[String]) -> Result<(), String> {
             super::request(required(args, 1)?, Request::Stop)?;
             Ok(())
         }
-        "capture" => {
-            let response = super::request(
-                required(args, 1)?,
-                Request::Capture {
-                    history: args.iter().any(|arg| arg == "--history"),
-                    ansi: args.iter().any(|arg| arg == "--ansi"),
-                    lines: 10300,
-                },
-            )?;
-            if let Response::Capture { content } = response {
-                println!("{content}");
-            }
-            Ok(())
-        }
+        "capture" => capture(args),
         "resume" => {
             let id = required(args, 1)?;
             let Response::Info { session } = super::request(id, Request::Info)? else {
@@ -91,6 +78,21 @@ pub fn run_cli(args: &[String]) -> Result<(), String> {
         }
         _ => Err(format!("unknown session command: {action}")),
     }
+}
+
+fn capture(args: &[String]) -> Result<(), String> {
+    let response = super::request(
+        required(args, 1)?,
+        Request::Capture {
+            history: args.iter().any(|arg| arg == "--history"),
+            ansi: args.iter().any(|arg| arg == "--ansi"),
+            lines: 10300,
+        },
+    )?;
+    if let Response::Capture { content } = response {
+        println!("{content}");
+    }
+    Ok(())
 }
 
 fn start(args: &[String]) -> Result<(), String> {
@@ -203,14 +205,7 @@ pub fn attach(id: &str, origin: bool) -> Result<(), String> {
         size: local_size(),
         origin,
     })?;
-    terminal::enable_raw_mode().map_err(|e| e.to_string())?;
-    let _guard = TerminalGuard;
-    execute!(
-        std::io::stdout(),
-        terminal::EnterAlternateScreen,
-        terminal::Clear(terminal::ClearType::All)
-    )
-    .map_err(|e| e.to_string())?;
+    let _guard = enter_terminal()?;
     let mut after = None;
     let mut prefix = false;
     let mut previous_size = None;
@@ -277,6 +272,18 @@ pub fn attach(id: &str, origin: bool) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+fn enter_terminal() -> Result<TerminalGuard, String> {
+    terminal::enable_raw_mode().map_err(|e| e.to_string())?;
+    let guard = TerminalGuard;
+    execute!(
+        std::io::stdout(),
+        terminal::EnterAlternateScreen,
+        terminal::Clear(terminal::ClearType::All)
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(guard)
 }
 
 fn render(snapshot: &super::Snapshot, previous_size: &mut Option<Size>) -> Result<(), String> {

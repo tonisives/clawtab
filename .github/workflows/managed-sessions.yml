@@ -63,6 +63,13 @@ jobs:
           & $shim session start --detached --keep-running -- powershell.exe -NoProfile -Command 'Write-Output INSTALL_READY; Start-Sleep -Seconds 120'
           if ($LASTEXITCODE -ne 0) { throw 'Installed CLI could not launch a session' }
           $session = @((& $shim session list --json | ConvertFrom-Json))[0].id
+          $outputReady = $false
+          for ($attempt = 0; $attempt -lt 50; $attempt++) {
+            $capture = & $shim session capture $session
+            if ($LASTEXITCODE -eq 0 -and ($capture -join "`n") -match 'INSTALL_READY') { $outputReady = $true; break }
+            Start-Sleep -Milliseconds 200
+          }
+          if (!$outputReady) { throw "Initial terminal output was unavailable: $($capture -join ' ')" }
           & ./package/install.ps1 -InstallRoot $root
           if ((Get-ChildItem (Join-Path $root 'versions')).Count -ne 2) { throw 'Upgrade replaced the previous launcher' }
           $ready = $false

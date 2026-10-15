@@ -37,21 +37,7 @@ fn detect_processes(
 ) -> Vec<DetectedProcess> {
     let stdout = list_panes().unwrap_or_default();
     let pane_lines = stdout.lines().count();
-    if pane_lines > 0 {
-        let first = stdout.lines().next().unwrap_or("");
-        let hex: String = first
-            .bytes()
-            .take(80)
-            .map(|b| format!("{:02x} ", b))
-            .collect();
-        log::trace!(
-            "detect_processes: tmux returned {} pane lines. first_line_hex(80)={}",
-            pane_lines,
-            hex
-        );
-    } else {
-        log::trace!("detect_processes: tmux returned 0 pane lines");
-    }
+    trace_panes(&stdout, pane_lines);
 
     let process_snapshot = crate::agent_session::ProcessSnapshot::capture();
     let overrides = crate::config::settings::AppSettings::load().process_overrides;
@@ -135,6 +121,24 @@ fn detect_processes(
     );
 
     results
+}
+
+fn trace_panes(stdout: &str, pane_lines: usize) {
+    if pane_lines > 0 {
+        let first = stdout.lines().next().unwrap_or("");
+        let hex: String = first
+            .bytes()
+            .take(80)
+            .map(|b| format!("{:02x} ", b))
+            .collect();
+        log::trace!(
+            "detect_processes: tmux returned {} pane lines. first_line_hex(80)={}",
+            pane_lines,
+            hex
+        );
+    } else {
+        log::trace!("detect_processes: tmux returned 0 pane lines");
+    }
 }
 
 fn list_panes() -> Option<String> {

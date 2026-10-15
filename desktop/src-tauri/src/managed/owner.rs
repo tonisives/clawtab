@@ -167,6 +167,55 @@ impl State {
             } => Ok(Response::Capture {
                 content: self.screen.capture(history, ansi, lines),
             }),
+            request @ (Request::Attach { .. }
+            | Request::Detach
+            | Request::LocalInput { .. }
+            | Request::LocalResize { .. }) => self.local_request(request, viewer),
+            request @ (Request::TakeControl { .. }
+            | Request::RenewControl { .. }
+            | Request::ReleaseControl { .. }
+            | Request::RemoteInput { .. }
+            | Request::RemoteResize { .. }) => self.remote_request(request),
+            Request::AutomationInput { data } => {
+                self.input(&data, None)?;
+                Ok(Response::Ok)
+            }
+            Request::Metadata {
+                values,
+                conversation_id,
+            } => {
+                if values.len() > 100
+                    || values.iter().any(|(k, v)| k.len() > 256 || v.len() > 65536)
+                {
+                    return Err("session metadata is too large".into());
+                }
+                if values
+                    .iter()
+                    .all(|(key, value)| self.info.launch.metadata.get(key) == Some(value))
+                    && (conversation_id.is_none()
+                        || self.info.launch.conversation_id == conversation_id)
+                {
+                    return Ok(Response::Ok);
+                }
+                self.info.launch.metadata.extend(values);
+                if conversation_id.is_some() {
+                    self.info.launch.conversation_id = conversation_id;
+                }
+                store::save_info(&self.info)?;
+                Ok(Response::Ok)
+            }
+            Request::Stop => {
+                self.stop()?;
+                Ok(Response::Ok)
+            }
+        }
+    }
+    fn local_request(
+        &mut self,
+        request: Request,
+        viewer: &mut Option<String>,
+    ) -> Result<Response, String> {
+        match request {
             Request::Attach {
                 viewer: id,
                 size,
@@ -210,6 +259,11 @@ impl State {
                 }
                 Ok(Response::Ok)
             }
+            _ => Err("expected a local viewer request".into()),
+        }
+    }
+    fn remote_request(&mut self, request: Request) -> Result<Response, String> {
+        match request {
             Request::TakeControl { holder, size } => {
                 self.resize(size)?;
                 self.control.epoch += 1;
@@ -250,38 +304,7 @@ impl State {
                 self.resize(size)?;
                 Ok(Response::Ok)
             }
-            Request::AutomationInput { data } => {
-                self.input(&data, None)?;
-                Ok(Response::Ok)
-            }
-            Request::Metadata {
-                values,
-                conversation_id,
-            } => {
-                if values.len() > 100
-                    || values.iter().any(|(k, v)| k.len() > 256 || v.len() > 65536)
-                {
-                    return Err("session metadata is too large".into());
-                }
-                if values
-                    .iter()
-                    .all(|(key, value)| self.info.launch.metadata.get(key) == Some(value))
-                    && (conversation_id.is_none()
-                        || self.info.launch.conversation_id == conversation_id)
-                {
-                    return Ok(Response::Ok);
-                }
-                self.info.launch.metadata.extend(values);
-                if conversation_id.is_some() {
-                    self.info.launch.conversation_id = conversation_id;
-                }
-                store::save_info(&self.info)?;
-                Ok(Response::Ok)
-            }
-            Request::Stop => {
-                self.stop()?;
-                Ok(Response::Ok)
-            }
+            _ => Err("expected a remote control request".into()),
         }
     }
 }
@@ -300,14 +323,7 @@ pub(super) fn serve(id: &str, launch: Launch) -> Result<(), String> {
     let _job = windows_job::OwnerJob::enter()?;
     let directory = store::directory(id)?;
     local_transport::private_directory(&directory)?;
-    let lock = std::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .open(directory.join("owner.lock"))
-        .map_err(|e| e.to_string())?;
-    fs2::FileExt::try_lock_exclusive(&lock).map_err(|_| "session already has an owner")?;
+    let _lock = lock_directory(&directory)?;
     let endpoint = store::endpoint(id)?;
     #[cfg(unix)]
     if endpoint.exists() {
@@ -319,27 +335,15 @@ pub(super) fn serve(id: &str, launch: Launch) -> Result<(), String> {
     let pair = portable_pty::native_pty_system()
         .openpty(pty_size(size))
         .map_err(|e| e.to_string())?;
-    let mut command = command(id, &launch)?;
-    #[cfg(windows)]
-    for (key, value) in std::env::vars_os() {
-        // portable-pty refreshes registry values, but the launcher's PATH and
-        // explicit job environment must take precedence over those defaults.
-        command.env(key, value);
-    }
-    command.cwd(&launch.cwd);
-    command.env("TERM", "xterm-256color");
-    command.env("COLORTERM", "truecolor");
-    command.env("CLAWTAB_SESSION_ID", id);
-    command.env_remove("TMUX");
-    command.env_remove("TMUX_PANE");
+    let command = command(id, &launch)?;
     store::save(&directory.join("startup.json"), &"starting command")?;
-    let mut child = pair
+    let child = pair
         .slave
         .spawn_command(command)
         .map_err(|e| e.to_string())?;
     drop(pair.slave);
-    let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
-    let mut writer = pair.master.take_writer().map_err(|e| e.to_string())?;
+    let reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
+    let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
     let (input_tx, input_rx) = std::sync::mpsc::sync_channel::<Input>(64);
     let info = SessionInfo {
         id: id.into(),
@@ -372,51 +376,7 @@ pub(super) fn serve(id: &str, launch: Launch) -> Result<(), String> {
         writer: input_tx,
         killer: child.clone_killer(),
     }));
-    let write_state = Arc::downgrade(&state);
-    std::thread::spawn(move || {
-        while let Ok(input) = input_rx.recv() {
-            if let Some((holder, epoch)) = input.authority {
-                if write_state.upgrade().is_none_or(|state| {
-                    let state = state.lock();
-                    state.control.holder != holder
-                        || state.control.epoch != epoch
-                        || (holder.is_some()
-                            && state.renewed.elapsed() >= Duration::from_secs(LEASE_SECONDS))
-                }) {
-                    continue;
-                }
-            }
-            if writer
-                .write_all(&input.data)
-                .and_then(|_| writer.flush())
-                .is_err()
-            {
-                break;
-            }
-        }
-    });
-    let read_state = Arc::clone(&state);
-    let drained = Arc::new(AtomicBool::new(false));
-    let reader_drained = Arc::clone(&drained);
-    std::thread::spawn(move || {
-        let mut buffer = [0; 32768];
-        while let Ok(count) = reader.read(&mut buffer) {
-            if count == 0 {
-                break;
-            }
-            let mut state = read_state.lock();
-            let replies = state.screen.process(&buffer[..count]);
-            if !replies.is_empty() {
-                let _ = state.writer.try_send(Input {
-                    data: replies,
-                    authority: None,
-                });
-            }
-            state.revision += 1;
-            state.output_revision += 1;
-        }
-        reader_drained.store(true, Ordering::Release);
-    });
+    let drained = spawn_io(&state, reader, writer, input_rx);
     let accept_state = Arc::clone(&state);
     std::thread::spawn(move || {
         while let Ok(stream) = local_transport::accept(&listener) {
@@ -426,6 +386,30 @@ pub(super) fn serve(id: &str, launch: Launch) -> Result<(), String> {
     });
     store::save_info(&state.lock().info)?;
     let _ = std::fs::remove_file(directory.join("startup.json"));
+    await_exit(&state, child, &drained, &directory)?;
+    #[cfg(unix)]
+    let _ = std::fs::remove_file(endpoint);
+    Ok(())
+}
+
+fn lock_directory(directory: &std::path::Path) -> Result<std::fs::File, String> {
+    let lock = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(directory.join("owner.lock"))
+        .map_err(|e| e.to_string())?;
+    fs2::FileExt::try_lock_exclusive(&lock).map_err(|_| "session already has an owner")?;
+    Ok(lock)
+}
+
+fn await_exit(
+    state: &Arc<Mutex<State>>,
+    mut child: Box<dyn portable_pty::Child + Send + Sync>,
+    drained: &AtomicBool,
+    directory: &std::path::Path,
+) -> Result<(), String> {
     let exit = loop {
         if let Some(exit) = child.try_wait().map_err(|e| e.to_string())? {
             break exit;
@@ -464,12 +448,81 @@ pub(super) fn serve(id: &str, launch: Launch) -> Result<(), String> {
     }
     // Give attached viewers time to observe the final screen and exit status.
     std::thread::sleep(Duration::from_millis(150));
-    #[cfg(unix)]
-    let _ = std::fs::remove_file(endpoint);
     Ok(())
 }
 
-fn command(_id: &str, launch: &Launch) -> Result<CommandBuilder, String> {
+fn spawn_io(
+    state: &Arc<Mutex<State>>,
+    mut reader: Box<dyn Read + Send>,
+    mut writer: Box<dyn Write + Send>,
+    input_rx: std::sync::mpsc::Receiver<Input>,
+) -> Arc<AtomicBool> {
+    let write_state = Arc::downgrade(state);
+    std::thread::spawn(move || {
+        while let Ok(input) = input_rx.recv() {
+            if let Some((holder, epoch)) = input.authority {
+                if write_state.upgrade().is_none_or(|state| {
+                    let state = state.lock();
+                    state.control.holder != holder
+                        || state.control.epoch != epoch
+                        || (holder.is_some()
+                            && state.renewed.elapsed() >= Duration::from_secs(LEASE_SECONDS))
+                }) {
+                    continue;
+                }
+            }
+            if writer
+                .write_all(&input.data)
+                .and_then(|_| writer.flush())
+                .is_err()
+            {
+                break;
+            }
+        }
+    });
+    let read_state = Arc::clone(state);
+    let drained = Arc::new(AtomicBool::new(false));
+    let reader_drained = Arc::clone(&drained);
+    std::thread::spawn(move || {
+        let mut buffer = [0; 32768];
+        while let Ok(count) = reader.read(&mut buffer) {
+            if count == 0 {
+                break;
+            }
+            let mut state = read_state.lock();
+            let replies = state.screen.process(&buffer[..count]);
+            if !replies.is_empty() {
+                let _ = state.writer.try_send(Input {
+                    data: replies,
+                    authority: None,
+                });
+            }
+            state.revision += 1;
+            state.output_revision += 1;
+        }
+        reader_drained.store(true, Ordering::Release);
+    });
+    drained
+}
+
+fn command(id: &str, launch: &Launch) -> Result<CommandBuilder, String> {
+    let mut command = program_command(id, launch)?;
+    #[cfg(windows)]
+    for (key, value) in std::env::vars_os() {
+        // portable-pty refreshes registry values, but the launcher's PATH and
+        // explicit job environment must take precedence over those defaults.
+        command.env(key, value);
+    }
+    command.cwd(&launch.cwd);
+    command.env("TERM", "xterm-256color");
+    command.env("COLORTERM", "truecolor");
+    command.env("CLAWTAB_SESSION_ID", id);
+    command.env_remove("TMUX");
+    command.env_remove("TMUX_PANE");
+    Ok(command)
+}
+
+fn program_command(_id: &str, launch: &Launch) -> Result<CommandBuilder, String> {
     #[cfg(windows)]
     {
         let program = which::which_in(&launch.program, std::env::var_os("PATH"), &launch.cwd)
