@@ -24,7 +24,7 @@ jobs:
         with:
           workspaces: desktop/src-tauri
       - run: cargo check -j4 --locked --no-default-features --lib --bins
-      - run: cargo test -j4 --locked --no-default-features --lib managed::
+      - run: "cargo test -j4 --locked --no-default-features --lib managed::"
       - run: cargo test -j4 --locked --no-default-features --test managed_sessions -- --nocapture
       - name: Build Windows host
         if: runner.os == 'Windows'
