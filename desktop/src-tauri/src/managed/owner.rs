@@ -320,6 +320,12 @@ pub(super) fn serve(id: &str, launch: Launch) -> Result<(), String> {
         .openpty(pty_size(size))
         .map_err(|e| e.to_string())?;
     let mut command = command(id, &launch)?;
+    #[cfg(windows)]
+    for (key, value) in std::env::vars_os() {
+        // portable-pty refreshes registry values, but the launcher's PATH and
+        // explicit job environment must take precedence over those defaults.
+        command.env(key, value);
+    }
     command.cwd(&launch.cwd);
     command.env("TERM", "xterm-256color");
     command.env("COLORTERM", "truecolor");

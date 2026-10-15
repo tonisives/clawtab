@@ -32,6 +32,21 @@ fn local_transport_round_trip_and_disconnect() {
     std::fs::remove_file(path).unwrap();
 }
 
+#[test]
+fn securing_a_directory_preserves_access_to_existing_children() {
+    let directory = tempfile::tempdir().unwrap();
+    let existing = directory.path().join("existing.txt");
+    std::fs::write(&existing, "existing content").unwrap();
+    clawtab_lib::local_transport::private_directory(directory.path()).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(existing).unwrap(),
+        "existing content"
+    );
+    let created = directory.path().join("created.txt");
+    std::fs::write(&created, "new content").unwrap();
+    assert_eq!(std::fs::read_to_string(created).unwrap(), "new content");
+}
+
 // Run inside a real PTY on every supported OS, without an agent account.
 #[test]
 fn terminal_fixture() {

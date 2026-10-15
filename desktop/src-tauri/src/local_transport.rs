@@ -261,17 +261,18 @@ pub mod windows {
     use std::io;
     use std::os::windows::{
         ffi::OsStrExt,
-        io::{AsRawHandle, FromRawHandle},
+        io::{AsRawHandle, FromRawHandle, OwnedHandle},
     };
+    use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
     use windows_sys::Win32::{
         Foundation::{LocalFree, ERROR_PIPE_CONNECTED, INVALID_HANDLE_VALUE},
         Security::{
             Authorization::{
-                ConvertStringSecurityDescriptorToSecurityDescriptorW, SetNamedSecurityInfoW,
-                SE_FILE_OBJECT,
+                ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
+                SetNamedSecurityInfoW, SE_FILE_OBJECT,
             },
-            GetSecurityDescriptorDacl, DACL_SECURITY_INFORMATION,
-            PROTECTED_DACL_SECURITY_INFORMATION, SECURITY_ATTRIBUTES,
+            GetSecurityDescriptorDacl, GetTokenInformation, TokenUser, DACL_SECURITY_INFORMATION,
+            PROTECTED_DACL_SECURITY_INFORMATION, SECURITY_ATTRIBUTES, TOKEN_QUERY, TOKEN_USER,
         },
         Storage::FileSystem::{ReadFile, FILE_FLAG_FIRST_PIPE_INSTANCE, PIPE_ACCESS_DUPLEX},
         System::Pipes::{
@@ -350,13 +351,67 @@ pub mod windows {
         value.encode_wide().chain(Some(0)).collect()
     }
 
+    fn user_sid() -> io::Result<String> {
+        let mut handle = std::ptr::null_mut();
+        if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut handle) } == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        let token = unsafe { OwnedHandle::from_raw_handle(handle) };
+        let mut length = 0;
+        unsafe {
+            GetTokenInformation(
+                token.as_raw_handle(),
+                TokenUser,
+                std::ptr::null_mut(),
+                0,
+                &mut length,
+            );
+        }
+        // usize storage provides the alignment required by TOKEN_USER.
+        let mut buffer = vec![0usize; (length as usize).div_ceil(std::mem::size_of::<usize>())];
+        if unsafe {
+            GetTokenInformation(
+                token.as_raw_handle(),
+                TokenUser,
+                buffer.as_mut_ptr().cast(),
+                length,
+                &mut length,
+            )
+        } == 0
+        {
+            return Err(io::Error::last_os_error());
+        }
+        let user = unsafe { &*buffer.as_ptr().cast::<TOKEN_USER>() };
+        let mut text = std::ptr::null_mut();
+        if unsafe { ConvertSidToStringSidW(user.User.Sid, &mut text) } == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        let mut count = 0;
+        while unsafe { *text.add(count) } != 0 {
+            count += 1;
+        }
+        let sid = String::from_utf16_lossy(unsafe { std::slice::from_raw_parts(text, count) });
+        unsafe {
+            LocalFree(text.cast());
+        }
+        Ok(sid)
+    }
+
     pub struct Security {
         descriptor: *mut core::ffi::c_void,
     }
     impl Security {
         pub fn new() -> io::Result<Self> {
-            // OWNER RIGHTS binds access to the creating user, not every authenticated user.
-            let sddl = wide(std::ffi::OsStr::new("D:P(A;;GA;;;OW)(A;;GA;;;SY)"));
+            Self::with_inheritance(false)
+        }
+        fn with_inheritance(directory: bool) -> io::Result<Self> {
+            // Directory entries must inherit the user's access. Removing
+            // inherited ACEs without replacements locks out existing children.
+            let flags = if directory { "OICI" } else { "" };
+            let sid = user_sid()?;
+            let sddl = wide(std::ffi::OsStr::new(&format!(
+                "D:P(A;{flags};GA;;;{sid})(A;{flags};GA;;;SY)"
+            )));
             let mut descriptor = std::ptr::null_mut();
             if unsafe {
                 ConvertStringSecurityDescriptorToSecurityDescriptorW(
@@ -388,7 +443,7 @@ pub mod windows {
     }
 
     pub fn protect(path: &Path) -> Result<(), String> {
-        let security = Security::new().map_err(|e| e.to_string())?;
+        let security = Security::with_inheritance(path.is_dir()).map_err(|e| e.to_string())?;
         let mut present = 0;
         let mut defaulted = 0;
         let mut acl = std::ptr::null_mut();
