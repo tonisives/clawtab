@@ -569,6 +569,26 @@ mod tests {
         assert_eq!(result["jobs"].as_array().unwrap().len(), 1);
         assert!(result["statuses"].get("b").is_none());
     }
+    #[test]
+    fn older_clients_keep_tmux_without_managed_resources() {
+        let value = json!({"type":"machine_event","message":{
+            "processes":[{"pane_id":"%1"},{"pane_id":"managed:example"}],
+            "questions":[{"pane_id":"managed:example"}],
+            "pane_ids":["%1","managed:example"],
+            "items":["pane:%1","pane:managed:example"],
+            "statuses":{"job":{"state":"running","pane_id":"managed:example","run_id":"run"}}
+        }});
+        let filtered = without_managed_sessions(&value);
+        assert_eq!(filtered["message"]["processes"], json!([{"pane_id":"%1"}]));
+        assert_eq!(filtered["message"]["questions"], json!([]));
+        assert_eq!(filtered["message"]["pane_ids"], json!(["%1"]));
+        assert_eq!(filtered["message"]["items"], json!(["pane:%1"]));
+        assert!(filtered["message"]["statuses"]["job"]
+            .get("pane_id")
+            .is_none());
+        assert_eq!(filtered["message"]["statuses"]["job"]["run_id"], "run");
+        assert_eq!(value["message"]["processes"].as_array().unwrap().len(), 2);
+    }
 }
 
 fn without_managed_sessions(value: &Value) -> Value {
@@ -594,6 +614,18 @@ fn without_managed_sessions(value: &Value) -> Value {
                     .as_str()
                     .is_some_and(|id| id.starts_with("managed:") || id.starts_with("pane:managed:"))
             });
+        }
+    }
+    if let Some(statuses) = payload["statuses"].as_object_mut() {
+        for status in statuses.values_mut() {
+            if status["pane_id"]
+                .as_str()
+                .is_some_and(|id| id.starts_with("managed:"))
+            {
+                if let Some(status) = status.as_object_mut() {
+                    status.remove("pane_id");
+                }
+            }
         }
     }
     value

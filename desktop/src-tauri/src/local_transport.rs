@@ -119,6 +119,26 @@ pub type AsyncStream = Box<dyn AsyncConnection>;
 pub type AsyncReadHalf = tokio::io::ReadHalf<AsyncStream>;
 pub type AsyncWriteHalf = tokio::io::WriteHalf<AsyncStream>;
 
+#[cfg(windows)]
+pub fn detach_standard_handles() -> std::io::Result<()> {
+    use windows_sys::Win32::{
+        Foundation::{SetHandleInformation, HANDLE_FLAG_INHERIT, INVALID_HANDLE_VALUE},
+        System::Console::{GetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE},
+    };
+    // Command duplicates the explicitly configured stdio handles. The original
+    // handles must not also leak into a detached owner: a pipe reader in the
+    // launching shell would otherwise wait for the entire session to end.
+    for kind in [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
+        let handle = unsafe { GetStdHandle(kind) };
+        if !handle.is_null() && handle != INVALID_HANDLE_VALUE {
+            if unsafe { SetHandleInformation(handle, HANDLE_FLAG_INHERIT, 0) } == 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+        }
+    }
+    Ok(())
+}
+
 #[cfg(unix)]
 pub struct AsyncListener(tokio::net::UnixListener);
 #[cfg(windows)]

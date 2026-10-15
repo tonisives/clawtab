@@ -24,6 +24,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: desktop/src-tauri
+          cache-on-failure: true
       - run: cargo check -j4 --locked --no-default-features --lib --bins
       - run: "cargo test -j4 --locked --no-default-features --lib managed::"
       - run: cargo test -j4 --locked --no-default-features --test managed_sessions -- --nocapture

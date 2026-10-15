@@ -116,7 +116,7 @@ fn detect_processes(
                 .filter(|name| !name.is_empty()),
             pane_slug_tag: info.launch.metadata.get("slug").cloned(),
         };
-        let provider = crate::agent_session::ProcessProvider::from_name(&info.launch.provider)
+        let provider = crate::agent_session::detect_process_provider(&pid, Some(&process_snapshot))
             .unwrap_or(crate::agent_session::ProcessProvider::Shell);
         let (group, job) = resolve_group_job(&row, &running_panes, &slug_to_group, &match_entries);
         results.push(build_remote(

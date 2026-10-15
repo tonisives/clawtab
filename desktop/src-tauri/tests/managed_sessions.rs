@@ -58,6 +58,41 @@ fn terminal_fixture() {
     }
 }
 
+#[cfg(windows)]
+#[test]
+fn windows_batch_shim_launches_with_spaced_arguments() {
+    let directory = tempfile::tempdir().unwrap();
+    let batch = directory.path().join("agent shim.cmd");
+    std::fs::write(
+        &batch,
+        "@echo off\r\necho BATCH_READY:%~1\r\nset /p input=\r\n",
+    )
+    .unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_cwtctl"))
+        .env("CLAWTAB_SESSION_DIR", directory.path())
+        .args(["session", "start", "--detached", "--keep-running", "--"])
+        .arg(&batch)
+        .arg("argument with spaces")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let id = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+    let mut client = managed::connect(&id).unwrap();
+    let Response::Info { session: info } = client.request(Request::Info).unwrap() else {
+        panic!("no info");
+    };
+    let _session = Session { directory, info };
+    wait_for(|| {
+        snapshot(&mut client)
+            .text
+            .contains("BATCH_READY:argument with spaces")
+    });
+}
+
 struct Session {
     directory: tempfile::TempDir,
     info: SessionInfo,

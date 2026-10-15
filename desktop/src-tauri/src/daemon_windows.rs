@@ -57,6 +57,7 @@ fn start() -> Result<(), String> {
         .append(true)
         .open(log_path())
         .map_err(|e| e.to_string())?;
+    crate::local_transport::detach_standard_handles().map_err(|e| e.to_string())?;
     Command::new(binary()?)
         .stdin(Stdio::null())
         .stdout(log.try_clone().map_err(|e| e.to_string())?)

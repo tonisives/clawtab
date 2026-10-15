@@ -180,6 +180,7 @@ pub(super) fn launch_with_id(
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
+        local_transport::detach_standard_handles().map_err(|e| e.to_string())?;
         command.creation_flags(
             windows_sys::Win32::System::Threading::DETACHED_PROCESS
                 | windows_sys::Win32::System::Threading::CREATE_NEW_PROCESS_GROUP,
@@ -209,9 +210,13 @@ pub(super) fn launch_with_id(
             return Err(message);
         }
         if Instant::now() > deadline {
+            let phase = store::read::<String>(&directory.join("startup.json"))
+                .unwrap_or_else(|_| "connecting to owner".into());
             let _ = child.kill();
             let _ = child.wait();
-            return Err(format!("launcher did not become ready: {error}"));
+            return Err(format!(
+                "launcher did not become ready while {phase}: {error}"
+            ));
         }
         std::thread::sleep(Duration::from_millis(25));
     }

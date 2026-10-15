@@ -1585,7 +1585,7 @@ fn detect_question_processes(
     {
         all_pane_ids.insert(info.id.clone());
         let Some(provider) =
-            crate::agent_session::ProcessProvider::from_name(&info.launch.provider)
+            detect_process_provider(&info.child_pid.to_string(), Some(process_snapshot))
                 .filter(|provider| *provider != ProcessProvider::Shell)
         else {
             continue;

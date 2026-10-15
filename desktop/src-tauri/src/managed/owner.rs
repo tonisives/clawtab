@@ -315,6 +315,7 @@ pub(super) fn serve(id: &str, launch: Launch) -> Result<(), String> {
     }
     let listener = local_transport::listen(&endpoint).map_err(|e| e.to_string())?;
     let size = Size::new(launch.size.cols, launch.size.rows);
+    store::save(&directory.join("startup.json"), &"opening terminal")?;
     let pair = portable_pty::native_pty_system()
         .openpty(pty_size(size))
         .map_err(|e| e.to_string())?;
@@ -325,6 +326,7 @@ pub(super) fn serve(id: &str, launch: Launch) -> Result<(), String> {
     command.env("CLAWTAB_SESSION_ID", id);
     command.env_remove("TMUX");
     command.env_remove("TMUX_PANE");
+    store::save(&directory.join("startup.json"), &"starting command")?;
     let mut child = pair
         .slave
         .spawn_command(command)
@@ -417,6 +419,7 @@ pub(super) fn serve(id: &str, launch: Launch) -> Result<(), String> {
         }
     });
     store::save_info(&state.lock().info)?;
+    let _ = std::fs::remove_file(directory.join("startup.json"));
     let exit = loop {
         if let Some(exit) = child.try_wait().map_err(|e| e.to_string())? {
             break exit;

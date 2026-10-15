@@ -420,6 +420,7 @@ pub fn detect_process_provider(
         .managed
         .get(pane_pid)
         .and_then(|launch| ProcessProvider::from_name(&launch.provider))
+        .filter(|provider| *provider != ProcessProvider::Shell)
     {
         return Some(provider);
     }

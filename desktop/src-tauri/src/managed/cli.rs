@@ -145,8 +145,8 @@ fn provider_for_program(program: &str) -> String {
         .file_stem()
         .and_then(|name| name.to_str())
         .unwrap_or(program);
-    match name {
-        "claude" | "codex" | "opencode" => name.into(),
+    match name.to_ascii_lowercase().as_str() {
+        "claude" | "codex" | "opencode" => name.to_ascii_lowercase(),
         "agy" => "antigravity".into(),
         _ => "shell".into(),
     }
