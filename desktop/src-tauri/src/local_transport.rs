@@ -255,12 +255,43 @@ pub mod windows {
         },
         Storage::FileSystem::{FILE_FLAG_FIRST_PIPE_INSTANCE, PIPE_ACCESS_DUPLEX},
         System::Pipes::{
-            ConnectNamedPipe, CreateNamedPipeW, PIPE_READMODE_BYTE, PIPE_REJECT_REMOTE_CLIENTS,
-            PIPE_TYPE_BYTE, PIPE_UNLIMITED_INSTANCES, PIPE_WAIT,
+            ConnectNamedPipe, CreateNamedPipeW, SetNamedPipeHandleState, PIPE_NOWAIT,
+            PIPE_READMODE_BYTE, PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE,
+            PIPE_UNLIMITED_INSTANCES, PIPE_WAIT,
         },
     };
 
-    pub type Stream = File;
+    pub struct Stream {
+        file: File,
+        nonblocking: bool,
+    }
+    impl io::Read for Stream {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            loop {
+                match io::Read::read(&mut self.file, buffer) {
+                    Err(error) if self.nonblocking && error.raw_os_error() == Some(232) => {
+                        if std::time::Instant::now() >= deadline {
+                            return Err(io::Error::new(
+                                io::ErrorKind::TimedOut,
+                                "session owner did not respond",
+                            ));
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(2));
+                    }
+                    result => return result,
+                }
+            }
+        }
+    }
+    impl io::Write for Stream {
+        fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+            io::Write::write(&mut self.file, buffer)
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
     pub struct Listener {
         path: PathBuf,
         next: parking_lot::Mutex<File>,
@@ -379,13 +410,35 @@ pub mod windows {
             return Err(io::Error::last_os_error());
         }
         let next = new_pipe(&listener.path, false)?;
-        Ok(std::mem::replace(&mut *pending, next))
+        Ok(Stream {
+            file: std::mem::replace(&mut *pending, next),
+            nonblocking: false,
+        })
     }
     pub fn connect(path: &Path) -> io::Result<Stream> {
         let name = pipe_name(path);
         for _ in 0..100 {
             match OpenOptions::new().read(true).write(true).open(&name) {
-                Ok(stream) => return Ok(stream),
+                Ok(file) => {
+                    // Bound RPC reads even if the owner is paused or a PTY
+                    // resize stalls. Async daemon pipes use Tokio instead.
+                    let mode = PIPE_READMODE_BYTE | PIPE_NOWAIT;
+                    if unsafe {
+                        SetNamedPipeHandleState(
+                            file.as_raw_handle(),
+                            &mode,
+                            std::ptr::null(),
+                            std::ptr::null(),
+                        )
+                    } == 0
+                    {
+                        return Err(io::Error::last_os_error());
+                    }
+                    return Ok(Stream {
+                        file,
+                        nonblocking: true,
+                    });
+                }
                 Err(error) if error.raw_os_error() == Some(231) => {
                     std::thread::sleep(std::time::Duration::from_millis(20))
                 }

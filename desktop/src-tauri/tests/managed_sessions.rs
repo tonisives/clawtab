@@ -36,8 +36,66 @@ struct Session {
     info: SessionInfo,
 }
 impl Session {
+    fn with_close_policy() -> Self {
+        let directory = tempfile::tempdir().unwrap();
+        let id = format!("managed:{}", uuid::Uuid::new_v4());
+        let launch = managed::Launch {
+            program: std::env::current_exe()
+                .unwrap()
+                .to_string_lossy()
+                .into_owned(),
+            args: vec![
+                "--exact".into(),
+                "terminal_fixture".into(),
+                "--nocapture".into(),
+                "--test-threads=1".into(),
+            ],
+            cwd: directory.path().to_string_lossy().into_owned(),
+            size: Size::default(),
+            close_with_terminal: true,
+            provider: "shell".into(),
+            conversation_id: None,
+            metadata: Default::default(),
+        };
+        let mut owner = Command::new(env!("CARGO_BIN_EXE_cwtctl"))
+            .env("CLAWTAB_SESSION_DIR", directory.path())
+            .env("CLAWTAB_TERMINAL_FIXTURE", "1")
+            .args(["session", "_serve", &id])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        let bytes = serde_json::to_vec(&launch).unwrap();
+        let mut input = owner.stdin.take().unwrap();
+        input
+            .write_all(&(bytes.len() as u32).to_be_bytes())
+            .unwrap();
+        input.write_all(&bytes).unwrap();
+        drop(input);
+        let mut info = None;
+        wait_for(|| {
+            assert!(owner.try_wait().unwrap().is_none(), "owner failed to start");
+            if let Ok(mut client) = managed::connect(&id) {
+                if let Ok(Response::Info { session }) = client.request(Request::Info) {
+                    info = Some(session);
+                    return true;
+                }
+            }
+            false
+        });
+        // Reap the owner without tying its lifetime to the test viewer.
+        std::thread::spawn(move || {
+            let _ = owner.wait();
+        });
+        Self {
+            directory,
+            info: info.unwrap(),
+        }
+    }
     fn start() -> Self {
         let directory = tempfile::tempdir().unwrap();
+        eprintln!("starting detached fixture");
         let output = Command::new(env!("CARGO_BIN_EXE_cwtctl"))
             .env("CLAWTAB_SESSION_DIR", directory.path())
             .env("CLAWTAB_TERMINAL_FIXTURE", "1")
@@ -56,6 +114,7 @@ impl Session {
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
+        eprintln!("detached launcher returned; listing sessions");
         let sessions = Command::new(env!("CARGO_BIN_EXE_cwtctl"))
             .env("CLAWTAB_SESSION_DIR", directory.path())
             .args(["session", "list", "--json"])
@@ -63,6 +122,7 @@ impl Session {
             .unwrap();
         let mut sessions: Vec<SessionInfo> = serde_json::from_slice(&sessions.stdout).unwrap();
         assert_eq!(sessions.len(), 1);
+        eprintln!("session registered");
         Self {
             directory,
             info: sessions.remove(0),
@@ -83,6 +143,80 @@ impl Session {
         )
         .unwrap()
     }
+}
+
+#[test]
+fn close_policy_stops_only_on_origin_loss_and_explicit_detach_keeps_running() {
+    let session = Session::with_close_policy();
+    let mut origin = session.connect();
+    origin
+        .request(Request::Attach {
+            viewer: "origin".into(),
+            size: Size::default(),
+            origin: true,
+        })
+        .unwrap();
+    let mut viewer = session.connect();
+    viewer
+        .request(Request::Attach {
+            viewer: "extra".into(),
+            size: Size::default(),
+            origin: false,
+        })
+        .unwrap();
+    drop(viewer);
+    assert_eq!(snapshot(&mut origin).status, Status::Running);
+    drop(origin);
+    wait_for(|| session.saved().status == Status::Exited);
+
+    let detached = Session::with_close_policy();
+    let mut origin = detached.connect();
+    origin
+        .request(Request::Attach {
+            viewer: "origin".into(),
+            size: Size::default(),
+            origin: true,
+        })
+        .unwrap();
+    origin.request(Request::Detach).unwrap();
+    drop(origin);
+    let mut viewer = detached.connect();
+    assert_eq!(snapshot(&mut viewer).status, Status::Running);
+    viewer.request(Request::Stop).unwrap();
+    wait_for(|| detached.saved().status == Status::Exited);
+}
+
+#[test]
+fn owner_crash_is_interrupted_without_relaunching_the_command() {
+    let session = Session::start();
+    #[cfg(unix)]
+    assert_eq!(
+        unsafe { libc::kill(session.info.owner_pid as i32, libc::SIGKILL) },
+        0
+    );
+    #[cfg(windows)]
+    assert!(Command::new("taskkill.exe")
+        .args(["/PID", &session.info.owner_pid.to_string(), "/F"])
+        .output()
+        .unwrap()
+        .status
+        .success());
+    wait_for(|| managed::connect(&session.info.id).is_err());
+    let output = Command::new(env!("CARGO_BIN_EXE_cwtctl"))
+        .env("CLAWTAB_SESSION_DIR", session.directory.path())
+        .args(["session", "list", "--json"])
+        .output()
+        .unwrap();
+    let sessions: Vec<SessionInfo> = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(sessions[0].status, Status::Interrupted);
+    assert_eq!(sessions[0].execution_id, session.info.execution_id);
+    let resume = Command::new(env!("CARGO_BIN_EXE_cwtctl"))
+        .env("CLAWTAB_SESSION_DIR", session.directory.path())
+        .args(["session", "resume", &session.info.id])
+        .output()
+        .unwrap();
+    assert!(!resume.status.success());
+    assert!(String::from_utf8_lossy(&resume.stderr).contains("no saved provider conversation"));
 }
 impl Drop for Session {
     fn drop(&mut self) {
@@ -106,6 +240,7 @@ fn wait_for(mut predicate: impl FnMut() -> bool) {
 #[test]
 fn durable_terminal_control_resize_and_reconnect() {
     let session = Session::start();
+    eprintln!("attaching local viewer");
     let mut local = session.connect();
     local
         .request(Request::Attach {
@@ -115,6 +250,7 @@ fn durable_terminal_control_resize_and_reconnect() {
         })
         .unwrap();
     wait_for(|| snapshot(&mut local).text.contains("FIXTURE_READY"));
+    eprintln!("fixture output received; taking remote control");
     let mut remote = session.connect();
     remote.request(Request::Watch).unwrap();
     let Response::Control { control } = remote
@@ -135,6 +271,7 @@ fn durable_terminal_control_resize_and_reconnect() {
         })
         .unwrap();
     wait_for(|| snapshot(&mut remote).text.contains("SIZE=40x20"));
+    eprintln!("remote resize verified; reclaiming local control");
     // A desktop layout change during mobile control is restored on reclaim.
     local
         .request(Request::LocalResize {
@@ -173,6 +310,7 @@ fn durable_terminal_control_resize_and_reconnect() {
     wait_for(|| snapshot(&mut local).text.contains("SIZE=110x32"));
     assert!(!snapshot(&mut local).text.contains("DO_NOT_SEND"));
     assert!(!snapshot(&mut local).text.contains("STALE"));
+    eprintln!("local reclaim verified; reconnecting host");
     // Dropping the host's connection restores desktop control without stopping.
     remote
         .request(Request::TakeControl {
@@ -182,6 +320,7 @@ fn durable_terminal_control_resize_and_reconnect() {
         .unwrap();
     drop(remote);
     wait_for(|| snapshot(&mut local).control.holder.is_none());
+    eprintln!("host disconnect reclaimed control");
     let execution = session.info.execution_id.clone();
     drop(local); // closing the originating terminal keeps the agent alive
     let mut reconnected = session.connect();
@@ -204,6 +343,7 @@ fn durable_terminal_control_resize_and_reconnect() {
             data: b"primary\rquit\r".to_vec(),
         })
         .unwrap();
+    eprintln!("waiting for agent exit");
     wait_for(|| session.saved().status == Status::Exited);
     assert_eq!(session.saved().exit_code, Some(0));
 }

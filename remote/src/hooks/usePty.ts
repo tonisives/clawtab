@@ -281,7 +281,10 @@ export function usePty(
     let unlistenControl = onMachineEvent((machine, message) => {
       let resource = splitResource(paneId);
       if (resource?.machine !== machine || resource.id !== message.pane_id || !resource.id.startsWith("managed:") || message.type !== "terminal_control") return;
-      termRef.current?.setScreenSize(message.controller === machineState().connectionId ? null : { cols: message.cols, rows: message.rows });
+      let controlled = message.controller === machineState().connectionId;
+      termRef.current?.setScreenSize(controlled ? null : { cols: message.cols, rows: message.rows });
+      let size = termRef.current?.dimensions();
+      if (controlled && size?.cols && size.rows && (size.cols !== message.cols || size.rows !== message.rows)) getWsSend()?.({ type: "pty_resize", pane_id: paneId, ...size });
     });
 
     const onOutput = (data: string) => {

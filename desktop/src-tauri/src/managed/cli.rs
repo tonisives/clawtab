@@ -10,6 +10,22 @@ use std::time::Duration;
 pub fn run_cli(args: &[String]) -> Result<(), String> {
     let action = args.first().map(String::as_str).unwrap_or("help");
     match action {
+        #[cfg(windows)]
+        "_exec" => {
+            // Rust's process launcher handles .cmd quoting. ConPTY itself can
+            // only CreateProcess a native executable, so batch shims enter here.
+            let path = store::directory(required(args, 1)?)?.join("command.json");
+            let launch: Launch = store::read(&path)?;
+            std::fs::remove_file(path).map_err(|e| e.to_string())?;
+            let program = which::which_in(&launch.program, std::env::var_os("PATH"), &launch.cwd)
+                .map_err(|e| e.to_string())?;
+            let status = std::process::Command::new(program)
+                .args(&launch.args)
+                .current_dir(&launch.cwd)
+                .status()
+                .map_err(|e| e.to_string())?;
+            std::process::exit(status.code().unwrap_or(1));
+        }
         "_serve" => {
             let id = required(args, 1)?;
             let launch = client::read_message(&mut std::io::stdin())?;

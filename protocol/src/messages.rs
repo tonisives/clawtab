@@ -143,6 +143,8 @@ pub enum ClientMessage {
         id: String,
         tmux_session: String,
         pane_id: String,
+        #[serde(default)]
+        lines: Option<u32>,
     },
     SendDetectedProcessInput {
         id: String,

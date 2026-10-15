@@ -7,6 +7,7 @@ on:
   workflow_dispatch:
 jobs:
   terminal:
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -26,6 +27,7 @@ jobs:
       - run: cargo check -j4 --locked --no-default-features --lib --bins
       - run: "cargo test -j4 --locked --no-default-features --lib managed::"
       - run: cargo test -j4 --locked --no-default-features --test managed_sessions -- --nocapture
+        timeout-minutes: 3
       - name: Build Windows host
         if: runner.os == 'Windows'
         run: cargo build -j4 --locked --release --no-default-features --bin cwtctl --bin clawtab-daemon --bin clawtab-hook

@@ -318,8 +318,7 @@ pub(super) fn serve(id: &str, launch: Launch) -> Result<(), String> {
     let pair = portable_pty::native_pty_system()
         .openpty(pty_size(size))
         .map_err(|e| e.to_string())?;
-    let mut command = CommandBuilder::new(&launch.program);
-    command.args(&launch.args);
+    let mut command = command(id, &launch)?;
     command.cwd(&launch.cwd);
     command.env("TERM", "xterm-256color");
     command.env("COLORTERM", "truecolor");
@@ -459,6 +458,27 @@ pub(super) fn serve(id: &str, launch: Launch) -> Result<(), String> {
     #[cfg(unix)]
     let _ = std::fs::remove_file(endpoint);
     Ok(())
+}
+
+fn command(_id: &str, launch: &Launch) -> Result<CommandBuilder, String> {
+    #[cfg(windows)]
+    {
+        let program = which::which_in(&launch.program, std::env::var_os("PATH"), &launch.cwd)
+            .map_err(|e| e.to_string())?;
+        if program
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("cmd") || ext.eq_ignore_ascii_case("bat"))
+        {
+            store::save(&store::directory(_id)?.join("command.json"), launch)?;
+            let mut command =
+                CommandBuilder::new(std::env::current_exe().map_err(|e| e.to_string())?);
+            command.args(["session", "_exec", _id]);
+            return Ok(command);
+        }
+    }
+    let mut command = CommandBuilder::new(&launch.program);
+    command.args(&launch.args);
+    Ok(command)
 }
 
 fn connection(mut stream: local_transport::Stream, state: Arc<Mutex<State>>) {

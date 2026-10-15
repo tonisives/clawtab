@@ -1,9 +1,10 @@
+import { MachineModal } from "./Onboarding"
 import { TerminalKeyBar } from "./TerminalKeyBar"
 import { encodeTerminalInput } from "../util/terminalInput"
 import { MachineActions } from "./Actions"
 import { MoveButton } from "./Move"
 import { useEffect, useRef, useState } from "react"
-import { View, Text, Pressable, StyleSheet, Modal, SafeAreaView, KeyboardAvoidingView, Platform } from "react-native"
+import { View, Text, Pressable, StyleSheet, Modal, SafeAreaView, KeyboardAvoidingView, Platform, ScrollView } from "react-native"
 import { XtermLog, type XtermLogHandle } from "../components/XtermLog"
 import { colors } from "../theme/colors"
 import { spacing } from "../theme/spacing"
@@ -21,12 +22,20 @@ import {
 
 export let MachineTerminalControls = ({ paneId, connectedOnly = false, inset = false }: { paneId: string; connectedOnly?: boolean; inset?: boolean }) => {
   let state = useMachines()
+  let [history, setHistory] = useState<string | null>(null)
+  let [historyError, setHistoryError] = useState<string | null>(null)
   let resource = splitResource(paneId)
   if (!resource) return null
   let machine = state.machines.find((m) => m.id === resource.machine)
   let appearance = machineAppearance(machine, state.machineAppearance, state.machines)
   if (connectedOnly && (!state.connected || !machine?.online)) return null
   let controlled = !!state.connectionId && state.controllers[paneId] === state.connectionId
+  let showHistory = () => {
+    setHistoryError(null)
+    void machineRequest(resource.machine, { type: "get_detected_process_logs", pane_id: resource.id, tmux_session: "", lines: 10300 })
+      .then((result) => setHistory(result.logs ?? "No output yet"))
+      .catch((error) => setHistoryError(error.message))
+  }
   let take = () => machineSend(resource.machine, { type: "take_control", pane_id: resource.id })
   return (
     <View style={[styles.controlSection, inset && styles.insetControls]}>
@@ -38,6 +47,7 @@ export let MachineTerminalControls = ({ paneId, connectedOnly = false, inset = f
             {machine?.online ? (controlled ? "You have control" : "Watching") : "Offline"}
           </Text>
         </View>
+        {resource.id.startsWith("managed:") && <Pressable accessibilityRole="button" onPress={showHistory} style={styles.button}><Text style={styles.buttonText}>History</Text></Pressable>}
         <MoveButton paneId={paneId} />
         {!controlled && <Pressable
           accessibilityRole="button"
@@ -49,6 +59,8 @@ export let MachineTerminalControls = ({ paneId, connectedOnly = false, inset = f
           <Text style={styles.buttonText}>Take control</Text>
         </Pressable>}
       </View>
+      {historyError && <Text style={styles.error}>{historyError}</Text>}
+      {history !== null && <MachineModal title="Terminal history" onClose={() => setHistory(null)}><ScrollView><Text selectable style={styles.text}>{history}</Text></ScrollView></MachineModal>}
     </View>
   )
 }

@@ -269,6 +269,22 @@ fn handle_managed_terminal(raw: &serde_json::Value, ctx: &JobContext) -> Option<
                     raw["key"].as_str().ok_or("missing key")?,
                 )?,
             },
+            "send_detected_process_input" | "send_input" => {
+                let text = raw["text"].as_str().ok_or("missing input")?;
+                let data = if let Some(freetext) = raw["freetext"].as_str() {
+                    let mut data = crate::terminal_backend::key_bytes(text)?;
+                    data.extend_from_slice(freetext.as_bytes());
+                    data.push(b'\r');
+                    data
+                } else {
+                    format!("{text}\r").into_bytes()
+                };
+                Request::RemoteInput {
+                    holder,
+                    epoch: epoch()?,
+                    data,
+                }
+            }
             _ => {
                 // Other agent actions still use their existing handlers after the owner validates authority.
                 managed::request(
@@ -295,7 +311,12 @@ fn handle_managed_terminal(raw: &serde_json::Value, ctx: &JobContext) -> Option<
                 serde_json::json!({"type":"control_ack","id":raw["id"],"controller":control.holder,"control_epoch":control.epoch}),
             )
         } else {
-            Ok(serde_json::json!({"type":"sent","id":raw["id"]}))
+            let kind = match kind {
+                "send_input" => "send_input_ack",
+                "send_detected_process_input" => "send_detected_process_input_ack",
+                _ => "sent",
+            };
+            Ok(serde_json::json!({"type":kind,"id":raw["id"],"success":true}))
         }
     })();
     match result {
@@ -683,9 +704,14 @@ fn dispatch_process_msg(
             id,
             tmux_session,
             pane_id,
+            lines,
         } => {
-            let logs = crate::terminal_backend::capture_pane(tmux_session, pane_id, 200)
-                .unwrap_or_default();
+            let logs = crate::terminal_backend::capture_pane(
+                tmux_session,
+                pane_id,
+                lines.unwrap_or(200).min(10300),
+            )
+            .unwrap_or_default();
             Some(DesktopMessage::DetectedProcessLogs {
                 id: id.clone(),
                 logs,
