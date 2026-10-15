@@ -1,3 +1,4 @@
+import { initializeWebAnalytics } from "../src/lib/analytics";
 import { MachineOnboardingProvider } from "@clawtab/shared";
 import { machineOnboardingChrome, machineOnboardingContent, machineManagementContent } from "../src/components/MachineSetup";
 import { useEffect } from "react";
@@ -139,6 +140,7 @@ export default function RootLayout() {
   const isMobileWeb = Platform.OS === "web" && !isWide && !isSplitView;
 
   useEffect(() => {
+    initializeWebAnalytics();
     init();
     handleColdStartAnswer();
   }, [init]);

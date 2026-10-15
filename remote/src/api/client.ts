@@ -1,3 +1,4 @@
+import { trackRemoteEvent } from "../lib/analytics";
 import * as storage from "../lib/storage";
 
 const KEYS = {
@@ -477,7 +478,11 @@ export async function postAnswer(
 export let isInvalidRefreshError = (error: unknown): boolean =>
   error instanceof Error && "status" in error && (error.status === 400 || error.status === 401);
 
-export let approveMachinePairing = (code: string) => request<{ ok: boolean }>("/machines/pairing/approve", { method: "POST", body: JSON.stringify({ code }) }, true);
+export let approveMachinePairing = async (code: string) => {
+  let result = await request<{ ok: boolean }>("/machines/pairing/approve", { method: "POST", body: JSON.stringify({ code }) }, true);
+  if (result.ok) trackRemoteEvent("remote_pairing_complete");
+  return result;
+};
 export let registerMachinePushToken = (push_token: string, platform: string) => request<{ ok: boolean }>("/machines/push-token", { method: "POST", body: JSON.stringify({ push_token, platform }) }, true);
 
 export let machineApi = (method: string, path: string, body?: Record<string, unknown>) => request<Record<string, any>>(path, { method, ...(body ? { body: JSON.stringify(body) } : {}) }, true);

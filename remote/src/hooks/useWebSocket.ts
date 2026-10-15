@@ -1,3 +1,4 @@
+import { trackConnectedHost } from "../lib/analytics"
 import { useEffect, useCallback } from "react"
 import { AppState, Platform } from "react-native"
 import {
@@ -110,6 +111,7 @@ export let useWebSocket = () => {
         if (nextExecutions.get(pane) !== execution) terminalCache.delete(pane)
       executions = nextExecutions
       let connected = machineState().connected && machineState().machines.some((m) => m.online)
+      if (machineState().connected && machineState().machines.some((machine) => machine.owned && machine.online)) trackConnectedHost()
       let nextHosts = new Map(
         machineState()
           .machines.filter((machine) => machine.online)

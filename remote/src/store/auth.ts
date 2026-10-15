@@ -1,3 +1,4 @@
+import { trackRemoteEvent } from "../lib/analytics";
 import { terminalCache } from "../lib/terminalCache";
 import { create } from "zustand"
 import * as api from "../api/client"
@@ -65,6 +66,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     await clearCache()
     terminalCache.clear()
     const resp = await api.googleAuth(idToken)
+    trackRemoteEvent("login")
     set({ isAuthenticated: true, userId: resp.user_id, email: emailFromToken(resp.access_token) })
   },
 
@@ -72,10 +74,12 @@ export const useAuthStore = create<AuthState>((set) => ({
     await clearCache()
     terminalCache.clear()
     const resp = await api.appleAuth(idToken, displayName, email)
+    trackRemoteEvent("login")
     set({ isAuthenticated: true, userId: resp.user_id, email: emailFromToken(resp.access_token) })
   },
 
   setAuth: (userId, accessToken) => {
+    trackRemoteEvent("login")
     clearCache()
     terminalCache.clear()
     set({ isAuthenticated: true, userId, email: emailFromToken(accessToken) })
