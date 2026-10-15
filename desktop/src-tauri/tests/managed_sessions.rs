@@ -22,6 +22,8 @@ fn local_transport_round_trip_and_disconnect() {
         assert!(matches!(stream.read(&mut message), Ok(0) | Err(_)));
     });
     let mut client = clawtab_lib::local_transport::connect(&path).unwrap();
+    #[cfg(windows)]
+    assert_eq!(client.server_process_id().unwrap(), std::process::id());
     client.write_all(b"ping").unwrap();
     let mut response = [0; 4];
     client.read_exact(&mut response).unwrap();

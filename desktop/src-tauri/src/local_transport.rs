@@ -286,6 +286,21 @@ pub mod windows {
         file: File,
         nonblocking: bool,
     }
+    impl Stream {
+        pub fn server_process_id(&self) -> io::Result<u32> {
+            let mut pid = 0;
+            if unsafe {
+                windows_sys::Win32::System::Pipes::GetNamedPipeServerProcessId(
+                    self.file.as_raw_handle(),
+                    &mut pid,
+                )
+            } == 0
+            {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(pid)
+        }
+    }
     impl io::Read for Stream {
         fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);

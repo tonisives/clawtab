@@ -54,6 +54,12 @@ jobs:
           & $shim --version
           if ($LASTEXITCODE -ne 0) { throw 'Installed CLI did not run' }
           $env:CLAWTAB_SESSION_DIR = Join-Path $root 'sessions'
+          & $shim daemon install
+          if ($LASTEXITCODE -ne 0) { throw 'First host install failed' }
+          Start-Sleep -Seconds 2
+          & $shim daemon ping
+          if ($LASTEXITCODE -ne 0) { throw 'First host did not answer IPC' }
+          $originalHostPid = (Get-Process clawtab-daemon).Id
           & $shim session start --detached --keep-running -- powershell.exe -NoProfile -Command 'Write-Output INSTALL_READY; Start-Sleep -Seconds 120'
           if ($LASTEXITCODE -ne 0) { throw 'Installed CLI could not launch a session' }
           $session = @((& $shim session list --json | ConvertFrom-Json))[0].id
@@ -66,12 +72,15 @@ jobs:
             Start-Sleep -Milliseconds 200
           }
           if (!$ready) { throw 'Installed Windows host did not answer IPC' }
+          $newHostPid = (Get-Process clawtab-daemon).Id
+          if ($newHostPid -eq $originalHostPid) { throw 'Upgrade did not replace the host process' }
           $capture = & $shim session capture $session
           if ($LASTEXITCODE -ne 0 -or ($capture -join "`n") -notmatch 'INSTALL_READY') { throw 'Upgrade lost the running terminal' }
           & $shim session stop $session
           if ($LASTEXITCODE -ne 0) { throw 'New launcher could not stop the old session' }
           & $shim daemon uninstall
           if ($LASTEXITCODE -ne 0) { throw 'Host startup cleanup failed' }
+          if (Get-Process -Id $newHostPid -ErrorAction SilentlyContinue) { throw 'Uninstall left the host running' }
       - uses: actions/upload-artifact@v4
         if: runner.os == 'Windows'
         with:

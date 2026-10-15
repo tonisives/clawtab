@@ -17,17 +17,12 @@ pub fn is_installed() -> bool {
         .is_ok_and(|output| output.status.success())
 }
 pub fn is_running() -> (bool, Option<u32>) {
-    let running = crate::local_transport::connect(&crate::ipc::daemon_socket_path()).is_ok();
-    let pid = running
-        .then(|| {
-            std::fs::read_to_string(crate::runtime_paths::lock())
-                .ok()?
-                .trim()
-                .parse()
-                .ok()
-        })
-        .flatten();
-    (running, pid)
+    // Windows file locks deny reads, so the singleton lock cannot double as
+    // a readable PID file. Ask the connected pipe for its actual server PID.
+    match crate::local_transport::connect(&crate::ipc::daemon_socket_path()) {
+        Ok(stream) => (true, stream.server_process_id().ok().filter(|pid| *pid > 1)),
+        Err(_) => (false, None),
+    }
 }
 pub fn install() -> Result<String, String> {
     let binary = binary()?;
@@ -58,7 +53,7 @@ fn start() -> Result<(), String> {
         .open(log_path())
         .map_err(|e| e.to_string())?;
     crate::local_transport::detach_standard_handles().map_err(|e| e.to_string())?;
-    Command::new(binary()?)
+    let mut child = Command::new(binary()?)
         .stdin(Stdio::null())
         .stdout(log.try_clone().map_err(|e| e.to_string())?)
         .stderr(log)
@@ -68,10 +63,28 @@ fn start() -> Result<(), String> {
         )
         .spawn()
         .map_err(|e| e.to_string())?;
-    Ok(())
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        if is_running().0 {
+            return Ok(());
+        }
+        if let Some(exit) = child.try_wait().map_err(|e| e.to_string())? {
+            return Err(format!(
+                "Daemon exited during startup ({exit}); run cwtctl daemon logs"
+            ));
+        }
+        if std::time::Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("Daemon did not become ready; run cwtctl daemon logs".into());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
 }
 pub fn stop() -> Result<String, String> {
-    if let (true, Some(pid)) = is_running() {
+    let (running, pid) = is_running();
+    if running {
+        let pid = pid.ok_or("Could not identify the running daemon")?;
         // Do not use /T: session owners must survive daemon updates.
         let status = Command::new("taskkill.exe")
             .args(["/PID", &pid.to_string(), "/F"])
@@ -79,6 +92,13 @@ pub fn stop() -> Result<String, String> {
             .map_err(|e| e.to_string())?;
         if !status.success() {
             return Err("Could not stop the daemon".into());
+        }
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while is_running().0 {
+            if std::time::Instant::now() >= deadline {
+                return Err("Daemon did not stop".into());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
         }
     }
     Ok("Daemon stopped; managed agents continue running".into())
