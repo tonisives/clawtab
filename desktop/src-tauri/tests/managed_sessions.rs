@@ -47,6 +47,11 @@ fn terminal_fixture() {
         if line == "size" {
             let (cols, rows) = crossterm::terminal::size().unwrap();
             println!("SIZE={cols}x{rows}");
+        } else if line == "flood" {
+            for index in 0..4000 {
+                println!("OUTPUT {index}: abcdefghijklmnopqrstuvwxyz0123456789");
+            }
+            println!("FLOOD_DONE");
         } else if line == "alternate" {
             print!("\x1b[?1049h\x1b[2J\x1b[1;1HALTERNATE\x1b[31m 世界\x1b[0m");
         } else if line == "primary" {
@@ -85,11 +90,29 @@ fn windows_batch_shim_launches_with_spaced_arguments() {
     let Response::Info { session: info } = client.request(Request::Info).unwrap() else {
         panic!("no info");
     };
-    let _session = Session { directory, info };
+    let session = Session { directory, info };
     wait_for(|| {
-        snapshot(&mut client)
-            .text
-            .contains("BATCH_READY:argument with spaces")
+        let screen = match client.request(Request::Snapshot { after: None }) {
+            Ok(Response::Snapshot { snapshot }) => snapshot,
+            _ => serde_json::from_slice::<Snapshot>(
+                &std::fs::read(
+                    session
+                        .directory
+                        .path()
+                        .join(session.info.id.strip_prefix("managed:").unwrap())
+                        .join("screen.json"),
+                )
+                .unwrap(),
+            )
+            .unwrap(),
+        };
+        assert_eq!(
+            screen.status,
+            Status::Running,
+            "batch output: {}",
+            screen.text
+        );
+        screen.text.contains("BATCH_READY:argument with spaces")
     });
 }
 
@@ -325,6 +348,23 @@ fn durable_terminal_control_resize_and_reconnect() {
         panic!("no control");
     };
     assert_eq!(snapshot(&mut remote).size, Size::new(40, 20));
+    remote
+        .request(Request::RemoteInput {
+            holder: "phone".into(),
+            epoch: control.epoch,
+            data: b"flood\r".to_vec(),
+        })
+        .unwrap();
+    for cols in [42, 38, 46, 40] {
+        remote
+            .request(Request::RemoteResize {
+                holder: "phone".into(),
+                epoch: control.epoch,
+                size: Size::new(cols, 20),
+            })
+            .unwrap();
+    }
+    wait_for(|| snapshot(&mut remote).text.contains("FLOOD_DONE"));
     remote
         .request(Request::RemoteInput {
             holder: "phone".into(),

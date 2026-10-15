@@ -43,6 +43,20 @@ jobs:
           Copy-Item etc/install-windows.ps1 package/install.ps1
           Compress-Archive -Path package/* -DestinationPath clawtab-windows-x86_64.zip
           (Get-FileHash clawtab-windows-x86_64.zip -Algorithm SHA256).Hash.ToLower() + '  clawtab-windows-x86_64.zip' | Set-Content clawtab-windows-x86_64.zip.sha256
+      - name: Test Windows install and upgrade
+        if: runner.os == 'Windows'
+        shell: pwsh
+        working-directory: .
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'ClawTab install test'
+          & ./package/install.ps1 -InstallRoot $root
+          $shim = Join-Path $root 'bin/cwtctl.cmd'
+          & $shim --version
+          if ($LASTEXITCODE -ne 0) { throw 'Installed CLI did not run' }
+          & ./package/install.ps1 -InstallRoot $root
+          if ((Get-ChildItem (Join-Path $root 'versions')).Count -ne 2) { throw 'Upgrade replaced the previous launcher' }
+          & $shim daemon uninstall
+          if ($LASTEXITCODE -ne 0) { throw 'Host startup cleanup failed' }
       - uses: actions/upload-artifact@v4
         if: runner.os == 'Windows'
         with:

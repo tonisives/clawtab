@@ -35,48 +35,7 @@ pub fn run_cli(args: &[String]) -> Result<(), String> {
             }
             result
         }
-        "start" => {
-            let split = args.iter().position(|arg| arg == "--").ok_or("usage: cwtctl session start [--detached] [--close-with-terminal] -- <program> [args]")?;
-            let program = required(args, split + 1)?.to_owned();
-            let mut close_with_terminal =
-                crate::config::settings::AppSettings::load().managed_close_with_terminal;
-            let mut detached = false;
-            for option in &args[1..split] {
-                match option.as_str() {
-                    "--detached" => detached = true,
-                    "--close-with-terminal" => close_with_terminal = true,
-                    "--keep-running" => close_with_terminal = false,
-                    _ => return Err(format!("unknown session option: {option}")),
-                }
-            }
-            if detached && close_with_terminal {
-                return Err("--close-with-terminal requires an attached terminal".into());
-            }
-            if !detached && !std::io::stdin().is_terminal() {
-                return Err("use --detached when launching without a terminal".into());
-            }
-            let provider = provider_for_program(&program);
-            let launch = Launch {
-                program,
-                args: args[split + 2..].to_vec(),
-                cwd: std::env::current_dir()
-                    .map_err(|e| e.to_string())?
-                    .to_string_lossy()
-                    .into_owned(),
-                size: local_size(),
-                close_with_terminal,
-                provider,
-                conversation_id: None,
-                metadata: Default::default(),
-            };
-            let info = super::launch(launch, &[])?;
-            eprintln!("{}", info.id);
-            if detached {
-                Ok(())
-            } else {
-                attach(&info.id, true)
-            }
-        }
+        "start" => start(args),
         "list" => {
             let sessions = super::list()?;
             if args.iter().any(|arg| arg == "--json") {
@@ -131,6 +90,51 @@ pub fn run_cli(args: &[String]) -> Result<(), String> {
             Ok(())
         }
         _ => Err(format!("unknown session command: {action}")),
+    }
+}
+
+fn start(args: &[String]) -> Result<(), String> {
+    let split = args.iter().position(|arg| arg == "--").ok_or(
+        "usage: cwtctl session start [--detached] [--close-with-terminal] -- <program> [args]",
+    )?;
+    let program = required(args, split + 1)?.to_owned();
+    let mut close_with_terminal =
+        crate::config::settings::AppSettings::load().managed_close_with_terminal;
+    let mut detached = false;
+    for option in &args[1..split] {
+        match option.as_str() {
+            "--detached" => detached = true,
+            "--close-with-terminal" => close_with_terminal = true,
+            "--keep-running" => close_with_terminal = false,
+            _ => return Err(format!("unknown session option: {option}")),
+        }
+    }
+    if detached && close_with_terminal {
+        return Err("--close-with-terminal requires an attached terminal".into());
+    }
+    if !detached && !std::io::stdin().is_terminal() {
+        return Err("use --detached when launching without a terminal".into());
+    }
+    let provider = provider_for_program(&program);
+    let launch = Launch {
+        program,
+        args: args[split + 2..].to_vec(),
+        cwd: std::env::current_dir()
+            .map_err(|e| e.to_string())?
+            .to_string_lossy()
+            .into_owned(),
+        size: local_size(),
+        close_with_terminal,
+        provider,
+        conversation_id: None,
+        metadata: Default::default(),
+    };
+    let info = super::launch(launch, &[])?;
+    eprintln!("{}", info.id);
+    if detached {
+        Ok(())
+    } else {
+        attach(&info.id, true)
     }
 }
 
@@ -214,27 +218,8 @@ pub fn attach(id: &str, origin: bool) -> Result<(), String> {
     loop {
         match client.request(Request::Snapshot { after })? {
             Response::Snapshot { snapshot } => {
-                input_modes = snapshot.input_modes;
-                let mut stdout = std::io::stdout().lock();
-                if previous_size != Some(snapshot.size) {
-                    write!(stdout, "\x1b[2J").map_err(|e| e.to_string())?;
-                    previous_size = Some(snapshot.size);
-                }
-                write!(stdout, "{}\x1b[?2004h", snapshot.ansi).map_err(|e| e.to_string())?;
-                let status = if snapshot.control.holder.is_some() {
-                    "Mobile has control. Press a key to reclaim."
-                } else {
-                    "ClawTab session | Ctrl+] d: detach"
-                };
-                let size = local_size();
-                write!(
-                    stdout,
-                    "\x1b7\x1b[{};1H\x1b[0m\x1b[2K{}\x1b8",
-                    size.rows + 1,
-                    status.chars().take(size.cols as usize).collect::<String>()
-                )
-                .map_err(|e| e.to_string())?;
-                stdout.flush().map_err(|e| e.to_string())?;
+                input_modes = snapshot.input_modes.clone();
+                render(&snapshot, &mut previous_size)?;
                 after = Some(snapshot.revision);
                 if snapshot.status != Status::Running {
                     break;
@@ -280,56 +265,9 @@ pub fn attach(id: &str, origin: bool) -> Result<(), String> {
                 client.request(Request::LocalInput { data })?;
             }
             Event::Mouse(mouse) if input_modes.mouse => {
-                use event::{MouseButton, MouseEventKind};
-                let (button, release) = match mouse.kind {
-                    MouseEventKind::Down(b) | MouseEventKind::Up(b) => (
-                        match b {
-                            MouseButton::Left => 0,
-                            MouseButton::Middle => 1,
-                            MouseButton::Right => 2,
-                        },
-                        matches!(mouse.kind, MouseEventKind::Up(_)),
-                    ),
-                    MouseEventKind::Drag(b)
-                        if input_modes.mouse_drag || input_modes.mouse_motion =>
-                    {
-                        (
-                            32 + match b {
-                                MouseButton::Left => 0,
-                                MouseButton::Middle => 1,
-                                MouseButton::Right => 2,
-                            },
-                            false,
-                        )
-                    }
-                    MouseEventKind::Moved if input_modes.mouse_motion => (35, false),
-                    MouseEventKind::ScrollUp => (64, false),
-                    MouseEventKind::ScrollDown => (65, false),
-                    _ => continue,
-                };
-                let modifier = if mouse.modifiers.contains(KeyModifiers::SHIFT) {
-                    4
-                } else {
-                    0
-                } + if mouse.modifiers.contains(KeyModifiers::ALT) {
-                    8
-                } else {
-                    0
-                } + if mouse.modifiers.contains(KeyModifiers::CONTROL) {
-                    16
-                } else {
-                    0
-                };
-                client.request(Request::LocalInput {
-                    data: format!(
-                        "\x1b[<{};{};{}{}",
-                        button + modifier,
-                        mouse.column + 1,
-                        mouse.row + 1,
-                        if release { 'm' } else { 'M' }
-                    )
-                    .into_bytes(),
-                })?;
+                if let Some(data) = encode_mouse(mouse, &input_modes) {
+                    client.request(Request::LocalInput { data })?;
+                }
             }
             Event::Resize(_, _) => {
                 client.request(Request::LocalResize { size: local_size() })?;
@@ -338,6 +276,30 @@ pub fn attach(id: &str, origin: bool) -> Result<(), String> {
             _ => {}
         }
     }
+    Ok(())
+}
+
+fn render(snapshot: &super::Snapshot, previous_size: &mut Option<Size>) -> Result<(), String> {
+    let mut stdout = std::io::stdout().lock();
+    if *previous_size != Some(snapshot.size) {
+        write!(stdout, "\x1b[2J").map_err(|e| e.to_string())?;
+        *previous_size = Some(snapshot.size);
+    }
+    write!(stdout, "{}\x1b[?2004h", snapshot.ansi).map_err(|e| e.to_string())?;
+    let status = if snapshot.control.holder.is_some() {
+        "Mobile has control. Press a key to reclaim."
+    } else {
+        "ClawTab session | Ctrl+] d: detach"
+    };
+    let size = local_size();
+    write!(
+        stdout,
+        "\x1b7\x1b[{};1H\x1b[0m\x1b[2K{}\x1b8",
+        size.rows + 1,
+        status.chars().take(size.cols as usize).collect::<String>()
+    )
+    .map_err(|e| e.to_string())?;
+    stdout.flush().map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -415,4 +377,53 @@ fn encode_key(key: KeyEvent, modes: &InputModes) -> Vec<u8> {
     } else {
         value.into_bytes()
     }
+}
+
+fn encode_mouse(mouse: event::MouseEvent, modes: &InputModes) -> Option<Vec<u8>> {
+    use event::{MouseButton, MouseEventKind};
+    let (button, release) = match mouse.kind {
+        MouseEventKind::Down(b) | MouseEventKind::Up(b) => (
+            match b {
+                MouseButton::Left => 0,
+                MouseButton::Middle => 1,
+                MouseButton::Right => 2,
+            },
+            matches!(mouse.kind, MouseEventKind::Up(_)),
+        ),
+        MouseEventKind::Drag(b) if modes.mouse_drag || modes.mouse_motion => (
+            32 + match b {
+                MouseButton::Left => 0,
+                MouseButton::Middle => 1,
+                MouseButton::Right => 2,
+            },
+            false,
+        ),
+        MouseEventKind::Moved if modes.mouse_motion => (35, false),
+        MouseEventKind::ScrollUp => (64, false),
+        MouseEventKind::ScrollDown => (65, false),
+        _ => return None,
+    };
+    let modifier = if mouse.modifiers.contains(KeyModifiers::SHIFT) {
+        4
+    } else {
+        0
+    } + if mouse.modifiers.contains(KeyModifiers::ALT) {
+        8
+    } else {
+        0
+    } + if mouse.modifiers.contains(KeyModifiers::CONTROL) {
+        16
+    } else {
+        0
+    };
+    Some(
+        format!(
+            "\x1b[<{};{};{}{}",
+            button + modifier,
+            mouse.column + 1,
+            mouse.row + 1,
+            if release { 'm' } else { 'M' }
+        )
+        .into_bytes(),
+    )
 }
