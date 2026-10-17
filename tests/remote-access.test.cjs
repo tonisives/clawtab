@@ -42,7 +42,7 @@ test('denied relay access is explained and manual retry can recover after entitl
   let subscribed = false;
   let { api, calls } = loadApi(async () => ({ body: { subscribed } }));
   await api.storeTokens(token(), 'fixture-refresh', 'returning-user');
-  await assert.rejects(api.getWsUrl(), /does not have active relay access.*demo/);
+  await assert.rejects(api.getWsUrl(), /Relay subscription required/);
   subscribed = true;
   assert.match(await api.getWsUrl(), /^wss:\/\/relay\.clawtab\.cc\/ws\?token=/);
   assert.deepEqual(calls.map((call) => call.path), ['/subscription/status', '/subscription/status']);
@@ -67,7 +67,7 @@ test('invalid returning-account credentials remain recognizable so connection re
 });
 
 
-test('a stalled relay access check times out with a retryable explanation', async () => {
+test('a stalled relay access check times out with a short explanation', async () => {
   let expire;
   let { api } = loadApi(async (_path, options) => new Promise((_resolve, reject) => {
     options.signal.addEventListener('abort', () => reject(new Error('Aborted')));
@@ -76,5 +76,5 @@ test('a stalled relay access check times out with a retryable explanation', asyn
   let connecting = api.getWsUrl();
   await new Promise(setImmediate);
   expire();
-  await assert.rejects(connecting, /timed out.*retry/);
+  await assert.rejects(connecting, /Relay connection timed out/);
 });

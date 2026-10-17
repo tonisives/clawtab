@@ -217,9 +217,9 @@ export async function getWsUrl(): Promise<string> {
   let timeout = setTimeout(() => controller.abort(), 15_000);
   try {
     let access = await getSubscriptionStatus(controller.signal);
-    if (!access.subscribed) throw new Error("This account does not have active relay access. Check your subscription in Settings, or explore the demo.");
+    if (!access.subscribed) throw new Error("Relay subscription required");
   } catch (error) {
-    if (controller.signal.aborted) throw new Error("The relay access check timed out. Check your connection and retry.");
+    if (controller.signal.aborted) throw new Error("Relay connection timed out");
     throw error;
   } finally {
     clearTimeout(timeout);
