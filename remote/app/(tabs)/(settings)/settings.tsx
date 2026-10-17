@@ -1,6 +1,6 @@
 import { createNativeStackNavigator } from "expo-router/build/react-navigation/native-stack"
 import { NavigationContainer, NavigationIndependentTree, DarkTheme, useIsFocused } from "expo-router/react-navigation"
-import { useMachines, reconnectMachines } from "@clawtab/shared"
+import { useMachines } from "@clawtab/shared"
 import { Platform, Text, View } from "react-native"
 import { useAuthStore } from "../../../src/store/auth"
 import { useResponsive } from "../../../src/hooks/useResponsive"
@@ -20,7 +20,6 @@ let Stack = createNativeStackNavigator<Routes>()
 export let SettingsHome = () => {
   let relay = useMachines()
   let unavailable = !relay.connected
-  let retryRelay = () => reconnectMachines()
   let email = useAuthStore((state) => state.email)
   let navigate = useSettingsNavigation()
   let open = (page: SettingsRoute) => () => navigate(page)
@@ -29,7 +28,6 @@ export let SettingsHome = () => {
       <Text style={styles.sectionTitle}>Relay connection</Text>
       <View style={styles.listGroup}>
         <SettingsRow title={relay.connected ? "Connected to relay" : "Connect to relay"} detail={relay.error ?? (relay.connected ? "Online" : "Disconnected")} onPress={open("account")} />
-        {!relay.connected && <SettingsRow title="Retry connection" onPress={retryRelay} />}
       </View>
     </View>
     <View style={styles.section}>

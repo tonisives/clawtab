@@ -97,9 +97,9 @@ test('usage immediately offers machines without a global selection and switches 
 
 test('settings disable relay operations offline while preserving account and debugging access', () => {
   let relay = { connected: false, error: 'Relay access is unavailable' };
-  let retries = 0, navigated = [];
+  let navigated = [];
   let h = harness('remote/app/(tabs)/(settings)/settings.tsx', {
-    '@clawtab/shared': { useMachines: () => relay, reconnectMachines: () => retries++ },
+    '@clawtab/shared': { useMachines: () => relay },
     'expo-router/build/react-navigation/native-stack': { createNativeStackNavigator: () => ({}) },
     'expo-router/react-navigation': {},
     '../../../src/components/settings/AccountSettings': {},
@@ -124,8 +124,6 @@ test('settings disable relay operations offline while preserving account and deb
   assert.equal(connection.props.detail, relay.error);
   connection.props.onPress();
   assert.deepEqual(navigated, ['account']);
-  offline.find((node) => node.props.title === 'Retry connection').props.onPress();
-  assert.equal(retries, 1);
   offline.find((node) => node.props.title === 'Account & subscription').props.onPress();
   assert.deepEqual(navigated, ['account', 'account']);
   relay = { connected: true, error: null };
