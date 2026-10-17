@@ -32,8 +32,8 @@ export let DemoJobList = ({ onConnect }: { onConnect: () => void }) => {
 }
 
 let styles = StyleSheet.create({
-  content: { width: "100%", maxWidth: 640, alignSelf: "center" },
-  notice: { paddingHorizontal: 24, paddingVertical: 16, flexDirection: "row", alignItems: "center", justifyContent: "center", flexWrap: "wrap", gap: 8, backgroundColor: colors.warningBg },
+  content: { width: "100%", padding: 0 },
+  notice: { paddingHorizontal: 24, paddingVertical: 16, flexDirection: "row", alignItems: "center", justifyContent: "center", flexWrap: "wrap", gap: 8 },
   title: { color: colors.warning, fontSize: 16, fontWeight: "600" },
   separator: { color: colors.warning, fontSize: 14 },
   connectButton: { minHeight: 44, paddingHorizontal: 16, justifyContent: "center", borderRadius: 22, backgroundColor: colors.surface },

@@ -47,7 +47,7 @@ export default DemoAgentScreen
 let styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
   terminal: { flex: 1, minHeight: 0, backgroundColor: "#1c1c1e" },
-  notice: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 24, paddingVertical: 12, backgroundColor: colors.warningBg },
+  notice: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 24, paddingVertical: 12 },
   noticeText: { color: colors.warning, fontSize: 13 },
   composer: { backgroundColor: "#252528", paddingHorizontal: 16, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: "#48484a" },
   input: { color: "#e4e4e4", fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", fontSize: 14, minHeight: 52, maxHeight: 120, paddingTop: 16, paddingBottom: 8, textAlignVertical: "top" },
