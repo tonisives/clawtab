@@ -295,23 +295,21 @@ fn render(snapshot: &super::Snapshot, previous_size: &mut Option<Size>) -> Resul
         *previous_size = Some(snapshot.size);
     }
     write!(stdout, "{}\x1b[?2004h", snapshot.ansi).map_err(|e| e.to_string())?;
-    render_indicator(
-        &mut stdout,
-        local_size().cols,
-        snapshot.control.holder.is_some(),
-    )?;
+    render_indicator(&mut stdout, local_size(), snapshot.control.holder.is_some())?;
     stdout.flush().map_err(|e| e.to_string())?;
     Ok(())
 }
 
 fn render_indicator(
     stdout: &mut impl Write,
-    cols: u16,
+    size: Size,
     remote_control: bool,
 ) -> Result<(), String> {
     // Overlay one cell without reserving a terminal row or moving the agent cursor.
+    let row = size.rows.clamp(1, 2);
+    let col = size.cols.saturating_sub(1).max(1);
     let style = if remote_control { "1;36" } else { "2;37" };
-    write!(stdout, "\x1b7\x1b[1;{cols}H\x1b[0;{style}mC\x1b[0m\x1b8").map_err(|e| e.to_string())
+    write!(stdout, "\x1b7\x1b[{row};{col}H\x1b[0;{style}m⫻\x1b[0m\x1b8").map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -338,14 +336,15 @@ mod tests {
     fn indicator_preserves_terminal_content_and_cursor() {
         for remote in [false, true] {
             let mut output = Vec::new();
-            render_indicator(&mut output, 80, remote).unwrap();
+            render_indicator(&mut output, Size::new(80, 3), remote).unwrap();
             let mut terminal = super::super::screen::Screen::new(Size::new(80, 3));
             terminal.process(b"header\r\nbody\r\nfooter\x1b[2;3H");
             terminal.process(&output);
             let text = terminal.capture(false, false, 3);
             let rows = text.lines().collect::<Vec<_>>();
             assert_eq!(rows.len(), 3);
-            assert_eq!(rows[0].trim_end().chars().last(), Some('C'));
+            assert_eq!(rows[1].chars().nth(78), Some('⫻'));
+            assert_eq!(rows[1].chars().count(), 79);
             assert!(rows[0].starts_with("header"));
             assert!(rows[1].starts_with("body"));
             assert!(rows[2].starts_with("footer"));

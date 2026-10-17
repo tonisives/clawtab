@@ -191,6 +191,7 @@ export function ProcessCard({
   const canMoveToWorkspace = !!onMoveToWorkspace && !!moveToWorkspaceLabel && !transient;
   const showMenu = (onStop || onRename || onSaveName || onTogglePin || canMoveToWorkspace) && !transient;
   const kind = kindForProcess(process);
+  let managed = resourceLabel(process.pane_id).startsWith("managed:");
   let machineId = process.machine_id ?? splitResource(process.pane_id)?.machine;
   const openMenu = useCallback((e?: any) => {
     if (!showMenu || editing) return;
@@ -217,7 +218,8 @@ export function ProcessCard({
           <MachineMark machineId={machineId} />
         </View> : null}
       </View>
-      <Text style={styles.paneId} numberOfLines={1} adjustsFontSizeToFit>{resourceLabel(process.pane_id)}</Text>
+      {managed ? <Tooltip label="Shell session"><JobKindIcon kind="shell" size={14} bare /></Tooltip>
+        : <Text style={styles.paneId} numberOfLines={1} adjustsFontSizeToFit>{resourceLabel(process.pane_id)}</Text>}
     </View>
   );
   const titleControls = (

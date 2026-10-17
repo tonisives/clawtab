@@ -36,6 +36,7 @@ pub(super) struct Screen {
     parser: Processor,
     events: Events,
     pub size: Size,
+    pub title: Option<String>,
 }
 
 impl Screen {
@@ -54,6 +55,7 @@ impl Screen {
             parser: Processor::new(),
             events,
             size,
+            title: None,
         }
     }
 
@@ -63,6 +65,14 @@ impl Screen {
         let mut reply = Vec::new();
         for event in self.events.0.lock().drain(..) {
             let text = match event {
+                Event::Title(title) => {
+                    self.title = Some(title);
+                    continue;
+                }
+                Event::ResetTitle => {
+                    self.title = None;
+                    continue;
+                }
                 Event::PtyWrite(text) => text,
                 Event::TextAreaSizeRequest(format) => format(WindowSize {
                     num_lines: self.size.rows,
@@ -232,6 +242,16 @@ fn color(out: &mut String, color: Color, background: bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tracks_split_terminal_title_updates() {
+        let mut screen = Screen::new(Size::new(80, 24));
+        screen.process(b"\x1b]0;First");
+        screen.process(b" task | project\x07");
+        assert_eq!(screen.title.as_deref(), Some("First task | project"));
+        screen.process(b"\x1b]2;Renamed | project\x1b\\");
+        assert_eq!(screen.title.as_deref(), Some("Renamed | project"));
+    }
 
     #[test]
     fn capture_and_frame_preserve_cells_and_cursor() {

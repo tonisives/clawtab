@@ -39,6 +39,14 @@ struct State {
 }
 
 impl State {
+    fn session_info(&self) -> SessionInfo {
+        let mut info = self.info.clone();
+        if let Some(title) = &self.screen.title {
+            info.launch.metadata.insert("title".into(), title.clone());
+        }
+        info
+    }
+
     fn snapshot(&self) -> Snapshot {
         Snapshot {
             revision: self.revision,
@@ -142,11 +150,11 @@ impl State {
                     );
                 }
                 Ok(Response::Info {
-                    session: self.info.clone(),
+                    session: self.session_info(),
                 })
             }
             Request::Info => Ok(Response::Info {
-                session: self.info.clone(),
+                session: self.session_info(),
             }),
             Request::Watch => Err("watch must be established on its own connection".into()),
             Request::Snapshot { after } => {

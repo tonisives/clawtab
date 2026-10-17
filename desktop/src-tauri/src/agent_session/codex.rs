@@ -191,6 +191,12 @@ fn session_from_pane_title(pane_pid: &str) -> Option<PaneTitleSession> {
 }
 
 fn read_pane_title_sessions() -> Option<HashMap<String, PaneTitleSession>> {
+    let conn = Connection::open_with_flags(
+        latest_codex_sqlite("state_")?,
+        OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .ok()?;
+    let mut sessions = HashMap::new();
     let output = std::process::Command::new("tmux")
         .args([
             "list-panes",
@@ -199,23 +205,24 @@ fn read_pane_title_sessions() -> Option<HashMap<String, PaneTitleSession>> {
             "#{pane_pid}\t#{pane_current_path}\t#{pane_title}",
         ])
         .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let conn = Connection::open_with_flags(
-        latest_codex_sqlite("state_")?,
-        OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .ok()?;
-    let mut sessions = HashMap::new();
-    for line in String::from_utf8_lossy(&output.stdout).lines() {
+        .ok();
+    let output = output.filter(|output| output.status.success());
+    let stdout = output.map(|output| output.stdout).unwrap_or_default();
+    for line in String::from_utf8_lossy(&stdout).lines() {
         let mut parts = line.splitn(3, '\t');
         let (Some(pid), Some(cwd), Some(title)) = (parts.next(), parts.next(), parts.next()) else {
             continue;
         };
         if let Some(session) = session_for_title(&conn, title, cwd) {
             sessions.insert(pid.to_string(), session);
+        }
+    }
+    for info in crate::managed::list().unwrap_or_default() {
+        let Some(title) = info.launch.metadata.get("title") else {
+            continue;
+        };
+        if let Some(session) = session_for_title(&conn, title, &info.launch.cwd) {
+            sessions.insert(info.child_pid.to_string(), session);
         }
     }
     Some(sessions)
