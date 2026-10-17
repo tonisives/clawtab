@@ -1,3 +1,4 @@
+import { useMobileListAppearance, mobileListStyles } from "./ListAppearance";
 import { compactAgentSelectionLabel } from "../util/agent";
 import { resourceLabel, splitResource } from "../machines/client";
 import { MachineMark } from "../machines/Badge";
@@ -62,6 +63,7 @@ export function ProcessCard({
   agentLabel?: string | null;
   groupedPosition?: GroupedRowPosition;
 }) {
+  let mobileAppearance = useMobileListAppearance();
   const { width, height } = useWindowDimensions();
   const compactPhoneLandscape = Platform.OS === "ios" && !Platform.isPad && width > height;
   let modelLabel = agentLabel ?? (process.model_id ? compactAgentSelectionLabel(null, process.model_id, process.agent_effort) : null);
@@ -241,7 +243,7 @@ export function ProcessCard({
   );
 
   return (
-    <View style={[styles.processCard, selected ? styles.processCardSelected : null, softBorder && !selected ? styles.processCardSoftBorder : null, groupedCardStyle(groupedPosition)]}>
+    <View style={[styles.processCard, mobileAppearance ? mobileListStyles.row : null, selected ? styles.processCardSelected : null, softBorder && !selected ? styles.processCardSoftBorder : null, mobileAppearance ? null : groupedCardStyle(groupedPosition)]}>
       <TouchableOpacity
         style={[styles.processRow, compactPhoneLandscape && styles.processRowCompact]}
         onPress={editing ? undefined : onPress}

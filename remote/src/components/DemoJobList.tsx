@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Platform, Pressable, StyleSheet, Text, View } from "react-native"
+import { Pressable, StyleSheet, Text, View } from "react-native"
 import { useRouter } from "expo-router"
 import { JobListView, colors, type JobListMode, type JobSortMode, type RemoteJob, type DetectedProcess } from "@clawtab/shared"
 import { DEMO_JOBS, DEMO_PROCESSES, DEMO_STATUSES } from "../demo/data"
@@ -26,7 +26,7 @@ export let DemoJobList = ({ onConnect }: { onConnect: () => void }) => {
     <Text style={styles.separator}>·</Text>
     <Pressable accessibilityRole="button" onPress={onConnect} style={styles.connectButton}><Text style={styles.connect}>Connect to relay</Text></Pressable>
   </View>
-  return <JobListView jobs={DEMO_JOBS} statuses={DEMO_STATUSES} detectedProcesses={DEMO_PROCESSES} savedGroups={savedGroups} compactMobileToolbar={Platform.OS !== "web"} groupTabView={groupTabView} onGroupTabViewChange={changeGroupView} onSetAllGroupTabView={changeAllGroupViews} collapsedGroups={collapsedGroups} onToggleGroup={toggleGroup} listMode={listMode} onListModeChange={setListMode} sortMode={sortMode} onSortChange={setSortMode} onSelectJob={openJob} onSelectProcess={openProcess} headerContent={notice} showEmpty />
+  return <JobListView jobs={DEMO_JOBS} statuses={DEMO_STATUSES} detectedProcesses={DEMO_PROCESSES} savedGroups={savedGroups} compactMobileToolbar mobileAppearance groupTabView={groupTabView} onGroupTabViewChange={changeGroupView} onSetAllGroupTabView={changeAllGroupViews} collapsedGroups={collapsedGroups} onToggleGroup={toggleGroup} listMode={listMode} onListModeChange={setListMode} sortMode={sortMode} onSortChange={setSortMode} onSelectJob={openJob} onSelectProcess={openProcess} headerContent={notice} showEmpty />
 }
 
 let styles = StyleSheet.create({

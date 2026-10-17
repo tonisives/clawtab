@@ -5,12 +5,12 @@ const path = require('node:path');
 const vm = require('node:vm');
 const ts = require('../desktop/node_modules/typescript');
 
-let loadDemo = (entry, params = {}) => {
+let loadDemo = (entry, params = {}, os = 'ios') => {
   let states = [], cursor = 0, pushed = [], cache = {}, effects = [], writes = [];
   let modules = {
     react: { useRef: (value) => ({ current: value }), useEffect: (effect) => effects.push(effect), useState: (initial) => { let index = cursor++; states[index] ??= typeof initial === 'function' ? initial() : initial; return [states[index], (value) => { states[index] = typeof value === 'function' ? value(states[index]) : value; }]; } },
     'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
-    'react-native': { Platform: { OS: 'ios' }, StyleSheet: { create: (value) => value }, Text: 'Text', View: 'View', Pressable: 'Pressable' },
+    'react-native': { Platform: { OS: os }, StyleSheet: { create: (value) => value }, Text: 'Text', View: 'View', Pressable: 'Pressable' },
     'expo-router': { useRouter: () => ({ push: (route) => pushed.push(route) }), useLocalSearchParams: () => params, Stack: { Screen: 'Screen' } },
     '@clawtab/shared': { JobListView: 'JobListView', XtermLog: 'XtermLog', JobKindIcon: 'JobKindIcon', kindForProcess: (process) => process.provider, colors: {} },
     '@expo/vector-icons': { Ionicons: 'Ionicons' },
@@ -85,4 +85,13 @@ test('demo agents open a read-only shell terminal with a native header menu', ()
   menu.props.onPress();
   assert.equal(demo.pushed[0].pathname, '/demo-agent-details');
   assert.equal(demo.pushed[0].params.id, 'demo-pane-codex');
+});
+
+
+test('the web demo uses the same compact list presentation as mobile', () => {
+  for (let platform of ['web', 'ios']) {
+    let { props } = loadDemo('index.tsx', {}, platform).render();
+    assert.equal(props.compactMobileToolbar, true);
+    assert.equal(props.mobileAppearance, true);
+  }
 });

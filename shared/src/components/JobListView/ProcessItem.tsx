@@ -36,7 +36,7 @@ export function JobListProcessItem({
     (hook.openElsewhereContentKeys?.has(`proc:${process.pane_id}`) ?? false) ||
     (hook.openElsewhereContentKeys?.has(`term:${process.pane_id}`) ?? false);
   const softBorder = openElsewhere && !selected;
-  const marginTop = Platform.OS === "web" && groupedPosition && groupedPosition !== "single" && groupedPosition !== "first" ? -1 : undefined;
+  const marginTop = !hook.mobileAppearance && Platform.OS === "web" && groupedPosition && groupedPosition !== "single" && groupedPosition !== "first" ? -1 : undefined;
   const onPress = hook.onSelectProcess ? () => hook.onSelectProcess?.(process) : undefined;
   const pinKey = `pane:${process.pane_id}`;
   const pinned = hook.pinnedItems?.includes(pinKey) ?? false;
@@ -97,7 +97,7 @@ export function JobListProcessItem({
     return (
       <View
         key={itemKey}
-        style={[styles.jobChildProcess, Platform.OS === "web" && groupedPosition && groupedPosition !== "single" && groupedPosition !== "first" ? { marginTop: -1 } : undefined]}
+        style={[styles.jobChildProcess, !hook.mobileAppearance && Platform.OS === "web" && groupedPosition && groupedPosition !== "single" && groupedPosition !== "first" ? { marginTop: -1 } : undefined]}
       >
         {card}
       </View>

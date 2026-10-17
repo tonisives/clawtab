@@ -1,3 +1,4 @@
+import { useMobileListAppearance, mobileListStyles } from "./ListAppearance";
 import { MachineBadge } from "../machines/Badge";
 import { memo, useCallback, useRef, useState } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from "react-native";
@@ -51,6 +52,7 @@ export const RunningJobCard = memo(function RunningJobCard({
   defaultAgentModel?: string | null;
   groupedPosition?: GroupedRowPosition;
 }) {
+  let mobileAppearance = useMobileListAppearance();
   const startedAt = status.state === "running" ? status.started_at : null;
   const [menuOpen, setMenuOpen] = useState(false);
   const menuBtnRef = useRef<any>(null);
@@ -80,7 +82,7 @@ export const RunningJobCard = memo(function RunningJobCard({
 
   return (
     <TouchableOpacity
-      style={[styles.card, selected ? styles.cardSelected : null, softBorder && !selected ? styles.cardSoftBorder : null, groupedCardStyle(groupedPosition)]}
+      style={[styles.card, mobileAppearance ? mobileListStyles.row : null, selected ? styles.cardSelected : null, softBorder && !selected ? styles.cardSoftBorder : null, mobileAppearance ? null : groupedCardStyle(groupedPosition)]}
       onPress={onPress}
       onLongPress={openMenu}
       activeOpacity={0.7}

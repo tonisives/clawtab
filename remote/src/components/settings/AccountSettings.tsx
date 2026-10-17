@@ -182,8 +182,12 @@ export let AccountSettings = () => {
     {!subLoading && !sub?.subscribed && <View style={styles.section}>
       <Text style={styles.sectionTitle}>Relay subscription</Text>
       <View style={styles.listGroup}>
-        <SettingsRow title={actionLoading || iap.purchasing ? "Please wait…" : iap.price ? `Subscribe · ${iap.price} / month` : "Subscribe"} detail={Platform.OS === "ios" && !iap.available ? "In-app purchases are currently unavailable" : "Connect your machines through the relay"} onPress={handleSubscribe} disabled={!sub || actionLoading || iap.purchasing || (Platform.OS === "ios" && !iap.available)} />
+        <SettingsRow title={actionLoading || iap.purchasing ? "Please wait…" : Platform.OS === "ios" && iap.loading ? "Loading purchases…" : iap.price ? `Subscribe · ${iap.price} / month` : "Subscribe"} detail={Platform.OS === "ios" && iap.error ? iap.error : "Connect your machines through the relay"} onPress={handleSubscribe} disabled={!sub || actionLoading || iap.purchasing || (Platform.OS === "ios" && !iap.available)} />
       </View>
+    </View>}
+    {Platform.OS === "ios" && !sub?.subscribed && !!iap.error && <View style={styles.section}>
+      <View style={styles.listGroup}><SettingsRow title="Retry loading purchases" onPress={iap.retry} disabled={iap.loading || actionLoading || iap.purchasing} /></View>
+      {!!iap.diagnostic && <Text selectable style={styles.usageDescription}>{iap.diagnostic}</Text>}
     </View>}
     {Platform.OS === "ios" && <View style={styles.listGroup}>
       <SettingsRow title="Restore Purchases" onPress={handleRestore} disabled={subLoading || actionLoading || iap.purchasing} />

@@ -30,7 +30,7 @@ export function JobListShellItem({ hook, shell, itemKey, groupedPosition }: JobL
     <View
       key={itemKey}
       {...(Platform.OS === "web" ? { dataSet: { shellId: shell.pane_id } } : {})}
-      style={Platform.OS === "web" && groupedPosition && groupedPosition !== "single" && groupedPosition !== "first" ? { marginTop: -1 } : undefined}
+      style={!hook.mobileAppearance && Platform.OS === "web" && groupedPosition && groupedPosition !== "single" && groupedPosition !== "first" ? { marginTop: -1 } : undefined}
     >
       {hook.customRenderShellCard
         ? hook.customRenderShellCard({ shell, onPress, selected, softBorder, onStop, onRename, renameShortcutHint: hook.renameShortcutHint, groupedPosition })

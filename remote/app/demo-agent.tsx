@@ -24,7 +24,7 @@ let DemoAgentScreen = () => {
   return <View style={styles.screen}>
     <Stack.Screen options={{ title, headerTitle, headerRight }} />
     <Text style={styles.notice}>Demo</Text>
-    <View style={styles.terminal} accessibilityLabel="Shell logs"><XtermLog ref={terminal} interactive={false} /></View>
+    <View style={styles.terminal} accessibilityLabel="Shell logs"><XtermLog ref={terminal} interactive={false} forceDarkTheme /></View>
   </View>
 }
 export default DemoAgentScreen

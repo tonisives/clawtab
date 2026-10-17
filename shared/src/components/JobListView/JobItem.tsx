@@ -34,7 +34,7 @@ export function JobListJobItem({ hook, item, itemKey, groupedPosition }: JobList
   const autoYesActive = jobPaneId ? hook.autoYesPaneIds?.has(jobPaneId) ?? false : false;
   const stopping = hook.stoppingSlugsExternal?.has(item.job.slug) ?? false;
   const onStop = isRunning && !stopping && hook.onStopJob ? () => hook.onStopJob?.(item.job.slug) : undefined;
-  const marginTop = Platform.OS === "web" && groupedPosition && groupedPosition !== "single" && groupedPosition !== "first" ? -1 : undefined;
+  const marginTop = !hook.mobileAppearance && Platform.OS === "web" && groupedPosition && groupedPosition !== "single" && groupedPosition !== "first" ? -1 : undefined;
   const dimmed = item.idx % 2 === 1;
   const childProcesses = hook.matchedProcessesByJob.get(item.job.slug) ?? [];
   const hasChildProcesses = childProcesses.length > 0;

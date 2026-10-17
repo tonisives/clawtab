@@ -135,7 +135,7 @@ test('settings disable relay operations offline while preserving account and deb
 let accountHarness = (os = 'ios') => {
   let subscribed = false, reconnects = 0, purchases = 0, restores = 0, checkouts = 0, opened = [], resumed;
   let iap = {
-    available: true, purchasing: false, price: '$4.99',
+    available: true, purchasing: false, loading: false, error: null, diagnostic: null, retry: async () => {}, price: '$4.99',
     purchase: async () => { purchases++; subscribed = true; return true; },
     restore: async () => { restores++; subscribed = true; return true; },
   };
@@ -208,4 +208,23 @@ test('web checkout refreshes access when returning to the app', async () => {
   account.resume();
   await flush();
   assert.equal(account.counts().reconnects, 1);
+});
+
+
+test('account distinguishes StoreKit loading from a retryable catalog failure', async () => {
+  let account = accountHarness();
+  account.iap.available = false;
+  account.iap.loading = true;
+  account.render(); await flush();
+  let loading = account.rows().find((node) => node.props.title === 'Loading purchases…');
+  assert.equal(loading.props.disabled, true);
+  account.iap.loading = false;
+  account.iap.error = 'The App Store did not return the relay subscription.';
+  account.iap.diagnostic = 'Product: cc.clawtab.pro.monthly';
+  let retried = false;
+  account.iap.retry = async () => { retried = true; };
+  let rows = account.rows();
+  assert.equal(rows.find((node) => node.props.title.startsWith('Subscribe')).props.detail, account.iap.error);
+  await rows.find((node) => node.props.title === 'Retry loading purchases').props.onPress();
+  assert.equal(retried, true);
 });

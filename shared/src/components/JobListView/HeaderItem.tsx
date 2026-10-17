@@ -95,7 +95,7 @@ export function JobListHeaderItem({ hook, item, itemKey, index, prevWasActive }:
       key={itemKey}
       style={[
         headerMarginTop ? { marginTop: headerMarginTop } : null,
-        Platform.OS !== "web" ? styles.nativeGroupHeaderWrap : null,
+        hook.mobileAppearance ? styles.nativeGroupHeaderWrap : null,
         hook.edgeToEdge && { marginHorizontal: 0 },
       ]}
       {...(hoverSwitchHandlers ?? {})}
@@ -131,7 +131,7 @@ export function JobListHeaderItem({ hook, item, itemKey, index, prevWasActive }:
           <View
             style={[
               styles.groupHeaderSegmentSlot,
-              Platform.OS !== "web" ? styles.nativeGroupSegmentRow : null,
+              hook.mobileAppearance ? styles.nativeGroupSegmentRow : null,
             ]}
           >
             <View
@@ -142,8 +142,8 @@ export function JobListHeaderItem({ hook, item, itemKey, index, prevWasActive }:
                 borderWidth: 1,
                 borderColor: colors.border,
                 borderRadius: 999,
-                padding: Platform.OS === "web" ? 2 : 3,
-                height: Platform.OS === "web" ? undefined : 34,
+                padding: !hook.mobileAppearance ? 2 : 3,
+                height: !hook.mobileAppearance ? undefined : 34,
               }}
             >
               {(["tabs", "jobs"] as const).map((view) => {
@@ -159,8 +159,8 @@ export function JobListHeaderItem({ hook, item, itemKey, index, prevWasActive }:
                     }}
                     activeOpacity={0.7}
                     style={{
-                      paddingHorizontal: Platform.OS === "web" ? 9 : 12,
-                      paddingVertical: Platform.OS === "web" ? 2 : 5,
+                      paddingHorizontal: !hook.mobileAppearance ? 9 : 12,
+                      paddingVertical: !hook.mobileAppearance ? 2 : 5,
                       borderRadius: 999,
                       backgroundColor: active ? colors.accent : "transparent",
                       justifyContent: "center",
@@ -169,7 +169,7 @@ export function JobListHeaderItem({ hook, item, itemKey, index, prevWasActive }:
                     <Text
                       style={{
                         fontSize: 12,
-                        lineHeight: Platform.OS === "web" ? undefined : 14,
+                        lineHeight: !hook.mobileAppearance ? undefined : 14,
                         fontWeight: "600",
                         color: active ? "#ffffff" : colors.textSecondary,
                       }}

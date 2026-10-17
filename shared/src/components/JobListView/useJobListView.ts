@@ -1,3 +1,4 @@
+import { Platform } from "react-native";
 import { useMachines } from "../../machines/client";
 import { useCallback, useMemo, useState } from "react";
 
@@ -113,6 +114,7 @@ export function useJobListView(props: JobListViewProps) {
   }, []);
 
   return {
+    mobileAppearance: props.mobileAppearance ?? Platform.OS !== "web",
     groupPreferencesApi: props.groupPreferencesApi,
     localHostRequest: props.localHostRequest,
     localAgentMachineId: props.localAgentMachineId,

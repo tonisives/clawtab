@@ -93,7 +93,7 @@ export function JobListItems({ hook }: JobListItemsProps) {
     return "middle";
   };
   const wrapRows = (key: string, children: ReactNode) => (
-    Platform.OS === "web"
+    !hook.mobileAppearance
       ? <View key={key} style={styles.webGroupedRows}>{children}</View>
       : <View key={key} style={[styles.nativeGroupedRows, hook.edgeToEdge && { marginHorizontal: 0, borderRadius: 0 }]}>{children}</View>
   );

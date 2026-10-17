@@ -1,3 +1,4 @@
+import { attachTerminalTouchScroll } from "../util/terminalTouchScroll";
 import { encodeTerminalInput } from "../util/terminalInput";
 import { useRef, useEffect, useImperativeHandle, forwardRef } from "react";
 import { Terminal } from "@xterm/xterm";
@@ -159,6 +160,7 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
 
       fit.fit();
       termRef.current = t;
+      let detachTouchScroll = attachTerminalTouchScroll(el, t);
 
       // Track previous dimensions to avoid spurious resizes from text selection
       let prevWidth = 0;
@@ -210,6 +212,7 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
       return () => {
         unsubscribeTheme();
         observer.disconnect();
+        detachTouchScroll();
         dataDisposable?.dispose();
         t.dispose();
         termRef.current = null;
