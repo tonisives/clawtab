@@ -93,3 +93,38 @@ test('usage immediately offers machines without a global selection and switches 
   render();
   assert.equal(queried.at(-1).machine, 'online');
 });
+
+test('settings disable relay operations offline while preserving account and debugging access', () => {
+  let relay = { connected: false, error: 'Relay access is unavailable' };
+  let retries = 0, navigated = [];
+  let h = harness('remote/app/(tabs)/(settings)/settings.tsx', {
+    '@clawtab/shared': { useMachines: () => relay, reconnectMachines: () => retries++ },
+    'expo-router/build/react-navigation/native-stack': { createNativeStackNavigator: () => ({}) },
+    'expo-router/react-navigation': {},
+    '../../../src/components/settings/AccountSettings': {},
+    '../../../src/components/settings/SharingSettings': {},
+    '../../../src/components/settings/TerminalSettings': {},
+    '../../../src/components/settings/UsageSettings': {},
+    'react-native': { Platform: { OS: 'ios' }, View: 'View', Text: 'Text' },
+    '../../../src/store/auth': { useAuthStore: (select) => select({ email: 'account@example.com' }) },
+    '../../../src/components/settings/SettingsPage': { SettingsPage: 'Page', SettingsRow: 'Row', styles: {} },
+    '../../../src/components/settings/navigation': { useSettingsNavigation: () => (page) => navigated.push(page) },
+    '../../../src/theme/colors': { colors: {} },
+  });
+  let rows = () => findAll(h.render(h.exports.SettingsHome), (node) => node.type === 'Row');
+  let offline = rows();
+  for (let title of ['Shared access', 'Model usage', 'Manage machines', 'API tokens']) {
+    assert.equal(offline.find((node) => node.props.title === title).props.disabled, true, title);
+  }
+  for (let title of ['Account & subscription', 'Terminal', 'Connect to relay']) {
+    assert.notEqual(offline.find((node) => node.props.title === title).props.disabled, true, title);
+  }
+  let connection = offline.find((node) => node.props.title === 'Connect to relay');
+  assert.equal(connection.props.detail, relay.error);
+  connection.props.onPress();
+  assert.equal(retries, 1);
+  offline.find((node) => node.props.title === 'Account & subscription').props.onPress();
+  assert.deepEqual(navigated, ['account']);
+  relay = { connected: true, error: null };
+  assert.ok(rows().every((node) => !node.props.disabled));
+});

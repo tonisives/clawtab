@@ -10,7 +10,7 @@ let loadDemo = (entry, params = {}) => {
   let modules = {
     react: { useState: (initial) => { let index = cursor++; states[index] ??= typeof initial === 'function' ? initial() : initial; return [states[index], (value) => { states[index] = typeof value === 'function' ? value(states[index]) : value; }]; } },
     'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
-    'react-native': { Platform: { OS: 'ios' }, StyleSheet: { create: (value) => value }, Text: 'Text', View: 'View' },
+    'react-native': { Platform: { OS: 'ios' }, StyleSheet: { create: (value) => value }, Text: 'Text', View: 'View', Pressable: 'Pressable' },
     'expo-router': { useRouter: () => ({ push: (route) => pushed.push(route) }), useLocalSearchParams: () => params, Stack: { Screen: 'Screen' } },
     '@clawtab/shared': { JobListView: 'JobListView', colors: {} },
     '../../../shared/src/components/InsetList': { InsetList: 'InsetList', InsetListRow: 'InsetListRow' },
@@ -27,8 +27,8 @@ let loadDemo = (entry, params = {}) => {
     } });
     return exports;
   };
-  let component = load(require.resolve(`../remote/app/demo/${entry}`)).default;
-  return { pushed, render: () => { cursor = 0; return component(); } };
+  let component = entry === 'index.tsx' ? load(require.resolve('../remote/src/components/DemoJobList.tsx')).DemoJobList : load(require.resolve(`../remote/app/demo/${entry}`)).default;
+  return { pushed, render: (props = {}) => { cursor = 0; return component(props); } };
 };
 let all = (node) => Array.isArray(node) ? node.flatMap(all) : node && typeof node === 'object' ? [node, ...all(node.props?.children)] : [];
 
@@ -38,9 +38,11 @@ test('demo list has isolated sample groups and no live mutation callbacks', () =
   assert.ok(props.jobs.length > 0 && props.detectedProcesses.length > 0);
   assert.equal(props.savedGroups.length, 0);
   for (let callback of ['onRunAgent', 'onStopJob', 'onStopProcess', 'groupPreferencesApi', 'onSaveProcessName', 'onTogglePin']) assert.equal(props[callback], undefined);
-  let controls = all(props.headerContent).filter((node) => node.type === 'InsetListRow');
-  assert.equal(controls.length, 2);
-  assert.ok(controls.every((node) => node.props.disabled));
+  let connected = false;
+  let header = all(demo.render({ onConnect: () => { connected = true; } }).props.headerContent);
+  assert.deepEqual(header.filter((node) => node.type === 'Text').map((node) => node.props.children), ['Demo', '·', 'Connect to relay']);
+  header.find((node) => node.type === 'Pressable').props.onPress();
+  assert.equal(connected, true);
   props.onSelectJob(props.jobs[0]);
   props.onSelectProcess(props.detectedProcesses[0]);
   assert.ok(demo.pushed.every((route) => route.pathname === '/demo/[id]'));

@@ -1,0 +1,37 @@
+import { useState } from "react"
+import { Platform, Pressable, StyleSheet, Text, View } from "react-native"
+import { useRouter } from "expo-router"
+import { JobListView, colors, type JobListMode, type JobSortMode, type RemoteJob, type DetectedProcess } from "@clawtab/shared"
+import { DEMO_JOBS, DEMO_PROCESSES, DEMO_STATUSES } from "../demo/data"
+
+let savedGroups: [] = []
+export let DemoJobList = ({ onConnect }: { onConnect: () => void }) => {
+  let router = useRouter()
+  let [collapsedGroups, setCollapsedGroups] = useState(new Set<string>())
+  let [listMode, setListMode] = useState<JobListMode>("tabs")
+  let [groupTabView, setGroupTabView] = useState<Record<string, "tabs" | "jobs">>({})
+  let changeGroupView = (group: string, view: "tabs" | "jobs") => setGroupTabView((current) => ({ ...current, [group]: view }))
+  let changeAllGroupViews = (groups: string[], view: "tabs" | "jobs") => setGroupTabView((current) => ({ ...current, ...Object.fromEntries(groups.map((group) => [group, view])) }))
+  let [sortMode, setSortMode] = useState<JobSortMode>("name")
+  let toggleGroup = (group: string) => setCollapsedGroups((current) => {
+    let next = new Set(current)
+    if (next.has(group)) next.delete(group)
+    else next.add(group)
+    return next
+  })
+  let openJob = (job: RemoteJob) => router.push({ pathname: "/demo/[id]", params: { id: job.slug, kind: "job" } })
+  let openProcess = (process: DetectedProcess) => router.push({ pathname: "/demo/[id]", params: { id: process.pane_id, kind: "process" } })
+  let notice = <View style={styles.notice}>
+    <Text style={styles.title}>Demo</Text>
+    <Text style={styles.separator}>·</Text>
+    <Pressable accessibilityRole="button" onPress={onConnect}><Text style={styles.connect}>Connect to relay</Text></Pressable>
+  </View>
+  return <JobListView jobs={DEMO_JOBS} statuses={DEMO_STATUSES} detectedProcesses={DEMO_PROCESSES} savedGroups={savedGroups} compactMobileToolbar={Platform.OS !== "web"} groupTabView={groupTabView} onGroupTabViewChange={changeGroupView} onSetAllGroupTabView={changeAllGroupViews} collapsedGroups={collapsedGroups} onToggleGroup={toggleGroup} listMode={listMode} onListModeChange={setListMode} sortMode={sortMode} onSortChange={setSortMode} onSelectJob={openJob} onSelectProcess={openProcess} headerContent={notice} showEmpty />
+}
+
+let styles = StyleSheet.create({
+  notice: { paddingHorizontal: 24, paddingVertical: 12, flexDirection: "row", alignItems: "center", gap: 8 },
+  title: { color: colors.textSecondary, fontSize: 14 },
+  separator: { color: colors.textMuted, fontSize: 14 },
+  connect: { color: colors.accent, fontSize: 14 },
+})

@@ -1,6 +1,6 @@
-import { useRouter } from "expo-router"
 import { createNativeStackNavigator } from "expo-router/build/react-navigation/native-stack"
 import { NavigationContainer, NavigationIndependentTree, DarkTheme, useIsFocused } from "expo-router/react-navigation"
+import { useMachines, reconnectMachines } from "@clawtab/shared"
 import { Platform, Text, View } from "react-native"
 import { useAuthStore } from "../../../src/store/auth"
 import { useResponsive } from "../../../src/hooks/useResponsive"
@@ -17,33 +17,39 @@ import { colors } from "../../../src/theme/colors"
 
 type Routes = { [Page in SettingsRoute]: undefined } & { "machine-page": MachinePageParams }
 let Stack = createNativeStackNavigator<Routes>()
-let SettingsHome = () => {
-  let router = useRouter()
-  let openDemo = () => router.push("/demo")
+export let SettingsHome = () => {
+  let relay = useMachines()
+  let unavailable = !relay.connected
+  let retryRelay = () => reconnectMachines()
   let email = useAuthStore((state) => state.email)
   let navigate = useSettingsNavigation()
   let open = (page: SettingsRoute) => () => navigate(page)
   return <SettingsPage>
     <View style={styles.section}>
+      <Text style={styles.sectionTitle}>Relay connection</Text>
+      <View style={styles.listGroup}>
+        <SettingsRow title={relay.connected ? "Connected to relay" : "Connect to relay"} detail={relay.error ?? (relay.connected ? "Online" : "Disconnected")} onPress={retryRelay} />
+      </View>
+    </View>
+    <View style={styles.section}>
       <Text style={styles.sectionTitle}>Account</Text>
       <View style={styles.listGroup}>
         <SettingsRow title="Account & subscription" detail={email ?? "Sign-in and billing"} onPress={open("account")} />
-        <SettingsRow title="Shared access" detail="People and group permissions" onPress={open("sharing")} />
+        <SettingsRow title="Shared access" detail="People and group permissions" onPress={open("sharing")} disabled={unavailable} />
       </View>
     </View>
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>Machines & models</Text>
       <View style={styles.listGroup}>
-        <SettingsRow title="Model usage" detail="Usage limits by machine and provider" onPress={open("usage")} />
-        <SettingsRow title="Try demo" detail="Explore sample jobs and agents" onPress={openDemo} />
-        <SettingsRow title="Manage machines" detail="Connections, models, and rented boxes" onPress={open("machines")} />
+        <SettingsRow title="Model usage" detail="Usage limits by machine and provider" onPress={open("usage")} disabled={unavailable} />
+        <SettingsRow title="Manage machines" detail="Connections, models, and rented boxes" onPress={open("machines")} disabled={unavailable} />
       </View>
     </View>
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>Preferences & integrations</Text>
       <View style={styles.listGroup}>
         <SettingsRow title="Terminal" detail="Recent pane cache" onPress={open("terminal")} />
-        <SettingsRow title="API tokens" detail="Automations and external triggers" onPress={open("tokens")} />
+        <SettingsRow title="API tokens" detail="Automations and external triggers" onPress={open("tokens")} disabled={unavailable} />
       </View>
     </View>
   </SettingsPage>
