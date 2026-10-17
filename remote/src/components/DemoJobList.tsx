@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { Pressable, StyleSheet, Text, View } from "react-native"
 import { useRouter } from "expo-router"
+import { Ionicons } from "@expo/vector-icons"
 import { JobListView, colors, type JobListMode, type JobSortMode, type RemoteJob, type DetectedProcess } from "@clawtab/shared"
 import { DEMO_JOBS, DEMO_PROCESSES, DEMO_STATUSES } from "../demo/data"
 
@@ -21,7 +22,8 @@ export let DemoJobList = ({ onConnect }: { onConnect: () => void }) => {
   })
   let openJob = (job: RemoteJob) => router.push({ pathname: "/demo-agent", params: { id: job.slug, kind: "job" } })
   let openProcess = (process: DetectedProcess) => router.push({ pathname: "/demo-agent", params: { id: process.pane_id, kind: "process" } })
-  let notice = <View style={styles.notice}>
+  let notice = <View style={styles.notice} accessibilityRole="alert">
+    <Ionicons name="alert-circle-outline" size={20} color={colors.textSecondary} />
     <Text style={styles.title}>Demo</Text>
     <Text style={styles.separator}>·</Text>
     <Pressable accessibilityRole="button" onPress={onConnect} style={styles.connectButton}><Text style={styles.connect}>Connect to relay</Text></Pressable>
@@ -31,7 +33,7 @@ export let DemoJobList = ({ onConnect }: { onConnect: () => void }) => {
 
 let styles = StyleSheet.create({
   content: { width: "100%", maxWidth: 640, alignSelf: "center" },
-  notice: { paddingHorizontal: 24, paddingVertical: 12, flexDirection: "row", alignItems: "center", gap: 8 },
+  notice: { paddingHorizontal: 24, paddingVertical: 16, flexDirection: "row", alignItems: "center", justifyContent: "center", flexWrap: "wrap", gap: 8 },
   title: { color: colors.textSecondary, fontSize: 16, fontWeight: "600" },
   separator: { color: colors.textMuted, fontSize: 14 },
   connectButton: { minHeight: 44, paddingHorizontal: 16, justifyContent: "center", borderRadius: 22, backgroundColor: colors.surface },

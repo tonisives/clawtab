@@ -10,7 +10,9 @@ let loadDemo = (entry, params = {}, os = 'ios') => {
   let modules = {
     react: { useRef: (value) => ({ current: value }), useEffect: (effect) => effects.push(effect), useState: (initial) => { let index = cursor++; states[index] ??= typeof initial === 'function' ? initial() : initial; return [states[index], (value) => { states[index] = typeof value === 'function' ? value(states[index]) : value; }]; } },
     'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
-    'react-native': { Platform: { OS: os }, StyleSheet: { create: (value) => value }, Text: 'Text', View: 'View', Pressable: 'Pressable' },
+    'react-native': { Platform: { OS: os }, StyleSheet: { create: (value) => value }, Text: 'Text', View: 'View', Pressable: 'Pressable', TextInput: 'TextInput', KeyboardAvoidingView: 'KeyboardAvoidingView' },
+    'expo-router/react-navigation': { useHeaderHeight: () => 96 },
+    'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
     'expo-router': { useRouter: () => ({ push: (route) => pushed.push(route) }), useLocalSearchParams: () => params, Stack: { Screen: 'Screen' } },
     '@clawtab/shared': { JobListView: 'JobListView', XtermLog: 'XtermLog', JobKindIcon: 'JobKindIcon', kindForProcess: (process) => process.provider, colors: {} },
     '@expo/vector-icons': { Ionicons: 'Ionicons' },
@@ -24,7 +26,7 @@ let loadDemo = (entry, params = {}, os = 'ios') => {
     let source = ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
     vm.runInNewContext(source, { exports, require: (name) => {
       if (name in modules) return modules[name];
-      if (name.endsWith('/demo/data')) return load(path.resolve(path.dirname(file), `${name}.ts`));
+      if (name.endsWith('/demo/data') || name.endsWith('/demo/shell')) return load(path.resolve(path.dirname(file), `${name}.ts`));
       throw new Error(`Demo attempted to import a live dependency: ${name}`);
     } });
     return exports;
@@ -93,5 +95,23 @@ test('the web demo uses the same compact list presentation as mobile', () => {
     let { props } = loadDemo('index.tsx', {}, platform).render();
     assert.equal(props.compactMobileToolbar, true);
     assert.equal(props.mobileAppearance, true);
+  }
+});
+
+test('each demo agent keeps an editable local prompt and model outside the shell buffer', () => {
+  for (let id of ['demo-pane-claude', 'demo-pane-codex', 'demo-pane-opencode']) {
+    let demo = loadDemo('terminal', { id, kind: 'process' });
+    let nodes = all(demo.render());
+    let prompt = nodes.find((node) => node.type === 'TextInput');
+    assert.equal(prompt.props.accessibilityLabel, 'Demo prompt');
+    prompt.props.onChangeText('Try the keyboard');
+    assert.equal(all(demo.render()).find((node) => node.type === 'TextInput').props.value, 'Try the keyboard');
+    let footer = nodes.find((node) => node.type === 'SafeAreaView');
+    assert.ok(all(footer).some((node) => node.type === 'Text' && typeof node.props.children === 'string' && node.props.children.length));
+    assert.ok(all(footer).some((node) => node.props?.accessibilityLabel === 'Show keyboard'));
+    assert.ok(!demo.writes[1].includes('────────────────'));
+    assert.ok(!demo.writes[1].includes('▀▀▀▀'));
+    assert.equal(nodes.find((node) => node.type === 'XtermLog').props.extendedViewport, true);
+    assert.equal(nodes[0].props.keyboardVerticalOffset, 96);
   }
 });
