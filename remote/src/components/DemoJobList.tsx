@@ -26,10 +26,11 @@ export let DemoJobList = ({ onConnect }: { onConnect: () => void }) => {
     <Text style={styles.separator}>·</Text>
     <Pressable accessibilityRole="button" onPress={onConnect} style={styles.connectButton}><Text style={styles.connect}>Connect to relay</Text></Pressable>
   </View>
-  return <JobListView jobs={DEMO_JOBS} statuses={DEMO_STATUSES} detectedProcesses={DEMO_PROCESSES} savedGroups={savedGroups} compactMobileToolbar mobileAppearance groupTabView={groupTabView} onGroupTabViewChange={changeGroupView} onSetAllGroupTabView={changeAllGroupViews} collapsedGroups={collapsedGroups} onToggleGroup={toggleGroup} listMode={listMode} onListModeChange={setListMode} sortMode={sortMode} onSortChange={setSortMode} onSelectJob={openJob} onSelectProcess={openProcess} headerContent={notice} showEmpty />
+  return <JobListView jobs={DEMO_JOBS} statuses={DEMO_STATUSES} detectedProcesses={DEMO_PROCESSES} savedGroups={savedGroups} compactMobileToolbar mobileAppearance groupTabView={groupTabView} onGroupTabViewChange={changeGroupView} onSetAllGroupTabView={changeAllGroupViews} collapsedGroups={collapsedGroups} onToggleGroup={toggleGroup} listMode={listMode} onListModeChange={setListMode} sortMode={sortMode} onSortChange={setSortMode} onSelectJob={openJob} onSelectProcess={openProcess} headerContent={notice} contentContainerStyle={styles.content} showEmpty />
 }
 
 let styles = StyleSheet.create({
+  content: { width: "100%", maxWidth: 640, alignSelf: "center" },
   notice: { paddingHorizontal: 24, paddingVertical: 12, flexDirection: "row", alignItems: "center", gap: 8 },
   title: { color: colors.textSecondary, fontSize: 16, fontWeight: "600" },
   separator: { color: colors.textMuted, fontSize: 14 },
