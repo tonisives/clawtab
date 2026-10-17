@@ -56,7 +56,7 @@ pub async fn get_subscription(
         Option<String>,
     )> = sqlx::query_as(
         "SELECT status, current_period_end, stripe_subscription_id, apple_original_transaction_id \
-         FROM subscriptions WHERE user_id = $1",
+         FROM subscriptions s WHERE user_id = $1 AND (s.apple_original_transaction_id IS NOT NULL OR NOT EXISTS (SELECT 1 FROM rental_billing_transitions t WHERE t.subscription_id=s.stripe_subscription_id AND t.retired_at IS NOT NULL))",
     )
     .bind(user_id)
     .fetch_optional(pool)

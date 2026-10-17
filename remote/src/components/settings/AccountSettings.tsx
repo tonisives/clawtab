@@ -177,21 +177,23 @@ export let AccountSettings = () => {
             <Text style={styles.label}>Status</Text>
             <Text style={[styles.value, { color: colors.success }]}>{sub.relay_included ? "Included with your box" : "Active"}</Text>
           </View>
-          {!sub.relay_included && sub.current_period_end && (
+          {sub.current_period_end && (!sub.relay_included || sub.provider) && (
             <View style={styles.row}>
-              <Text style={styles.label}>Period ends</Text>
+              <Text style={styles.label}>{sub.relay_included ? "Separate plan period ends" : "Period ends"}</Text>
               <Text style={styles.value}>
                 {new Date(sub.current_period_end).toLocaleDateString()}
               </Text>
             </View>
           )}
         </View>
-        <View style={styles.listGroup}><SettingsRow
-          title={actionLoading ? "Loading…" : sub.relay_included ? (sub.provider === "apple" ? "Manage existing Apple subscription" : "Manage boxes") : "Manage subscription"}
-          onPress={sub.relay_included && sub.provider !== "apple" ? openMachines : handleManageBilling}
+        {sub.relay_included && <Text style={styles.usageDescription}>Your box includes relay access. Any separate relay subscription continues on its normal billing schedule until you cancel it.</Text>}
+        {(!sub.relay_included || sub.provider) && <View style={styles.listGroup}><SettingsRow
+          title={actionLoading ? "Loading…" : sub.relay_included ? `Manage existing ${sub.provider === "apple" ? "Apple" : "Stripe"} subscription` : "Manage subscription"}
+          onPress={handleManageBilling}
           disabled={actionLoading}
-          chevron={!!sub.relay_included && sub.provider !== "apple"}
-        /></View>
+          chevron={false}
+        /></View>}
+        {sub.relay_included && <View style={styles.listGroup}><SettingsRow title="Manage boxes" onPress={openMachines} /></View>}
       </View>
     )}
     {!subLoading && !sub?.subscribed && <View style={styles.section}>

@@ -219,11 +219,11 @@ export let RentalsPanel = ({ children, style, api, purchases, platform = "web", 
             <Text style={styles.text}>SSH public keys (optional, one per line)</Text>
             <TextInput accessibilityLabel="SSH public keys" value={keys} onChangeText={editKeys} multiline autoCapitalize="none" style={styles.input} />
           </>}
-          <Text style={styles.detail}>Relay included. Bring your own AI account.</Text>
+          <Text style={styles.detail}>Relay included. Bring your own AI account. Any separate relay subscription continues until you cancel it.</Text>
           <Pressable accessibilityRole="button" accessibilityState={{ expanded: showTerms }} onPress={toggleTerms} style={styles.disclosure}><Text style={styles.link}>{showTerms ? "Hide rental terms" : "Rental and deletion terms"}</Text></Pressable>
           {showTerms && <>
           <Text style={styles.detail}>Includes ClawTab, tmux, Git, Claude Code, Codex, and OpenCode. Authorize your own AI accounts in the terminal. Relay access for this box and your own machines is included. AI usage is billed by your AI provider.</Text>
-          <Text style={styles.detail}>Once your box is ready, an existing Stripe relay plan is canceled and its unused paid time credited to future invoices (refunded if the currency differs). Apple plans must be canceled in Apple subscription settings.</Text>
+          <Text style={styles.detail}>Renting or deleting a box does not change a separate Stripe or Apple relay subscription. It keeps its normal billing schedule until you cancel it. Keeping it preserves relay access to your own machines after your rental ends.</Text>
           <Text style={styles.detail}>Billed monthly in advance at provider cost plus 20%. No automatic backups. Cancellation ends renewal; the box is deleted at period end. A failed renewal has 10 days to recover before permanent deletion. Networking pauses at 90% of included traffic until the next provider month. Immediate deletion has no automatic prorated refund.</Text>
           </>}
           <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: accepted }} onPress={toggleAccepted} style={styles.acceptance}>
@@ -247,8 +247,8 @@ export let RentalsPanel = ({ children, style, api, purchases, platform = "web", 
           {rental.past_due && !finished && <Text style={styles.error}>Renewal payment is overdue. Pay before the deletion deadline to keep your box.</Text>}
           {rental.delete_at && !finished && <Text style={styles.error}>Permanent deletion: {date(rental.delete_at)}. Download important files before then.</Text>}
           {rental.state === "ready" && <Text style={styles.detail}>Sign in to your AI account, then start an agent.</Text>}
-          {rental.billing_transition_pending && <Text style={styles.detail}>Switching your existing relay billing. Any unused paid time will be credited automatically.</Text>}
-          {rental.apple_relay_subscription && !finished && <Text style={styles.detail}>Your Apple relay subscription is still active. Cancel it in Apple subscription settings to avoid paying for relay twice; Apple billing cannot be changed here.</Text>}
+          {rental.billing_transition_pending && <Text style={styles.detail}>Finishing a credit for your previously canceled relay plan.</Text>}
+          {rental.apple_relay_subscription && !finished && <Text style={styles.detail}>Your separate Apple relay plan is managed in Apple subscription settings. Renting a box does not change its billing or cancellation settings.</Text>}
           {rental.needs_attention && !finished && <Text style={styles.detail}>An operation is being retried. Your box status will update automatically.</Text>}
           <View style={styles.row}>
             {rental.state === "ready" && <Button primary={!rental.setup.login_terminal} label={rental.setup.login_terminal ? "Resume sign-in" : `Sign in to ${providerName}`} onPress={setupAgent(rental, "login")} disabled={busy || !available} />}

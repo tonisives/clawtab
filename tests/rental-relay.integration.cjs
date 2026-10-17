@@ -59,7 +59,40 @@ let run = async () => {
   await Promise.all([revokedHost, revokedOwn, revokedClient]);
   await assert.rejects(connect(path));
   await assert.rejects(connect(`/v2/ws?token=${owner.access_token}`));
-  console.log('PASS: paid rental without base plan, owner isolation, account-wide own-host access, grace access, and live expiry revocation');
+  // Either provider can keep personal-machine access after the rental ends.
+  for (let provider of ['stripe', 'apple']) {
+    sql(`INSERT INTO subscriptions (user_id,status,current_period_end,stripe_subscription_id,apple_original_transaction_id)
+      VALUES ('${user}','active',now()+interval '30 days',${provider === 'stripe' ? "'sub_standalone'" : 'NULL'},${provider === 'apple' ? "'apple_standalone'" : 'NULL'});`);
+    status = await api('/subscription/status', owner.access_token);
+    assert.equal(status.subscribed, true);
+    assert.equal(status.relay_included, false);
+    assert.equal(status.provider, provider);
+    sql(`UPDATE rentals SET paid_until=now()+interval '30 days',unpaid_since=NULL,delete_at=NULL WHERE id='${id}';`);
+    status = await api('/subscription/status', owner.access_token);
+    assert.equal(status.subscribed, true);
+    assert.equal(status.relay_included, true);
+    assert.equal(status.provider, provider);
+    sql(`UPDATE rentals SET state='deleted' WHERE id='${id}';`);
+    status = await api('/subscription/status', owner.access_token);
+    assert.equal(status.subscribed, true);
+    assert.equal(status.relay_included, false);
+    assert.equal(status.provider, provider);
+    sql(`DELETE FROM subscriptions WHERE user_id='${user}';
+      UPDATE rentals SET state='ready',paid_until=now()-interval '11 days',unpaid_since=now()-interval '11 days' WHERE id='${id}';`);
+  }
+  // A stale webhook for a previously credited Stripe plan must not revive it.
+  sql(`INSERT INTO subscriptions (user_id,status,stripe_subscription_id) VALUES ('${user}','active','sub_retired');
+    INSERT INTO rental_billing_transitions (subscription_id,user_id,rental_id,prepared,retired_at,completed_at)
+      VALUES ('sub_retired','${user}','${id}',true,now(),now());`);
+  status = await api('/subscription/status', owner.access_token);
+  assert.equal(status.subscribed, false);
+  assert.equal(status.provider, null);
+  sql(`UPDATE rentals SET paid_until=now()+interval '30 days',unpaid_since=NULL WHERE id='${id}';`);
+  status = await api('/subscription/status', owner.access_token);
+  assert.equal(status.subscribed, true);
+  assert.equal(status.relay_included, true);
+  assert.equal(status.provider, null);
+  console.log('PASS: rental-only access, owner isolation, grace and expiry, independent Stripe/Apple access, and retired-plan protection');
 };
 run().catch((error) => { console.error(error.message); process.exitCode = 1; }).finally(() => sockets.forEach((ws) => {
   if (ws.readyState === WebSocket.OPEN) ws.close();

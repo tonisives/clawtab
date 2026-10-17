@@ -132,7 +132,7 @@ test('settings disable relay operations offline while preserving account and deb
   assert.ok(rows().every((node) => !node.props.disabled));
 });
 
-let accountHarness = (os = 'ios') => {
+let accountHarness = (os = 'ios', subscription = {}) => {
   let subscribed = false, statusError = false, reconnects = 0, purchases = 0, restores = 0, checkouts = 0, opened = [], resumed;
   let iap = {
     available: true, purchasing: false, loading: false, error: null, diagnostic: null, retry: async () => {}, price: '$4.99',
@@ -146,7 +146,7 @@ let accountHarness = (os = 'ios') => {
     'expo-router': { useRouter: () => ({}) },
     '../../store/auth': { useAuthStore: (select) => select({ userId: 'returning-user', email: 'account@example.com' }) },
     '../../hooks/useResponsive': { useResponsive: () => ({ isWide: false }) },
-    '../../api/client': { getSubscriptionStatus: async () => { if (statusError) throw new Error('Offline'); return { subscribed, provider: subscribed ? 'apple' : null }; }, createCheckout: async () => { checkouts++; return { url: 'https://checkout.example.com' }; } },
+    '../../api/client': { getSubscriptionStatus: async () => { if (statusError) throw new Error('Offline'); return { subscribed, provider: subscribed ? 'apple' : null, ...subscription }; }, createPortal: async () => ({ url: 'https://billing.example.com' }), createCheckout: async () => { checkouts++; return { url: 'https://checkout.example.com' }; } },
     '../../lib/platform': { openUrl: async (url) => opened.push(url) },
     '../../theme/colors': { colors: {} },
     './SettingsPage': { SettingsPage: 'Page', SettingsRow: 'Row', styles: {} },
@@ -257,4 +257,24 @@ test('subscription actions omit chevrons and logout has its own Session section'
   await account.rows().find((node) => node.props.title.startsWith('Subscribe')).props.onPress();
   assert.equal(account.rows().find((node) => node.props.title === 'Manage subscription').props.chevron, false);
   assert.ok(!account.rows().some((node) => /Refresh|Retry subscription/.test(node.props.title)));
+});
+
+test('rental access keeps separate Apple and Stripe subscription management available', async () => {
+  for (let provider of ['apple', 'stripe', null]) {
+    let account = accountHarness('ios', { subscribed: true, relay_included: true, provider });
+    account.render(); await flush();
+    let rows = account.rows();
+    assert.ok(rows.some((row) => row.props.title === 'Manage boxes'));
+    assert.ok(!rows.some((row) => row.props.title.startsWith('Subscribe')));
+    assert.ok(findAll(account.render(), (node) => node.type === 'Text' && typeof node.props.children === 'string' && node.props.children.includes('normal billing schedule')).length);
+    let manage = rows.find((row) => row.props.title.startsWith('Manage existing'));
+    if (!provider) {
+      assert.equal(manage, undefined);
+      continue;
+    }
+    await manage.props.onPress();
+    assert.deepEqual(account.opened, [provider === 'apple' ? 'https://apps.apple.com/account/subscriptions' : 'https://billing.example.com']);
+    assert.equal(account.counts().purchases, 0);
+    assert.equal(account.counts().checkouts, 0);
+  }
 });
