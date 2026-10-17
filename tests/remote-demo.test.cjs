@@ -4,10 +4,15 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const ts = require('../desktop/node_modules/typescript');
+const { createStore } = require('../remote/node_modules/zustand/vanilla');
 
 let loadDemo = (entry, params = {}, os = 'ios') => {
-  let states = [], cursor = 0, pushed = [], cache = {}, effects = [], writes = [];
+  let states = [], cursor = 0, pushed = [], cache = {}, effects = [], writes = [], filterStore;
   let modules = {
+    zustand: { create: (initializer) => {
+      filterStore = createStore(initializer);
+      return (selector) => selector(filterStore.getState());
+    } },
     react: { useRef: (value) => ({ current: value }), useEffect: (effect) => effects.push(effect), useState: (initial) => { let index = cursor++; states[index] ??= typeof initial === 'function' ? initial() : initial; return [states[index], (value) => { states[index] = typeof value === 'function' ? value(states[index]) : value; }]; } },
     'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
     'react-native': { Platform: { OS: os }, StyleSheet: { create: (value) => value }, Text: 'Text', View: 'View', Pressable: 'Pressable', TextInput: 'TextInput', KeyboardAvoidingView: 'KeyboardAvoidingView' },
@@ -26,13 +31,13 @@ let loadDemo = (entry, params = {}, os = 'ios') => {
     let source = ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
     vm.runInNewContext(source, { exports, require: (name) => {
       if (name in modules) return modules[name];
-      if (name.endsWith('/demo/data') || name.endsWith('/demo/shell')) return load(path.resolve(path.dirname(file), `${name}.ts`));
+      if (name.endsWith('/demo/data') || name.endsWith('/demo/shell') || name.endsWith('/store/jobFilter')) return load(path.resolve(path.dirname(file), `${name}.ts`));
       throw new Error(`Demo attempted to import a live dependency: ${name}`);
     } });
     return exports;
   };
   let component = entry === 'index.tsx' ? load(require.resolve('../remote/src/components/DemoJobList.tsx')).DemoJobList : load(require.resolve(entry === 'terminal' ? '../remote/app/demo-agent.tsx' : `../remote/app/demo/${entry}`)).default;
-  return { pushed, writes, render: (props = {}) => {
+  return { pushed, writes, getFilter: () => filterStore.getState(), render: (props = {}) => {
     cursor = 0;
     let tree = component(props);
     for (let node of all(tree)) if (node.type === 'XtermLog') node.props.ref.current = { clear: () => writes.push('clear'), writeText: (text) => writes.push(text) };
@@ -69,6 +74,25 @@ test('demo job and agent details render output offline and disable action contro
     let action = nodes.find((node) => node.type === 'InsetListRow' && node.props.title === 'Agent actions');
     assert.equal(action.props.disabled, true);
     assert.ok(nodes.some((node) => node.type === 'Text' && typeof node.props.children === 'string' && node.props.children.length > 100));
+  }
+});
+
+test('demo lists follow mobile search input and clear across every list mode', () => {
+  for (let platform of ['ios', 'web']) {
+    let demo = loadDemo('index.tsx', {}, platform);
+    assert.equal(demo.render().props.searchQuery, '');
+    demo.getFilter().openSearch();
+    for (let mode of ['tabs', 'jobs', 'latest']) {
+      demo.render().props.onListModeChange(mode);
+      demo.getFilter().setQuery('codex');
+      assert.equal(demo.render().props.searchQuery, 'codex');
+      demo.getFilter().closeSearch();
+      assert.equal(demo.render().props.searchQuery, 'codex');
+      demo.render().props.onSearchQueryChange('deploy');
+      assert.equal(demo.getFilter().query, 'deploy');
+      demo.getFilter().clear();
+      assert.equal(demo.render().props.searchQuery, '');
+    }
   }
 });
 

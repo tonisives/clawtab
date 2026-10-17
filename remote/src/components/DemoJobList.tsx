@@ -4,10 +4,13 @@ import { useRouter } from "expo-router"
 import { Ionicons } from "@expo/vector-icons"
 import { JobListView, colors, type JobListMode, type JobSortMode, type RemoteJob, type DetectedProcess } from "@clawtab/shared"
 import { DEMO_JOBS, DEMO_PROCESSES, DEMO_STATUSES } from "../demo/data"
+import { useJobFilterStore } from "../store/jobFilter"
 
 let savedGroups: [] = []
 export let DemoJobList = ({ onConnect }: { onConnect: () => void }) => {
   let router = useRouter()
+  let searchQuery = useJobFilterStore((state) => state.query)
+  let setSearchQuery = useJobFilterStore((state) => state.setQuery)
   let [collapsedGroups, setCollapsedGroups] = useState(new Set<string>())
   let [listMode, setListMode] = useState<JobListMode>("tabs")
   let [groupTabView, setGroupTabView] = useState<Record<string, "tabs" | "jobs">>({})
@@ -28,7 +31,7 @@ export let DemoJobList = ({ onConnect }: { onConnect: () => void }) => {
     <Text style={styles.separator}>·</Text>
     <Pressable accessibilityRole="button" onPress={onConnect} style={styles.connectButton}><Text style={styles.connect}>Connect to relay</Text></Pressable>
   </View>
-  return <JobListView jobs={DEMO_JOBS} statuses={DEMO_STATUSES} detectedProcesses={DEMO_PROCESSES} savedGroups={savedGroups} compactMobileToolbar mobileAppearance groupTabView={groupTabView} onGroupTabViewChange={changeGroupView} onSetAllGroupTabView={changeAllGroupViews} collapsedGroups={collapsedGroups} onToggleGroup={toggleGroup} listMode={listMode} onListModeChange={setListMode} sortMode={sortMode} onSortChange={setSortMode} onSelectJob={openJob} onSelectProcess={openProcess} headerContent={notice} contentContainerStyle={styles.content} showEmpty />
+  return <JobListView jobs={DEMO_JOBS} statuses={DEMO_STATUSES} detectedProcesses={DEMO_PROCESSES} savedGroups={savedGroups} compactMobileToolbar mobileAppearance searchQuery={searchQuery} onSearchQueryChange={setSearchQuery} groupTabView={groupTabView} onGroupTabViewChange={changeGroupView} onSetAllGroupTabView={changeAllGroupViews} collapsedGroups={collapsedGroups} onToggleGroup={toggleGroup} listMode={listMode} onListModeChange={setListMode} sortMode={sortMode} onSortChange={setSortMode} onSelectJob={openJob} onSelectProcess={openProcess} headerContent={notice} contentContainerStyle={styles.content} showEmpty />
 }
 
 let styles = StyleSheet.create({
