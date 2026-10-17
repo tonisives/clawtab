@@ -131,6 +131,7 @@ test('settings disable relay operations offline while preserving account and deb
 });
 
 let accountHarness = (os = 'ios', subscription = {}) => {
+  let alerts = [];
   let subscribed = false, statusError = false, reconnects = 0, purchases = 0, restores = 0, checkouts = 0, opened = [], resumed;
   let iap = {
     available: true, purchasing: false, loading: false, error: null, diagnostic: null, retry: async () => {}, price: '$4.99',
@@ -145,13 +146,14 @@ let accountHarness = (os = 'ios', subscription = {}) => {
     '../../store/auth': { useAuthStore: (select) => select({ userId: 'returning-user', email: 'account@example.com' }) },
     '../../hooks/useResponsive': { useResponsive: () => ({ isWide: false }) },
     '../../api/client': { getSubscriptionStatus: async () => { if (statusError) throw new Error('Offline'); return { subscribed, provider: subscribed ? 'apple' : null, ...subscription }; }, createPortal: async () => ({ url: 'https://billing.example.com' }), createCheckout: async () => { checkouts++; return { url: 'https://checkout.example.com' }; } },
-    '../../lib/platform': { openUrl: async (url) => opened.push(url) },
+    '../../lib/platform': { openUrl: async (url) => opened.push(url), alertError: (title, message) => alerts.push({ title, message }) },
     '../../theme/colors': { colors: {} },
     './SettingsPage': { SettingsPage: 'Page', SettingsRow: 'Row', styles: {} },
     './navigation': { useSettingsNavigation: () => () => {} },
   });
   return {
     iap,
+    alerts,
     render: () => h.render(h.exports.AccountSettings),
     rows: () => findAll(h.render(h.exports.AccountSettings), (node) => node.type === 'Row'),
     counts: () => ({ purchases, restores, reconnects, checkouts }),
@@ -192,6 +194,19 @@ test('unavailable or unsuccessful native purchases do not grant relay access', a
   await account.rows().find((node) => node.props.title.startsWith('Subscribe')).props.onPress();
   assert.equal(account.counts().reconnects, 0);
   assert.ok(findAll(account.render(), (node) => node.props?.accessibilityRole === 'alert').length);
+  for (let result of ['missing', 'inactive', 'error', 'offline']) {
+    account.iap.restore = async () => {
+      if (result === 'error') throw new Error('Store unavailable');
+      return result !== 'missing';
+    };
+    account.setStatusError(result === 'offline');
+    let alertsBefore = account.alerts.length;
+    await account.rows().find((node) => node.props.title === 'Restore Purchases').props.onPress();
+    assert.equal(account.alerts.length, alertsBefore + 1);
+    assert.equal(findAll(account.render(), (node) => node.props?.accessibilityRole === 'alert').length, 0);
+    assert.ok(!account.rows().some((node) => node.props.title === 'Retry subscription check'));
+    assert.equal(account.counts().reconnects, 0);
+  }
 });
 
 test('web checkout refreshes access when returning to the app', async () => {

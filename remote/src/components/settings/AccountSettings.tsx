@@ -70,15 +70,18 @@ export let AccountSettings = () => {
     if (actionLoading || iap.purchasing) return
     setActionLoading(true)
     setSubscriptionError(null)
+    setSubscriptionCheckFailed(false)
     try {
       if (!await iap.restore()) {
-        setSubscriptionError("No subscription was restored. Check the Apple account used for your purchase and try again.")
+        alertError("Restore Purchases", "No subscription was restored. Check the Apple account used for your purchase and try again.")
         return
       }
       let updated = await refreshSubscription()
-      if (!updated.subscribed) setSubscriptionError("No active subscription was found. You can subscribe below.")
-    } catch { setSubscriptionError("Could not restore your subscription. Please try again.") }
-    finally { setActionLoading(false) }
+      if (!updated.subscribed) alertError("Restore Purchases", "No active subscription was found. You can subscribe below.")
+    } catch {
+      setSubscriptionCheckFailed(false)
+      alertError("Restore Purchases", "Could not restore your subscription. Please try again.")
+    } finally { setActionLoading(false) }
   }
   useEffect(() => {
     if (!userId) { setSubLoading(false); return }

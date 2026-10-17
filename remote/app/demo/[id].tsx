@@ -15,7 +15,7 @@ let DemoDetails = () => {
   if (!job && !process) return <SettingsPage><Text style={styles.description}>This sample was not found. Go back to the demo list.</Text></SettingsPage>
   return <SettingsPage>
     <Stack.Screen options={{ title }} />
-    <Text style={styles.description}>Demo mode · Sample data</Text>
+    <Text style={[styles.description, styles.demoNotice]}>Demo mode · Sample data</Text>
     <InsetList>
       <InsetListRow title={title} description={job ? DEMO_STATUSES[job.slug]?.state : process?.provider} />
       <InsetListRow title="Folder" description={job?.work_dir ?? process?.cwd} selectable />
@@ -39,6 +39,7 @@ let styles = StyleSheet.create({
   section: { gap: 12 },
   heading: { color: colors.textSecondary, fontSize: 13, fontWeight: "600" },
   description: { color: colors.textSecondary, fontSize: 14, lineHeight: 20 },
+  demoNotice: { color: colors.warning },
   output: { padding: 18, backgroundColor: colors.surface, borderRadius: 24, borderCurve: "continuous" },
   log: { color: colors.text, fontSize: 12, lineHeight: 18, fontFamily: "monospace" },
 })

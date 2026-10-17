@@ -49,7 +49,7 @@ export function MessageInput({
         returnKeyType="send"
         inputAccessoryViewID={Platform.OS === "ios" ? "keyboard-dismiss" : undefined}
         onSubmitEditing={handleSend}
-        blurOnSubmit={false}
+        submitBehavior="blurAndSubmit"
         editable={!sending}
       />
       {sending ? (

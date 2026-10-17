@@ -28,15 +28,16 @@ let DemoAgentScreen = () => {
     terminal.current?.writeText(shell.output)
   }, [shell.output])
   let focusInput = () => input.current?.focus()
+  let dismissInput = () => input.current?.blur()
   let openDetails = () => router.push({ pathname: "/demo-agent-details", params: { id, kind } })
   let headerTitle = () => <HeaderTitleWithIcon title={title} icon={<JobKindIcon kind={process ? kindForProcess(process) : "shell"} size={26} bare />} onPress={openDetails} accessibilityLabel="Open pane overview" />
   let headerRight = () => <Pressable accessibilityRole="button" accessibilityLabel="Open pane overview" onPress={openDetails} style={styles.menu} hitSlop={8}><Ionicons name="ellipsis-horizontal" size={22} color={colors.text} /></Pressable>
   return <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={headerHeight}>
     <Stack.Screen options={{ title, headerTitle, headerRight }} />
-    <View style={styles.notice} accessibilityRole="alert"><Ionicons name="alert-circle-outline" size={18} color={colors.textSecondary} /><Text style={styles.noticeText}>Demo</Text></View>
+    <View style={styles.notice} accessibilityRole="alert"><Ionicons name="alert-circle-outline" size={18} color={colors.warning} /><Text style={styles.noticeText}>Demo</Text></View>
     <View style={styles.terminal} accessibilityLabel="Shell logs"><XtermLog ref={terminal} interactive={false} forceDarkTheme extendedViewport /></View>
     <SafeAreaView edges={["bottom"]} style={styles.composer}>
-      <TextInput ref={input} value={draft} onChangeText={setDraft} placeholder={shell.placeholder} placeholderTextColor="#a1a1aa" accessibilityLabel="Demo prompt" accessibilityHint="Try typing locally. Demo prompts are not sent to an agent." multiline autoCapitalize="none" autoCorrect={false} style={styles.input} />
+      <TextInput ref={input} value={draft} onChangeText={setDraft} placeholder={shell.placeholder} placeholderTextColor="#a1a1aa" accessibilityLabel="Demo prompt" accessibilityHint="Try typing locally. Demo prompts are not sent to an agent." multiline submitBehavior="blurAndSubmit" blurOnSubmit onSubmitEditing={dismissInput} returnKeyType="done" autoCapitalize="none" autoCorrect={false} style={styles.input} />
       <View style={styles.inputFooter}><Text style={styles.model}>{shell.model}</Text><Pressable accessibilityRole="button" accessibilityLabel="Show keyboard" onPress={focusInput} style={styles.menu}><Ionicons name="keypad-outline" size={22} color="#a1a1aa" /></Pressable></View>
     </SafeAreaView>
   </KeyboardAvoidingView>
@@ -46,8 +47,8 @@ export default DemoAgentScreen
 let styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
   terminal: { flex: 1, minHeight: 0, backgroundColor: "#1c1c1e" },
-  notice: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 24, paddingVertical: 12 },
-  noticeText: { color: colors.textSecondary, fontSize: 13 },
+  notice: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 24, paddingVertical: 12, backgroundColor: colors.warningBg },
+  noticeText: { color: colors.warning, fontSize: 13 },
   composer: { backgroundColor: "#252528", paddingHorizontal: 16, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: "#48484a" },
   input: { color: "#e4e4e4", fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", fontSize: 14, minHeight: 52, maxHeight: 120, paddingTop: 16, paddingBottom: 8, textAlignVertical: "top" },
   inputFooter: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },

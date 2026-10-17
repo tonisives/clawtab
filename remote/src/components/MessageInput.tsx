@@ -51,7 +51,7 @@ export function MessageInput({
           placeholderTextColor={colors.textMuted}
           returnKeyType="send"
           onSubmitEditing={handleSend}
-          blurOnSubmit={false}
+          submitBehavior="blurAndSubmit"
           editable={!sending}
         />
         {sending ? (

@@ -676,6 +676,7 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
             onChangeText={handleNativeInputChange}
             onKeyPress={handleNativeKeyPress}
             onSubmitEditing={() => sendNativeInput("\r")}
+            submitBehavior="blurAndSubmit"
             autoCapitalize="none"
             autoCorrect={false}
             spellCheck={false}
