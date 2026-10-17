@@ -12,9 +12,9 @@ export let SettingsPage = ({ children }: { children: ReactNode }) => {
     <ContentContainer><View style={styles.container}>{children}</View></ContentContainer>
   </ScrollView>
 }
-export let SettingsRow = ({ title, detail, onPress, disabled = false }: { title: string; detail?: string; onPress: () => void; disabled?: boolean }) => <Pressable accessibilityRole="button" disabled={disabled} accessibilityState={{ disabled }} onPress={onPress} style={({ pressed }) => [styles.row, (pressed || disabled) && styles.pressed]}>
+export let SettingsRow = ({ title, detail, onPress, disabled = false, chevron = true }: { title: string; detail?: string; onPress: () => void; disabled?: boolean; chevron?: boolean }) => <Pressable accessibilityRole="button" disabled={disabled} accessibilityState={{ disabled }} onPress={onPress} style={({ pressed }) => [styles.row, (pressed || disabled) && styles.pressed]}>
   <View style={styles.rowText}><Text style={styles.rowTitle}>{title}</Text>{detail && <Text style={styles.rowDetail}>{detail}</Text>}</View>
-  <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+  {chevron && <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />}
 </Pressable>
 export let styles = StyleSheet.create({
   pageContent: { flexGrow: 1, paddingBottom: 32 },

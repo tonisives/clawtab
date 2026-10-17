@@ -19,14 +19,21 @@ export let AccountSettings = () => {
   let [subLoading, setSubLoading] = useState(true)
   let [actionLoading, setActionLoading] = useState(false)
   let [subscriptionError, setSubscriptionError] = useState<string | null>(null)
+  let [subscriptionCheckFailed, setSubscriptionCheckFailed] = useState(false)
   let iap = useIap()
   let subscriptionRequest = useRef(0)
   let refreshSubscription = async () => {
     let revision = ++subscriptionRequest.current
-    let updated = await api.getSubscriptionStatus()
+    let updated: api.SubscriptionStatus
+    try { updated = await api.getSubscriptionStatus() }
+    catch (error) {
+      if (revision === subscriptionRequest.current) setSubscriptionCheckFailed(true)
+      throw error
+    }
     if (revision !== subscriptionRequest.current) return updated
     setSub(updated)
     setSubscriptionError(null)
+    setSubscriptionCheckFailed(false)
     if (updated.subscribed && !machineState().connected) reconnectMachines()
     return updated
   }
@@ -47,7 +54,10 @@ export let AccountSettings = () => {
           return
         }
         let updated = await refreshSubscription()
-        if (!updated.subscribed) setSubscriptionError("Your purchase is still being confirmed. Refresh your subscription in a moment.")
+        if (!updated.subscribed) {
+          setSubscriptionError("Your purchase is still being confirmed. Retry the subscription check in a moment.")
+          setSubscriptionCheckFailed(true)
+        }
       } else {
         let { url } = await api.createCheckout()
         await openUrl(url)
@@ -79,9 +89,13 @@ export let AccountSettings = () => {
         if (!active || revision !== subscriptionRequest.current) return
         setSub(value)
         setSubscriptionError(null)
+        setSubscriptionCheckFailed(false)
         if (value.subscribed && !machineState().connected) reconnectMachines()
       }).catch(() => {
-        if (active && revision === subscriptionRequest.current) setSubscriptionError("Could not check your subscription. Please try again.")
+        if (active && revision === subscriptionRequest.current) {
+          setSubscriptionError("Could not check your subscription. Please try again.")
+          setSubscriptionCheckFailed(true)
+        }
       }).finally(() => { if (active) setSubLoading(false) })
     }
     void refresh()
@@ -176,25 +190,27 @@ export let AccountSettings = () => {
           title={actionLoading ? "Loading…" : sub.relay_included ? (sub.provider === "apple" ? "Manage existing Apple subscription" : "Manage boxes") : "Manage subscription"}
           onPress={sub.relay_included && sub.provider !== "apple" ? openMachines : handleManageBilling}
           disabled={actionLoading}
+          chevron={!!sub.relay_included && sub.provider !== "apple"}
         /></View>
       </View>
     )}
     {!subLoading && !sub?.subscribed && <View style={styles.section}>
       <Text style={styles.sectionTitle}>Relay subscription</Text>
       <View style={styles.listGroup}>
-        <SettingsRow title={actionLoading || iap.purchasing ? "Please wait…" : Platform.OS === "ios" && iap.loading ? "Loading purchases…" : iap.price ? `Subscribe · ${iap.price} / month` : "Subscribe"} detail={Platform.OS === "ios" && iap.error ? iap.error : "Connect your machines through the relay"} onPress={handleSubscribe} disabled={!sub || actionLoading || iap.purchasing || (Platform.OS === "ios" && !iap.available)} />
+        <SettingsRow title={actionLoading || iap.purchasing ? "Please wait…" : Platform.OS === "ios" && iap.loading ? "Loading purchases…" : iap.price ? `Subscribe · ${iap.price} / month` : "Subscribe"} detail={Platform.OS === "ios" && iap.error ? iap.error : "Connect your machines through the relay"} onPress={handleSubscribe} disabled={!sub || actionLoading || iap.purchasing || (Platform.OS === "ios" && !iap.available)} chevron={false} />
       </View>
     </View>}
     {Platform.OS === "ios" && !sub?.subscribed && !!iap.error && <View style={styles.section}>
-      <View style={styles.listGroup}><SettingsRow title="Retry loading purchases" onPress={iap.retry} disabled={iap.loading || actionLoading || iap.purchasing} /></View>
+      <View style={styles.listGroup}><SettingsRow title="Retry loading purchases" onPress={iap.retry} disabled={iap.loading || actionLoading || iap.purchasing} chevron={false} /></View>
       {!!iap.diagnostic && <Text selectable style={styles.usageDescription}>{iap.diagnostic}</Text>}
     </View>}
     {Platform.OS === "ios" && <View style={styles.listGroup}>
-      <SettingsRow title="Restore Purchases" onPress={handleRestore} disabled={subLoading || actionLoading || iap.purchasing} />
+      <SettingsRow title="Restore Purchases" onPress={handleRestore} disabled={subLoading || actionLoading || iap.purchasing} chevron={false} />
     </View>}
-    <View style={styles.listGroup}><SettingsRow title="Refresh subscription" onPress={handleRefreshSubscription} disabled={subLoading || actionLoading || iap.purchasing} /></View>
     {!!subscriptionError && <Text accessibilityRole="alert" style={styles.usageDescription}>{subscriptionError}</Text>}
+    {subscriptionCheckFailed && <View style={styles.listGroup}><SettingsRow title={actionLoading ? "Checking…" : "Retry subscription check"} onPress={handleRefreshSubscription} disabled={subLoading || actionLoading || iap.purchasing} chevron={false} /></View>}
     <View style={styles.section}>
+      <Text style={styles.sectionTitle}>Session</Text>
       <Pressable
         style={[styles.dangerBtn, isWide && styles.btnConstrained]}
         onPress={handleLogout}

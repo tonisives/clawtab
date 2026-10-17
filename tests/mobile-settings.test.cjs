@@ -133,7 +133,7 @@ test('settings disable relay operations offline while preserving account and deb
 });
 
 let accountHarness = (os = 'ios') => {
-  let subscribed = false, reconnects = 0, purchases = 0, restores = 0, checkouts = 0, opened = [], resumed;
+  let subscribed = false, statusError = false, reconnects = 0, purchases = 0, restores = 0, checkouts = 0, opened = [], resumed;
   let iap = {
     available: true, purchasing: false, loading: false, error: null, diagnostic: null, retry: async () => {}, price: '$4.99',
     purchase: async () => { purchases++; subscribed = true; return true; },
@@ -146,7 +146,7 @@ let accountHarness = (os = 'ios') => {
     'expo-router': { useRouter: () => ({}) },
     '../../store/auth': { useAuthStore: (select) => select({ userId: 'returning-user', email: 'account@example.com' }) },
     '../../hooks/useResponsive': { useResponsive: () => ({ isWide: false }) },
-    '../../api/client': { getSubscriptionStatus: async () => ({ subscribed, provider: subscribed ? 'apple' : null }), createCheckout: async () => { checkouts++; return { url: 'https://checkout.example.com' }; } },
+    '../../api/client': { getSubscriptionStatus: async () => { if (statusError) throw new Error('Offline'); return { subscribed, provider: subscribed ? 'apple' : null }; }, createCheckout: async () => { checkouts++; return { url: 'https://checkout.example.com' }; } },
     '../../lib/platform': { openUrl: async (url) => opened.push(url) },
     '../../theme/colors': { colors: {} },
     './SettingsPage': { SettingsPage: 'Page', SettingsRow: 'Row', styles: {} },
@@ -160,6 +160,7 @@ let accountHarness = (os = 'ios') => {
     opened,
     resume: () => resumed('active'),
     setSubscribed: (value) => { subscribed = value; },
+    setStatusError: (value) => { statusError = value; },
   };
 };
 
@@ -227,4 +228,33 @@ test('account distinguishes StoreKit loading from a retryable catalog failure', 
   assert.equal(rows.find((node) => node.props.title.startsWith('Subscribe')).props.detail, account.iap.error);
   await rows.find((node) => node.props.title === 'Retry loading purchases').props.onPress();
   assert.equal(retried, true);
+});
+
+test('subscription checks offer retry only after failure and hide it after recovery', async () => {
+  let account = accountHarness();
+  account.render(); await flush();
+  assert.ok(!account.rows().some((node) => /Refresh|Retry subscription/.test(node.props.title)));
+  account.setStatusError(true);
+  account.resume(); await flush();
+  let retry = account.rows().find((node) => node.props.title === 'Retry subscription check');
+  assert.equal(retry.props.chevron, false);
+  await retry.props.onPress();
+  assert.ok(account.rows().some((node) => node.props.title === 'Retry subscription check'));
+  account.setStatusError(false);
+  await retry.props.onPress();
+  assert.ok(!account.rows().some((node) => /Refresh|Retry subscription/.test(node.props.title)));
+  assert.equal(findAll(account.render(), (node) => node.props?.accessibilityRole === 'alert').length, 0);
+});
+
+test('subscription actions omit chevrons and logout has its own Session section', async () => {
+  let account = accountHarness();
+  account.render(); await flush();
+  assert.ok(account.rows().every((node) => node.props.chevron === false));
+  let session = findAll(account.render(), (node) => node.type === 'View').find((node) =>
+    Array.isArray(node.props.children) && node.props.children.some((child) => child?.type === 'Text' && child.props.children === 'Session'));
+  assert.ok(session);
+  assert.equal(findAll(session, (node) => node.type === 'Text' && node.props.children === 'Log Out').length, 1);
+  await account.rows().find((node) => node.props.title.startsWith('Subscribe')).props.onPress();
+  assert.equal(account.rows().find((node) => node.props.title === 'Manage subscription').props.chevron, false);
+  assert.ok(!account.rows().some((node) => /Refresh|Retry subscription/.test(node.props.title)));
 });
