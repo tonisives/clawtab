@@ -86,22 +86,7 @@ fn detect_processes(
         .filter(|info| info.status == crate::managed::Status::Running)
     {
         let pid = info.child_pid.to_string();
-        let row = ProcessRow {
-            pane_id: &info.id,
-            command: &info.launch.program,
-            cwd: &info.launch.cwd,
-            session: "",
-            window: &info.id,
-            pane_pid: &pid,
-            pane_title: info.launch.metadata.get("title").cloned(),
-            display_name: info
-                .launch
-                .metadata
-                .get("display_name")
-                .cloned()
-                .filter(|name| !name.is_empty()),
-            pane_slug_tag: info.launch.metadata.get("slug").cloned(),
-        };
+        let row = managed_row(&info, &pid);
         let provider = crate::agent_session::detect_process_provider(&pid, Some(&process_snapshot))
             .unwrap_or(crate::agent_session::ProcessProvider::Shell);
         let (group, job) = resolve_group_job(&row, &running_panes, &slug_to_group, &match_entries);
@@ -123,6 +108,25 @@ fn detect_processes(
     );
 
     results
+}
+
+fn managed_row<'a>(info: &'a crate::managed::SessionInfo, pid: &'a str) -> ProcessRow<'a> {
+    ProcessRow {
+        pane_id: &info.id,
+        command: &info.launch.program,
+        cwd: &info.launch.cwd,
+        session: "",
+        window: &info.id,
+        pane_pid: pid,
+        pane_title: info.launch.metadata.get("title").cloned(),
+        display_name: info
+            .launch
+            .metadata
+            .get("display_name")
+            .cloned()
+            .filter(|name| !name.is_empty()),
+        pane_slug_tag: info.launch.metadata.get("slug").cloned(),
+    }
 }
 
 fn apply_managed_fallbacks(process: &mut DetectedProcess, info: &crate::managed::SessionInfo) {
