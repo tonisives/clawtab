@@ -787,10 +787,7 @@ export default function JobsScreen() {
   }, [visibleDetectedProcesses, selectedProcess, processesLoaded, split.cleanStaleLeaves])
 
   let demoMode = !machines.connected && !connected
-  let connectRelay = () => {
-    if (isSplitView || isWide) setSidebarSection("settings")
-    else router.push("/settings")
-  }
+  let connectRelay = () => router.push("/account")
   const jobListLoading = demoMode ? null : jobListLoadingState({ connected: connected || machines.connected, desktopOnline: hostOnline, loaded })
 
   const bannerContent = (

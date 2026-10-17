@@ -28,7 +28,8 @@ export let SettingsHome = () => {
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>Relay connection</Text>
       <View style={styles.listGroup}>
-        <SettingsRow title={relay.connected ? "Connected to relay" : "Connect to relay"} detail={relay.error ?? (relay.connected ? "Online" : "Disconnected")} onPress={retryRelay} />
+        <SettingsRow title={relay.connected ? "Connected to relay" : "Connect to relay"} detail={relay.error ?? (relay.connected ? "Online" : "Disconnected")} onPress={open("account")} />
+        {!relay.connected && <SettingsRow title="Retry connection" onPress={retryRelay} />}
       </View>
     </View>
     <View style={styles.section}>

@@ -6,13 +6,15 @@ const vm = require('node:vm');
 const ts = require('../desktop/node_modules/typescript');
 
 let loadDemo = (entry, params = {}) => {
-  let states = [], cursor = 0, pushed = [], cache = {};
+  let states = [], cursor = 0, pushed = [], cache = {}, effects = [], writes = [];
   let modules = {
-    react: { useState: (initial) => { let index = cursor++; states[index] ??= typeof initial === 'function' ? initial() : initial; return [states[index], (value) => { states[index] = typeof value === 'function' ? value(states[index]) : value; }]; } },
+    react: { useRef: (value) => ({ current: value }), useEffect: (effect) => effects.push(effect), useState: (initial) => { let index = cursor++; states[index] ??= typeof initial === 'function' ? initial() : initial; return [states[index], (value) => { states[index] = typeof value === 'function' ? value(states[index]) : value; }]; } },
     'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
     'react-native': { Platform: { OS: 'ios' }, StyleSheet: { create: (value) => value }, Text: 'Text', View: 'View', Pressable: 'Pressable' },
     'expo-router': { useRouter: () => ({ push: (route) => pushed.push(route) }), useLocalSearchParams: () => params, Stack: { Screen: 'Screen' } },
-    '@clawtab/shared': { JobListView: 'JobListView', colors: {} },
+    '@clawtab/shared': { JobListView: 'JobListView', XtermLog: 'XtermLog', JobKindIcon: 'JobKindIcon', kindForProcess: (process) => process.provider, colors: {} },
+    '@expo/vector-icons': { Ionicons: 'Ionicons' },
+    '../src/components/HeaderButtons': { HeaderTitleWithIcon: 'HeaderTitleWithIcon' },
     '../../../shared/src/components/InsetList': { InsetList: 'InsetList', InsetListRow: 'InsetListRow' },
     '../../src/components/settings/SettingsPage': { SettingsPage: 'SettingsPage' },
   };
@@ -27,8 +29,14 @@ let loadDemo = (entry, params = {}) => {
     } });
     return exports;
   };
-  let component = entry === 'index.tsx' ? load(require.resolve('../remote/src/components/DemoJobList.tsx')).DemoJobList : load(require.resolve(`../remote/app/demo/${entry}`)).default;
-  return { pushed, render: (props = {}) => { cursor = 0; return component(props); } };
+  let component = entry === 'index.tsx' ? load(require.resolve('../remote/src/components/DemoJobList.tsx')).DemoJobList : load(require.resolve(entry === 'terminal' ? '../remote/app/demo-agent.tsx' : `../remote/app/demo/${entry}`)).default;
+  return { pushed, writes, render: (props = {}) => {
+    cursor = 0;
+    let tree = component(props);
+    for (let node of all(tree)) if (node.type === 'XtermLog') node.props.ref.current = { clear: () => writes.push('clear'), writeText: (text) => writes.push(text) };
+    effects.splice(0).forEach((effect) => effect());
+    return tree;
+  } };
 };
 let all = (node) => Array.isArray(node) ? node.flatMap(all) : node && typeof node === 'object' ? [node, ...all(node.props?.children)] : [];
 
@@ -45,7 +53,7 @@ test('demo list has isolated sample groups and no live mutation callbacks', () =
   assert.equal(connected, true);
   props.onSelectJob(props.jobs[0]);
   props.onSelectProcess(props.detectedProcesses[0]);
-  assert.ok(demo.pushed.every((route) => route.pathname === '/demo/[id]'));
+  assert.ok(demo.pushed.every((route) => route.pathname === '/demo-agent'));
   assert.equal(demo.pushed[0].params.kind, 'job');
   assert.equal(demo.pushed[1].params.kind, 'process');
   props.onToggleGroup('sample');
@@ -60,4 +68,21 @@ test('demo job and agent details render output offline and disable action contro
     assert.equal(action.props.disabled, true);
     assert.ok(nodes.some((node) => node.type === 'Text' && typeof node.props.children === 'string' && node.props.children.length > 100));
   }
+});
+
+
+test('demo agents open a read-only shell terminal with a native header menu', () => {
+  let demo = loadDemo('terminal', { id: 'demo-pane-codex', kind: 'process' });
+  let nodes = all(demo.render());
+  let terminal = nodes.find((node) => node.type === 'XtermLog');
+  assert.equal(terminal.props.interactive, false);
+  assert.equal(terminal.props.onData, undefined);
+  assert.equal(demo.writes[0], 'clear');
+  assert.ok(demo.writes[1].length > 100);
+  let screen = nodes.find((node) => node.type === 'Screen');
+  let menu = screen.props.options.headerRight();
+  assert.equal(menu.props.accessibilityLabel, 'Open pane overview');
+  menu.props.onPress();
+  assert.equal(demo.pushed[0].pathname, '/demo-agent-details');
+  assert.equal(demo.pushed[0].params.id, 'demo-pane-codex');
 });

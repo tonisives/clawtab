@@ -7,6 +7,7 @@ const ts = require('../desktop/node_modules/typescript');
 let harness = (file, modules = {}) => {
   let states = [], effects = [], queued = [], cursor = 0;
   let react = {
+    useRef: (initial) => { let index = cursor++; states[index] ??= { current: initial }; return states[index]; },
     useState: (initial) => {
       let index = cursor++;
       if (!(index in states)) states[index] = typeof initial === 'function' ? initial() : initial;
@@ -122,9 +123,89 @@ test('settings disable relay operations offline while preserving account and deb
   let connection = offline.find((node) => node.props.title === 'Connect to relay');
   assert.equal(connection.props.detail, relay.error);
   connection.props.onPress();
+  assert.deepEqual(navigated, ['account']);
+  offline.find((node) => node.props.title === 'Retry connection').props.onPress();
   assert.equal(retries, 1);
   offline.find((node) => node.props.title === 'Account & subscription').props.onPress();
-  assert.deepEqual(navigated, ['account']);
+  assert.deepEqual(navigated, ['account', 'account']);
   relay = { connected: true, error: null };
   assert.ok(rows().every((node) => !node.props.disabled));
+});
+
+let accountHarness = (os = 'ios') => {
+  let subscribed = false, reconnects = 0, purchases = 0, restores = 0, checkouts = 0, opened = [], resumed;
+  let iap = {
+    available: true, purchasing: false, price: '$4.99',
+    purchase: async () => { purchases++; subscribed = true; return true; },
+    restore: async () => { restores++; subscribed = true; return true; },
+  };
+  let h = harness('remote/src/components/settings/AccountSettings.tsx', {
+    '@clawtab/shared': { machineState: () => ({ connected: false }), reconnectMachines: () => reconnects++ },
+    '../../hooks/useIap': { useIap: () => iap },
+    'react-native': { Platform: { OS: os }, AppState: { addEventListener: (_, handler) => { resumed = handler; return { remove: () => {} }; } }, View: 'View', Text: 'Text', Pressable: 'Pressable', ActivityIndicator: 'ActivityIndicator' },
+    'expo-router': { useRouter: () => ({}) },
+    '../../store/auth': { useAuthStore: (select) => select({ userId: 'returning-user', email: 'account@example.com' }) },
+    '../../hooks/useResponsive': { useResponsive: () => ({ isWide: false }) },
+    '../../api/client': { getSubscriptionStatus: async () => ({ subscribed, provider: subscribed ? 'apple' : null }), createCheckout: async () => { checkouts++; return { url: 'https://checkout.example.com' }; } },
+    '../../lib/platform': { openUrl: async (url) => opened.push(url) },
+    '../../theme/colors': { colors: {} },
+    './SettingsPage': { SettingsPage: 'Page', SettingsRow: 'Row', styles: {} },
+    './navigation': { useSettingsNavigation: () => () => {} },
+  });
+  return {
+    iap,
+    render: () => h.render(h.exports.AccountSettings),
+    rows: () => findAll(h.render(h.exports.AccountSettings), (node) => node.type === 'Row'),
+    counts: () => ({ purchases, restores, reconnects, checkouts }),
+    opened,
+    resume: () => resumed('active'),
+    setSubscribed: (value) => { subscribed = value; },
+  };
+};
+
+test('account offers native subscribe and restore, then reconnects only after access is confirmed', async () => {
+  for (let action of ['subscribe', 'restore']) {
+    let account = accountHarness();
+    account.render();
+    await flush();
+    let rows = account.rows();
+    let subscribe = rows.find((node) => node.props.title.startsWith('Subscribe'));
+    assert.equal(subscribe.props.disabled, false);
+    assert.match(subscribe.props.title, /\$4\.99/);
+    let button = action === 'subscribe' ? subscribe : rows.find((node) => node.props.title === 'Restore Purchases');
+    await button.props.onPress();
+    assert.equal(account.counts().reconnects, 1);
+    assert.equal(account.counts()[action === 'subscribe' ? 'purchases' : 'restores'], 1);
+    assert.equal(account.counts().checkouts, 0);
+    assert.ok(account.rows().some((node) => node.props.title === 'Manage subscription'));
+    assert.ok(!account.rows().some((node) => node.props.title.startsWith('Subscribe')));
+  }
+});
+
+test('unavailable or unsuccessful native purchases do not grant relay access', async () => {
+  let account = accountHarness();
+  account.render();
+  await flush();
+  account.iap.available = false;
+  assert.equal(account.rows().find((node) => node.props.title.startsWith('Subscribe')).props.disabled, true);
+  account.iap.available = true;
+  account.iap.purchase = async () => false;
+  await account.rows().find((node) => node.props.title.startsWith('Subscribe')).props.onPress();
+  assert.equal(account.counts().reconnects, 0);
+  assert.ok(findAll(account.render(), (node) => node.props?.accessibilityRole === 'alert').length);
+});
+
+test('web checkout refreshes access when returning to the app', async () => {
+  let account = accountHarness('web');
+  account.render();
+  await flush();
+  await account.rows().find((node) => node.props.title.startsWith('Subscribe')).props.onPress();
+  assert.equal(account.counts().checkouts, 1);
+  assert.equal(account.counts().purchases, 0);
+  assert.deepEqual(account.opened, ['https://checkout.example.com']);
+  assert.equal(account.counts().reconnects, 0);
+  account.setSubscribed(true);
+  account.resume();
+  await flush();
+  assert.equal(account.counts().reconnects, 1);
 });

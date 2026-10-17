@@ -19,19 +19,20 @@ export let DemoJobList = ({ onConnect }: { onConnect: () => void }) => {
     else next.add(group)
     return next
   })
-  let openJob = (job: RemoteJob) => router.push({ pathname: "/demo/[id]", params: { id: job.slug, kind: "job" } })
-  let openProcess = (process: DetectedProcess) => router.push({ pathname: "/demo/[id]", params: { id: process.pane_id, kind: "process" } })
+  let openJob = (job: RemoteJob) => router.push({ pathname: "/demo-agent", params: { id: job.slug, kind: "job" } })
+  let openProcess = (process: DetectedProcess) => router.push({ pathname: "/demo-agent", params: { id: process.pane_id, kind: "process" } })
   let notice = <View style={styles.notice}>
     <Text style={styles.title}>Demo</Text>
     <Text style={styles.separator}>·</Text>
-    <Pressable accessibilityRole="button" onPress={onConnect}><Text style={styles.connect}>Connect to relay</Text></Pressable>
+    <Pressable accessibilityRole="button" onPress={onConnect} style={styles.connectButton}><Text style={styles.connect}>Connect to relay</Text></Pressable>
   </View>
   return <JobListView jobs={DEMO_JOBS} statuses={DEMO_STATUSES} detectedProcesses={DEMO_PROCESSES} savedGroups={savedGroups} compactMobileToolbar={Platform.OS !== "web"} groupTabView={groupTabView} onGroupTabViewChange={changeGroupView} onSetAllGroupTabView={changeAllGroupViews} collapsedGroups={collapsedGroups} onToggleGroup={toggleGroup} listMode={listMode} onListModeChange={setListMode} sortMode={sortMode} onSortChange={setSortMode} onSelectJob={openJob} onSelectProcess={openProcess} headerContent={notice} showEmpty />
 }
 
 let styles = StyleSheet.create({
   notice: { paddingHorizontal: 24, paddingVertical: 12, flexDirection: "row", alignItems: "center", gap: 8 },
-  title: { color: colors.textSecondary, fontSize: 14 },
+  title: { color: colors.textSecondary, fontSize: 16, fontWeight: "600" },
   separator: { color: colors.textMuted, fontSize: 14 },
-  connect: { color: colors.accent, fontSize: 14 },
+  connectButton: { minHeight: 44, paddingHorizontal: 16, justifyContent: "center", borderRadius: 22, backgroundColor: colors.surface },
+  connect: { color: colors.accent, fontSize: 16, fontWeight: "600" },
 })

@@ -5,7 +5,7 @@ import { useAuthStore } from "../../src/store/auth"
 let DemoScreen = () => {
   let router = useRouter()
   let authenticated = useAuthStore((state) => state.isAuthenticated)
-  let connect = () => router.dismissTo(authenticated ? "/settings" : "/login")
+  let connect = () => router.dismissTo(authenticated ? "/account" : "/login")
   return <DemoJobList onConnect={connect} />
 }
 export default DemoScreen
