@@ -105,14 +105,16 @@ fn detect_processes(
         let provider = crate::agent_session::detect_process_provider(&pid, Some(&process_snapshot))
             .unwrap_or(crate::agent_session::ProcessProvider::Shell);
         let (group, job) = resolve_group_job(&row, &running_panes, &slug_to_group, &match_entries);
-        results.push(build_remote(
+        let mut process = build_remote(
             &row,
             provider,
             group,
             job,
             &process_snapshot,
             overrides.get(&info.id),
-        ));
+        );
+        apply_managed_fallbacks(&mut process, &info);
+        results.push(process);
     }
 
     log::trace!(
@@ -121,6 +123,34 @@ fn detect_processes(
     );
 
     results
+}
+
+fn apply_managed_fallbacks(process: &mut DetectedProcess, info: &crate::managed::SessionInfo) {
+    // A fresh agent may not have a provider conversation yet. Keep it named and
+    // sortable in the remote list using the launch metadata we already own.
+    if process
+        .display_name
+        .as_deref()
+        .is_none_or(|name| name.trim().is_empty())
+    {
+        process.display_name = Some(match info.launch.provider.as_str() {
+            "codex" => "Codex".into(),
+            "claude" => "Claude Code".into(),
+            "opencode" => "OpenCode".into(),
+            "antigravity" => "Antigravity".into(),
+            _ => std::path::Path::new(&info.launch.program)
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned(),
+        });
+    }
+    if process.session_started_at.is_none() {
+        process.session_started_at = i64::try_from(info.started_at)
+            .ok()
+            .and_then(|secs| chrono::DateTime::from_timestamp(secs, 0))
+            .map(|time| time.to_rfc3339());
+    }
 }
 
 fn trace_panes(stdout: &str, pane_lines: usize) {
@@ -412,7 +442,54 @@ fn normalize_optional_text(value: String) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_row;
+    use super::{apply_managed_fallbacks, parse_row};
+
+    #[test]
+    fn fresh_managed_agent_has_identity_and_start_time_without_a_conversation() {
+        let mut process = serde_json::from_value(serde_json::json!({
+            "pane_id": "managed:test", "cwd": "/work", "version": "", "provider": "codex",
+            "can_fork_session": false, "can_send_skills": false, "can_inject_secrets": false,
+            "tmux_session": "", "window_name": "", "log_lines": "",
+        }))
+        .unwrap();
+        let info = crate::managed::SessionInfo {
+            id: "managed:test".into(),
+            execution_id: "execution".into(),
+            protocol_version: 1,
+            launcher_version: "test".into(),
+            owner_pid: 0,
+            child_pid: 0,
+            started_at: 1_700_000_000,
+            launch: crate::managed::Launch {
+                program: "codex".into(),
+                args: Vec::new(),
+                cwd: "/work".into(),
+                size: Default::default(),
+                close_with_terminal: false,
+                provider: "codex".into(),
+                conversation_id: None,
+                metadata: Default::default(),
+            },
+            status: crate::managed::Status::Running,
+            exit_code: None,
+        };
+        apply_managed_fallbacks(&mut process, &info);
+        assert_eq!(process.display_name.as_deref(), Some("Codex"));
+        assert_eq!(
+            process.session_started_at.as_deref(),
+            Some("2023-11-14T22:13:20+00:00")
+        );
+        assert!(process.first_query.is_none());
+
+        process.display_name = Some("My conversation".into());
+        process.session_started_at = Some("2026-10-18 09:00".into());
+        apply_managed_fallbacks(&mut process, &info);
+        assert_eq!(process.display_name.as_deref(), Some("My conversation"));
+        assert_eq!(
+            process.session_started_at.as_deref(),
+            Some("2026-10-18 09:00")
+        );
+    }
 
     #[test]
     fn preserves_saved_name_separately_from_terminal_title() {

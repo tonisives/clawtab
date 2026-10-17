@@ -176,7 +176,7 @@ fn resume_launch(info: SessionInfo) -> Result<Launch, String> {
 
 fn local_size() -> Size {
     let (cols, rows) = terminal::size().unwrap_or((80, 25));
-    Size::new(cols, rows.saturating_sub(1))
+    Size::new(cols, rows)
 }
 
 struct TerminalGuard;
@@ -293,21 +293,47 @@ fn render(snapshot: &super::Snapshot, previous_size: &mut Option<Size>) -> Resul
         *previous_size = Some(snapshot.size);
     }
     write!(stdout, "{}\x1b[?2004h", snapshot.ansi).map_err(|e| e.to_string())?;
-    let status = if snapshot.control.holder.is_some() {
-        "Mobile has control. Press a key to reclaim."
-    } else {
-        "ClawTab session | Ctrl+] d: detach"
-    };
-    let size = local_size();
-    write!(
-        stdout,
-        "\x1b7\x1b[{};1H\x1b[0m\x1b[2K{}\x1b8",
-        size.rows + 1,
-        status.chars().take(size.cols as usize).collect::<String>()
-    )
-    .map_err(|e| e.to_string())?;
+    render_indicator(
+        &mut stdout,
+        local_size().cols,
+        snapshot.control.holder.is_some(),
+    )?;
     stdout.flush().map_err(|e| e.to_string())?;
     Ok(())
+}
+
+fn render_indicator(
+    stdout: &mut impl Write,
+    cols: u16,
+    remote_control: bool,
+) -> Result<(), String> {
+    // Overlay one cell without reserving a terminal row or moving the agent cursor.
+    let style = if remote_control { "1;36" } else { "2;37" };
+    write!(stdout, "\x1b7\x1b[1;{cols}H\x1b[0;{style}mC\x1b[0m\x1b8").map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn indicator_preserves_terminal_content_and_cursor() {
+        for remote in [false, true] {
+            let mut output = Vec::new();
+            render_indicator(&mut output, 80, remote).unwrap();
+            let mut terminal = super::super::screen::Screen::new(Size::new(80, 3));
+            terminal.process(b"header\r\nbody\r\nfooter\x1b[2;3H");
+            terminal.process(&output);
+            let text = terminal.capture(false, false, 3);
+            let rows = text.lines().collect::<Vec<_>>();
+            assert_eq!(rows.len(), 3);
+            assert_eq!(rows[0].trim_end().chars().last(), Some('C'));
+            assert!(rows[0].starts_with("header"));
+            assert!(rows[1].starts_with("body"));
+            assert!(rows[2].starts_with("footer"));
+            assert_eq!(terminal.process(b"\x1b[6n"), b"\x1b[2;3R");
+        }
+    }
 }
 
 fn encode_key(key: KeyEvent, modes: &InputModes) -> Vec<u8> {
