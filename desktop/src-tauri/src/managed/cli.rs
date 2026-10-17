@@ -235,14 +235,10 @@ pub fn attach(id: &str, origin: bool) -> Result<(), String> {
                         return Ok(());
                     }
                     client.request(Request::LocalInput { data: vec![29] })?;
-                    if key.code == KeyCode::Char(']')
-                        && key.modifiers.contains(KeyModifiers::CONTROL)
-                    {
+                    if is_detach_prefix(key) {
                         continue;
                     }
-                } else if key.code == KeyCode::Char(']')
-                    && key.modifiers.contains(KeyModifiers::CONTROL)
-                {
+                } else if is_detach_prefix(key) {
                     prefix = true;
                     continue;
                 }
@@ -272,6 +268,12 @@ pub fn attach(id: &str, origin: bool) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+fn is_detach_prefix(key: KeyEvent) -> bool {
+    // Crossterm decodes the legacy Ctrl+] byte (0x1d) as Ctrl+5. Terminals
+    // using an extended keyboard protocol can report the bracket directly.
+    matches!(key.code, KeyCode::Char(']' | '5')) && key.modifiers.contains(KeyModifiers::CONTROL)
 }
 
 fn enter_terminal() -> Result<TerminalGuard, String> {
@@ -315,6 +317,22 @@ fn render_indicator(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn detach_prefix_accepts_legacy_and_extended_terminal_keys() {
+        assert!(is_detach_prefix(KeyEvent::new(
+            KeyCode::Char('5'),
+            KeyModifiers::CONTROL
+        )));
+        assert!(is_detach_prefix(KeyEvent::new(
+            KeyCode::Char(']'),
+            KeyModifiers::CONTROL
+        )));
+        assert!(!is_detach_prefix(KeyEvent::new(
+            KeyCode::Char('5'),
+            KeyModifiers::NONE
+        )));
+    }
 
     #[test]
     fn indicator_preserves_terminal_content_and_cursor() {
