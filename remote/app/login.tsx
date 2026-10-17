@@ -96,6 +96,8 @@ export default function LoginScreen() {
     };
   }, [completeGoogleLogin, googleAuthSessionResult, loading]);
 
+  let openDemo = () => router.push("/demo");
+
   const handleGoogleLogin = async () => {
     setLoading(true);
     setError(null);
@@ -243,6 +245,10 @@ export default function LoginScreen() {
             disabled={loading}
           >
             <Text style={styles.googleBtnText}>Sign in with Google</Text>
+          </Pressable>
+
+          <Pressable accessibilityRole="button" onPress={openDemo} disabled={loading} style={[styles.googleBtn, loading && styles.btnDisabled]}>
+            <Text style={styles.googleBtnText}>Try demo</Text>
           </Pressable>
 
           <Pressable onPress={() => { setTempServerUrl(serverUrl); setShowServer(true); }}>

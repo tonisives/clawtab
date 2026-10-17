@@ -1,5 +1,5 @@
 import { machineOnboardingChrome, machineOnboardingContent, machineManagementContent } from "../../../src/components/MachineSetup";
-import { useMachines, useHiddenGroups, machineHostRequest, machineRequest, machineState, scopedMessage, matchesSavedGroup, savedGroupKey, newOperationId, saveAccountPreferences } from "@clawtab/shared";
+import { useMachines, useHiddenGroups, machineHostRequest, machineRequest, machineState, scopedMessage, matchesSavedGroup, savedGroupKey, newOperationId, saveAccountPreferences, reconnectMachines } from "@clawtab/shared";
 import { machineApi } from "../../../src/api/client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
@@ -785,10 +785,20 @@ export default function JobsScreen() {
     })
   }, [visibleDetectedProcesses, selectedProcess, processesLoaded, split.cleanStaleLeaves])
 
-  const jobListLoading = jobListLoadingState({ connected: connected || machines.connected, desktopOnline: hostOnline, loaded })
+  let openDemo = () => router.push("/demo")
+  let retryRelay = () => reconnectMachines()
+  const jobListLoading = machines.error ? null : jobListLoadingState({ connected: connected || machines.connected, desktopOnline: hostOnline, loaded })
 
   const bannerContent = (
     <>
+      {machines.error && <View style={styles.relayNotice}>
+        <Text accessibilityRole="alert" style={styles.bannerText}>{machines.error}</Text>
+        <Pressable accessibilityRole="button" onPress={retryRelay}><Text style={styles.relayLink}>Retry connection</Text></Pressable>
+      </View>}
+      {!hostOnline && <View style={styles.relayNotice}>
+        <Text style={styles.bannerText}>Explore sample jobs and agents while your machines are unavailable.</Text>
+        <Pressable accessibilityRole="button" onPress={openDemo}><Text style={styles.relayLink}>Try demo</Text></Pressable>
+      </View>}
       {jobListLoading && (
         <View style={styles.loadingContainer}>
           <LoadingBar label={jobListLoading.label} progress={jobListLoading.progress} />
@@ -1535,6 +1545,8 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   bannerWarn: { backgroundColor: "#332800" },
+  relayNotice: { padding: 16, gap: 12 },
+  relayLink: { color: colors.accent, fontSize: 14, fontWeight: "600" },
   bannerText: { color: colors.textSecondary, fontSize: 12 },
   searchKeyboardRoot: {
     flex: 1,

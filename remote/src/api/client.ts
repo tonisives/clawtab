@@ -211,6 +211,19 @@ export async function clearTokens() {
 }
 
 export async function getWsUrl(): Promise<string> {
+  // WebSocket handshakes hide HTTP rejection details on native platforms.
+  // Check the same entitlement over HTTP so the UI can explain a denied relay.
+  let controller = new AbortController();
+  let timeout = setTimeout(() => controller.abort(), 15_000);
+  try {
+    let access = await getSubscriptionStatus(controller.signal);
+    if (!access.subscribed) throw new Error("This account does not have active relay access. Check your subscription in Settings, or explore the demo.");
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error("The relay access check timed out. Check your connection and retry.");
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
   // Ensure token is fresh before connecting
   let token = await storage.getItem(KEYS.accessToken);
   if (token && isTokenExpiringSoon(token)) {
@@ -295,8 +308,8 @@ export interface SubscriptionStatus {
   provider: string | null;
 }
 
-export async function getSubscriptionStatus(): Promise<SubscriptionStatus> {
-  return request<SubscriptionStatus>("/subscription/status", { method: "GET" }, true);
+export async function getSubscriptionStatus(signal?: AbortSignal): Promise<SubscriptionStatus> {
+  return request<SubscriptionStatus>("/subscription/status", { method: "GET", signal }, true);
 }
 
 export async function createCheckout(): Promise<{ url: string }> {

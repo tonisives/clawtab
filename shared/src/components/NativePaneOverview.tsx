@@ -83,7 +83,7 @@ let PaneDetailsPage = () => {
     </InsetList>}
     <SessionAction />
     {!!actions?.agentActions?.length && <View style={styles.actionsLink}>
-      <MachineSettingsPageButton title="Agent actions"><AgentActionsPage /></MachineSettingsPageButton>
+      <InsetList><MachineSettingsPageButton title="Agent actions"><AgentActionsPage /></MachineSettingsPageButton></InsetList>
       {actions.agentActionRun && <Text style={styles.hint}>{actions.agentActionRun.error ?? actions.agentActionRun.progress}</Text>}
     </View>}
     <QueryCard title="First command" query={pane.firstQuery} />

@@ -112,7 +112,9 @@ function WebSocketProvider({ children }: { children: React.ReactNode }) {
     useJobsStore.setState({ jobs: [], statuses: {}, detectedProcesses: [], agentActivity: {}, questionPaneIds: new Set(), queryDetailsHiddenPaneIds: new Set(), loaded: false, cachedLoad: false, processesLoaded: false });
     useNotificationStore.getState().reset();
 
+    let active = true;
     loadCache().then((cached) => {
+      if (!active) return;
       if (cached) {
         useJobsStore.getState().hydrateFromCache(cached.jobs, cached.statuses);
         if (cached.questions.length > 0) {
@@ -122,6 +124,7 @@ function WebSocketProvider({ children }: { children: React.ReactNode }) {
       }
     });
     loadPendingAnswers();
+    return () => { active = false; };
   }, []);
 
   useWebSocket();
@@ -136,6 +139,7 @@ export default function RootLayout() {
   const loading = useAuthStore((s) => s.loading);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const init = useAuthStore((s) => s.init);
+  const userId = useAuthStore((s) => s.userId);
   const isSettingsTab = mobileHeaderTab === "settings";
   const isMobileWeb = Platform.OS === "web" && !isWide && !isSplitView;
 
@@ -200,7 +204,7 @@ export default function RootLayout() {
   }
 
   return (
-    <WebSocketProvider>
+    <WebSocketProvider key={userId}>
       {content}
     </WebSocketProvider>
   );

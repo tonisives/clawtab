@@ -92,6 +92,7 @@ let synchronize = () => {
 }
 export let useWebSocket = () => {
   let authenticated = useAuthStore((s) => s.isAuthenticated)
+  let userId = useAuthStore((s) => s.userId)
   useEffect(() => {
     if (!authenticated) {
       terminalCache.clear()
@@ -194,7 +195,7 @@ export let useWebSocket = () => {
       setWsSend(null)
       useWsStore.getState().reset()
     }
-  }, [authenticated])
+  }, [authenticated, userId])
   let send = useCallback((message: ClientMessage) => sendResource(message), [])
   return { send }
 }

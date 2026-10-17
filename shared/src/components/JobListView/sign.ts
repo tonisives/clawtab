@@ -26,6 +26,7 @@ export const GROUP_AGENT_PROVIDER_STORAGE_KEY = "clawtab_group_agent_providers";
 export type GroupedRowPosition = "single" | "first" | "middle" | "last";
 
 export interface JobListViewProps {
+  savedGroups?: import("../../util/jobGroups").SavedJobGroup[];
   machineOnboarding?: MachineOnboardingContent;
   machineManagement?: MachineOnboardingContent;
   machineChrome?: MachineOnboardingChrome;

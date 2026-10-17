@@ -11,7 +11,7 @@ import { useSelectableItems } from "./useSelectableItems";
 
 export function useJobListView(props: JobListViewProps) {
   let machines = useMachines();
-  let savedGroups = useMemo(() => Object.values(machines.jobGroups).filter((group) => !machines.filter || group.machine_id === machines.filter), [machines.jobGroups, machines.filter]);
+  let savedGroups = useMemo(() => props.savedGroups ?? Object.values(machines.jobGroups).filter((group) => !machines.filter || group.machine_id === machines.filter), [props.savedGroups, machines.jobGroups, machines.filter]);
   const [sortOpen, setSortOpen] = useState(false);
   const [collapsedJobPanes, setCollapsedJobPanes] = useState<Set<string>>(() => new Set());
   const [hiddenSectionCollapsed, setHiddenSectionCollapsed] = useState(true);

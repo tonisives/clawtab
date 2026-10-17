@@ -64,7 +64,7 @@ test('already-versioned websocket URLs remain versioned once; launch target is e
   t.after(stop);
   await new Promise(setImmediate);
   let ws = sockets[0];
-  assert.equal(ws.url, 'ws://localhost/v2/ws?token=fixture');
+  assert.equal(ws.url, 'ws://localhost/v2/ws?token=fixture&managed_sessions=1');
   ws.onopen(); ws.receive({ type: 'machines', connection_id: 'connection', machines: [{ id: a, online: false, owned: true }, { id: b, online: false, owned: true }] });
   assert.equal(client.machineState().selected, null);
   let replies = [];

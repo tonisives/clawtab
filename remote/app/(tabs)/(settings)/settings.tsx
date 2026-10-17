@@ -1,3 +1,4 @@
+import { useRouter } from "expo-router"
 import { createNativeStackNavigator } from "expo-router/build/react-navigation/native-stack"
 import { NavigationContainer, NavigationIndependentTree, DarkTheme, useIsFocused } from "expo-router/react-navigation"
 import { Platform, Text, View } from "react-native"
@@ -17,6 +18,8 @@ import { colors } from "../../../src/theme/colors"
 type Routes = { [Page in SettingsRoute]: undefined } & { "machine-page": MachinePageParams }
 let Stack = createNativeStackNavigator<Routes>()
 let SettingsHome = () => {
+  let router = useRouter()
+  let openDemo = () => router.push("/demo")
   let email = useAuthStore((state) => state.email)
   let navigate = useSettingsNavigation()
   let open = (page: SettingsRoute) => () => navigate(page)
@@ -32,6 +35,7 @@ let SettingsHome = () => {
       <Text style={styles.sectionTitle}>Machines & models</Text>
       <View style={styles.listGroup}>
         <SettingsRow title="Model usage" detail="Usage limits by machine and provider" onPress={open("usage")} />
+        <SettingsRow title="Try demo" detail="Explore sample jobs and agents" onPress={openDemo} />
         <SettingsRow title="Manage machines" detail="Connections, models, and rented boxes" onPress={open("machines")} />
       </View>
     </View>
