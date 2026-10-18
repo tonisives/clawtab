@@ -1,9 +1,10 @@
 import { Stack, useLocalSearchParams } from "expo-router"
-import { StyleSheet, Text, View } from "react-native"
+import { Pressable, StyleSheet, Text, View } from "react-native"
 import { colors } from "@clawtab/shared"
 import { InsetList, InsetListRow } from "../../../shared/src/components/InsetList"
 import { SettingsPage } from "../../src/components/settings/SettingsPage"
 import { DEMO_JOBS, DEMO_LOGS, DEMO_PROCESSES, DEMO_RUNS, DEMO_STATUSES } from "../../src/demo/data"
+import { showDemoInfo } from "../../src/demo/info"
 
 let unavailable = () => {}
 let DemoDetails = () => {
@@ -15,7 +16,9 @@ let DemoDetails = () => {
   if (!job && !process) return <SettingsPage><Text style={styles.description}>This sample was not found. Go back to the demo list.</Text></SettingsPage>
   return <SettingsPage>
     <Stack.Screen options={{ title }} />
-    <Text style={[styles.description, styles.demoNotice]}>Demo mode · Sample data</Text>
+    <Pressable accessibilityRole="button" accessibilityLabel="About demo mode" onPress={showDemoInfo} style={styles.demoButton}>
+      <Text style={[styles.description, styles.demoNotice]}>Demo mode · Sample data</Text>
+    </Pressable>
     <InsetList>
       <InsetListRow title={title} description={job ? DEMO_STATUSES[job.slug]?.state : process?.provider} />
       <InsetListRow title="Folder" description={job?.work_dir ?? process?.cwd} selectable />
@@ -40,6 +43,7 @@ let styles = StyleSheet.create({
   heading: { color: colors.textSecondary, fontSize: 13, fontWeight: "600" },
   description: { color: colors.textSecondary, fontSize: 14, lineHeight: 20 },
   demoNotice: { color: colors.warning },
+  demoButton: { minHeight: 44, justifyContent: "center" },
   output: { padding: 18, backgroundColor: colors.surface, borderRadius: 24, borderCurve: "continuous" },
   log: { color: colors.text, fontSize: 12, lineHeight: 18, fontFamily: "monospace" },
 })
