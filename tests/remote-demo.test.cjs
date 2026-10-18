@@ -31,7 +31,7 @@ let loadDemo = (entry, params = {}, os = 'ios') => {
     let source = ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
     vm.runInNewContext(source, { exports, require: (name) => {
       if (name in modules) return modules[name];
-      if (name.endsWith('/demo/data') || name.endsWith('/demo/shell') || name.endsWith('/store/jobFilter')) return load(path.resolve(path.dirname(file), `${name}.ts`));
+      if (name.endsWith('/demo/data') || name.endsWith('/demo/shell') || name.endsWith('/demo/info') || name.endsWith('/store/jobFilter')) return load(path.resolve(path.dirname(file), `${name}.ts`));
       throw new Error(`Demo attempted to import a live dependency: ${name}`);
     } });
     return exports;
@@ -56,7 +56,7 @@ test('demo list has isolated sample groups and no live mutation callbacks', () =
   let connected = false;
   let header = all(demo.render({ onConnect: () => { connected = true; } }).props.headerContent);
   assert.deepEqual(header.filter((node) => node.type === 'Text').map((node) => node.props.children), ['Demo', '·', 'Connect to relay']);
-  header.find((node) => node.type === 'Pressable').props.onPress();
+  header.find((node) => node.props?.accessibilityLabel === 'Connect to relay').props.onPress();
   assert.equal(connected, true);
   props.onSelectJob(props.jobs[0]);
   props.onSelectProcess(props.detectedProcesses[0]);
