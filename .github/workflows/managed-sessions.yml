@@ -14,7 +14,7 @@ jobs:
         os: [windows-latest, macos-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     permissions:
-      contents: read
+      contents: write
     defaults:
       run:
         working-directory: desktop/src-tauri
@@ -93,3 +93,9 @@ jobs:
         with:
           name: clawtab-windows-x86_64
           path: clawtab-windows-*.zip*
+      - name: Attach Windows release assets
+        if: runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/v')
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.ref_name }}" clawtab-windows-x86_64.zip clawtab-windows-x86_64.zip.sha256 --clobber --repo "${{ github.repository }}"

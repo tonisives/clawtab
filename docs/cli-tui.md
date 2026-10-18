@@ -13,6 +13,22 @@
 cwtctl <command> [args]
 ```
 
+### Managed terminal sessions
+
+These commands work with managed sessions on macOS, Linux, and Windows. The owner process keeps each terminal alive independently of the desktop app and daemon. Remote access still needs the host daemon.
+
+| Command | Description |
+|---------|-------------|
+| `session start -- <program> [args]` | Start and attach in the current directory |
+| `session start --detached -- <program> [args]` | Start in the background |
+| `session list [--json]` | List session IDs and state |
+| `session attach <id>` | Reconnect to a running session |
+| `session capture <id> [--history] [--ansi]` | Read terminal output |
+| `session stop <id>` | Stop the session |
+| `session resume <id>` | Attach if running, or resume an interrupted provider conversation when available |
+
+Closing the terminal keeps its agent running by default. Add `--close-with-terminal` or `--keep-running` to choose a policy at launch. Press **Ctrl+] then d** to detach explicitly. The [managed session guide](managed-sessions.md) explains Remote control and recovery.
+
 ### Commands requiring daemon
 
 | Command | Description |

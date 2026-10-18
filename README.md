@@ -1,7 +1,7 @@
 <h3 align="center">ClawTab - Tmux-Native Agent Control Plane</h3>
 
 <p align="center">
-  Run Claude Code, Codex, OpenCode, and shell jobs in durable tmux panes, then control the same sessions from your terminal, desktop, web, or phone.
+  Run Claude Code, Codex, OpenCode, and shell jobs in durable tmux panes or managed terminals, then control the same sessions from your terminal, desktop, web, or phone.
 </p>
 
 <p align="center">
@@ -152,6 +152,8 @@ For an interactive agent job, `cwtctl jobs run` waits for the daemon to publish 
 </p>
 
 ## Managed CLI sessions
+
+New in [ClawTab 0.6.0](docs/release-notes.md). Follow the [session guide](docs/managed-sessions.md) for setup and recovery.
 
 ClawTab also supports agents without tmux. Launch the command through ClawTab so a separate owner process can keep its terminal alive:
 

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Platform, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
 import { spacing } from "../../theme/spacing";
 import type { GroupedRowPosition, ListItem } from "./sign";

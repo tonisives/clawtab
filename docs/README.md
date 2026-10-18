@@ -2,7 +2,7 @@
 
 # ClawTab Documentation
 
-ClawTab is a macOS desktop app for scheduling and managing automated jobs -- shell scripts, Claude Code prompts, and project-based AI agents -- all orchestrated through tmux.
+ClawTab is a macOS desktop app for scheduling and managing automated jobs -- shell scripts, Claude Code prompts, and project-based AI agents -- using tmux or managed terminals. Managed terminals also support Linux and Windows hosts.
 
 ## Table of Contents
 
@@ -30,3 +30,7 @@ ClawTab is a macOS desktop app for scheduling and managing automated jobs -- she
 12. [Architecture](./architecture.md) -- System design, execution flow, IPC
 13. [Project Layout](./project-layout.md) -- Repository structure (relay, mobile, protocol)
 14. [File Reference](./file-reference.md) -- Config paths, schemas, log locations
+
+- [Sessions without tmux](managed-sessions.md) -- Start, detach, reconnect, and control a managed terminal
+- [Platform installation](platform-builds.md) -- macOS, Linux, and Windows host packages
+- [0.6.0 release notes](release-notes.md) -- Managed sessions, Windows hosting, and other changes

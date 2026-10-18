@@ -1,4 +1,4 @@
-import { Platform, Text, TouchableOpacity, View } from "react-native";
+import { Text, TouchableOpacity, View } from "react-native";
 
 import { colors } from "../../theme/colors";
 import { spacing } from "../../theme/spacing";

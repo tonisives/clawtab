@@ -3,8 +3,10 @@
 ## Prerequisites
 
 - macOS
-- [tmux](https://github.com/tmux/tmux) installed
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) (for Claude/Folder jobs)
+- Your provider CLI: Claude Code, Codex, or OpenCode
+- [tmux](https://github.com/tmux/tmux) for tmux sessions; optional for managed sessions
+
+For Linux or Windows hosts, follow [platform installation](platform-builds.md).
 
 ## Installation
 
@@ -30,6 +32,18 @@ Both methods produce three binaries:
 | `clawtab` | GUI app (Tauri window) |
 | `cwtctl` | CLI for headless control |
 | `cwttui` | Terminal UI (ratatui) |
+
+## Start an agent from your terminal
+
+ClawTab 0.6 can run agents without tmux. In your project directory:
+
+```sh
+cwtctl session start -- codex
+```
+
+Use `claude` or `opencode` for another provider. The agent keeps running when you close the terminal. Press Ctrl+] then d to detach, and use `cwtctl session list` followed by `cwtctl session attach <id>` to reconnect. Pair the host with `cwtctl setup` to see it in Remote.
+
+See [sessions without tmux](managed-sessions.md) for control, shutdown, and recovery options, and the [0.6.0 release notes](release-notes.md) for the full update.
 
 ## Setup Wizard
 
