@@ -34,6 +34,7 @@ async function request<T>(
   path: string,
   options: RequestInit = {},
   useAuth = false,
+  expectedUserId?: string,
 ): Promise<T> {
   const serverUrl = await getServerUrl();
   const headers: Record<string, string> = {
@@ -49,6 +50,7 @@ async function request<T>(
     }
   }
 
+  if (expectedUserId && await storage.getItem(KEYS.userId) !== expectedUserId) throw new Error("Account changed");
   let resp = await fetch(`${serverUrl}${path}`, {
     ...options,
     headers,
@@ -57,6 +59,7 @@ async function request<T>(
   // Auto-refresh on 401 for authenticated requests
   if (resp.status === 401 && useAuth) {
     try {
+      if (expectedUserId && await storage.getItem(KEYS.userId) !== expectedUserId) throw new Error("Account changed");
       // Check if another request already refreshed the token
       const currentToken = await storage.getItem(KEYS.accessToken);
       if (currentToken && currentToken !== originalToken) {
@@ -69,6 +72,7 @@ async function request<T>(
           headers["Authorization"] = `Bearer ${newToken}`;
         }
       }
+      if (expectedUserId && await storage.getItem(KEYS.userId) !== expectedUserId) throw new Error("Account changed");
       resp = await fetch(`${serverUrl}${path}`, { ...options, headers });
     } catch {
       // refresh failed, throw the original 401
@@ -157,6 +161,7 @@ export async function refreshToken(): Promise<AuthResponse> {
 
   refreshInFlight = (async () => {
     const token = await storage.getItem(KEYS.refreshToken);
+    const userId = await storage.getItem(KEYS.userId);
     if (!token) throw Object.assign(new Error("No refresh token"), { status: 401 });
 
     let controller = new AbortController();
@@ -172,6 +177,9 @@ export async function refreshToken(): Promise<AuthResponse> {
       clearTimeout(timeout);
     }
 
+    if (await storage.getItem(KEYS.refreshToken) !== token || await storage.getItem(KEYS.userId) !== userId || (userId && resp.user_id !== userId)) {
+      throw new Error("Account changed during refresh");
+    }
     await storage.setItem(KEYS.refreshToken, resp.refresh_token);
     await storage.setItem(KEYS.accessToken, resp.access_token);
 
@@ -287,17 +295,16 @@ export async function appleAuth(
   return resp;
 }
 
-export interface VerifyReceiptRequest {
-  original_transaction_id: string;
-  product_id: string;
-  expires_date_ms?: number;
-}
+export type VerifyReceiptRequest = { signed_transaction: string };
 
-export async function verifyIapReceipt(req: VerifyReceiptRequest): Promise<{ subscribed: boolean }> {
-  return request<{ subscribed: boolean }>("/iap/verify-receipt", {
-    method: "POST",
-    body: JSON.stringify(req),
-  }, true);
+export async function verifyIapReceipt(req: VerifyReceiptRequest, userId: string): Promise<{ subscribed: boolean }> {
+  let controller = new AbortController();
+  let timer = setTimeout(() => controller.abort(), 45_000);
+  try {
+    return await request<{ subscribed: boolean }>("/iap/verify-receipt", {
+      method: "POST", body: JSON.stringify(req), signal: controller.signal,
+    }, true, userId);
+  } finally { clearTimeout(timer); }
 }
 
 export interface SubscriptionStatus {
@@ -306,10 +313,18 @@ export interface SubscriptionStatus {
   status: string | null;
   current_period_end: string | null;
   provider: string | null;
+  providers?: string[];
 }
 
-export async function getSubscriptionStatus(signal?: AbortSignal): Promise<SubscriptionStatus> {
-  return request<SubscriptionStatus>("/subscription/status", { method: "GET", signal }, true);
+export async function getSubscriptionStatus(signal?: AbortSignal, userId?: string): Promise<SubscriptionStatus> {
+  let controller = new AbortController();
+  let abort = () => controller.abort();
+  if (signal?.aborted) abort();
+  signal?.addEventListener("abort", abort);
+  let timer = signal ? undefined : setTimeout(abort, 15_000);
+  try {
+    return await request<SubscriptionStatus>("/subscription/status", { method: "GET", signal: controller.signal }, true, userId);
+  } finally { clearTimeout(timer); signal?.removeEventListener("abort", abort); }
 }
 
 export async function createCheckout(): Promise<{ url: string }> {

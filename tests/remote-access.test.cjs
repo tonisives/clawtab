@@ -78,3 +78,22 @@ test('a stalled relay access check times out with a short explanation', async ()
   expire();
   await assert.rejects(connecting, /Relay connection timed out/);
 });
+
+test('purchase verification never switches to another signed-in account', async () => {
+  let h = loadApi(async()=>({body:{subscribed:true}}));
+  await h.api.storeTokens(token(), 'fixture-refresh', 'account-b');
+  await assert.rejects(h.api.verifyIapReceipt({signed_transaction:'fixture.payload.signature'}, 'account-a'), /Account changed/);
+  assert.equal(h.calls.length,0);
+});
+
+test('a late token refresh cannot overwrite credentials after an account switch', async () => {
+  let finish;
+  let h=loadApi(async()=>new Promise(resolve=>{finish=resolve}));
+  await h.api.storeTokens(token(1),'old-refresh','account-a');
+  let refreshing=h.api.refreshToken();await new Promise(setImmediate);
+  await h.api.storeTokens('new-access','new-refresh','account-b');
+  finish({body:{user_id:'account-a',access_token:'old-access',refresh_token:'old-rotated'}});
+  await assert.rejects(refreshing,/Account changed/);
+  assert.equal(h.values.get('clawtab_access_token'),'new-access');
+  assert.equal(h.values.get('clawtab_refresh_token'),'new-refresh');
+});

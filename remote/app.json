@@ -3,9 +3,7 @@
     "name": "ClawTab",
     "slug": "clawtab",
     "version": "1.3.1",
-    "runtimeVersion": {
-      "policy": "appVersion"
-    },
+    "runtimeVersion": "1.3.1-iap1",
     "updates": {
       "enabled": true,
       "checkAutomatically": "ON_LOAD",
@@ -23,17 +21,20 @@
       "supportsTablet": true,
       "deploymentTarget": "16.4",
       "bundleIdentifier": "cc.clawtab",
-      "buildNumber": "3",
+      "buildNumber": "5",
       "usesAppleSignIn": true,
       "infoPlist": {
         "UISupportedInterfaceOrientations": [
           "UIInterfaceOrientationPortrait",
           "UIInterfaceOrientationLandscapeLeft",
           "UIInterfaceOrientationLandscapeRight"
-        ]
+        ],
+        "ITSAppUsesNonExemptEncryption": false
       },
       "entitlements": {
-        "keychain-access-groups": ["$(AppIdentifierPrefix)cc.clawtab"],
+        "keychain-access-groups": [
+          "$(AppIdentifierPrefix)cc.clawtab"
+        ],
         "aps-environment": "production"
       }
     },
@@ -50,6 +51,7 @@
       "bundler": "metro"
     },
     "plugins": [
+      "./plugins/withIapPreflightFix",
       "./plugins/with-native-answer",
       "./plugins/with-ios-simulator-keychain",
       "expo-router",

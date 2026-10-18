@@ -1,3 +1,4 @@
+import { useIapRecovery } from "../src/hooks/useIap";
 import { initializeWebAnalytics } from "../src/lib/analytics";
 import { MachineOnboardingProvider } from "@clawtab/shared";
 import { machineOnboardingChrome, machineOnboardingContent, machineManagementContent } from "../src/components/MachineSetup";
@@ -133,6 +134,7 @@ function WebSocketProvider({ children }: { children: React.ReactNode }) {
 }
 
 export default function RootLayout() {
+  useIapRecovery();
   useWebDarkScrollbars();
   const { isSplitView, isWide } = useResponsive();
   const mobileHeaderTab = useMobileHeaderStore((s) => s.tab);

@@ -14,6 +14,7 @@ pub struct SubscriptionStatus {
     pub status: Option<String>,
     pub current_period_end: Option<String>,
     pub provider: Option<String>,
+    pub providers: Vec<String>,
 }
 
 pub async fn status(
@@ -25,6 +26,7 @@ pub async fn status(
 
     Ok(Json(SubscriptionStatus {
         subscribed,
+        providers: billing::subscription_providers(&state.pool, claims.sub).await?,
         relay_included: billing::rental_included(&state.pool, claims.sub).await?,
         status: sub.as_ref().map(|s| s.status.clone()),
         current_period_end: sub

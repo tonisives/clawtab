@@ -21,16 +21,21 @@ export let AccountSettings = () => {
   let [subscriptionError, setSubscriptionError] = useState<string | null>(null)
   let [subscriptionCheckFailed, setSubscriptionCheckFailed] = useState(false)
   let iap = useIap()
+  let [diagnosticsExpanded, setDiagnosticsExpanded] = useState(false)
+  let toggleDiagnostics = () => setDiagnosticsExpanded((value) => !value)
+  let openPrivacy = () => openUrl("https://clawtab.cc/privacy")
+  let openTerms = () => openUrl("https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")
   let subscriptionRequest = useRef(0)
   let refreshSubscription = async () => {
     let revision = ++subscriptionRequest.current
     let updated: api.SubscriptionStatus
-    try { updated = await api.getSubscriptionStatus() }
+    try { updated = await api.getSubscriptionStatus(undefined, userId ?? undefined) }
     catch (error) {
-      if (revision === subscriptionRequest.current) setSubscriptionCheckFailed(true)
+      if (revision !== subscriptionRequest.current || useAuthStore.getState().userId !== userId) return null
+      setSubscriptionCheckFailed(true)
       throw error
     }
-    if (revision !== subscriptionRequest.current) return updated
+    if (revision !== subscriptionRequest.current || useAuthStore.getState().userId !== userId) return null
     setSub(updated)
     setSubscriptionError(null)
     setSubscriptionCheckFailed(false)
@@ -49,12 +54,14 @@ export let AccountSettings = () => {
     setSubscriptionError(null)
     try {
       if (Platform.OS === "ios") {
-        if (!await iap.purchase()) {
-          setSubscriptionError("Purchase was not completed. Try again or restore an existing purchase.")
+        let result = await iap.purchase()
+        if (result.status === "cancelled") return
+        if (result.status !== "purchased") {
+          setSubscriptionError(result.message ?? "Purchase was not completed. Try again or restore an existing purchase.")
           return
         }
         let updated = await refreshSubscription()
-        if (!updated.subscribed) {
+        if (updated && !updated.subscribed) {
           setSubscriptionError("Your purchase is still being confirmed. Retry the subscription check in a moment.")
           setSubscriptionCheckFailed(true)
         }
@@ -72,23 +79,30 @@ export let AccountSettings = () => {
     setSubscriptionError(null)
     setSubscriptionCheckFailed(false)
     try {
-      if (!await iap.restore()) {
-        alertError("Restore Purchases", "No subscription was restored. Check the Apple account used for your purchase and try again.")
+      let result = await iap.restore()
+      if (result.status === "cancelled") return
+      if (result.status !== "purchased") {
+        alertError("Restore Purchases", result.message ?? "No subscription was restored. Check the Apple account used for your purchase and try again.")
         return
       }
       let updated = await refreshSubscription()
-      if (!updated.subscribed) alertError("Restore Purchases", "No active subscription was found. You can subscribe below.")
+      if (updated && !updated.subscribed) alertError("Restore Purchases", "No active subscription was found. You can subscribe below.")
     } catch {
       setSubscriptionCheckFailed(false)
       alertError("Restore Purchases", "Could not restore your subscription. Please try again.")
     } finally { setActionLoading(false) }
   }
   useEffect(() => {
+    ++subscriptionRequest.current
+    setSub(null)
+    setSubscriptionError(null)
+    setSubscriptionCheckFailed(false)
     if (!userId) { setSubLoading(false); return }
+    setSubLoading(true)
     let active = true
     let refresh = () => {
       let revision = ++subscriptionRequest.current
-      return api.getSubscriptionStatus().then((value) => {
+      return api.getSubscriptionStatus(undefined, userId ?? undefined).then((value) => {
         if (!active || revision !== subscriptionRequest.current) return
         setSub(value)
         setSubscriptionError(null)
@@ -103,12 +117,12 @@ export let AccountSettings = () => {
     }
     void refresh()
     let listener = AppState.addEventListener("change", (state) => { if (state === "active") void refresh() })
-    return () => { active = false; listener.remove() }
-  }, [userId])
-  let handleManageBilling = async () => {
+    return () => { active = false; ++subscriptionRequest.current; listener.remove() }
+  }, [userId, iap.activation])
+  let handleManageProvider = async (provider: string | null) => {
     setActionLoading(true)
     try {
-      if (sub?.provider === "apple") {
+      if (provider === "apple") {
         await openUrl("https://apps.apple.com/account/subscriptions")
       } else {
         let { url } = await api.createPortal()
@@ -121,6 +135,9 @@ export let AccountSettings = () => {
       setActionLoading(false)
     }
   }
+  let handleManageBilling = () => handleManageProvider(sub?.provider ?? null)
+  let manageApple = () => handleManageProvider("apple")
+  let manageStripe = () => handleManageProvider("stripe")
   let [deleteLoading, setDeleteLoading] = useState(false)
   let [dangerExpanded, setDangerExpanded] = useState(false)
   let router = useRouter()
@@ -190,7 +207,10 @@ export let AccountSettings = () => {
           )}
         </View>
         {sub.relay_included && <Text style={styles.usageDescription}>Your box includes relay access. Any separate relay subscription continues on its normal billing schedule until you cancel it.</Text>}
-        {(!sub.relay_included || sub.provider) && <View style={styles.listGroup}><SettingsRow
+        {(sub.providers?.length ?? 0) > 1 ? <View style={styles.listGroup}>
+          <SettingsRow title="Manage Apple subscription" onPress={manageApple} disabled={actionLoading} chevron={false} />
+          <SettingsRow title="Manage Stripe subscription" onPress={manageStripe} disabled={actionLoading} chevron={false} />
+        </View> : (!sub.relay_included || sub.provider) && <View style={styles.listGroup}><SettingsRow
           title={actionLoading ? "Loading…" : sub.relay_included ? `Manage existing ${sub.provider === "apple" ? "Apple" : "Stripe"} subscription` : "Manage subscription"}
           onPress={handleManageBilling}
           disabled={actionLoading}
@@ -205,12 +225,22 @@ export let AccountSettings = () => {
         <SettingsRow title={actionLoading || iap.purchasing ? "Please wait…" : Platform.OS === "ios" && iap.loading ? "Loading purchases…" : iap.price ? `Subscribe · ${iap.price} / month` : "Subscribe"} detail={Platform.OS === "ios" && iap.error ? iap.error : "Connect your machines through the relay"} onPress={handleSubscribe} disabled={!sub || actionLoading || iap.purchasing || (Platform.OS === "ios" && !iap.available)} chevron={false} />
       </View>
     </View>}
+    {Platform.OS === "ios" && !sub?.subscribed && <View style={styles.section}>
+      <Text style={styles.usageDescription}>Relay access renews monthly until canceled. Manage or cancel your subscription in your Apple account settings.</Text>
+      <View style={styles.listGroup}>
+        <SettingsRow title="Terms of Use" onPress={openTerms} chevron={false} />
+        <SettingsRow title="Privacy Policy" onPress={openPrivacy} chevron={false} />
+      </View>
+    </View>}
     {Platform.OS === "ios" && !sub?.subscribed && !!iap.error && <View style={styles.section}>
       <View style={styles.listGroup}><SettingsRow title="Retry loading purchases" onPress={iap.retry} disabled={iap.loading || actionLoading || iap.purchasing} chevron={false} /></View>
-      {!!iap.diagnostic && <Text selectable style={styles.usageDescription}>{iap.diagnostic}</Text>}
     </View>}
     {Platform.OS === "ios" && <View style={styles.listGroup}>
       <SettingsRow title="Restore Purchases" onPress={handleRestore} disabled={subLoading || actionLoading || iap.purchasing} chevron={false} />
+    </View>}
+    {Platform.OS === "ios" && !!iap.diagnostic && <View style={styles.section}>
+      <View style={styles.listGroup}><SettingsRow title={diagnosticsExpanded ? "Hide purchase diagnostics" : "View purchase diagnostics"} onPress={toggleDiagnostics} chevron={false} /></View>
+      {diagnosticsExpanded && <Text selectable style={styles.usageDescription}>{iap.diagnostic}</Text>}
     </View>}
     {!!subscriptionError && <Text accessibilityRole="alert" style={styles.usageDescription}>{subscriptionError}</Text>}
     {subscriptionCheckFailed && <View style={styles.listGroup}><SettingsRow title={actionLoading ? "Checking…" : "Retry subscription check"} onPress={handleRefreshSubscription} disabled={subLoading || actionLoading || iap.purchasing} chevron={false} /></View>}

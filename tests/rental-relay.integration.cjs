@@ -29,6 +29,17 @@ let run = async () => {
   // Credentials remain in memory and never enter SQL or assertion output.
   let user = JSON.parse(Buffer.from(owner.access_token.split('.')[1], 'base64url')).sub;
   assert.match(user, /^[0-9a-f-]{36}$/);
+  // Client-reported IDs/expiry and forged server notifications grant no access.
+  for (let [endpoint, body] of [
+    ['/iap/verify-receipt', {original_transaction_id:'forged',product_id:'cc.clawtab.pro.monthly',expires_date_ms:Date.now()+9999999}],
+    ['/iap/verify-receipt', {signed_transaction:'forged.payload.signature'}],
+    ['/iap/app-store-notification', {notificationType:'DID_RENEW',data:{signedTransactionInfo:'forged.payload.signature'}}],
+    ['/iap/app-store-notification', {signedPayload:'forged.payload.signature'}],
+  ]) {
+    let response=await fetch(base+endpoint,{method:'POST',headers:{'content-type':'application/json',authorization:`Bearer ${owner.access_token}`},body:JSON.stringify(body)});
+    assert.ok(response.status===400 || response.status===422);
+  }
+  assert.equal((await api('/subscription/status',owner.access_token)).subscribed,false);
   let rented = await api('/devices/pair', owner.access_token, { device_name: 'Rented host' });
   let ordinary = await api('/devices/pair', owner.access_token, { device_name: 'Ordinary host' });
   assert.match(rented.device_id, /^[0-9a-f-]{36}$/);
@@ -61,8 +72,10 @@ let run = async () => {
   await assert.rejects(connect(`/v2/ws?token=${owner.access_token}`));
   // Either provider can keep personal-machine access after the rental ends.
   for (let provider of ['stripe', 'apple']) {
-    sql(`INSERT INTO subscriptions (user_id,status,current_period_end,stripe_subscription_id,apple_original_transaction_id)
-      VALUES ('${user}','active',now()+interval '30 days',${provider === 'stripe' ? "'sub_standalone'" : 'NULL'},${provider === 'apple' ? "'apple_standalone'" : 'NULL'});`);
+    if (provider === 'stripe') sql(`INSERT INTO subscriptions (user_id,status,current_period_end,stripe_subscription_id)
+      VALUES ('${user}','active',now()+interval '30 days','sub_standalone_${user}');`);
+    else sql(`INSERT INTO apple_subscriptions (environment,original_transaction_id,user_id,transaction_id,product_id,purchase_date,expires_date,signed_date)
+      VALUES ('Sandbox','apple_standalone_${user}','${user}','apple_transaction','cc.clawtab.pro.monthly',now(),now()+interval '30 days',now());`);
     status = await api('/subscription/status', owner.access_token);
     assert.equal(status.subscribed, true);
     assert.equal(status.relay_included, false);
@@ -77,13 +90,13 @@ let run = async () => {
     assert.equal(status.subscribed, true);
     assert.equal(status.relay_included, false);
     assert.equal(status.provider, provider);
-    sql(`DELETE FROM subscriptions WHERE user_id='${user}';
+    sql(`DELETE FROM subscriptions WHERE user_id='${user}'; DELETE FROM apple_subscriptions WHERE user_id='${user}';
       UPDATE rentals SET state='ready',paid_until=now()-interval '11 days',unpaid_since=now()-interval '11 days' WHERE id='${id}';`);
   }
   // A stale webhook for a previously credited Stripe plan must not revive it.
-  sql(`INSERT INTO subscriptions (user_id,status,stripe_subscription_id) VALUES ('${user}','active','sub_retired');
+  sql(`INSERT INTO subscriptions (user_id,status,stripe_subscription_id) VALUES ('${user}','active','sub_retired_${user}');
     INSERT INTO rental_billing_transitions (subscription_id,user_id,rental_id,prepared,retired_at,completed_at)
-      VALUES ('sub_retired','${user}','${id}',true,now(),now());`);
+      VALUES ('sub_retired_${user}','${user}','${id}',true,now(),now());`);
   status = await api('/subscription/status', owner.access_token);
   assert.equal(status.subscribed, false);
   assert.equal(status.provider, null);

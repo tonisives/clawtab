@@ -45,6 +45,7 @@ futures-util = "0.3"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 # crypto
+app-store-server-library = { version = "=6.0.1", features = ["ring"] }
 sha2 = "0.10"
 hex = "0.4"
 
@@ -96,3 +97,6 @@ map_unwrap_or = "warn"
 lto = true
 codegen-units = 1
 panic = "abort"
+
+[dev-dependencies]
+openssl = "0.10"

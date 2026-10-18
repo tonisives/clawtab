@@ -135,15 +135,15 @@ let accountHarness = (os = 'ios', subscription = {}) => {
   let subscribed = false, statusError = false, reconnects = 0, purchases = 0, restores = 0, checkouts = 0, opened = [], resumed;
   let iap = {
     available: true, purchasing: false, loading: false, error: null, diagnostic: null, retry: async () => {}, price: '$4.99',
-    purchase: async () => { purchases++; subscribed = true; return true; },
-    restore: async () => { restores++; subscribed = true; return true; },
+    purchase: async () => { purchases++; subscribed = true; return { status: 'purchased' }; },
+    restore: async () => { restores++; subscribed = true; return { status: 'purchased' }; },
   };
   let h = harness('remote/src/components/settings/AccountSettings.tsx', {
     '@clawtab/shared': { machineState: () => ({ connected: false }), reconnectMachines: () => reconnects++ },
     '../../hooks/useIap': { useIap: () => iap },
     'react-native': { Platform: { OS: os }, AppState: { addEventListener: (_, handler) => { resumed = handler; return { remove: () => {} }; } }, View: 'View', Text: 'Text', Pressable: 'Pressable', ActivityIndicator: 'ActivityIndicator' },
     'expo-router': { useRouter: () => ({}) },
-    '../../store/auth': { useAuthStore: (select) => select({ userId: 'returning-user', email: 'account@example.com' }) },
+    '../../store/auth': { useAuthStore: Object.assign((select) => select({ userId: 'returning-user', email: 'account@example.com' }), { getState: () => ({ userId: 'returning-user' }) }) },
     '../../hooks/useResponsive': { useResponsive: () => ({ isWide: false }) },
     '../../api/client': { getSubscriptionStatus: async () => { if (statusError) throw new Error('Offline'); return { subscribed, provider: subscribed ? 'apple' : null, ...subscription }; }, createPortal: async () => ({ url: 'https://billing.example.com' }), createCheckout: async () => { checkouts++; return { url: 'https://checkout.example.com' }; } },
     '../../lib/platform': { openUrl: async (url) => opened.push(url), alertError: (title, message) => alerts.push({ title, message }) },
@@ -190,14 +190,14 @@ test('unavailable or unsuccessful native purchases do not grant relay access', a
   account.iap.available = false;
   assert.equal(account.rows().find((node) => node.props.title.startsWith('Subscribe')).props.disabled, true);
   account.iap.available = true;
-  account.iap.purchase = async () => false;
+  account.iap.purchase = async () => ({ status: 'failed' });
   await account.rows().find((node) => node.props.title.startsWith('Subscribe')).props.onPress();
   assert.equal(account.counts().reconnects, 0);
   assert.ok(findAll(account.render(), (node) => node.props?.accessibilityRole === 'alert').length);
   for (let result of ['missing', 'inactive', 'error', 'offline']) {
     account.iap.restore = async () => {
       if (result === 'error') throw new Error('Store unavailable');
-      return result !== 'missing';
+      return { status: result === 'missing' ? 'not-found' : 'purchased' };
     };
     account.setStatusError(result === 'offline');
     let alertsBefore = account.alerts.length;
@@ -290,4 +290,12 @@ test('rental access keeps separate Apple and Stripe subscription management avai
     assert.equal(account.counts().purchases, 0);
     assert.equal(account.counts().checkouts, 0);
   }
+});
+
+test('overlapping Apple and Stripe plans retain both management actions', async () => {
+  let account = accountHarness('ios', { subscribed:true, relay_included:true, provider:'apple', providers:['apple','stripe'] });
+  account.render(); await flush();
+  await account.rows().find(node=>node.props.title==='Manage Apple subscription').props.onPress();
+  await account.rows().find(node=>node.props.title==='Manage Stripe subscription').props.onPress();
+  assert.deepEqual(account.opened,['https://apps.apple.com/account/subscriptions','https://billing.example.com']);
 });
