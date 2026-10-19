@@ -21,6 +21,11 @@ let loadDemo = (entry, params = {}, os = 'ios') => {
     'expo-router': { useRouter: () => ({ push: (route) => pushed.push(route) }), useLocalSearchParams: () => params, Stack: { Screen: 'Screen' } },
     '@clawtab/shared': { JobListView: 'JobListView', XtermLog: 'XtermLog', JobKindIcon: 'JobKindIcon', kindForProcess: (process) => process.provider, colors: {} },
     '@expo/vector-icons': { Ionicons: 'Ionicons' },
+    '../hooks/useResponsive': { useResponsive: () => ({ isSplitView: true }) },
+    './DemoJobList': { DemoJobList: 'DemoJobList' },
+    './DemoAgentPane': { DemoAgentPane: 'DemoAgentPane' },
+    './settings/SettingsPage': { SettingsPage: 'SettingsPage' },
+    '../../../shared/src/machines/Onboarding': { MachineModal: 'MachineModal' },
     '../src/components/HeaderButtons': { HeaderTitleWithIcon: 'HeaderTitleWithIcon' },
     '../../../shared/src/components/InsetList': { InsetList: 'InsetList', InsetListRow: 'InsetListRow' },
     '../../src/components/settings/SettingsPage': { SettingsPage: 'SettingsPage' },
@@ -32,14 +37,16 @@ let loadDemo = (entry, params = {}, os = 'ios') => {
     vm.runInNewContext(source, { exports, require: (name) => {
       if (name in modules) return modules[name];
       if (name.endsWith('/demo/data') || name.endsWith('/demo/shell') || name.endsWith('/demo/info') || name.endsWith('/store/jobFilter')) return load(path.resolve(path.dirname(file), `${name}.ts`));
+      if (name.endsWith('/DemoDetailsContent')) return load(path.resolve(path.dirname(file), `${name}.tsx`));
       throw new Error(`Demo attempted to import a live dependency: ${name}`);
     } });
     return exports;
   };
-  let component = entry === 'index.tsx' ? load(require.resolve('../remote/src/components/DemoJobList.tsx')).DemoJobList : load(require.resolve(entry === 'terminal' ? '../remote/app/demo-agent.tsx' : `../remote/app/demo/${entry}`)).default;
+  let component = entry === 'workspace' ? load(require.resolve('../remote/src/components/DemoWorkspace.tsx')).DemoWorkspace : entry === 'index.tsx' ? load(require.resolve('../remote/src/components/DemoJobList.tsx')).DemoJobList : load(require.resolve(entry === 'terminal' ? '../remote/app/demo-agent.tsx' : `../remote/app/demo/${entry}`)).default;
   return { pushed, writes, getFilter: () => filterStore.getState(), render: (props = {}) => {
     cursor = 0;
     let tree = component(props);
+    if (typeof tree.type === "function") tree = tree.type(tree.props);
     for (let node of all(tree)) if (node.type === 'XtermLog') node.props.ref.current = { clear: () => writes.push('clear'), writeText: (text) => writes.push(text) };
     effects.splice(0).forEach((effect) => effect());
     return tree;
@@ -138,4 +145,27 @@ test('each demo agent keeps an editable local prompt and model outside the shell
     assert.equal(nodes.find((node) => node.type === 'XtermLog').props.extendedViewport, true);
     assert.equal(nodes[0].props.keyboardVerticalOffset, 96);
   }
+});
+
+test('wide web demo keeps sample selection beside the sidebar without routing away', () => {
+  let demo = loadDemo('workspace', {}, 'web');
+  let nodes = all(demo.render());
+  let list = nodes.find((node) => node.type === 'DemoJobList');
+  let pane = nodes.find((node) => node.type === 'DemoAgentPane');
+  assert.equal(pane.props.id, list.props.selectedSlug);
+  list.props.onSelectProcess({ pane_id: 'demo-pane-codex' });
+  nodes = all(demo.render());
+  pane = nodes.find((node) => node.type === 'DemoAgentPane');
+  assert.equal(pane.props.id, 'demo-pane-codex');
+  assert.equal(pane.props.kind, 'process');
+  nodes.find((node) => node.type === 'DemoJobList').props.onSelectJob({ slug: 'deploy-api' });
+  pane = all(demo.render()).find((node) => node.type === 'DemoAgentPane');
+  assert.equal(pane.props.id, 'deploy-api');
+  assert.equal(pane.props.kind, 'job');
+  assert.deepEqual(demo.pushed, []);
+});
+test('native demo keeps navigation to sample detail screens', () => {
+  let tree = loadDemo('workspace', {}, 'ios').render();
+  assert.equal(tree.type, 'DemoJobList');
+  assert.equal(tree.props.onSelectJob, undefined);
 });

@@ -1,3 +1,5 @@
+import { DemoAgentPane, type DemoSelection } from "../../../src/components/DemoAgentPane"
+import { DEMO_PROCESSES } from "../../../src/demo/data"
 import { DemoJobList } from "../../../src/components/DemoJobList"
 import { machineOnboardingChrome, machineOnboardingContent, machineManagementContent } from "../../../src/components/MachineSetup";
 import { useMachines, useHiddenGroups, machineHostRequest, machineRequest, machineState, scopedMessage, matchesSavedGroup, savedGroupKey, newOperationId, saveAccountPreferences } from "@clawtab/shared";
@@ -251,6 +253,7 @@ export default function JobsScreen() {
   const [groupLatestSortMode, setGroupLatestSortMode] = useState<GroupLatestSortMode>({})
   const [listMode, setListMode] = useState<JobListMode>(() => readListMode())
   const [groupTabView, setGroupTabView] = useState<GroupTabView>(() => readGroupTabView())
+  let [demoSelection, setDemoSelection] = useState<DemoSelection>({ id: DEMO_PROCESSES[0].pane_id, kind: "process" })
   const [selectedJob, setSelectedJob] = useState<string | null>(() => readSelection("job"))
   const [selectedProcess, setSelectedProcess] = useState<string | null>(() =>
     readSelection("process"),
@@ -1122,7 +1125,7 @@ export default function JobsScreen() {
   }
 
   // Non-tree primary content (when no split tree)
-  const primaryContent = selectedJob ? (
+  const primaryContent = demoMode ? <DemoAgentPane key={`${demoSelection.kind}:${demoSelection.id}`} {...demoSelection} /> : selectedJob ? (
     <JobDetailPane
       key={selectedJob}
       jobName={selectedJob}
@@ -1264,7 +1267,7 @@ export default function JobsScreen() {
       <View style={[styles.listPane, { width: splitListWidth }]}>
         {!isIosPad && !isIosPhoneLandscape ? sidebarHeader : null}
         <View style={styles.listPaneScrollArea}>
-          {demoMode ? <DemoJobList onConnect={connectRelay} /> : <JobListView
+          {demoMode ? <DemoJobList onConnect={connectRelay} selectedSlug={demoSelection.id} onSelectJob={(job) => setDemoSelection({ id: job.slug, kind: "job" })} onSelectProcess={(process) => setDemoSelection({ id: process.pane_id, kind: "process" })} /> : <JobListView
             machineOnboarding={machineOnboardingContent}
             machineManagement={machineManagementContent}
             machineChrome={machineOnboardingChrome}
@@ -1351,7 +1354,7 @@ export default function JobsScreen() {
           <NotificationsPanel mode="screen" />
         ) : (
           <SplitDetailArea
-            tree={split.tree}
+            tree={demoMode ? null : split.tree}
             renderLeaf={renderLeaf}
             onRatioChange={split.handleSplitRatioChange}
             onFocusLeaf={(leafId) => {

@@ -1,11 +1,11 @@
 import { useRouter } from "expo-router"
-import { DemoJobList } from "../../src/components/DemoJobList"
+import { DemoWorkspace } from "../../src/components/DemoWorkspace"
 import { useAuthStore } from "../../src/store/auth"
 
 let DemoScreen = () => {
   let router = useRouter()
   let authenticated = useAuthStore((state) => state.isAuthenticated)
   let connect = () => router.dismissTo(authenticated ? "/account" : "/login")
-  return <DemoJobList onConnect={connect} />
+  return <DemoWorkspace onConnect={connect} />
 }
 export default DemoScreen
