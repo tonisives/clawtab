@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react"
-import { Animated, BackHandler, Modal, SafeAreaView, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions, type StyleProp, type ViewStyle } from "react-native"
+import { Animated, BackHandler, Platform, Modal, SafeAreaView, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions, type StyleProp, type ViewStyle } from "react-native"
 import { colors } from "../theme/colors"
 
 export type MachineOnboardingContent = ReactNode | ((close: () => void) => ReactNode)
@@ -49,6 +49,16 @@ let FallbackMachineModal = ({ title, children, overlay, onClose }: MachineModalP
   let back = () => setPages((current) => current.slice(0, -1))
   let dismiss = pages.length ? back : onClose
   useEffect(() => {
+    if (Platform.OS === "web") {
+      let keydown = (event: KeyboardEvent) => {
+        if (event.key !== "Escape") return
+        event.preventDefault()
+        event.stopPropagation()
+        dismiss()
+      }
+      document.addEventListener("keydown", keydown)
+      return () => document.removeEventListener("keydown", keydown)
+    }
     let subscription = BackHandler.addEventListener("hardwareBackPress", () => { dismiss(); return true })
     return () => subscription.remove()
   }, [dismiss])
