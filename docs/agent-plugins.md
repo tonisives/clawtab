@@ -176,6 +176,10 @@ cwtctl codex set-model <model> <effort> [pane_id]
 
 The command waits for the live Codex TUI to confirm the selection and preserves any composer draft. It does not launch an external plugin process. If `pane_id` is omitted, it uses `$TMUX_PANE`.
 
+Before model switching or a plugin stash clears a nonempty Codex composer, ClawTab writes a `composer_draft_backup` entry to the daemon log. Each entry contains JSON with `pane_id`, `plugin_id`, `action_id`, and the full `draft`, including escaped line breaks. These entries remain available after the operation finishes or draft restoration fails, for as long as the log is retained.
+
+For an installed daemon, search `/tmp/clawtab/daemon.stderr.log` for `composer_draft_backup` and decode the JSON `draft` field to recover the text. When running the development daemon, entries appear in its stderr output.
+
 ## Small Bash example
 
 This package declares one Codex-only action with no parameters. The action submits literal text through standard input, so the note is not exposed in a process argument. It reports a JSON result the same way.

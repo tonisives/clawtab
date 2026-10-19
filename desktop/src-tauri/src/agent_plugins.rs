@@ -2208,6 +2208,20 @@ fn draft_to_stash(
     }
     let screen = capture_plain(&host.pane_id)?;
     let draft = codex_draft_to_stash(&screen, tracked_working)?;
+    if let Some(draft) = draft.as_deref() {
+        // Keep a recoverable copy before either model switching or a plugin
+        // clears the composer. JSON preserves multiline text in one log entry.
+        log::info!(
+            target: "composer_draft_backup",
+            "{}",
+            serde_json::json!({
+                "pane_id": host.pane_id,
+                "plugin_id": host.plugin_id,
+                "action_id": host.action_id,
+                "draft": draft,
+            })
+        );
+    }
     let vim_mode = draft.as_ref().and_then(|_| codex_vim_mode(&screen));
     Ok((draft, vim_mode))
 }
