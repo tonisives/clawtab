@@ -101,6 +101,7 @@ export interface JobDetailViewProps {
   // Expand live output to fill available space (no fixed height)
   expandOutput?: boolean;
   hideInfoPanels?: boolean;
+  mobileDetails?: boolean;
   // Start the collapsible live output section closed
   defaultOutputCollapsed?: boolean;
   // Start run history closed unless a specific run must be expanded
@@ -197,6 +198,7 @@ export function JobDetailView({
   hideRuns,
   expandOutput,
   hideInfoPanels = false,
+  mobileDetails = false,
   defaultOutputCollapsed = false,
   defaultRunsCollapsed = false,
   containerStyle,
@@ -461,6 +463,11 @@ export function JobDetailView({
 
   const hasHeaderRow = showBackButton || !!onEditTitle;
   const headerInsetStyle = headerLeftInset ? { paddingLeft: headerLeftInset } : null;
+  let overviewActions = mobileDetails ? {
+    ...paneOverviewActions,
+    onStop: paneOverviewActions?.onStop ?? (isRunning ? () => { void handleAction("stop"); } : undefined),
+    stopping: paneOverviewActions?.stopping ?? sigintPending,
+  } : paneOverviewActions;
   const detailInner = (
     <>
       {/* Header with back button (hidden when platform provides its own nav bar) */}
@@ -660,7 +667,7 @@ export function JobDetailView({
           {isRunning && status.pane_id ? (
             <Text style={styles.runtimeDim}>{status.pane_id}</Text>
           ) : null}
-          {isRunning && onToggleAutoYes ? (
+          {isRunning && onToggleAutoYes && !mobileDetails ? (
             <TouchableOpacity
               onPress={onToggleAutoYes}
               activeOpacity={0.6}
@@ -698,12 +705,18 @@ export function JobDetailView({
             </TouchableOpacity>
           ) : null}
           {/* Settings "..." menu */}
-          {(showMobileAutoYesMenuItem || onDuplicate || onDelete || isRunning || onFork || onSplitPane || onZoomPane || onInjectSecrets || onSearchSkills || onRevealInSidebar || !!extraMenuItems?.length) && (
+          {(showMobileAutoYesMenuItem || paneOverview || onDuplicate || onDelete || isRunning || onFork || onSplitPane || onZoomPane || onInjectSecrets || onSearchSkills || onRevealInSidebar || !!extraMenuItems?.length) && (
             <View ref={settingsMenuRef} style={{ zIndex: 9999, ...(isWeb ? { position: "relative" as const } : {}) }}>
               <TouchableOpacity
                 ref={settingsBtnRef}
                 style={styles.moreBtn}
+                accessibilityRole="button"
+                accessibilityLabel={mobileDetails ? "Agent details" : "More actions"}
                 onPress={(e: any) => {
+                  if (mobileDetails && paneOverview) {
+                    setShowPaneOverview(true);
+                    return;
+                  }
                   if (isWeb) {
                     const refNode = settingsBtnRef.current as any;
                     const node = (refNode && typeof refNode.getBoundingClientRect === "function")
@@ -953,7 +966,8 @@ export function JobDetailView({
           <PaneOverviewModal
             visible={showPaneOverview}
             onClose={() => setShowPaneOverview(false)}
-            actions={paneOverviewActions}
+            actions={overviewActions}
+            mobileViews={mobileDetails}
             {...paneOverview}
           />
         )}
@@ -1095,7 +1109,8 @@ export function JobDetailView({
         <PaneOverviewModal
           visible={showPaneOverview}
           onClose={() => setShowPaneOverview(false)}
-          actions={paneOverviewActions}
+          actions={overviewActions}
+          mobileViews={mobileDetails}
           {...paneOverview}
         />
       )}

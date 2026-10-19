@@ -245,7 +245,7 @@ export function ProcessCard({
   );
 
   return (
-    <View style={[styles.processCard, mobileAppearance ? mobileListStyles.row : null, selected ? styles.processCardSelected : null, softBorder && !selected ? styles.processCardSoftBorder : null, mobileAppearance ? null : groupedCardStyle(groupedPosition)]}>
+    <View style={[styles.processCard, mobileAppearance ? mobileListStyles.row : null, softBorder && !selected ? styles.processCardSoftBorder : null, mobileAppearance ? null : groupedCardStyle(groupedPosition), selected ? styles.processCardSelected : null]}>
       <TouchableOpacity
         style={[styles.processRow, compactPhoneLandscape && styles.processRowCompact]}
         onPress={editing ? undefined : onPress}

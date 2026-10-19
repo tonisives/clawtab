@@ -1,6 +1,8 @@
 import type { Terminal } from "@xterm/xterm"
 
-export let attachTerminalTouchScroll = (element: HTMLElement, terminal: Terminal) => {
+export type TerminalScrollState = { atStart: boolean; atEnd: boolean; scrollable: boolean; boundaryReached: boolean }
+
+export let attachTerminalTouchScroll = (element: HTMLElement, terminal: Terminal, onChange?: (state: TerminalScrollState) => void) => {
   let lastTouch: { x: number; y: number; time: number } | null = null
   let origin: { x: number; y: number } | null = null
   let dragging = false
@@ -8,21 +10,26 @@ export let attachTerminalTouchScroll = (element: HTMLElement, terminal: Terminal
   let remainder = 0
   let frame = 0
   let screenOffset = 0
+  let boundaryReached = false
   let stop = () => { cancelAnimationFrame(frame); frame = 0 }
+  let report = (position: number, max: number) => onChange?.({ atStart: position <= 0, atEnd: position >= max, scrollable: max > 0, boundaryReached })
   let scroll = (pixels: number) => {
     let screen = element.querySelector<HTMLElement>(".xterm-screen")
     let rowHeight = screen ? screen.getBoundingClientRect().height / Math.max(1, terminal.rows) : 0
     if (!rowHeight) return false
     let buffer = terminal.buffer.active
     let gridOverflow = Math.max(0, rowHeight * terminal.rows - element.clientHeight)
-    let previous = buffer.viewportY * rowHeight + screenOffset
-    let next = Math.max(0, Math.min(buffer.baseY * rowHeight + gridOverflow, previous + pixels + remainder))
+    let max = buffer.baseY * rowHeight + gridOverflow
+    let previous = buffer.viewportY * rowHeight + screenOffset + remainder
+    let next = Math.max(0, Math.min(max, previous + pixels))
     let line = Math.min(buffer.baseY, Math.floor(next / rowHeight))
     terminal.scrollToLine(line)
     screenOffset = line === buffer.baseY ? Math.max(0, next - line * rowHeight) : 0
     remainder = line < buffer.baseY ? next - line * rowHeight : 0
     let surface = element.querySelector<HTMLElement>(".xterm")
     if (surface) surface.style.transform = screenOffset ? `translateY(${-screenOffset}px)` : ""
+    if (pixels && (next <= 0 || next >= max)) boundaryReached = true
+    report(next, max)
     return Math.abs(next - previous) > 0.1
   }
   let start = (event: TouchEvent) => {
@@ -66,17 +73,37 @@ export let attachTerminalTouchScroll = (element: HTMLElement, terminal: Terminal
     dragging = false
   }
   let cancel = () => { lastTouch = null; origin = null; dragging = false; stop() }
+  let wheel = (event: WheelEvent) => {
+    stop()
+    if (event.ctrlKey || !event.deltaY) return
+    event.preventDefault()
+    event.stopImmediatePropagation()
+    let scale = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? element.clientHeight : 1
+    scroll(event.deltaY * scale)
+  }
   element.addEventListener("touchstart", start, { capture: true, passive: true })
   element.addEventListener("touchmove", move, { capture: true, passive: false })
   element.addEventListener("touchend", end, true)
   element.addEventListener("touchcancel", cancel, true)
-  element.addEventListener("wheel", stop, { passive: true })
-  return () => {
+  element.addEventListener("wheel", wheel, { capture: true, passive: false })
+  let detach = () => {
     stop()
     element.removeEventListener("touchstart", start, true)
     element.removeEventListener("touchmove", move, true)
     element.removeEventListener("touchend", end, true)
     element.removeEventListener("touchcancel", cancel, true)
-    element.removeEventListener("wheel", stop)
+    element.removeEventListener("wheel", wheel, true)
   }
+  let refresh = () => {
+    let screen = element.querySelector<HTMLElement>(".xterm-screen")
+    let rowHeight = screen ? screen.getBoundingClientRect().height / Math.max(1, terminal.rows) : 0
+    if (!rowHeight) return
+    let buffer = terminal.buffer.active
+    let overflow = Math.max(0, rowHeight * terminal.rows - element.clientHeight)
+    screenOffset = Math.min(screenOffset, overflow)
+    let surface = element.querySelector<HTMLElement>(".xterm")
+    if (surface) surface.style.transform = screenOffset ? `translateY(${-screenOffset}px)` : ""
+    report(buffer.viewportY * rowHeight + screenOffset, buffer.baseY * rowHeight + overflow)
+  }
+  return Object.assign(detach, { scroll, refresh })
 }

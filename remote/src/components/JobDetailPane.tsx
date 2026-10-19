@@ -24,6 +24,7 @@ import { TerminalHeaderActions } from "./TerminalHeaderActions"
 import { TerminalCopySheet } from "./TerminalCopySheet"
 import { TerminalKeyboardToolbar, TERMINAL_KEYBOARD_TOOLBAR_HEIGHT } from "./TerminalKeyboardToolbar"
 import { TerminalWriteDialog } from "./TerminalWriteDialog"
+import { useAgentActions } from "../hooks/useAgentActions"
 import { useTerminalKeyboard } from "../hooks/useTerminalKeyboard"
 
 const wsTransport = createWsTransport()
@@ -66,6 +67,7 @@ export function JobDetailPane({ jobName, onClose, embedded = false }: JobDetailP
   const realStatus = useJobStatus(jobName)
   const status = realStatus
   const statusPaneId = status?.state === "running" ? (status as any).pane_id ?? "" : ""
+  let activeProcess = useJobsStore((state) => state.detectedProcesses.find((process) => process.pane_id === statusPaneId))
   const { logs } = useLogs(slug)
   const runs = useRunsStore((s) => s.runs[slug]) ?? null
   const [runsLoading, setRunsLoading] = useState(false)
@@ -123,6 +125,7 @@ export function JobDetailPane({ jobName, onClose, embedded = false }: JobDetailP
   const landscapeHeader = useLandscapeTerminalHeader(isRunningWithPty)
   const [copyText, setCopyText] = useState<string | null>(null)
   const [showPaneOverview, setShowPaneOverview] = useState(false)
+  let agentActionControls = useAgentActions(statusPaneId, showPaneOverview)
   const [terminalMenuOpen, setTerminalMenuOpen] = useState(false)
   const [writeOpen, setWriteOpen] = useState(false)
   const [writeDraft, setWriteDraft] = useState("")
@@ -169,7 +172,7 @@ export function JobDetailPane({ jobName, onClose, embedded = false }: JobDetailP
             </>
           ) : null}
         </View>
-        {Platform.OS !== "ios" && <MachineTerminalControls paneId={statusPaneId ?? ""} />}
+        {Platform.OS === "android" && <MachineTerminalControls paneId={statusPaneId ?? ""} />}
         <View ref={terminalSurfaceRef} style={styles.terminalSurface} onLayout={handleTerminalLayout}>
           <XtermLog
             ref={termRef}
@@ -206,7 +209,7 @@ export function JobDetailPane({ jobName, onClose, embedded = false }: JobDetailP
 
   return (
     <View style={styles.container}>
-      {landscapeHeader.headerShown || landscapeHeader.overlayShown ? <View style={[styles.header, landscapeHeader.isLandscape && styles.landscapeHeaderOverlay, { paddingTop: embedded ? spacing.md : insets.top + spacing.md }]}>
+      {Platform.OS !== "web" && (landscapeHeader.headerShown || landscapeHeader.overlayShown) ? <View style={[styles.header, landscapeHeader.isLandscape && styles.landscapeHeaderOverlay, { paddingTop: embedded ? spacing.md : insets.top + spacing.md }]}>
         <Text style={styles.title} numberOfLines={1}>{landscapeHeader.isLandscape ? compactPath(job.work_dir) : job.name}</Text>
         {landscapeHeader.isLandscape && isRunningWithPty ? (
           <TerminalHeaderActions onZoom={zoomToFullScreen} onOpenDetails={() => setShowPaneOverview(true)} />
@@ -230,9 +233,10 @@ export function JobDetailPane({ jobName, onClose, embedded = false }: JobDetailP
         onBack={onClose}
         showBackButton={false}
         hidePath
+        mobileDetails={Platform.OS === "web"}
         hideInfoPanels={landscapeHeader.isLandscape && isRunningWithPty}
-        paneOverview={statusPaneId ? { paneId: statusPaneId, tmuxSession: statusTmuxSession, cwd: job.work_dir } : undefined}
-        paneOverviewActions={{ autoYesActive, onToggleAutoYes: handleToggleAutoYes }}
+        paneOverview={statusPaneId ? { paneId: statusPaneId, tmuxSession: statusTmuxSession, cwd: activeProcess?.cwd ?? job.work_dir, windowName: activeProcess?.window_name, startedAt: activeProcess?.session_started_at, firstQuery: activeProcess?.first_query, lastQuery: activeProcess?.last_query } : undefined}
+        paneOverviewActions={{ autoYesActive, onToggleAutoYes: canToggleAutoYes ? handleToggleAutoYes : undefined, ...agentActionControls }}
         paneOverviewVisible={showPaneOverview}
         onPaneOverviewVisibleChange={setShowPaneOverview}
         onReloadRuns={loadRuns}

@@ -1,0 +1,7 @@
+.terminal-frame { display: flex; flex: 1; min-width: 0; min-height: 0; position: relative; overflow: hidden; }
+.terminal-buffer { flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
+.terminal-scroll-controls { position: absolute; right: 12px; bottom: 12px; display: flex; gap: 4px; z-index: 2; }
+.terminal-scroll-controls button { display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; color: #e4e4e4; background: #272729; border: 1px solid #48484a; border-radius: 8px; cursor: pointer; }
+.terminal-scroll-controls button:disabled { opacity: 0.35; cursor: default; }
+.terminal-scroll-controls button:focus-visible { outline: 2px solid #7986cb; outline-offset: 2px; }
+.terminal-scroll-controls path { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }

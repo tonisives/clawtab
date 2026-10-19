@@ -98,7 +98,7 @@ export function ShellCard({
   const showMenu = !!(onStop || onRename || canMoveToWorkspace);
 
   return (
-    <View style={[styles.card, selected ? styles.cardSelected : null, softBorder && !selected ? styles.cardSoftBorder : null, groupedCardStyle(groupedPosition)]}>
+    <View style={[styles.card, softBorder && !selected ? styles.cardSoftBorder : null, groupedCardStyle(groupedPosition), selected ? styles.cardSelected : null]}>
       <TouchableOpacity style={[styles.row, showMenu && styles.rowWithMenu]} onPress={onPress} activeOpacity={0.7}>
         <JobKindIcon kind="shell" />
         <View style={styles.info}>

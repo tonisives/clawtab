@@ -92,7 +92,7 @@ export const JobCard = memo(function JobCard({
     <View>
       <TouchableOpacity
         ref={menuBtnRef}
-        style={[styles.card, mobileAppearance ? mobileListStyles.row : null, selected ? styles.cardSelected : null, !job.enabled && styles.cardDisabled, softBorder && !selected ? styles.cardSoftBorder : null, mobileAppearance ? null : groupedCardStyle(groupedPosition)]}
+        style={[styles.card, mobileAppearance ? mobileListStyles.row : null, !job.enabled && styles.cardDisabled, softBorder && !selected ? styles.cardSoftBorder : null, mobileAppearance ? null : groupedCardStyle(groupedPosition), selected ? styles.cardSelected : null]}
         onPress={onPress}
         onLongPress={openMenu}
         activeOpacity={0.7}

@@ -519,3 +519,15 @@ test('the add agent sheet animates its panel separately from its stationary back
   let sheet = find(tree, (node) => node.type === 'AnimatedView' && node !== backdrop);
   assert.equal(sheet.props.style.at(-1).transform[0].translateY.outputRange[1], 0);
 });
+
+test('saved group Tabs and Jobs segments keep the group and launch control visible', () => {
+  let processes = [{ pane_id: 'p', machine_id: 'remote', cwd: groupA.work_dir, provider: 'codex' }];
+  let tabs = derivedGroups({ detectedProcesses: processes });
+  assert.equal(tabs.items[0].tabsToggle.tabCount, 1);
+  assert.equal(tabs.items[0].tabsToggle.view, 'tabs');
+  let jobs = derivedGroups({ detectedProcesses: processes }, { groupTabView: { 'saved:group-a': 'jobs' } });
+  assert.equal(jobs.items[0].tabsToggle.view, 'jobs');
+  assert.equal(jobs.items[0].tabsToggle.jobCount, 0);
+  assert.ok(jobs.items.some((item) => item.kind === 'group-agent'));
+  assert.ok(!jobs.items.some((item) => item.kind === 'process'));
+});

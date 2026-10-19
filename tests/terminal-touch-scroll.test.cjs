@@ -17,9 +17,15 @@ let harness = (rows = 24, baseY = 100) => {
   let exports = {};
   let source = ts.transpileModule(fs.readFileSync(__dirname + '/../shared/src/util/terminalTouchScroll.ts', 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   vm.runInNewContext(source, { exports, performance: { now: () => clock }, requestAnimationFrame: (callback) => { frames.set(++frame, callback); return frame; }, cancelAnimationFrame: (id) => frames.delete(id) });
-  let detach = exports.attachTerminalTouchScroll(element, terminal);
+  let states = [];
+  let detach = exports.attachTerminalTouchScroll(element, terminal, (state) => states.push(state));
   return {
-    buffer, surface, frames, events, detach,
+    buffer, surface, frames, events, detach, states,
+    wheel: (deltaY, deltaMode = 0, ctrlKey = false) => {
+      let prevented = false;
+      events.wheel({ deltaY, deltaMode, ctrlKey, preventDefault: () => prevented = true, stopImmediatePropagation() {} });
+      return prevented;
+    },
     select: () => selected = true,
     touch: (name, x, y, count = 1) => {
       clock += 16;
@@ -59,5 +65,50 @@ test('swipes can read a taller fixed shell grid and stay within its bounds', () 
   assert.equal(h.surface.style.transform, 'translateY(-360px)');
   h.touch('touchmove', 50, 3000);
   assert.equal(h.surface.style.transform, '');
+  h.detach();
+});
+
+test('mouse wheel scrolls locally, clamps to history and reports buffer edges', () => {
+  let h = harness();
+  assert.equal(h.wheel(-100), true);
+  assert.equal(h.buffer.viewportY, 40);
+  assert.equal(h.states.at(-1).boundaryReached, false);
+  h.wheel(-10000);
+  assert.equal(h.buffer.viewportY, 0);
+  assert.equal(h.states.at(-1).atStart, true);
+  assert.equal(h.states.at(-1).boundaryReached, true);
+  h.wheel(10000);
+  assert.equal(h.buffer.viewportY, 100);
+  assert.equal(h.states.at(-1).atEnd, true);
+  h.detach();
+});
+test('wheel reads oversized grids and preserves fractional motion across renders', () => {
+  let h = harness(60, 0);
+  h.wheel(100);
+  h.detach.refresh();
+  assert.equal(h.surface.style.transform, 'translateY(-100px)');
+  h.wheel(10000);
+  assert.equal(h.surface.style.transform, 'translateY(-360px)');
+  assert.equal(h.states.at(-1).atEnd, true);
+  h.detach.scroll(-120);
+  assert.equal(h.surface.style.transform, 'translateY(-240px)');
+  h.detach();
+  h = harness();
+  h.wheel(3);
+  h.detach.refresh();
+  h.wheel(3);
+  h.detach.refresh();
+  h.wheel(4);
+  assert.equal(h.buffer.viewportY, 51);
+  h.detach();
+});
+test('wheel respects line/page units and leaves browser pinch zoom alone', () => {
+  let h = harness();
+  assert.equal(h.wheel(100, 0, true), false);
+  assert.equal(h.buffer.viewportY, 50);
+  h.wheel(1, 1);
+  assert.equal(h.buffer.viewportY, 51);
+  h.wheel(1, 2);
+  assert.equal(h.buffer.viewportY, 75);
   h.detach();
 });

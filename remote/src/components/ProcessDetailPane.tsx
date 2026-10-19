@@ -14,7 +14,7 @@ import type { XtermLogHandle } from "@clawtab/shared"
 import { getWsSend, nextId } from "../lib/wsRuntime"
 import { usePty } from "../hooks/usePty"
 import { registerRequest } from "../lib/useRequestMap"
-import { alertError, confirm } from "../lib/platform"
+import { alertError } from "../lib/platform"
 import { stopSession } from "../lib/stopSession"
 import type { Transport, RemoteJob, JobStatus } from "@clawtab/shared"
 import { useAgentActions } from "../hooks/useAgentActions"
@@ -212,9 +212,7 @@ export function ProcessDetailPane({ paneId, onClose, embedded = false }: Process
       setStopping(false)
     }
   }, [paneId, stopping, transport])
-  const handleStop = useCallback(() => {
-    confirm("Stop session", `Close the terminal session in ${displayName} and stop any program running in it?`, doStop)
-  }, [displayName, doStop])
+
 
   // PTY streaming terminal
   const termRef = useRef<XtermLogHandle | null>(null)
@@ -267,7 +265,7 @@ export function ProcessDetailPane({ paneId, onClose, embedded = false }: Process
             </Text>
           </View>
         ) : null}
-        {Platform.OS !== "ios" && <MachineTerminalControls paneId={paneId} />}
+        {Platform.OS === "android" && <MachineTerminalControls paneId={paneId} />}
         <View ref={terminalSurfaceRef} style={styles.terminalSurface} onLayout={handleTerminalLayout}>
           <XtermLog
             ref={termRef}
@@ -323,7 +321,7 @@ export function ProcessDetailPane({ paneId, onClose, embedded = false }: Process
     : { state: "idle" }
   return (
     <View style={styles.container}>
-      {landscapeHeader.headerShown || landscapeHeader.overlayShown ? <View style={[styles.header, landscapeHeader.isLandscape && styles.landscapeHeaderOverlay, { paddingTop: embedded ? spacing.md : insets.top + spacing.md }]}>
+      {Platform.OS !== "web" && (landscapeHeader.headerShown || landscapeHeader.overlayShown) ? <View style={[styles.header, landscapeHeader.isLandscape && styles.landscapeHeaderOverlay, { paddingTop: embedded ? spacing.md : insets.top + spacing.md }]}>
         <TouchableOpacity
           style={styles.titleButton}
           onPress={handleTitlePress}
@@ -348,6 +346,7 @@ export function ProcessDetailPane({ paneId, onClose, embedded = false }: Process
         showBackButton={false}
         hideRuns
         hidePath
+        mobileDetails={Platform.OS === "web"}
         expandOutput
         hideInfoPanels={landscapeHeader.isLandscape}
         options={paneQuestion?.options}
@@ -368,7 +367,7 @@ export function ProcessDetailPane({ paneId, onClose, embedded = false }: Process
           onToggleAutoYes: handleToggleAutoYes,
           isPinned,
           onTogglePin: handleTogglePin,
-          onStop: Platform.OS === "web" ? handleStop : doStop,
+          onStop: doStop,
           stopping,
           stopError,
           ...agentActionControls,

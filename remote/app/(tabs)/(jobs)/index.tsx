@@ -1202,10 +1202,21 @@ export default function JobsScreen() {
           <Image source={require("../../../assets/icon.png")} style={styles.listPaneBrandIcon} />
           <Text style={styles.listPaneBrandText}>ClawTab</Text>
         </Pressable>
-        {!isIosPad && <NotificationsMenuButton variant={isWide ? "compact" : "fluid"} />}
+        {Platform.OS === "web" && !isIosPad ? <View style={styles.sidebarIconButtons}>
+          <Pressable style={styles.sidebarIconButton} onPress={handleOpenSidebarJobs} accessibilityRole="button" accessibilityLabel="Show jobs" accessibilityState={{ selected: sidebarSection === "jobs" }}>
+            <Ionicons name="briefcase-outline" size={20} color={sidebarSection === "jobs" ? colors.accent : colors.textSecondary} />
+          </Pressable>
+          <Pressable style={styles.sidebarIconButton} onPress={openSearch} accessibilityRole="button" accessibilityLabel="Search jobs">
+            <Ionicons name="search" size={20} color={searchQuery ? colors.accent : colors.textSecondary} />
+          </Pressable>
+          <Pressable style={styles.sidebarIconButton} onPress={handleOpenSidebarSettings} accessibilityRole="button" accessibilityLabel="Settings" accessibilityState={{ selected: sidebarSection === "settings" }}>
+            <Ionicons name="settings-outline" size={20} color={sidebarSection === "settings" ? colors.accent : colors.textSecondary} />
+          </Pressable>
+          <NotificationsMenuButton variant="compact" />
+        </View> : !isIosPad ? <NotificationsMenuButton variant={isWide ? "compact" : "fluid"} /> : null}
       </View>
 
-      {!isIosPad && (
+      {Platform.OS !== "web" && !isIosPad && (
         <>
           <LiquidSectionSwitcher
             activeSection={sidebarSection === "settings" ? "settings" : "jobs"}
@@ -1268,6 +1279,9 @@ export default function JobsScreen() {
             interactiveHiddenGroups
             onRefresh={handleRefresh}
             sortMode={sortMode}
+            groupLatestSortMode={groupLatestSortMode}
+            onGroupLatestSortChange={handleGroupLatestSortChange}
+            compactMobileToolbar={Platform.OS === "web"}
             onSortChange={setSortMode}
             listMode={listMode}
             onListModeChange={handleListModeChange}
@@ -1388,6 +1402,8 @@ export default function JobsScreen() {
 }
 
 const styles = StyleSheet.create({
+  sidebarIconButtons: { flexDirection: "row", alignItems: "center", gap: 4 },
+  sidebarIconButton: { width: 32, height: 36, alignItems: "center", justifyContent: "center" },
   screenRoot: { flex: 1, backgroundColor: colors.bg },
   container: { flex: 1, backgroundColor: colors.bg },
   mobileListContent: {

@@ -50,6 +50,7 @@ type PaneOverviewModalProps = PaneOverviewData & {
   visible: boolean;
   onClose: () => void;
   actions?: PaneOverviewActions;
+  mobileViews?: boolean;
 };
 
 const formatStartedAt = (value?: string | null): string => {
@@ -113,7 +114,7 @@ let AgentActionList = ({ children }: { children: ReactNode[] }) => {
   );
 };
 
-export let PaneOverviewModal = (props: PaneOverviewModalProps) => Platform.OS === "web" ? <WebPaneOverview {...props} /> : <NativePaneOverview {...props} />;
+export let PaneOverviewModal = ({ mobileViews = false, ...props }: PaneOverviewModalProps) => Platform.OS === "web" && !mobileViews ? <WebPaneOverview {...props} /> : <NativePaneOverview {...props} />;
 
 let WebPaneOverview = ({ visible, onClose, actions, ...pane }: PaneOverviewModalProps) => {
   const latestQuery = pane.lastQuery && pane.lastQuery !== pane.firstQuery ? pane.lastQuery : null;

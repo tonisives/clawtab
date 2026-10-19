@@ -653,22 +653,29 @@ export function useJobListDerivedItems({
 
     const visibleGroups = allGroups.filter((e) => !isGroupHidden(e));
     const hiddenEntries = allGroups.filter((e) => isGroupHidden(e));
-    const hasMultipleGroups = visibleGroups.length > 1;
 
     const appendGroupEntries = (entries: GroupEntry[], hidden = false) => {
       for (const entry of entries) {
         if (entry.type === "home") {
-          result.push({ kind: "header", group: entry.groupKey, displayGroup: "Home", hidden, agentOnly: true });
+          let view = groupTabView?.[entry.groupKey] ?? "tabs";
+          let tabsToggle = { group: entry.groupKey, view, hasTabs: entry.procs.length + entry.shells.length > 0, hasJobs: false, tabCount: entry.procs.length + entry.shells.length, jobCount: 0 };
+          result.push({ kind: "header", group: entry.groupKey, displayGroup: "Home", hidden, agentOnly: true, tabsToggle });
           if (query || !collapsedGroups.has(entry.groupKey)) {
-            result.push(...entry.procs.map((process): ListItem => ({ kind: "process", process, inGroup: true })));
-            result.push(...entry.shells.map((shell): ListItem => ({ kind: "shell", shell })));
+            if (view === "tabs") {
+              result.push(...entry.procs.map((process): ListItem => ({ kind: "process", process, inGroup: true })));
+              result.push(...entry.shells.map((shell): ListItem => ({ kind: "shell", shell })));
+            }
             if (onRunAgent) result.push({ kind: "group-agent", workDir: "~", footerPath: "~" });
           }
         } else if (entry.type === "saved") {
-          result.push({ kind: "header", group: entry.groupKey, displayGroup: entry.displayGroup, folderPath: entry.folderPath, hidden, agentOnly: true });
+          let view = groupTabView?.[entry.groupKey] ?? "tabs";
+          let tabsToggle = { group: entry.groupKey, view, hasTabs: entry.procs.length + entry.shells.length > 0, hasJobs: false, tabCount: entry.procs.length + entry.shells.length, jobCount: 0 };
+          result.push({ kind: "header", group: entry.groupKey, displayGroup: entry.displayGroup, folderPath: entry.folderPath, hidden, agentOnly: true, tabsToggle });
           if (query || !collapsedGroups.has(entry.groupKey)) {
-            result.push(...entry.procs.map((process): ListItem => ({ kind: "process", process, inGroup: true })));
-            result.push(...entry.shells.map((shell): ListItem => ({ kind: "shell", shell })));
+            if (view === "tabs") {
+              result.push(...entry.procs.map((process): ListItem => ({ kind: "process", process, inGroup: true })));
+              result.push(...entry.shells.map((shell): ListItem => ({ kind: "shell", shell })));
+            }
             if (onRunAgent) result.push({ kind: "group-agent", workDir: entry.folderPath, footerPath: entry.folderPath, machineId: entry.machineId });
             else result.push({ kind: "group-footer", group: entry.groupKey, folderPath: entry.folderPath });
           }
@@ -684,9 +691,7 @@ export function useJobListDerivedItems({
           if (view === "jobs" && !hasJobs) view = "tabs";
           const expanded = Boolean(query) || !collapsedGroups.has(entry.displayGroup);
           const tabsToggle = { group: entry.group, view, hasTabs: hasTabsContent, hasJobs, tabCount, jobCount };
-          if (hasMultipleGroups || result.length > 0 || query) {
-            result.push({ kind: "header", group: entry.displayGroup, displayGroup: entry.displayGroup, folderPath: entry.folderPath, hidden, tabsToggle });
-          }
+          result.push({ kind: "header", group: entry.displayGroup, displayGroup: entry.displayGroup, folderPath: entry.folderPath, hidden, tabsToggle });
           if (expanded) {
             if (view === "jobs") {
               let jobIdx = 0;
