@@ -97,6 +97,7 @@ test('usage immediately offers machines without a global selection and switches 
 
 test('settings disable relay operations offline while preserving account and debugging access', () => {
   let relay = { connected: false, error: 'Relay access is unavailable' };
+  let connected = false, demoPopups = 0;
   let navigated = [];
   let h = harness('remote/app/(tabs)/(settings)/settings.tsx', {
     '@clawtab/shared': { useMachines: () => relay },
@@ -106,7 +107,10 @@ test('settings disable relay operations offline while preserving account and deb
     '../../../src/components/settings/SharingSettings': {},
     '../../../src/components/settings/TerminalSettings': {},
     '../../../src/components/settings/UsageSettings': {},
-    'react-native': { Platform: { OS: 'ios' }, View: 'View', Text: 'Text' },
+    'react-native': { Platform: { OS: 'ios' }, View: 'View', Text: 'Text', Pressable: 'Pressable', StyleSheet: { create: (styles) => styles } },
+    '@expo/vector-icons': { Ionicons: 'Ionicons' },
+    '../../../src/store/ws': { useWsStore: (select) => select({ connected }) },
+    '../../../src/demo/info': { showDemoInfo: () => demoPopups++ },
     '../../../src/store/auth': { useAuthStore: (select) => select({ email: 'account@example.com' }) },
     '../../../src/components/settings/SettingsPage': { SettingsPage: 'Page', SettingsRow: 'Row', styles: {} },
     '../../../src/components/settings/navigation': { useSettingsNavigation: () => (page) => navigated.push(page) },
@@ -114,6 +118,12 @@ test('settings disable relay operations offline while preserving account and deb
   });
   let rows = () => findAll(h.render(h.exports.SettingsHome), (node) => node.type === 'Row');
   let offline = rows();
+  let demoNotices = () => findAll(h.render(h.exports.SettingsHome), (node) => node.props?.accessibilityLabel === 'About demo mode');
+  demoNotices()[0].props.onPress();
+  assert.equal(demoPopups, 1);
+  connected = true;
+  assert.equal(demoNotices().length, 0);
+  connected = false;
   for (let title of ['Shared access', 'Model usage', 'Manage machines', 'API tokens']) {
     assert.equal(offline.find((node) => node.props.title === title).props.disabled, true, title);
   }
@@ -127,6 +137,7 @@ test('settings disable relay operations offline while preserving account and deb
   offline.find((node) => node.props.title === 'Account & subscription').props.onPress();
   assert.deepEqual(navigated, ['account', 'account']);
   relay = { connected: true, error: null };
+  assert.equal(demoNotices().length, 0);
   assert.ok(rows().every((node) => !node.props.disabled));
 });
 
@@ -263,12 +274,16 @@ test('subscription actions omit chevrons and logout has its own Session section'
   let account = accountHarness();
   account.render(); await flush();
   assert.ok(account.rows().every((node) => node.props.chevron === false));
+  let titles = () => account.rows().map((node) => node.props.title);
+  assert.ok(titles().indexOf('Terms of Use') > titles().indexOf('Restore Purchases'));
+  assert.ok(titles().indexOf('Privacy Policy') > titles().indexOf('Terms of Use'));
   let session = findAll(account.render(), (node) => node.type === 'View').find((node) =>
     Array.isArray(node.props.children) && node.props.children.some((child) => child?.type === 'Text' && child.props.children === 'Session'));
   assert.ok(session);
   assert.equal(findAll(session, (node) => node.type === 'Text' && node.props.children === 'Log Out').length, 1);
   await account.rows().find((node) => node.props.title.startsWith('Subscribe')).props.onPress();
   assert.equal(account.rows().find((node) => node.props.title === 'Manage subscription').props.chevron, false);
+  assert.ok(titles().indexOf('Terms of Use') > titles().indexOf('Restore Purchases'));
   assert.ok(!account.rows().some((node) => /Refresh|Retry subscription/.test(node.props.title)));
 });
 

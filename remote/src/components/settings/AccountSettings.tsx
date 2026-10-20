@@ -225,13 +225,6 @@ export let AccountSettings = () => {
         <SettingsRow title={actionLoading || iap.purchasing ? "Please wait…" : Platform.OS === "ios" && iap.loading ? "Loading purchases…" : iap.price ? `Subscribe · ${iap.price} / month` : "Subscribe"} detail={Platform.OS === "ios" && iap.error ? iap.error : "Connect your machines through the relay"} onPress={handleSubscribe} disabled={!sub || actionLoading || iap.purchasing || (Platform.OS === "ios" && !iap.available)} chevron={false} />
       </View>
     </View>}
-    {Platform.OS === "ios" && !sub?.subscribed && <View style={styles.section}>
-      <Text style={styles.usageDescription}>Relay access renews monthly until canceled. Manage or cancel your subscription in your Apple account settings.</Text>
-      <View style={styles.listGroup}>
-        <SettingsRow title="Terms of Use" onPress={openTerms} chevron={false} />
-        <SettingsRow title="Privacy Policy" onPress={openPrivacy} chevron={false} />
-      </View>
-    </View>}
     {Platform.OS === "ios" && !sub?.subscribed && !!iap.error && <View style={styles.section}>
       <View style={styles.listGroup}><SettingsRow title="Retry loading purchases" onPress={iap.retry} disabled={iap.loading || actionLoading || iap.purchasing} chevron={false} /></View>
     </View>}
@@ -244,6 +237,13 @@ export let AccountSettings = () => {
     </View>}
     {!!subscriptionError && <Text accessibilityRole="alert" style={styles.usageDescription}>{subscriptionError}</Text>}
     {subscriptionCheckFailed && <View style={styles.listGroup}><SettingsRow title={actionLoading ? "Checking…" : "Retry subscription check"} onPress={handleRefreshSubscription} disabled={subLoading || actionLoading || iap.purchasing} chevron={false} /></View>}
+    {Platform.OS === "ios" && <View style={styles.section}>
+      {!sub?.subscribed && <Text style={styles.usageDescription}>Relay access renews monthly until canceled. Manage or cancel your subscription in your Apple account settings.</Text>}
+      <View style={styles.listGroup}>
+        <SettingsRow title="Terms of Use" onPress={openTerms} chevron={false} />
+        <SettingsRow title="Privacy Policy" onPress={openPrivacy} chevron={false} />
+      </View>
+    </View>}
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>Session</Text>
       <Pressable

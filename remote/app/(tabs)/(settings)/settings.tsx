@@ -1,8 +1,11 @@
 import { createNativeStackNavigator } from "expo-router/build/react-navigation/native-stack"
 import { NavigationContainer, NavigationIndependentTree, DarkTheme, useIsFocused } from "expo-router/react-navigation"
 import { useMachines } from "@clawtab/shared"
-import { Platform, Text, View } from "react-native"
+import { Platform, Pressable, StyleSheet, Text, View } from "react-native"
+import { Ionicons } from "@expo/vector-icons"
 import { useAuthStore } from "../../../src/store/auth"
+import { useWsStore } from "../../../src/store/ws"
+import { showDemoInfo } from "../../../src/demo/info"
 import { useResponsive } from "../../../src/hooks/useResponsive"
 import { ApiTokensSection } from "../../../src/components/ApiTokensSection"
 import { MachinePageScreen, type MachinePageParams } from "../../../src/components/MachineNavigation"
@@ -19,6 +22,8 @@ type Routes = { [Page in SettingsRoute]: undefined } & { "machine-page": Machine
 let Stack = createNativeStackNavigator<Routes>()
 export let SettingsHome = () => {
   let relay = useMachines()
+  let connected = useWsStore((state) => state.connected)
+  let demoMode = !relay.connected && !connected
   let unavailable = !relay.connected
   let email = useAuthStore((state) => state.email)
   let navigate = useSettingsNavigation()
@@ -26,8 +31,14 @@ export let SettingsHome = () => {
   return <SettingsPage>
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>Relay connection</Text>
-      <View style={styles.listGroup}>
-        <SettingsRow title={relay.connected ? "Connected to relay" : "Connect to relay"} detail={relay.error ?? (relay.connected ? "Online" : "Disconnected")} onPress={open("account")} />
+      <View style={[styles.listGroup, homeStyles.relayRow]}>
+        <View style={homeStyles.relayConnection}>
+          <SettingsRow title={relay.connected ? "Connected to relay" : "Connect to relay"} detail={relay.error ?? (relay.connected ? "Online" : "Disconnected")} onPress={open("account")} />
+        </View>
+        {demoMode && <Pressable accessibilityRole="button" accessibilityLabel="About demo mode" onPress={showDemoInfo} style={homeStyles.demoButton}>
+          <Ionicons name="alert-circle-outline" size={20} color={colors.warning} />
+          <Text style={homeStyles.demoText}>Demo</Text>
+        </Pressable>}
       </View>
     </View>
     <View style={styles.section}>
@@ -53,6 +64,12 @@ export let SettingsHome = () => {
     </View>
   </SettingsPage>
 }
+let homeStyles = StyleSheet.create({
+  relayRow: { flexDirection: "row", alignItems: "center" },
+  relayConnection: { flex: 1 },
+  demoButton: { minHeight: 44, paddingHorizontal: 16, flexDirection: "row", alignItems: "center", gap: 8 },
+  demoText: { color: colors.warning, fontSize: 14, fontWeight: "600" },
+})
 let MachineSettings = () => <SettingsPage><MachineSetup manage /></SettingsPage>
 let TokenSettings = () => <SettingsPage><ApiTokensSection /></SettingsPage>
 let pages = {
