@@ -194,6 +194,21 @@ test('account offers native subscribe and restore, then reconnects only after ac
   }
 });
 
+test('Android uses existing access without checkout or subscription management links', async () => {
+  let account = accountHarness('android');
+  account.render();
+  await flush();
+  assert.ok(!account.rows().some((node) => /Subscribe|Restore Purchases|Manage.*subscription/.test(node.props.title)));
+  assert.equal(account.counts().checkouts, 0);
+  account.setSubscribed(true);
+  account.resume();
+  await flush();
+  assert.ok(findAll(account.render(), (node) => node.props?.children === 'Active').length);
+  assert.ok(!account.rows().some((node) => /Subscribe|Restore Purchases|Manage.*subscription/.test(node.props.title)));
+  assert.equal(account.counts().reconnects, 1);
+  assert.deepEqual(account.opened, []);
+});
+
 test('unavailable or unsuccessful native purchases do not grant relay access', async () => {
   let account = accountHarness();
   account.render();

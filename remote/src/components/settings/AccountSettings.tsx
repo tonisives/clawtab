@@ -49,6 +49,7 @@ export let AccountSettings = () => {
     finally { setActionLoading(false) }
   }
   let handleSubscribe = async () => {
+    if (Platform.OS === "android") return
     if (actionLoading || iap.purchasing) return
     setActionLoading(true)
     setSubscriptionError(null)
@@ -120,6 +121,7 @@ export let AccountSettings = () => {
     return () => { active = false; ++subscriptionRequest.current; listener.remove() }
   }, [userId, iap.activation])
   let handleManageProvider = async (provider: string | null) => {
+    if (Platform.OS === "android") return
     setActionLoading(true)
     try {
       if (provider === "apple") {
@@ -207,7 +209,7 @@ export let AccountSettings = () => {
           )}
         </View>
         {sub.relay_included && <Text style={styles.usageDescription}>Your box includes relay access. Any separate relay subscription continues on its normal billing schedule until you cancel it.</Text>}
-        {(sub.providers?.length ?? 0) > 1 ? <View style={styles.listGroup}>
+        {Platform.OS !== "android" && ((sub.providers?.length ?? 0) > 1 ? <View style={styles.listGroup}>
           <SettingsRow title="Manage Apple subscription" onPress={manageApple} disabled={actionLoading} chevron={false} />
           <SettingsRow title="Manage Stripe subscription" onPress={manageStripe} disabled={actionLoading} chevron={false} />
         </View> : (!sub.relay_included || sub.provider) && <View style={styles.listGroup}><SettingsRow
@@ -215,15 +217,15 @@ export let AccountSettings = () => {
           onPress={handleManageBilling}
           disabled={actionLoading}
           chevron={false}
-        /></View>}
+        /></View>)}
         {sub.relay_included && <View style={styles.listGroup}><SettingsRow title="Manage boxes" onPress={openMachines} /></View>}
       </View>
     )}
     {!subLoading && !sub?.subscribed && <View style={styles.section}>
       <Text style={styles.sectionTitle}>Relay subscription</Text>
-      <View style={styles.listGroup}>
+      {Platform.OS === "android" ? <Text style={styles.usageDescription}>Relay access requires an existing ClawTab subscription.</Text> : <View style={styles.listGroup}>
         <SettingsRow title={actionLoading || iap.purchasing ? "Please wait…" : Platform.OS === "ios" && iap.loading ? "Loading purchases…" : iap.price ? `Subscribe · ${iap.price} / month` : "Subscribe"} detail={Platform.OS === "ios" && iap.error ? iap.error : "Connect your machines through the relay"} onPress={handleSubscribe} disabled={!sub || actionLoading || iap.purchasing || (Platform.OS === "ios" && !iap.available)} chevron={false} />
-      </View>
+      </View>}
     </View>}
     {Platform.OS === "ios" && !sub?.subscribed && !!iap.error && <View style={styles.section}>
       <View style={styles.listGroup}><SettingsRow title="Retry loading purchases" onPress={iap.retry} disabled={iap.loading || actionLoading || iap.purchasing} chevron={false} /></View>

@@ -18,12 +18,17 @@ test('paused backend has a distinct reason and does not depend on native billing
   assert.equal(result.purchases, false);
   assert.match(rentalAvailabilityMessage(result.reason), /paused/);
 });
-test('web checkout works without a storefront, native checkout uses the server allowlist', async () => {
+test('web checkout works without a storefront and iOS uses the server allowlist', async () => {
   assert.equal((await resolveRentalAvailability(capabilities, 'web', () => { throw Error(); })).purchases, true);
   assert.equal((await resolveRentalAvailability(capabilities, 'ios', async () => ' usa ')).purchases, true);
-  assert.equal((await resolveRentalAvailability(capabilities, 'android', async () => 'US')).purchases, true);
   assert.equal((await resolveRentalAvailability(capabilities, 'ios', async () => 'THA')).reason, 'region');
-  assert.equal((await resolveRentalAvailability({ ...capabilities, android_storefronts: [] }, 'android', async () => 'US')).reason, 'region');
+});
+test('Android does not offer rental checkout even when a storefront is allowlisted', async () => {
+  let lookups = 0;
+  let result = await resolveRentalAvailability(capabilities, 'android', async () => { lookups++; return 'US'; });
+  assert.equal(result.purchases, false);
+  assert.equal(result.reason, 'paused');
+  assert.equal(lookups, 0);
 });
 test('failed and empty storefront lookups are retryable, and a later lookup can succeed', async () => {
   for (let lookup of [async () => '', async () => { throw Error('offline'); }]) {

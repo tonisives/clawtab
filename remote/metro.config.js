@@ -18,4 +18,5 @@ config.resolver.nodeModulesPaths = [
   path.resolve(workspaceRoot, "node_modules"),
 ];
 
+config.maxWorkers = 4;
 module.exports = config;

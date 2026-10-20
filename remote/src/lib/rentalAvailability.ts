@@ -6,6 +6,7 @@ export let resolveRentalAvailability = async (
   platform: string,
   getStorefront: () => Promise<string>,
 ): Promise<RentalAvailability> => {
+  if (platform === "android") return { purchases: false, reason: "paused" }
   if (!capabilities.enabled) return { purchases: false, reason: "paused" }
   if (platform === "web") return { purchases: true }
   let storefront: string
