@@ -35,6 +35,12 @@ _cwtctl_panes() {
   compadd -a panes
 }
 
+_cwtctl_sessions() {
+  local -a sessions
+  sessions=(${(f)"$(cwtctl session list 2>/dev/null | cut -f1)"})
+  compadd -a sessions
+}
+
 _cwtctl_plugins() {
   local -a plugins
   plugins=('list:List available agent plugins')
@@ -68,6 +74,7 @@ _cwtctl() {
     'secrets:Manage secrets'
     'telegram:Send a Telegram message'
     'pane:Pane controls'
+    'session:Manage durable CLI sessions'
     'daemon:Daemon management'
   )
 
@@ -114,6 +121,53 @@ _cwtctl() {
             _cwtctl_jobs
           elif (( CURRENT == 4 )) && [[ $words[2] == run || $words[2] == pause || $words[2] == resume || $words[2] == restart || $words[2] == edit ]] && [[ $words[3] != */* ]]; then
             _cwtctl_jobs_for_group "$words[3]"
+          fi
+          ;;
+        session)
+          if (( CURRENT == 2 )); then
+            local -a sub
+            sub=(
+              'start:Start a durable terminal session'
+              'list:List managed sessions'
+              'attach:Attach to a running session'
+              'capture:Print a session screen or history'
+              'stop:Stop a managed session'
+              'resume:Resume a managed session'
+              'help:Show session usage'
+            )
+            _describe -t subcmd 'session subcommand' sub
+          elif [[ $words[2] == start ]]; then
+            local command_index=${words[(i)--]}
+            if (( command_index < CURRENT )); then
+              words=("${words[@]:$command_index}")
+              (( CURRENT -= command_index ))
+              _normal
+            else
+              words=("${words[@]:1}")
+              (( CURRENT-- ))
+              _arguments -S \
+                '(--close-with-terminal)--detached[Start without attaching this terminal]' \
+                '(--detached --keep-running)--close-with-terminal[Stop when this terminal closes]' \
+                '(--close-with-terminal)--keep-running[Keep running when this terminal closes]' \
+                '--[Start the program and its arguments]'
+            fi
+          else
+            words=("${words[@]:1}")
+            (( CURRENT-- ))
+            case $words[1] in
+              list)
+                _arguments '--json[Output sessions as JSON]'
+                ;;
+              attach|stop|resume)
+                _arguments '1:session ID:_cwtctl_sessions'
+                ;;
+              capture)
+                _arguments \
+                  '--history[Include retained terminal history]' \
+                  '--ansi[Include ANSI terminal formatting]' \
+                  '1:session ID:_cwtctl_sessions'
+                ;;
+            esac
           fi
           ;;
         usage)
