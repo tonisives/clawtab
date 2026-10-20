@@ -61,7 +61,7 @@ _cwtctl_secret_keys() {
   compadd -a keys
 }
 
-_cwtctl() {
+_cwtctl_complete() {
   local curcontext="$curcontext" state line
   typeset -A opt_args
 
@@ -308,4 +308,10 @@ _cwtctl() {
   esac
 }
 
-_cwtctl "$@"
+# Zsh caches this entry point in each shell. Read the installed file again on
+# the next completion so an atomic local install takes effect immediately.
+_cwtctl() {
+  source "${functions_source[_cwtctl]}" "$@"
+}
+
+_cwtctl_complete "$@"
