@@ -96,9 +96,12 @@ export const useJobsStore = create<JobsState>((set) => ({
       );
       const startedAt = parsedTimestamp(process.session_started_at);
       const lastLogChange = logChanged ? now : previous?._last_log_change ?? startedAt;
-      const lastUserMessage = humanMessageChanged
-        ? now
-        : previous?._last_user_message ?? startedAt;
+      const lastUserMessage = Math.max(
+        process.last_user_message_at ?? 0,
+        previous?._last_user_message ?? 0,
+        process.last_user_message_at == null && humanMessageChanged ? now : 0,
+        startedAt,
+      );
       const lastActivity = Math.max(
         meaningfulOutputChanged ? now : 0,
         previous?._last_activity ?? 0,

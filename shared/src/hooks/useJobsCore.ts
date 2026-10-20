@@ -160,9 +160,12 @@ export function useJobsCore(transport: Transport, pollInterval = 5000) {
         } else {
           proc._last_log_change = prevChanges.get(proc.pane_id) ?? startedAt;
         }
-        proc._last_user_message = oldQuery !== undefined && oldQuery !== proc.last_query
-          ? now
-          : prevUserMessages.get(proc.pane_id) ?? startedAt;
+        proc._last_user_message = Math.max(
+          proc.last_user_message_at ?? 0,
+          prevUserMessages.get(proc.pane_id) ?? 0,
+          proc.last_user_message_at == null && oldQuery !== undefined && oldQuery !== proc.last_query ? now : 0,
+          startedAt,
+        );
         nextChanges.set(proc.pane_id, proc._last_log_change);
         nextUserMessages.set(proc.pane_id, proc._last_user_message);
       }

@@ -19,6 +19,7 @@ pub struct SessionInfo {
     pub agent_effort: Option<String>,
     pub first_query: Option<String>,
     pub last_query: Option<String>,
+    pub last_user_message_at: Option<i64>,
     pub session_started_at: Option<String>,
     pub started_epoch: Option<u64>,
     pub token_count: Option<u64>,

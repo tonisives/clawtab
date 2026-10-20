@@ -61,6 +61,11 @@ pub(super) fn resolve_session_info(
                             }
                         }
 
+                        info.last_user_message_at = parsed
+                            .created_at
+                            .as_deref()
+                            .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
+                            .map(|time| time.timestamp_millis());
                         if first_query.is_none() {
                             first_query = Some(content.clone());
                             started_at = parsed.created_at;

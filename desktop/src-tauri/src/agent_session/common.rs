@@ -145,3 +145,38 @@ pub(super) fn read_latest_jsonl<T>(
     }
     None
 }
+
+/// Cache the historical message time, rather than the time a client observes activity.
+pub(super) fn last_user_message_at(
+    path: &std::path::Path,
+    is_user_message: impl Fn(&serde_json::Value) -> bool,
+) -> Option<i64> {
+    type Entry = (Option<std::time::SystemTime>, u64, Option<i64>);
+    static CACHE: std::sync::OnceLock<
+        parking_lot::Mutex<std::collections::HashMap<std::path::PathBuf, Entry>>,
+    > = std::sync::OnceLock::new();
+    let cache = CACHE.get_or_init(|| parking_lot::Mutex::new(std::collections::HashMap::new()));
+    let metadata = std::fs::metadata(path).ok()?;
+    let modified = metadata.modified().ok();
+    let len = metadata.len();
+    if let Some(entry) = cache.lock().get(path) {
+        if entry.0 == modified && entry.1 == len {
+            return entry.2;
+        }
+    }
+    let timestamp = read_latest_jsonl(path, |value| {
+        if !is_user_message(value) {
+            return None;
+        }
+        chrono::DateTime::parse_from_rfc3339(value.get("timestamp")?.as_str()?)
+            .ok()
+            .map(|time| time.timestamp_millis())
+    });
+    insert_bounded(
+        &mut cache.lock(),
+        path.to_path_buf(),
+        (modified, len, timestamp),
+        SESSION_CACHE_MAX_ENTRIES,
+    );
+    timestamp
+}
