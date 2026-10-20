@@ -10,7 +10,7 @@ import {
   Image,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import * as Google from "expo-auth-session/providers/google";
+import { useGoogleBrowserAuth } from "../src/lib/googleBrowserAuth";
 import * as WebBrowser from "expo-web-browser";
 import { useAuthStore } from "../src/store/auth";
 import * as api from "../src/api/client";
@@ -28,7 +28,7 @@ if (Platform.OS !== "web") {
     const mod = require("@react-native-google-signin/google-signin");
     GoogleSignin = mod.GoogleSignin;
     isSuccessResponse = mod.isSuccessResponse;
-    if (process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS) {
+    if (process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS || process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB) {
       GoogleSignin.configure({
         iosClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS,
         ...(process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB
@@ -64,7 +64,7 @@ export default function LoginScreen() {
   const [tempServerUrl, setTempServerUrl] = useState("");
 
   // Web: Google auth via expo-auth-session provider
-  const [, googleAuthSessionResult, promptAsync] = Google.useIdTokenAuthRequest({
+  const [, googleAuthSessionResult, promptAsync] = useGoogleBrowserAuth({
     webClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB,
     iosClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS,
   });
