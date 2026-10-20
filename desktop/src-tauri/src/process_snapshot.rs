@@ -418,6 +418,7 @@ fn build_remote(
         log_lines,
         first_query: session_info.first_query,
         last_query: session_info.last_query,
+        last_user_message_at: session_info.last_user_message_at,
         session_started_at: session_info.session_started_at,
         token_count: session_info.token_count,
     }

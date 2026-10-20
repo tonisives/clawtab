@@ -98,6 +98,8 @@ export interface DetectedProcess {
   log_lines: string;
   first_query: string | null;
   last_query: string | null;
+  /** Unix milliseconds of the latest human message from provider history. */
+  last_user_message_at?: number | null;
   session_started_at: string | null;
   token_count?: number | null;
   _transient_state?: "starting" | "stopping";

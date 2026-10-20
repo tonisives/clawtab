@@ -306,6 +306,9 @@ pub struct DetectedProcess {
     pub first_query: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_query: Option<String>,
+    /// Unix milliseconds of the latest human message, from provider history.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_user_message_at: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session_started_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

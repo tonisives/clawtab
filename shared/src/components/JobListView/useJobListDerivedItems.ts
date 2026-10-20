@@ -36,7 +36,7 @@ const processStartedTimestamp = (process: DetectedProcess): number => (
 const PINNED_GROUP_KEY = "__pinned";
 
 const processLatestTimestamp = (process: DetectedProcess, sortMode: LatestSortMode): number => {
-  if (sortMode === "message") return process._last_user_message ?? processStartedTimestamp(process);
+  if (sortMode === "message") return Math.max(process.last_user_message_at ?? 0, process._last_user_message ?? 0) || processStartedTimestamp(process);
   if (sortMode === "activity") return process._last_activity ?? processStartedTimestamp(process);
   return processStartedTimestamp(process);
 };
@@ -428,7 +428,7 @@ export function useJobListDerivedItems({
       rows.push({
         item: { kind: "process", process, inGroup: true },
         name: processDisplayTitle(process),
-        timestamp: processLatestTimestamp(process, "activity"),
+        timestamp: processLatestTimestamp(process, "message"),
       });
     }
 

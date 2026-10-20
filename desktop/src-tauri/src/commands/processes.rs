@@ -38,6 +38,9 @@ pub struct DetectedProcess {
     pub log_lines: String,
     pub first_query: Option<String>,
     pub last_query: Option<String>,
+    /// Unix milliseconds of the latest human message, from provider history.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_user_message_at: Option<i64>,
     pub session_started_at: Option<String>,
     pub token_count: Option<u64>,
 }
@@ -557,6 +560,7 @@ fn build_detected_process(
         last_query: override_meta
             .and_then(|meta| meta.last_query.clone())
             .or(session_info.last_query),
+        last_user_message_at: session_info.last_user_message_at,
         session_started_at: session_info.session_started_at,
         token_count: session_info.token_count,
     }

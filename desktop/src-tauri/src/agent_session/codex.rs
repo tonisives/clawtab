@@ -116,6 +116,7 @@ fn resolve_session_info_with_details(
     info.session_started_at = format_local_timestamp(started_secs);
 
     if let Some(rollout_path) = thread.rollout_path.as_deref() {
+        info.last_user_message_at = read_last_user_message_at(std::path::Path::new(rollout_path));
         let needs_messages = info.first_query.is_none() || info.last_query.is_none();
         if include_details || needs_messages {
             let rollout = read_codex_rollout(&PathBuf::from(rollout_path), needs_messages);
@@ -413,6 +414,16 @@ fn read_codex_thread_from_db(conn: &Connection, thread_id: &str) -> Option<Codex
     .optional()
     .ok()
     .flatten()
+}
+
+fn read_last_user_message_at(path: &std::path::Path) -> Option<i64> {
+    super::common::last_user_message_at(path, |value| {
+        value.get("type").and_then(|value| value.as_str()) == Some("event_msg")
+            && value
+                .pointer("/payload/type")
+                .and_then(|value| value.as_str())
+                == Some("user_message")
+    })
 }
 
 fn read_codex_last_query(thread_id: &str) -> Option<String> {
@@ -811,6 +822,30 @@ fn read_codex_rollout_messages(path: &PathBuf) -> (Option<String>, Option<String
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn message_time_ignores_agent_output_and_refreshes_for_identical_prompts() {
+        use std::io::Write;
+        let path =
+            std::env::temp_dir().join(format!("codex-message-time-{}.jsonl", uuid::Uuid::new_v4()));
+        std::fs::write(&path, concat!(
+            "{\"type\":\"event_msg\",\"timestamp\":\"2026-10-20T01:00:00Z\",\"payload\":{\"type\":\"user_message\",\"message\":\"continue\"}}\n",
+            "{\"type\":\"event_msg\",\"timestamp\":\"2026-10-20T02:00:00Z\",\"payload\":{\"type\":\"task_complete\"}}\n",
+        )).expect("fixture");
+        let first = super::read_last_user_message_at(&path).expect("message time");
+        assert_eq!(first, 1792458000000);
+        assert_eq!(super::read_last_user_message_at(&path), Some(first));
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .expect("open");
+        writeln!(file, "{{\"type\":\"event_msg\",\"timestamp\":\"2026-10-20T03:00:00Z\",\"payload\":{{\"type\":\"user_message\",\"message\":\"continue\"}}}}").expect("append");
+        assert_eq!(
+            super::read_last_user_message_at(&path),
+            Some(first + 7200000)
+        );
+        std::fs::remove_file(path).expect("cleanup");
+    }
+
     fn unique_thread_for_title(
         conn: &rusqlite::Connection,
         title: &str,

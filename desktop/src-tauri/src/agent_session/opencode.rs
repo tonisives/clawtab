@@ -68,6 +68,12 @@ pub(super) fn resolve_session_info(
         .or(first)
         .or_else(|| normalize_optional_owned(session.title.clone()));
     info.last_query = last;
+    info.last_user_message_at = Connection::open(opencode_db_path()).ok().and_then(|conn| {
+        conn.query_row(
+            "select max(time_created) from message where session_id = ?1 and json_extract(data, '$.role') = 'user'",
+            [&session.id], |row| row.get(0),
+        ).ok().flatten()
+    });
     info.token_count = read_opencode_token_count(&session.id);
 
     if info

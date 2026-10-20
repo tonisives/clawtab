@@ -553,6 +553,7 @@ mod tests {
             log_lines: String::new(),
             first_query: None,
             last_query: None,
+            last_user_message_at: None,
             session_started_at: None,
             token_count: None,
         }

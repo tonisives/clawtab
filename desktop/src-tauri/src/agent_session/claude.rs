@@ -103,6 +103,9 @@ pub(super) fn resolve_session_info(
     let jsonl_path = project_path.join(format!("{}.jsonl", session.session_id));
 
     let (first, last, token_count, model_id, title) = read_session_messages(&jsonl_path);
+    info.last_user_message_at = super::common::last_user_message_at(&jsonl_path, |value| {
+        extract_user_text_from_jsonl_line(&value.to_string()).is_some()
+    });
     info.first_query = first;
     info.last_query = last;
     info.token_count = token_count;
