@@ -71,9 +71,16 @@ export const DEMO_STATUSES: Record<string, JobStatus> = {
   "sync-assets": { state: "success", last_run: ago(1440) },
 };
 
+let demoPaneBase = Math.floor(Math.random() * 9000) + 1000;
+const DEMO_PANE_IDS = {
+  claude: `%${demoPaneBase}`,
+  codex: `%${demoPaneBase + 1}`,
+  opencode: `%${demoPaneBase + 2}`,
+};
+
 export const DEMO_QUESTIONS: ClaudeQuestion[] = [
   {
-    pane_id: "demo-pane-claude",
+    pane_id: DEMO_PANE_IDS.claude,
     cwd: "~/workspace/app",
     tmux_session: "demo",
     window_name: "claude",
@@ -366,14 +373,14 @@ export const DEMO_TERMINALS: Record<string, string> = {
 };
 
 export const DEMO_PTY_OUTPUT_BY_PANE: Record<string, string> = {
-  "demo-pane-claude": DEMO_TERMINALS["claude-review-prs"],
-  "demo-pane-codex": DEMO_TERMINALS["codex-investigate-flake"],
-  "demo-pane-opencode": DEMO_TERMINALS["opencode-upgrade-ui"],
+  [DEMO_PANE_IDS.claude]: DEMO_TERMINALS["claude-review-prs"],
+  [DEMO_PANE_IDS.codex]: DEMO_TERMINALS["codex-investigate-flake"],
+  [DEMO_PANE_IDS.opencode]: DEMO_TERMINALS["opencode-upgrade-ui"],
 };
 
 export const DEMO_PROCESSES: DetectedProcess[] = [
   {
-    pane_id: "demo-pane-claude",
+    pane_id: DEMO_PANE_IDS.claude,
     cwd: "~/workspace/app",
     version: "demo",
     display_name: "Claude review",
@@ -395,7 +402,7 @@ export const DEMO_PROCESSES: DetectedProcess[] = [
     _last_activity: Date.parse(ago(1)),
   },
   {
-    pane_id: "demo-pane-codex",
+    pane_id: DEMO_PANE_IDS.codex,
     cwd: "~/workspace/app",
     version: "demo",
     display_name: "Codex flake investigation",
@@ -417,7 +424,7 @@ export const DEMO_PROCESSES: DetectedProcess[] = [
     _last_activity: Date.parse(ago(2)),
   },
   {
-    pane_id: "demo-pane-opencode",
+    pane_id: DEMO_PANE_IDS.opencode,
     cwd: "~/workspace/app",
     version: "demo",
     display_name: "OpenCode UI upgrade",

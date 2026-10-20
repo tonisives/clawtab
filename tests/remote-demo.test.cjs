@@ -42,8 +42,10 @@ let loadDemo = (entry, params = {}, os = 'ios') => {
     } });
     return exports;
   };
+  let processes = load(require.resolve('../remote/src/demo/data.ts')).DEMO_PROCESSES;
+  if (params.kind === 'process') params.id = processes.find((process) => process.provider === params.id)?.pane_id ?? params.id;
   let component = entry === 'workspace' ? load(require.resolve('../remote/src/components/DemoWorkspace.tsx')).DemoWorkspace : entry === 'index.tsx' ? load(require.resolve('../remote/src/components/DemoJobList.tsx')).DemoJobList : load(require.resolve(entry === 'terminal' ? '../remote/app/demo-agent.tsx' : `../remote/app/demo/${entry}`)).default;
-  return { pushed, writes, getFilter: () => filterStore.getState(), render: (props = {}) => {
+  return { pushed, writes, processes, getFilter: () => filterStore.getState(), render: (props = {}) => {
     cursor = 0;
     let tree = component(props);
     if (typeof tree.type === "function") tree = tree.type(tree.props);
@@ -75,7 +77,7 @@ test('demo list has isolated sample groups and no live mutation callbacks', () =
 });
 
 test('demo job and agent details render output offline and disable action controls', () => {
-  for (let params of [{ id: 'deploy-api', kind: 'job' }, { id: 'demo-pane-codex', kind: 'process' }]) {
+  for (let params of [{ id: 'deploy-api', kind: 'job' }, { id: 'codex', kind: 'process' }]) {
     let nodes = all(loadDemo('[id].tsx', params).render());
     assert.ok(nodes.some((node) => node.type === 'Text' && node.props.children === 'Output'));
     let action = nodes.find((node) => node.type === 'InsetListRow' && node.props.title === 'Agent actions');
@@ -105,7 +107,7 @@ test('demo lists follow mobile search input and clear across every list mode', (
 
 
 test('demo agents open a read-only shell terminal with a native header menu', () => {
-  let demo = loadDemo('terminal', { id: 'demo-pane-codex', kind: 'process' });
+  let demo = loadDemo('terminal', { id: 'codex', kind: 'process' });
   let nodes = all(demo.render());
   let terminal = nodes.find((node) => node.type === 'XtermLog');
   assert.equal(terminal.props.interactive, false);
@@ -117,7 +119,7 @@ test('demo agents open a read-only shell terminal with a native header menu', ()
   assert.equal(menu.props.accessibilityLabel, 'Open pane overview');
   menu.props.onPress();
   assert.equal(demo.pushed[0].pathname, '/demo-agent-details');
-  assert.equal(demo.pushed[0].params.id, 'demo-pane-codex');
+  assert.equal(demo.pushed[0].params.id, demo.processes.find((process) => process.provider === 'codex').pane_id);
 });
 
 
@@ -130,7 +132,7 @@ test('the web demo uses the same compact list presentation as mobile', () => {
 });
 
 test('each demo agent keeps an editable local prompt and model outside the shell buffer', () => {
-  for (let id of ['demo-pane-claude', 'demo-pane-codex', 'demo-pane-opencode']) {
+  for (let id of ['claude', 'codex', 'opencode']) {
     let demo = loadDemo('terminal', { id, kind: 'process' });
     let nodes = all(demo.render());
     let prompt = nodes.find((node) => node.type === 'TextInput');
@@ -153,10 +155,11 @@ test('wide web demo keeps sample selection beside the sidebar without routing aw
   let list = nodes.find((node) => node.type === 'DemoJobList');
   let pane = nodes.find((node) => node.type === 'DemoAgentPane');
   assert.equal(pane.props.id, list.props.selectedSlug);
-  list.props.onSelectProcess({ pane_id: 'demo-pane-codex' });
+  let paneId = demo.processes.find((process) => process.provider === 'codex').pane_id;
+  list.props.onSelectProcess({ pane_id: paneId });
   nodes = all(demo.render());
   pane = nodes.find((node) => node.type === 'DemoAgentPane');
-  assert.equal(pane.props.id, 'demo-pane-codex');
+  assert.equal(pane.props.id, paneId);
   assert.equal(pane.props.kind, 'process');
   nodes.find((node) => node.type === 'DemoJobList').props.onSelectJob({ slug: 'deploy-api' });
   pane = all(demo.render()).find((node) => node.type === 'DemoAgentPane');

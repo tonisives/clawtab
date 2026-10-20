@@ -219,7 +219,7 @@ export function ProcessCard({
         </View> : null}
       </View>
       {managed ? <Tooltip label="Shell session"><JobKindIcon kind="shell" size={14} bare /></Tooltip>
-        : <Text style={styles.paneId} numberOfLines={1} adjustsFontSizeToFit>{resourceLabel(process.pane_id)}</Text>}
+        : <Text style={styles.paneId} numberOfLines={1} ellipsizeMode="tail">{resourceLabel(process.pane_id)}</Text>}
     </View>
   );
   const titleControls = (
@@ -413,6 +413,7 @@ const styles = StyleSheet.create({
   },
   machineOverlayCompact: { width: 10, height: 10, right: -6 },
   paneId: {
+    maxWidth: 42,
     fontSize: 10,
     color: colors.textMuted,
     fontFamily: "monospace",
