@@ -190,5 +190,8 @@ pub async fn apple_callback(
         ).await;
     }
 
+    if scheme == "clawtab-cli" {
+        return Ok(super::auth_session::cli_login_complete());
+    }
     Ok(redirect_page(&deep_link))
 }

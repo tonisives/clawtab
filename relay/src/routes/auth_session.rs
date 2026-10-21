@@ -6,6 +6,14 @@ use uuid::Uuid;
 
 use crate::AppState;
 
+pub fn cli_login_complete() -> axum::response::Html<String> {
+    axum::response::Html(
+        "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>ClawTab - Sign In</title></head>\
+         <body><h1>Sign-in successful</h1><p>Return to your terminal to finish connecting this machine.</p></body></html>"
+            .into(),
+    )
+}
+
 #[derive(Deserialize)]
 pub struct CreateSessionRequest {
     pub session_id: String,

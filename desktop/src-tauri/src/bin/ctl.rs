@@ -10,6 +10,9 @@ use clawtab_lib::ipc::{self, DesktopIpcCommand, IpcCommand, IpcResponse, PaneDir
 #[path = "../ctl_create.rs"]
 mod ctl_create;
 
+#[path = "../ctl_login.rs"]
+mod ctl_login;
+
 /// Routes a parsed command to either the daemon or the desktop-app socket.
 /// `cwtctl` originally only spoke to the daemon; UI actions like `pane focus`
 /// and `open` live on the desktop socket so the daemon stays UI-agnostic.
@@ -24,6 +27,7 @@ fn print_usage() {
     eprintln!("Usage: cwtctl <command> [args]");
     eprintln!();
     eprintln!("  setup [--relay URL] [--name NAME] [--linger | --no-service] [--replace]  Pair and install the host");
+    eprintln!("  login [--provider google|apple | --email EMAIL] [--relay URL] [--no-browser]  Replace the current account");
     eprintln!("Commands (require daemon):");
     eprintln!("  jobs              Manage configured jobs");
     eprintln!("  move help         Move a conversation or verify machine/client identities");
@@ -783,6 +787,12 @@ async fn main() {
         std::process::exit(1);
     }
 
+    if command == "login" {
+        if let Err(error) = ctl_login::login(&args[2..]).await {
+            exit_error(&error);
+        }
+        return;
+    }
     if command == "setup" {
         if let Err(error) = clawtab_lib::machine_setup::setup(&args[2..]).await {
             exit_error(&error);

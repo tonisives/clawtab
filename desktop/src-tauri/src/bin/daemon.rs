@@ -15,6 +15,10 @@ use clawtab_lib::notifications::IpcNotifier;
 use clawtab_lib::secrets::SecretsManager;
 use clawtab_lib::telegram;
 
+// One task owns both the connected session and its offline retry loop.
+static RELAY_TASK: tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>> =
+    tokio::sync::Mutex::const_new(None);
+
 struct DaemonInstanceGuard {
     _file: File,
 }
@@ -332,45 +336,18 @@ fn main() {
         }
 
         // Relay connection (if configured)
-        {
-            let relay_settings = settings.lock().relay.clone();
-            if let Some(rs) = relay_settings {
-                let device_token = if rs.device_token.is_empty() {
-                    secrets
-                        .lock()
-                        .get("relay_device_token")
-                        .cloned()
-                        .unwrap_or_default()
-                } else {
-                    rs.device_token.clone()
-                };
-
-                if rs.enabled && !rs.server_url.is_empty() && !device_token.is_empty() {
-                    let ws_url = if rs.server_url.starts_with("http") {
-                        rs.server_url.replacen("http", "ws", 1) + "/ws"
-                    } else {
-                        rs.server_url.clone()
-                    };
-                    let server_url = rs.server_url.clone();
-                    let relay_sub = Arc::clone(&relay_sub_required);
-                    let jobs_config = Arc::clone(&jobs_config);
-                    let ctx = ctx.clone();
-                    let pty_manager = Arc::clone(&pty_manager);
-                    let event_sink = Arc::clone(&event_sink);
-                    tokio::spawn(async move {
-                        clawtab_lib::relay::connect_loop(clawtab_lib::relay::ConnectLoopParams {
-                            ws_url,
-                            device_token,
-                            server_url,
-                            relay_sub_required: relay_sub,
-                            jobs_config,
-                            ctx,
-                            pty_manager,
-                            event_sink,
-                        })
-                        .await;
-                    });
-                }
+        let relay_enabled = settings.lock().relay.as_ref().is_some_and(|r| r.enabled);
+        if relay_enabled {
+            if let Err(error) = spawn_relay_connect(
+                &relay_sub_required,
+                &jobs_config,
+                &ctx,
+                &pty_manager,
+                &event_sink,
+            )
+            .await
+            {
+                log::warn!("Relay: {error}");
             }
         }
 
@@ -980,18 +957,16 @@ async fn handle_ipc_command(
                 ctx,
                 pty_manager,
                 event_sink,
-            ) {
+            )
+            .await
+            {
                 Ok(()) => IpcResponse::Ok,
                 Err(e) => IpcResponse::Error(e),
             }
         }
         IpcCommand::RelayDisconnect => {
-            {
-                let guard = relay.lock();
-                if let Some(handle) = guard.as_ref() {
-                    handle.disconnect();
-                }
-            }
+            let mut task = RELAY_TASK.lock().await;
+            stop_relay_task(&mut task, relay).await;
             IpcResponse::Ok
         }
         IpcCommand::ReloadSettings => {
@@ -1324,29 +1299,32 @@ fn compute_relay_status(
     }
 }
 
-fn spawn_relay_connect(
+async fn spawn_relay_connect(
     relay_sub_required: &Arc<Mutex<bool>>,
     jobs_config: &Arc<Mutex<JobsConfig>>,
     ctx: &clawtab_lib::job_context::JobContext,
     pty_manager: &clawtab_lib::pty::SharedPtyManager,
     event_sink: &Arc<dyn clawtab_lib::events::EventSink>,
 ) -> Result<(), String> {
-    let settings_guard = ctx.settings.lock();
-    let rs = settings_guard
-        .relay
-        .as_ref()
-        .ok_or_else(|| "No relay settings configured".to_string())?;
-    if rs.server_url.is_empty() {
-        return Err("Relay server URL not configured".to_string());
-    }
-    let server_url = rs.server_url.clone();
-    let yaml_token = rs.device_token.clone();
-    let ws_url = if rs.server_url.starts_with("http") {
-        rs.server_url.replacen("http", "ws", 1) + "/ws"
-    } else {
-        rs.server_url.clone()
+    let (server_url, yaml_token) = {
+        let settings = ctx.settings.lock();
+        let rs = settings
+            .relay
+            .as_ref()
+            .ok_or("No relay settings configured")?;
+        if !rs.enabled {
+            return Err("Relay connection is disabled".into());
+        }
+        if rs.server_url.is_empty() {
+            return Err("Relay server URL not configured".into());
+        }
+        (rs.server_url.clone(), rs.device_token.clone())
     };
-    drop(settings_guard);
+    let ws_url = if server_url.starts_with("http") {
+        server_url.replacen("http", "ws", 1) + "/ws"
+    } else {
+        server_url.clone()
+    };
 
     let device_token = if yaml_token.is_empty() {
         ctx.secrets
@@ -1361,6 +1339,8 @@ fn spawn_relay_connect(
         return Err("Device token not configured".to_string());
     }
 
+    let mut task = RELAY_TASK.lock().await;
+    stop_relay_task(&mut task, &ctx.relay).await;
     *relay_sub_required.lock() = false;
 
     let relay_sub = Arc::clone(relay_sub_required);
@@ -1369,7 +1349,7 @@ fn spawn_relay_connect(
     let pty_manager = Arc::clone(pty_manager);
     let event_sink = Arc::clone(event_sink);
 
-    tokio::spawn(async move {
+    *task = Some(tokio::spawn(async move {
         clawtab_lib::relay::connect_loop(clawtab_lib::relay::ConnectLoopParams {
             ws_url,
             device_token,
@@ -1381,7 +1361,48 @@ fn spawn_relay_connect(
             event_sink,
         })
         .await;
-    });
+    }));
 
     Ok(())
+}
+
+async fn stop_relay_task(
+    task: &mut Option<tokio::task::JoinHandle<()>>,
+    relay: &Arc<Mutex<Option<clawtab_lib::relay::RelayHandle>>>,
+) {
+    if let Some(previous) = task.take() {
+        previous.abort();
+        let _ = previous.await;
+    }
+    if let Some(handle) = relay.lock().take() {
+        handle.disconnect();
+    }
+}
+
+#[cfg(test)]
+mod relay_task_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn disconnect_cancels_an_offline_retry_before_replacement() {
+        let (started, ready) = tokio::sync::oneshot::channel();
+        let (dropped, stopped) = tokio::sync::oneshot::channel();
+        struct OnDrop(Option<tokio::sync::oneshot::Sender<()>>);
+        impl Drop for OnDrop {
+            fn drop(&mut self) {
+                let _ = self.0.take().unwrap().send(());
+            }
+        }
+        let mut task = Some(tokio::spawn(async move {
+            let _guard = OnDrop(Some(dropped));
+            let _ = started.send(());
+            std::future::pending::<()>().await;
+        }));
+        ready.await.unwrap();
+        let relay = Arc::new(Mutex::new(None));
+        stop_relay_task(&mut task, &relay).await;
+        assert!(task.is_none());
+        stopped.await.unwrap();
+        stop_relay_task(&mut task, &relay).await;
+    }
 }

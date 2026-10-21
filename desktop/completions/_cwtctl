@@ -67,6 +67,7 @@ _cwtctl_complete() {
 
   local -a top_cmds
   top_cmds=(
+    'login:Sign in or replace the current account'
     'jobs:Job management'
     'usage:Show local provider quota usage'
     'agent:Agent pane controls'
@@ -88,6 +89,17 @@ _cwtctl_complete() {
       ;;
     args)
       case $words[1] in
+        login)
+          words=("${words[@]:1}")
+          (( CURRENT-- ))
+          _arguments \
+            '(- *)'{-h,--help}'[Show login help]' \
+            '(--email)--provider[Browser sign-in provider]:provider:(google apple)' \
+            '(--provider --no-browser)--email[Sign in with a hidden password]:email:' \
+            '--relay[Relay server URL]:URL:' \
+            '--name[Machine name]:name:' \
+            '(--email)--no-browser[Print the sign-in URL without opening a browser]'
+          ;;
         jobs)
           if (( CURRENT == 2 )); then
             local -a sub

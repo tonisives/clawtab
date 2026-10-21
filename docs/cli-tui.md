@@ -13,6 +13,21 @@
 cwtctl <command> [args]
 ```
 
+### Account login
+
+Run `cwtctl login` to sign in with Google in your browser. Choose another account to switch logins. ClawTab saves one account; each successful login overwrites the previous login.
+
+```sh
+cwtctl login
+cwtctl login --provider apple
+cwtctl login --email you@example.com
+cwtctl login --no-browser
+```
+
+Email login prompts for a password with input hidden. `--no-browser` prints the browser sign-in URL for headless hosts. Login uses the configured relay and machine name; override them with `--relay URL` or `--name NAME`.
+
+Login reuses the machine's pairing when the selected account owns it, or pairs this host with the new account. A running daemon reloads the login and reconnects without restarting local agents. If the daemon is stopped, start it with `cwtctl daemon install`. Canceling or failing authentication leaves the saved login unchanged.
+
 ### Managed terminal sessions
 
 These commands work with managed sessions on macOS, Linux, and Windows. The owner process keeps each terminal alive independently of the desktop app and daemon. Remote access still needs the host daemon.
