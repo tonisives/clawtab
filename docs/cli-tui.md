@@ -289,3 +289,10 @@ JSON response. `working` is true for a short window after the daemon detects
 new terminal scrollback or a repeated color-only animation in the visible
 agent UI; echoed input and layout reflows are ignored. `asking` takes precedence
 for that pane when a question is detected.
+
+
+### Session file size warnings
+
+ClawTab alerts when an active Codex session transcript reaches 200 MB. The daemon checks the file's metadata and reports its size through the existing agent alert status. The tmux window list shows `!`, the top pane border shows `! Alert`, and the tmux popup and desktop, web, and remote agent details show the warning and suggested next step. Working and question state continue to be tracked while the warning is visible.
+
+Configure **Settings > General > Session health > Session file warning (MB)** on the host, or set `session_file_warning_mb` in the host's ClawTab settings. Sizes use decimal MB; `0` disables the warning. The warning clears when the file falls below the threshold, the threshold increases, or a smaller session replaces it. Compacting a Codex conversation reduces model context but does not shrink its transcript file.

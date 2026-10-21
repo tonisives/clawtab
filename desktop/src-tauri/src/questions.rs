@@ -643,12 +643,24 @@ pub async fn question_detection_loop(
             .iter()
             .map(|question| question.pane_id.clone())
             .collect();
-        let activity = activity_tracker.update_with_hooks(
+        let settings_snapshot = settings.lock().clone();
+        let mut activity = activity_tracker.update_with_hooks(
             &processes,
             &asking_panes,
             Instant::now(),
             &hook_runtime,
         );
+        for item in &mut activity {
+            if let Some(warning) = crate::agent_session::session_file_size_alert(
+                detection.session_file_sizes.get(&item.pane_id).copied(),
+                settings_snapshot.session_file_warning_mb,
+            ) {
+                item.alert = Some(match item.alert.take() {
+                    Some(alert) => format!("{}\n{}", alert, warning),
+                    None => warning,
+                });
+            }
+        }
         let activity_changed = {
             let mut stored_activity = agent_activity.lock();
             if *stored_activity != activity {
@@ -662,7 +674,6 @@ pub async fn question_detection_loop(
             event_sink.emit_agent_activity_changed(activity);
         }
 
-        let settings_snapshot = settings.lock().clone();
         let notifiable_questions = filter_visible_questions(&visible_questions);
 
         if !local_notifications_initialized {
@@ -1470,6 +1481,7 @@ impl ActivityTracker {
 
 struct DetectionResult {
     processes: Vec<DetectedAgent>,
+    session_file_sizes: HashMap<String, u64>,
     /// All pane IDs that currently exist in tmux (not just Claude processes).
     all_pane_ids: HashSet<String>,
 }
@@ -1567,6 +1579,7 @@ fn detect_question_processes(
     let running_panes = collect_q_running_panes(jobs_config, job_status);
     let match_entries = collect_q_match_entries(jobs_config);
 
+    let mut session_file_sizes = HashMap::new();
     let mut all_pane_ids = HashSet::new();
     let mut seen = HashSet::new();
     let mut results = Vec::new();
@@ -1601,6 +1614,13 @@ fn detect_question_processes(
         let Some(provider) = detect_process_provider(pane_pid, Some(process_snapshot)) else {
             continue;
         };
+        if provider == ProcessProvider::Codex {
+            if let Some(size) =
+                crate::agent_session::codex_session_file_size_for_pane(pane_pid, process_snapshot)
+            {
+                session_file_sizes.insert(pane_id.to_string(), size);
+            }
+        }
         hook_runtime.bind_process_to_pane(pane_id, pane_pid, provider, process_snapshot);
         log::debug!(
             "[questions] pane {} pid {} detected as {:?}",
@@ -1660,6 +1680,14 @@ fn detect_question_processes(
         let Ok(screen) = crate::terminal_backend::snapshot(&info.id) else {
             continue;
         };
+        if provider == ProcessProvider::Codex {
+            if let Some(size) = crate::agent_session::codex_session_file_size_for_pane(
+                &info.child_pid.to_string(),
+                process_snapshot,
+            ) {
+                session_file_sizes.insert(info.id.clone(), size);
+            }
+        }
         hook_runtime.bind_process_to_pane(
             &info.id,
             &info.child_pid.to_string(),
@@ -1718,6 +1746,7 @@ fn detect_question_processes(
 
     DetectionResult {
         processes: results,
+        session_file_sizes,
         all_pane_ids,
     }
 }

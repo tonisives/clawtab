@@ -353,8 +353,10 @@ export function ProcessDetailPane({ paneId, onClose, embedded = false }: Process
         questionContext={paneQuestion?.context_lines}
         renderTerminal={isAlive ? renderTerminal : undefined}
         hideMessageInput={isAlive}
+        agentAlert={activeProcess?._agent_alert}
         paneOverview={{
           paneId,
+          alert: activeProcess?._agent_alert,
           startedAt: activeProcess?.session_started_at,
           cwd: activeProcess?.cwd,
           tmuxSession: activeProcess?.tmux_session,

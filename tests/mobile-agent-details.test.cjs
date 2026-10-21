@@ -204,3 +204,14 @@ test('machine sheets use UIKit presentation and headers without an RN Modal touc
   container.props.onStateChange({ index: 0, routes: [{ name: 'anchor' }] });
   assert.equal(closed, 2);
 });
+
+
+test('agent details expose a selectable session health warning', () => {
+  let view = details();
+  view.props.alert = 'Codex session file is 1200 MB (warning at 200 MB). Start a new session; compacting does not shrink the file.';
+  let tree = view.render();
+  assert.ok(find(tree, (node) => node.type === 'Text' && node.props.children === 'Alert'));
+  assert.ok(find(tree, (node) => node.type === 'Text' && node.props.children === view.props.alert && node.props.selectable));
+  view.props.alert = undefined;
+  assert.equal(find(view.render(), (node) => node.type === 'Text' && node.props.children === 'Alert'), undefined);
+});

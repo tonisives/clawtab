@@ -121,6 +121,9 @@ if [[ "$current_border" != *"@clawtab-agent-title"* ]]; then
     agent_title='#{?#{@clawtab-pane-has-info},,#{?#{@clawtab-agent-title},#{@clawtab-agent-title} ,}}'
     current_border="${agent_title}${current_border}"
 fi
+if [[ "$current_border" != *"@clawtab-agent-pane-alert"* ]]; then
+    current_border='#{?#{@clawtab-daemon-running},#{?#{==:#{@clawtab-agent-pane-alert},1},#[fg=colour208#,bold]! Alert #[default],},}'"${current_border}"
+fi
 tmux set-option -g pane-border-format "$current_border"
 tmux set-option -g pane-border-status top
 

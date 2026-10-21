@@ -787,6 +787,14 @@ pub async fn get_active_questions(
 }
 
 #[tauri::command]
+pub async fn get_agent_activity() -> Result<Vec<crate::ipc::AgentActivity>, String> {
+    match crate::ipc::send_command(crate::ipc::IpcCommand::GetAgentActivity).await? {
+        crate::ipc::IpcResponse::AgentActivity(activity) => Ok(activity),
+        response => Err(format!("Unexpected IPC response: {:?}", response)),
+    }
+}
+
+#[tauri::command]
 pub async fn get_auto_yes_panes(_state: State<'_, AppState>) -> Result<Vec<String>, String> {
     match crate::ipc::send_command(crate::ipc::IpcCommand::GetAutoYesPanes).await {
         Ok(crate::ipc::IpcResponse::AutoYesPanes(panes)) => Ok(panes),

@@ -228,7 +228,7 @@ pub struct JobSummary {
 /// visible agent UI has a repeated color-only animation, and it is not asking
 /// a question. Echoed input and layout reflows are ignored. `asking` is
 /// independent so a window containing both kinds of panes can render both
-/// indicators. `alert` carries an actionable provider error from the live terminal.
+/// indicators. `alert` carries provider errors and session health warnings.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AgentActivity {
     pub pane_id: String,

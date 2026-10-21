@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { Transport } from "@clawtab/shared";
 import type { RemoteJob, JobStatus, RunRecord, RunDetail } from "@clawtab/shared";
-import type { AgentEffort, DetectedProcess, ProcessProvider, ShellPane } from "@clawtab/shared";
+import type { AgentActivity, AgentEffort, DetectedProcess, ProcessAgentState, ProcessProvider, ShellPane } from "@clawtab/shared";
 
 function createLocalTauriTransport(): Transport {
   return {
@@ -68,7 +68,15 @@ function createLocalTauriTransport(): Transport {
     },
 
     async detectProcesses() {
-      return invoke<DetectedProcess[]>("detect_processes");
+      const [processes, activity] = await Promise.all([
+        invoke<DetectedProcess[]>("detect_processes"),
+        invoke<AgentActivity[]>("get_agent_activity").catch(() => []),
+      ]);
+      const byPane = new Map(activity.map((item) => [item.pane_id, item]));
+      return processes.map((process) => {
+        const item = byPane.get(process.pane_id);
+        return { ...process, _agent_alert: item?.alert, _agent_state: item ? (item.alert ? "alert" : item.asking ? "asking" : item.working ? "working" : "finished") as ProcessAgentState : undefined };
+      });
     },
 
     async sendInput(name: string, text: string, freetext?: string) {

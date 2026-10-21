@@ -267,6 +267,20 @@ let GeneralSettingsContent = ({ onAddJob }: { onAddJob: () => void }) => {
       </div>
 
       <div className="field-group">
+        <span className="field-group-title">Session health</span>
+        <div className="form-group">
+          <label htmlFor="session-file-warning">Session file warning (MB)</label>
+          <input id="session-file-warning" type="number" min="0" step="1"
+            value={settings.session_file_warning_mb ?? 200}
+            onChange={(event) => {
+              const value = Number(event.target.value);
+              if (Number.isSafeInteger(value) && value >= 0) void update({ session_file_warning_mb: value });
+            }} />
+          <span className="hint">Warn when a Codex session file reaches this size. Set to 0 to disable. Applies to tmux, desktop, web, and remote apps.</span>
+        </div>
+      </div>
+
+      <div className="field-group">
         <span className="field-group-title">Appearance</span>
         <div className="form-group">
           <label className="checkbox-label">

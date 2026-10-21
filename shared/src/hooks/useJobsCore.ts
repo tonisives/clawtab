@@ -83,6 +83,8 @@ export function useJobsCore(transport: Transport, pollInterval = 5000) {
       proc.first_query,
       proc.last_query,
       proc.session_started_at,
+      proc._agent_alert ?? null,
+      proc._agent_state ?? null,
       proc._last_log_change ?? null,
       proc._last_user_message ?? null,
     ]));

@@ -13,6 +13,7 @@ const MAX_VISIBLE_ACTIONS = 4;
 
 export type PaneOverviewData = {
   paneId: string;
+  alert?: string;
   startedAt?: string | null;
   cwd?: string | null;
   tmuxSession?: string | null;
@@ -172,6 +173,7 @@ let WebPaneOverview = ({ visible, onClose, actions, ...pane }: PaneOverviewModal
         </View>
 
         <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+          {pane.alert && <QueryBlock label="Alert" value={pane.alert} />}
           {(actions?.onToggleAutoYes || actions?.onTogglePin || actions?.onStop || actions?.onStart) ? (
             <View style={styles.actions}>
               <View style={styles.toggleGroup}>
