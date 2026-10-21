@@ -293,6 +293,6 @@ for that pane when a question is detected.
 
 ### Session file size warnings
 
-ClawTab alerts when an active Codex session transcript reaches 200 MB. The daemon checks the file's metadata and reports its size through the existing agent alert status. The tmux window list shows `!`, the top pane border shows `! Alert`, and the tmux popup and desktop, web, and remote agent details show the warning and suggested next step. Working and question state continue to be tracked while the warning is visible.
+ClawTab alerts when an active Codex session transcript reaches 200 MB. The daemon checks the file's metadata and reports its size through the existing agent alert status. The tmux window list shows `! ↑590 MB`, the top pane border shows `! Alert ↑590 MB`, and app session lists show `! ↑590 MB`, using the current file size. Windows with several size warnings show the largest one. The tmux popup and desktop, web, and remote agent details also label the warning `Alert ↑590 MB` and show the suggested next step. Working and question state continue to be tracked while the warning is visible.
 
 Configure **Settings > General > Session health > Session file warning (MB)** on the host, or set `session_file_warning_mb` in the host's ClawTab settings. Sizes use decimal MB; `0` disables the warning. The warning clears when the file falls below the threshold, the threshold increases, or a smaller session replaces it. Compacting a Codex conversation reduces model context but does not shrink its transcript file.

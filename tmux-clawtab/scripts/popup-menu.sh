@@ -1257,7 +1257,9 @@ draw_shortcuts() {
     ((row++))
 
     if [ -n "$SESSION_ALERT" ]; then
-        draw_section_header $row "Alert"
+        local alert_size
+        alert_size=$(printf '%s\n' "$SESSION_ALERT" | sed -n 's/^Codex session file is \([0-9][0-9]*\) MB.*/↑\1 MB/p')
+        draw_section_header $row "Alert${alert_size:+ $alert_size}"
         ((row++))
         wrap_query_lines "$SESSION_ALERT"
         for alert_line in "${QUERY_LINES[@]}"; do

@@ -1,3 +1,4 @@
+import { agentAlertTitle } from "../util/alert";
 import { createContext, useContext, useEffect, useState } from "react";
 import { StyleSheet, Switch, Text, View } from "react-native";
 import { MachineActionButton, MachineModal, MachineSettingsPageButton } from "../machines/Onboarding";
@@ -76,7 +77,7 @@ let PaneDetailsPage = () => {
   let { pane, actions } = useDetails();
   let started = pane.startedAt ? `${formatTime(pane.startedAt)} (${timeAgo(pane.startedAt)})` : "-";
   return <View style={styles.page}>
-    {pane.alert && <QueryCard title="Alert" query={pane.alert} />}
+    {pane.alert && <QueryCard title={agentAlertTitle(pane.alert)} query={pane.alert} />}
     <MachineTerminalControls paneId={pane.paneId} connectedOnly inset />
     {(actions?.onToggleAutoYes || actions?.onTogglePin) && <InsetList>
       {actions.onToggleAutoYes && <PaneToggle label="Auto Yes" value={actions.autoYesActive} onChange={actions.onToggleAutoYes} />}

@@ -1,3 +1,4 @@
+import { agentAlertTitle } from "../../util/alert";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -804,7 +805,7 @@ export function JobDetailView({
         </View>
       </View>
 
-      {agentAlert && <Text accessibilityRole="alert" selectable style={{ color: colors.warning, paddingHorizontal: 16, paddingVertical: 8 }}>{agentAlert}</Text>}
+      {agentAlert && <Text accessibilityRole="alert" selectable style={{ color: colors.warning, paddingHorizontal: 16, paddingVertical: 8 }}>{agentAlertTitle(agentAlert)}: {agentAlert}</Text>}
       {isRunning && (firstQuery || lastQuery || tokenLabel) ? (
         <View style={styles.querySummaryRow}>
           <QuerySummary firstQuery={firstQuery} lastQuery={lastQuery} />

@@ -28,3 +28,17 @@ test('machine session alerts stay scoped to their host and clear with new activi
   assert.equal(exports.machineProcesses()[0]._agent_alert, undefined);
   assert.equal(exports.machineProcesses()[0]._agent_state, 'working');
 });
+
+
+test('session size alert labels identify size warnings and preserve other alerts', () => {
+  let exports = {};
+  let source = ts.transpileModule(fs.readFileSync(__dirname + '/../shared/src/util/alert.ts', 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  vm.runInNewContext(source, { exports });
+  assert.equal(exports.sessionSizeAlertLabel('Codex session file is 590 MB (warning at 200 MB).'), '↑590 MB');
+  assert.equal(exports.agentAlertTitle('Capacity error.\nCodex session file is 1200 MB (warning at 200 MB).'), 'Alert ↑1200 MB');
+  assert.equal(exports.sessionSizeAlertLabel('Quota is 590 MB'), null);
+  assert.equal(exports.agentAlertTitle('Selected model is at capacity.'), 'Alert');
+  assert.equal(exports.sessionSizeAlertLabel(undefined), null);
+});

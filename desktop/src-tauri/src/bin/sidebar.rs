@@ -11,7 +11,7 @@ use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
 
 use clawtab_lib::config::jobs::JobStatus;
-use clawtab_lib::ipc::{self, IpcCommand, IpcResponse, JobSummary, PaneEntry};
+use clawtab_lib::ipc::{self, AgentActivity, IpcCommand, IpcResponse, JobSummary, PaneEntry};
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 enum Section {
@@ -21,6 +21,7 @@ enum Section {
 
 struct App {
     panes: Vec<PaneEntry>,
+    activity: HashMap<String, AgentActivity>,
     jobs: Vec<JobSummary>,
     statuses: HashMap<String, JobStatus>,
     pane_state: ListState,
@@ -36,6 +37,7 @@ impl App {
     fn new(invoking_pane: Option<String>) -> Self {
         Self {
             panes: Vec::new(),
+            activity: HashMap::new(),
             jobs: Vec::new(),
             statuses: HashMap::new(),
             pane_state: ListState::default(),
@@ -175,6 +177,14 @@ async fn main() {
 async fn refresh(app: &mut App) {
     if let Ok(IpcResponse::AllPanes(panes)) = ipc::send_command(IpcCommand::ListAllPanes).await {
         app.panes = panes;
+    }
+    if let Ok(IpcResponse::AgentActivity(activity)) =
+        ipc::send_command(IpcCommand::GetAgentActivity).await
+    {
+        app.activity = activity
+            .into_iter()
+            .map(|item| (item.pane_id.clone(), item))
+            .collect();
     }
     if let Ok(IpcResponse::Jobs(jobs)) = ipc::send_command(IpcCommand::ListJobs).await {
         app.jobs = jobs;
@@ -321,6 +331,14 @@ fn draw(f: &mut Frame, app: &mut App) {
                 Span::styled(p.current_command.clone(), Style::default().fg(Color::Green)),
                 Span::raw("  "),
                 Span::styled(p.pane_id.clone(), Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    pane_alert_label(
+                        app.activity
+                            .get(&p.pane_id)
+                            .and_then(|item| item.alert.as_deref()),
+                    ),
+                    Style::default().fg(Color::Indexed(208)).bold(),
+                ),
             ]))
         })
         .collect();
@@ -382,4 +400,44 @@ fn draw(f: &mut Frame, app: &mut App) {
         Paragraph::new(keys).style(Style::default().fg(Color::DarkGray)),
         chunks[4],
     );
+}
+
+fn pane_alert_label(alert: Option<&str>) -> String {
+    let Some(alert) = alert.filter(|value| !value.is_empty()) else {
+        return String::new();
+    };
+    let size = alert.lines().find_map(|line| {
+        let value = line.strip_prefix("Codex session file is ")?;
+        let (mb, _) = value.split_once(" MB")?;
+        mb.parse::<u64>().ok()
+    });
+    match size {
+        Some(mb) => format!("  ! ↑{mb} MB"),
+        None => "  ! Alert".to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::pane_alert_label;
+
+    #[test]
+    fn pane_alerts_show_session_size_and_clear_with_activity() {
+        assert_eq!(
+            pane_alert_label(Some("Codex session file is 590 MB (warning at 200 MB).")),
+            "  ! ↑590 MB"
+        );
+        assert_eq!(
+            pane_alert_label(Some(
+                "Quota exceeded\nCodex session file is 1200 MB (warning at 200 MB)."
+            )),
+            "  ! ↑1200 MB"
+        );
+        assert_eq!(
+            pane_alert_label(Some("Selected model is at capacity.")),
+            "  ! Alert"
+        );
+        assert_eq!(pane_alert_label(None), "");
+        assert_eq!(pane_alert_label(Some("")), "");
+    }
 }

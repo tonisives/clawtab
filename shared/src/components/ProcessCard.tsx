@@ -1,4 +1,5 @@
 import { useMobileListAppearance, mobileListStyles } from "./ListAppearance";
+import { agentAlertTitle, sessionSizeAlertLabel } from "../util/alert";
 import { compactAgentSelectionLabel } from "../util/agent";
 import { resourceLabel, splitResource } from "../machines/client";
 import { MachineMark } from "../machines/Badge";
@@ -85,8 +86,9 @@ export function ProcessCard({
     : agentState === "working" || recentActivity
       ? "working"
       : "finished";
+  const alertSize = effectiveAgentState === "alert" ? sessionSizeAlertLabel(process._agent_alert) : null;
   const agentStatusLabel = effectiveAgentState === "alert"
-    ? `Alert${process._agent_alert ? `: ${process._agent_alert}` : ""}`
+    ? `${agentAlertTitle(process._agent_alert)}${process._agent_alert ? `: ${process._agent_alert}` : ""}`
     : effectiveAgentState === "asking"
       ? "Question"
       : effectiveAgentState === "working"
@@ -185,9 +187,9 @@ export function ProcessCard({
     <Tooltip label={agentStatusLabel}>
       <Text
         accessibilityLabel={agentStatusLabel}
-        style={[styles.statusIcon, agentStatusStyle]}
+        style={[styles.statusIcon, agentStatusStyle, alertSize ? styles.statusIconWithSize : null]}
       >
-        {agentStatusIcon}
+        {agentStatusIcon}{alertSize ? ` ${alertSize}` : ""}
       </Text>
     </Tooltip>
   );
@@ -447,6 +449,11 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     fontWeight: "800",
     textAlign: "center",
+  },
+  statusIconWithSize: {
+    width: "auto",
+    flexShrink: 0,
+    fontSize: 12,
   },
   statusIconWorking: {
     color: "#64d2ff",

@@ -1,3 +1,4 @@
+import { agentAlertTitle } from "../util/alert";
 import { Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { resourceLabel } from "../machines/client";
@@ -173,7 +174,7 @@ let WebPaneOverview = ({ visible, onClose, actions, ...pane }: PaneOverviewModal
         </View>
 
         <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
-          {pane.alert && <QueryBlock label="Alert" value={pane.alert} />}
+          {pane.alert && <QueryBlock label={agentAlertTitle(pane.alert)} value={pane.alert} />}
           {(actions?.onToggleAutoYes || actions?.onTogglePin || actions?.onStop || actions?.onStart) ? (
             <View style={styles.actions}>
               <View style={styles.toggleGroup}>
