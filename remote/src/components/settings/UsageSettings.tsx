@@ -7,7 +7,7 @@ import { colors } from "../../theme/colors"
 import { useModelUsage } from "../../hooks/useModelUsage"
 import type { ProviderUsageSnapshot } from "../../types/messages"
 import { UsageProgressBar, parseUsagePercent } from "../UsageProgressBar"
-import { SettingsPage, SettingsRow, styles } from "./SettingsPage"
+import { SettingsGroup, SettingsPage, SettingsRow, styles } from "./SettingsPage"
 import { useSettingsNavigation, useSettingsVisible } from "./navigation"
 
 export let UsageSettings = () => {
@@ -25,12 +25,12 @@ export let UsageSettings = () => {
   return <SettingsPage>
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>Machine</Text>
-      <View style={styles.listGroup}>{state.machines.map((item) => <Pressable key={item.id} accessibilityRole="radio" accessibilityState={{ checked: machine?.id === item.id }} onPress={choose(item.id)} style={styles.row}>
+      <SettingsGroup>{state.machines.map((item) => <Pressable key={item.id} accessibilityRole="radio" accessibilityState={{ checked: machine?.id === item.id }} onPress={choose(item.id)} style={styles.row}>
         <View style={styles.rowText}><Text style={styles.rowTitle}>{item.name}</Text><Text style={styles.rowDetail}>{item.online ? "Online" : "Offline"}</Text></View>
         {machine?.id === item.id && <Ionicons name="checkmark" size={22} color={colors.accent} />}
-      </Pressable>)}</View>
+      </Pressable>)}</SettingsGroup>
       {!state.machines.length && <Text style={styles.usageEmptyText}>{state.connected ? "Add a machine to see its model usage." : "Connecting to your machines…"}</Text>}
-      <View style={styles.listGroup}><SettingsRow title="Manage machines" onPress={openMachines} /></View>
+      <SettingsGroup><SettingsRow title="Manage machines" onPress={openMachines} /></SettingsGroup>
     </View>
     <View style={styles.section}>
       <View style={styles.sectionHeadingRow}>

@@ -117,7 +117,7 @@ let styles = StyleSheet.create({
   body: { flex: 1, minHeight: 0 },
   page: { flex: 1 },
   hidden: { display: "none" },
-  content: { width: "100%", maxWidth: 840, alignSelf: "center", paddingBottom: 20 },
+  content: { width: "100%", maxWidth: Platform.OS === "web" ? 1120 : 840, alignSelf: "center", paddingBottom: 20 },
   header: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 12 },
   title: { flex: 1, color: colors.text, fontSize: 18, fontWeight: "600", textAlign: "center" },
   headerSpacer: { width: 44, height: 44 },

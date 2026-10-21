@@ -47,7 +47,7 @@ let harness = (rental, launch, props = {}, rentals = [rental]) => {
     return { ...rental.setup };
   };
   let render = () => { cursor = 0; let tree = exports.RentalsPanel({ api, purchases: true, ...props }); effects.splice(0).forEach((effect) => effect()); return tree; };
-  return { render, calls, machines };
+  return { render, calls, machines, exports };
 };
 let rental = () => ({ id: 'rental-1', machine_id: 'remote-only', name: 'My box', state: 'ready', quote: { currency: 'eur', monthly_cents: 540 }, agent_provider: 'codex', setup: {} });
 
@@ -126,4 +126,63 @@ test('machine controls remain available when the account has no rentals', async 
   let view = harness(rental(), async () => {}, { allowNewRentals: false, children: controls }, []);
   view.render(); await flush();
   assert.equal(findType(view.render(), 'MachineControls'), controls);
+});
+
+let quotes = () => [
+  ['sin', 'Singapore', 4, 1200], ['sin', 'Singapore', 8, 1800],
+  ['ash', 'Ashburn', 4, 800], ['hil', 'Hillsboro', 8, 1600],
+  ['fsn1', 'Falkenstein', 4, 600], ['hel1', 'Helsinki', 8, 1000],
+].map(([region, region_description, memory_gb, monthly_cents]) => ({
+  region, region_description, memory_gb, monthly_cents, server_type: `box-${memory_gb}`, currency: 'eur',
+  cores: 2, disk_gb: 80, traffic_bytes: 1e12, cost_cents: 500,
+}));
+
+test('box suggestions use timezone, include a larger nearby box and a cheaper alternative', () => {
+  let { recommendRentalQuotes, rentalRegionGroup } = harness(rental(), async () => {}).exports;
+  let catalog = quotes();
+  let suggestions = recommendRentalQuotes(catalog, 'Asia/Bangkok');
+  assert.deepEqual(Array.from(suggestions, (q) => `${q.region}/${q.memory_gb}`), ['sin/4', 'sin/8', 'fsn1/4']);
+  assert.equal(recommendRentalQuotes(catalog, 'America/Los_Angeles')[0].region, 'hil');
+  assert.equal(recommendRentalQuotes(catalog, 'Europe/London')[0].region, 'fsn1');
+  assert.equal(recommendRentalQuotes([], 'Asia/Bangkok').length, 0);
+  assert.equal(rentalRegionGroup('future-location'), 'other');
+  assert.equal(catalog[0].region, 'sin');
+});
+
+test('box region filters and price or memory sorting preserve the catalog', () => {
+  let { sortRentalQuotes } = harness(rental(), async () => {}).exports;
+  let catalog = quotes();
+  assert.deepEqual(Array.from(sortRentalQuotes(catalog, 'emea', 'price-asc'), (q) => q.region), ['fsn1', 'hel1']);
+  assert.deepEqual(Array.from(sortRentalQuotes(catalog, 'americas', 'price-desc'), (q) => q.region), ['hil', 'ash']);
+  assert.equal(sortRentalQuotes(catalog, 'asia', 'memory')[0].memory_gb, 8);
+  assert.equal(sortRentalQuotes(catalog, 'all', 'price-asc')[0].monthly_cents, 600);
+  assert.equal(sortRentalQuotes(catalog, 'all', 'price-desc')[0].monthly_cents, 1800);
+  assert.equal(catalog[0].region, 'sin');
+});
+
+test('changing the box filter retains the chosen quote through checkout', async () => {
+  const catalog = quotes();
+  let purchase;
+  let api = async (method, path, body) => {
+    if (path === '/rentals/catalog') return { enabled: true, quotes: catalog };
+    if (path === '/rentals/checkout') { purchase = body; return { rental_id: 'new', url: 'https://checkout.example.com' }; }
+    return { rentals: [] };
+  };
+  let view = harness(rental(), async () => {}, { api, openUrl: async () => {} }, []);
+  let all = (node) => Array.isArray(node) ? node.flatMap(all) : node && typeof node === 'object' ? [node, ...all(node.props?.children)] : [];
+  view.render(); await flush();
+  find(view.render(), 'Rent a box').props.onPress(); await flush();
+  let nodes = all(view.render());
+  assert.equal(nodes.filter((node) => node.props?.accessibilityRole === 'radio' && node.props?.accessibilityLabel?.includes('per month')).length, 3);
+  nodes.find((node) => node.type === 'Pressable' && node.props.children?.props?.children === 'Browse all boxes').props.onPress();
+  nodes = all(view.render());
+  nodes.find((node) => node.props?.accessibilityLabel?.startsWith('8 GB, Singapore')).props.onPress();
+  nodes.find((node) => node.type === 'Pressable' && node.props.children?.props?.children === 'EMEA').props.onPress();
+  nodes = all(view.render());
+  let region = nodes.find((node) => node.props?.accessibilityLabel === 'Box region');
+  assert.equal(all(region).find((node) => node.props.children?.props?.children === 'EMEA').props.accessibilityState.checked, true);
+  nodes.find((node) => node.props?.accessibilityRole === 'checkbox').props.onPress();
+  find(view.render(), 'Continue to checkout').props.onPress(); await flush();
+  assert.equal(purchase.quote.region, 'sin');
+  assert.equal(purchase.quote.memory_gb, 8);
 });

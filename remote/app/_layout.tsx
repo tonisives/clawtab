@@ -186,6 +186,7 @@ export default function RootLayout() {
           <Stack.Screen name="demo-agent" options={{ headerShown: true, headerTintColor: colors.text, headerStyle: { backgroundColor: colors.bg }, headerBackButtonDisplayMode: "minimal", animation: "slide_from_right" }} />
           <Stack.Screen name="demo-agent-details" options={{ title: "Agent details", headerShown: true, headerTintColor: colors.text, headerStyle: { backgroundColor: colors.bg }, headerBackButtonDisplayMode: "minimal", animation: "slide_from_right" }} />
           <Stack.Screen name="machines" options={{ title: "Manage machines", headerShown: true, headerTintColor: colors.text, headerStyle: { backgroundColor: colors.bg }, headerBackButtonDisplayMode: "minimal", animation: "slide_from_right" }} />
+          <Stack.Screen name="add-machine" options={{ title: "Add machine", headerShown: true, headerTintColor: colors.text, headerStyle: { backgroundColor: colors.bg }, headerBackButtonDisplayMode: "minimal", animation: "slide_from_right" }} />
           <Stack.Screen name="machine-page" options={({ route }) => ({ title: (route.params as { title?: string } | undefined)?.title ?? "Machine", headerShown: true, headerTintColor: colors.text, headerStyle: { backgroundColor: colors.bg }, headerBackButtonDisplayMode: "minimal", animation: "slide_from_right" })} />
           <Stack.Screen name="job/[name]" options={{ animation: "slide_from_right" }} />
           <Stack.Screen name="process/[pane_id]" options={{ animation: "slide_from_right" }} />

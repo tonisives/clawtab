@@ -15,7 +15,7 @@ let loadDemo = (entry, params = {}, os = 'ios') => {
     } },
     react: { useRef: (value) => ({ current: value }), useEffect: (effect) => effects.push(effect), useState: (initial) => { let index = cursor++; states[index] ??= typeof initial === 'function' ? initial() : initial; return [states[index], (value) => { states[index] = typeof value === 'function' ? value(states[index]) : value; }]; } },
     'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
-    'react-native': { Platform: { OS: os }, StyleSheet: { create: (value) => value }, Text: 'Text', View: 'View', Pressable: 'Pressable', TextInput: 'TextInput', KeyboardAvoidingView: 'KeyboardAvoidingView' },
+    'react-native': { Platform: { OS: os }, StyleSheet: { create: (value) => value }, Text: 'Text', View: 'View', Pressable: 'Pressable', TextInput: 'TextInput', ScrollView: 'ScrollView', KeyboardAvoidingView: 'KeyboardAvoidingView' },
     'expo-router/react-navigation': { useHeaderHeight: () => 96 },
     'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
     'expo-router': { useRouter: () => ({ push: (route) => pushed.push(route) }), useLocalSearchParams: () => params, Stack: { Screen: 'Screen' } },
@@ -24,6 +24,7 @@ let loadDemo = (entry, params = {}, os = 'ios') => {
     '../hooks/useResponsive': { useResponsive: () => ({ isSplitView: true }) },
     './DemoJobList': { DemoJobList: 'DemoJobList' },
     './DemoAgentPane': { DemoAgentPane: 'DemoAgentPane' },
+    './DemoOverview': { DemoOverview: 'DemoOverview' },
     './settings/SettingsPage': { SettingsPage: 'SettingsPage' },
     '../../../shared/src/machines/Onboarding': { MachineModal: 'MachineModal' },
     '../src/components/HeaderButtons': { HeaderTitleWithIcon: 'HeaderTitleWithIcon' },
@@ -44,7 +45,7 @@ let loadDemo = (entry, params = {}, os = 'ios') => {
   };
   let processes = load(require.resolve('../remote/src/demo/data.ts')).DEMO_PROCESSES;
   if (params.kind === 'process') params.id = processes.find((process) => process.provider === params.id)?.pane_id ?? params.id;
-  let component = entry === 'workspace' ? load(require.resolve('../remote/src/components/DemoWorkspace.tsx')).DemoWorkspace : entry === 'index.tsx' ? load(require.resolve('../remote/src/components/DemoJobList.tsx')).DemoJobList : load(require.resolve(entry === 'terminal' ? '../remote/app/demo-agent.tsx' : `../remote/app/demo/${entry}`)).default;
+  let component = entry === 'overview' ? load(require.resolve('../remote/src/components/DemoOverview.tsx')).DemoOverview : entry === 'workspace' ? load(require.resolve('../remote/src/components/DemoWorkspace.tsx')).DemoWorkspace : entry === 'index.tsx' ? load(require.resolve('../remote/src/components/DemoJobList.tsx')).DemoJobList : load(require.resolve(entry === 'terminal' ? '../remote/app/demo-agent.tsx' : `../remote/app/demo/${entry}`)).default;
   return { pushed, writes, processes, getFilter: () => filterStore.getState(), render: (props = {}) => {
     cursor = 0;
     let tree = component(props);
@@ -153,8 +154,9 @@ test('wide web demo keeps sample selection beside the sidebar without routing aw
   let demo = loadDemo('workspace', {}, 'web');
   let nodes = all(demo.render());
   let list = nodes.find((node) => node.type === 'DemoJobList');
-  let pane = nodes.find((node) => node.type === 'DemoAgentPane');
-  assert.equal(pane.props.id, list.props.selectedSlug);
+  assert.ok(nodes.some((node) => node.type === 'DemoOverview'));
+  assert.equal(list.props.selectedSlug, undefined);
+  let pane;
   let paneId = demo.processes.find((process) => process.provider === 'codex').pane_id;
   list.props.onSelectProcess({ pane_id: paneId });
   nodes = all(demo.render());
@@ -165,10 +167,27 @@ test('wide web demo keeps sample selection beside the sidebar without routing aw
   pane = all(demo.render()).find((node) => node.type === 'DemoAgentPane');
   assert.equal(pane.props.id, 'deploy-api');
   assert.equal(pane.props.kind, 'job');
+  nodes = all(demo.render());
+  nodes.find((node) => node.type === 'DemoJobList').props.onShowOverview();
+  nodes = all(demo.render());
+  assert.ok(nodes.some((node) => node.type === 'DemoOverview'));
+  assert.equal(nodes.find((node) => node.type === 'DemoJobList').props.selectedSlug, undefined);
   assert.deepEqual(demo.pushed, []);
 });
 test('native demo keeps navigation to sample detail screens', () => {
   let tree = loadDemo('workspace', {}, 'ios').render();
   assert.equal(tree.type, 'DemoJobList');
   assert.equal(tree.props.onSelectJob, undefined);
+});
+
+test('demo overview explains sample sessions and links to box setup and relay subscription', () => {
+  let connected = false;
+  let demo = loadDemo('overview', {}, 'web');
+  let nodes = all(demo.render({ onConnect: () => { connected = true; } }));
+  let press = (label) => nodes.find((node) => node.type === 'Pressable' && all(node).some((child) => child.type === 'Text' && child.props.children === label)).props.onPress();
+  assert.ok(nodes.some((node) => node.type === 'Text' && node.props.children.includes('sample sessions')));
+  press('Choose a box');
+  assert.equal(demo.pushed[0], '/add-machine');
+  press('Subscribe to relay');
+  assert.equal(connected, true);
 });

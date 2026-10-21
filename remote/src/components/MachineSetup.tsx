@@ -58,7 +58,7 @@ export let MachineSetup = ({ onNavigate, manage = false }: { onNavigate?: () => 
     return () => { active = false }
   }, [authenticated, attempt, manage, allowNewRentals])
   let retry = () => setAttempt((value) => value + 1)
-  let signIn = () => { onNavigate?.(); router.push({ pathname: "/login", params: { return_to: "machines" } }) }
+  let signIn = () => { onNavigate?.(); router.push({ pathname: "/login", params: { return_to: manage ? "machines" : "add-machine" } }) }
   if (!authenticated) return <View style={styles.intro}>
     <Text style={styles.text}>Sign in to connect your machines and save groups across your ClawTab apps.</Text>
     <Pressable accessibilityRole="button" onPress={signIn} style={styles.button}><Text style={styles.action}>Sign in</Text></Pressable>

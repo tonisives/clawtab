@@ -14,7 +14,7 @@ import { AccountSettings } from "../../../src/components/settings/AccountSetting
 import { SharingSettings } from "../../../src/components/settings/SharingSettings"
 import { TerminalSettings } from "../../../src/components/settings/TerminalSettings"
 import { UsageSettings } from "../../../src/components/settings/UsageSettings"
-import { SettingsPage, SettingsRow, styles } from "../../../src/components/settings/SettingsPage"
+import { SettingsGroup, SettingsPage, SettingsRow, styles } from "../../../src/components/settings/SettingsPage"
 import { SettingsNavigation, SettingsVisibility, useSettingsNavigation, type SettingsRoute } from "../../../src/components/settings/navigation"
 import { colors } from "../../../src/theme/colors"
 
@@ -23,7 +23,9 @@ let Stack = createNativeStackNavigator<Routes>()
 export let SettingsHome = () => {
   let relay = useMachines()
   let connected = useWsStore((state) => state.connected)
-  let demoMode = !relay.connected && !connected
+  let authenticated = useAuthStore((state) => state.isAuthenticated)
+  let authLoading = useAuthStore((state) => state.loading)
+  let demoMode = !authLoading && !authenticated && !relay.connected && !connected
   let unavailable = !relay.connected
   let email = useAuthStore((state) => state.email)
   let navigate = useSettingsNavigation()
@@ -43,24 +45,24 @@ export let SettingsHome = () => {
     </View>
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>Account</Text>
-      <View style={styles.listGroup}>
+      <SettingsGroup>
         <SettingsRow title="Account & subscription" detail={email ?? "Sign-in and billing"} onPress={open("account")} />
         <SettingsRow title="Shared access" detail="People and group permissions" onPress={open("sharing")} disabled={unavailable} />
-      </View>
+      </SettingsGroup>
     </View>
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>Machines & models</Text>
-      <View style={styles.listGroup}>
+      <SettingsGroup>
         <SettingsRow title="Model usage" detail="Usage limits by machine and provider" onPress={open("usage")} disabled={unavailable} />
         <SettingsRow title="Manage machines" detail="Connections, models, and rented boxes" onPress={open("machines")} disabled={unavailable} />
-      </View>
+      </SettingsGroup>
     </View>
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>Preferences & integrations</Text>
-      <View style={styles.listGroup}>
+      <SettingsGroup>
         <SettingsRow title="Terminal" detail="Recent pane cache" onPress={open("terminal")} />
         <SettingsRow title="API tokens" detail="Automations and external triggers" onPress={open("tokens")} disabled={unavailable} />
-      </View>
+      </SettingsGroup>
     </View>
   </SettingsPage>
 }

@@ -97,7 +97,7 @@ test('usage immediately offers machines without a global selection and switches 
 
 test('settings disable relay operations offline while preserving account and debugging access', () => {
   let relay = { connected: false, error: 'Relay access is unavailable' };
-  let connected = false, demoPopups = 0;
+  let connected = false, demoPopups = 0, authenticated = false, authLoading = false;
   let navigated = [];
   let h = harness('remote/app/(tabs)/(settings)/settings.tsx', {
     '@clawtab/shared': { useMachines: () => relay },
@@ -111,7 +111,7 @@ test('settings disable relay operations offline while preserving account and deb
     '@expo/vector-icons': { Ionicons: 'Ionicons' },
     '../../../src/store/ws': { useWsStore: (select) => select({ connected }) },
     '../../../src/demo/info': { showDemoInfo: () => demoPopups++ },
-    '../../../src/store/auth': { useAuthStore: (select) => select({ email: 'account@example.com' }) },
+    '../../../src/store/auth': { useAuthStore: (select) => select({ email: 'account@example.com', isAuthenticated: authenticated, loading: authLoading }) },
     '../../../src/components/settings/SettingsPage': { SettingsPage: 'Page', SettingsRow: 'Row', styles: {} },
     '../../../src/components/settings/navigation': { useSettingsNavigation: () => (page) => navigated.push(page) },
     '../../../src/theme/colors': { colors: {} },
@@ -121,6 +121,12 @@ test('settings disable relay operations offline while preserving account and deb
   let demoNotices = () => findAll(h.render(h.exports.SettingsHome), (node) => node.props?.accessibilityLabel === 'About demo mode');
   demoNotices()[0].props.onPress();
   assert.equal(demoPopups, 1);
+  authLoading = true;
+  assert.equal(demoNotices().length, 0);
+  authLoading = false;
+  authenticated = true;
+  assert.equal(demoNotices().length, 0);
+  authenticated = false;
   connected = true;
   assert.equal(demoNotices().length, 0);
   connected = false;

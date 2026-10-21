@@ -1,5 +1,8 @@
 import { DemoAgentPane, type DemoSelection } from "../../../src/components/DemoAgentPane"
-import { DEMO_PROCESSES } from "../../../src/demo/data"
+import { DemoOverview } from "../../../src/components/DemoOverview"
+import { ConnectionLoadingView } from "../../../src/components/ConnectionLoadingView"
+import { jobListState } from "../../../src/lib/jobListState"
+import { useAuthStore } from "../../../src/store/auth"
 import { DemoJobList } from "../../../src/components/DemoJobList"
 import { machineOnboardingChrome, machineOnboardingContent, machineManagementContent } from "../../../src/components/MachineSetup";
 import { useMachines, useHiddenGroups, machineHostRequest, machineRequest, machineState, scopedMessage, matchesSavedGroup, savedGroupKey, newOperationId, saveAccountPreferences } from "@clawtab/shared";
@@ -41,7 +44,6 @@ import {
   type IpadNavigationItem,
 } from "../../../src/components/IpadBottomBar"
 import { NotificationsPanel } from "../../../src/components/NotificationsPanel"
-import { LoadingBar } from "../../../src/components/LoadingBar"
 import {
   JobListView,
   GroupAgentRow,
@@ -76,7 +78,6 @@ type SidebarSection = LiquidSidebarSection | "notifications"
 const COLLAPSED_GROUPS_STORAGE_KEY = "remote_collapsed_groups"
 const GROUP_TAB_VIEW_STORAGE_KEY = "remote_group_tab_view"
 const LIST_MODE_STORAGE_KEY = "remote_job_list_mode"
-const JOB_LIST_LOADING_PROGRESS = 0.62
 
 function isProcessProvider(value: string | undefined): value is ProcessProvider {
   return (
@@ -166,21 +167,6 @@ function parseStringSet(raw: string | null): Set<string> {
   }
 }
 
-function jobListLoadingState({
-  connected,
-  desktopOnline,
-  loaded,
-}: {
-  connected: boolean
-  desktopOnline: boolean
-  loaded: boolean
-}) {
-  if (!connected) return { label: "Connecting to relay...", progress: JOB_LIST_LOADING_PROGRESS }
-  if (!desktopOnline) return null
-  if (!loaded) return { label: "Loading jobs...", progress: JOB_LIST_LOADING_PROGRESS }
-  return null
-}
-
 function readWebStringSet(key: string): Set<string> {
   if (Platform.OS !== "web" || typeof localStorage === "undefined") return new Set()
   return parseStringSet(localStorage.getItem(key))
@@ -239,6 +225,8 @@ export default function JobsScreen() {
   const enabledModels = useJobsStore((s) => s.enabledModels)
   const defaultProvider = useJobsStore((s) => s.defaultProvider)
   const defaultModel = useJobsStore((s) => s.defaultModel)
+  const authenticated = useAuthStore((s) => s.isAuthenticated)
+  const authLoading = useAuthStore((s) => s.loading)
   const connected = useWsStore((s) => s.connected)
   const desktopOnline = useWsStore((s) => s.desktopOnline)
   let machines = useMachines()
@@ -253,7 +241,7 @@ export default function JobsScreen() {
   const [groupLatestSortMode, setGroupLatestSortMode] = useState<GroupLatestSortMode>({})
   const [listMode, setListMode] = useState<JobListMode>(() => readListMode())
   const [groupTabView, setGroupTabView] = useState<GroupTabView>(() => readGroupTabView())
-  let [demoSelection, setDemoSelection] = useState<DemoSelection>({ id: DEMO_PROCESSES[0].pane_id, kind: "process" })
+  let [demoSelection, setDemoSelection] = useState<DemoSelection | null>(null)
   const [selectedJob, setSelectedJob] = useState<string | null>(() => readSelection("job"))
   const [selectedProcess, setSelectedProcess] = useState<string | null>(() =>
     readSelection("process"),
@@ -789,17 +777,13 @@ export default function JobsScreen() {
     })
   }, [visibleDetectedProcesses, selectedProcess, processesLoaded, split.cleanStaleLeaves])
 
-  let demoMode = !machines.connected && !connected
-  let connectRelay = () => router.push("/account")
-  const jobListLoading = demoMode ? null : jobListLoadingState({ connected: connected || machines.connected, desktopOnline: hostOnline, loaded })
+  let viewState = jobListState({ authenticated, authLoading, connected: connected || machines.connected, hostOnline, loaded })
+  let demoMode = viewState.demo
+  let connectRelay = () => authenticated ? router.push("/account") : router.push({ pathname: "/login", params: { return_to: "account" } })
+  let connectionLoading = viewState.loading ? <ConnectionLoadingView label={viewState.loading} error={machines.error} onAccount={connectRelay} /> : null
 
   const bannerContent = (
     <>
-      {jobListLoading && (
-        <View style={styles.loadingContainer}>
-          <LoadingBar label={jobListLoading.label} progress={jobListLoading.progress} />
-        </View>
-      )}
       {connected && !hostOnline && realJobs.length > 0 && (
         <View style={[styles.banner, styles.bannerWarn]}>
           <Text style={styles.bannerText}>No machines connected</Text>
@@ -812,7 +796,7 @@ export default function JobsScreen() {
     <View style={styles.container}>
 
 
-      {demoMode ? <DemoJobList onConnect={connectRelay} /> : <JobListView
+      {connectionLoading ?? (demoMode ? <DemoJobList onConnect={connectRelay} /> : <JobListView
         machineOnboarding={machineOnboardingContent}
         machineManagement={machineManagementContent}
         machineChrome={machineOnboardingChrome}
@@ -852,12 +836,12 @@ export default function JobsScreen() {
         searchQuery={searchQuery}
         onSearchQueryChange={setSearchQuery}
         hideSearchBar={!isSplitView}
-      />}
+      />)}
     </View>
   )
 
   const mobileJobList = (
-    demoMode ? <DemoJobList onConnect={connectRelay} /> : <JobListView
+    connectionLoading ?? (demoMode ? <DemoJobList onConnect={connectRelay} /> : <JobListView
       machineOnboarding={machineOnboardingContent}
       machineManagement={machineManagementContent}
       machineChrome={machineOnboardingChrome}
@@ -925,7 +909,7 @@ export default function JobsScreen() {
       scrollEventThrottle={16}
       renderAsScrollRoot
     />
-  )
+  ))
 
   // Resizable list pane (web only)
   const [listWidth, setListWidth] = useState(() => {
@@ -1125,7 +1109,7 @@ export default function JobsScreen() {
   }
 
   // Non-tree primary content (when no split tree)
-  const primaryContent = demoMode ? <DemoAgentPane key={`${demoSelection.kind}:${demoSelection.id}`} {...demoSelection} /> : selectedJob ? (
+  const primaryContent = connectionLoading ?? (demoMode ? (demoSelection ? <DemoAgentPane key={`${demoSelection.kind}:${demoSelection.id}`} {...demoSelection} /> : <DemoOverview onConnect={connectRelay} />) : selectedJob ? (
     <JobDetailPane
       key={selectedJob}
       jobName={selectedJob}
@@ -1148,7 +1132,7 @@ export default function JobsScreen() {
     <View style={styles.emptyDetail}>
       <Text style={styles.emptyDetailText}>Select a job to view details</Text>
     </View>
-  )
+  ))
 
   // Drag overlay
   const dragOverlayContent = (() => {
@@ -1267,7 +1251,7 @@ export default function JobsScreen() {
       <View style={[styles.listPane, { width: splitListWidth }]}>
         {!isIosPad && !isIosPhoneLandscape ? sidebarHeader : null}
         <View style={styles.listPaneScrollArea}>
-          {demoMode ? <DemoJobList onConnect={connectRelay} selectedSlug={demoSelection.id} onSelectJob={(job) => setDemoSelection({ id: job.slug, kind: "job" })} onSelectProcess={(process) => setDemoSelection({ id: process.pane_id, kind: "process" })} /> : <JobListView
+          {connectionLoading ?? (demoMode ? <DemoJobList onConnect={connectRelay} onShowOverview={() => setDemoSelection(null)} selectedSlug={demoSelection?.id} onSelectJob={(job) => setDemoSelection({ id: job.slug, kind: "job" })} onSelectProcess={(process) => setDemoSelection({ id: process.pane_id, kind: "process" })} /> : <JobListView
             machineOnboarding={machineOnboardingContent}
             machineManagement={machineManagementContent}
             machineChrome={machineOnboardingChrome}
@@ -1338,7 +1322,7 @@ export default function JobsScreen() {
             scrollEventThrottle={16}
             renderJobCard={renderDraggableJobCard}
             renderProcessCard={renderDraggableProcessCard}
-          />}
+          />)}
         </View>
         {isIosPad && (
           <View style={[styles.ipadBottomBarWrap, { paddingBottom: insets.bottom + 8 }]}>
@@ -1354,7 +1338,7 @@ export default function JobsScreen() {
           <NotificationsPanel mode="screen" />
         ) : (
           <SplitDetailArea
-            tree={demoMode ? null : split.tree}
+            tree={demoMode || connectionLoading ? null : split.tree}
             renderLeaf={renderLeaf}
             onRatioChange={split.handleSplitRatioChange}
             onFocusLeaf={(leafId) => {

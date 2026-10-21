@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const ts = require('../desktop/node_modules/typescript');
 
-let loadLogin = (os) => {
+let loadLogin = (os, params = {}) => {
   let events = [], browserRequests = 0, configured;
   let provider = { useIdTokenAuthRequest: (config) => {
     browserRequests++;
@@ -36,7 +36,7 @@ let loadLogin = (os) => {
     'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
     'react-native': { Platform: { OS: os }, StyleSheet: { create: (value) => value },
       View: 'View', Text: 'Text', TextInput: 'TextInput', Pressable: 'Pressable', Modal: 'Modal', Image: 'Image' },
-    'expo-router': { useLocalSearchParams: () => ({}), useRouter: () => ({
+    'expo-router': { useLocalSearchParams: () => params, useRouter: () => ({
       push: (route) => events.push(['push', route]), replace: (route) => events.push(['replace', route]),
     }) },
     'expo-web-browser': { maybeCompleteAuthSession: () => {} },
@@ -69,3 +69,11 @@ for (let os of ['android', 'ios', 'web']) {
     assert.deepEqual(h.events.slice(1), [['login', os === 'web' ? 'web-identity' : 'native-identity'], ['replace', '/(tabs)']]);
   });
 }
+
+test('sign-in preserves the selected demo setup path', async () => {
+  for (let os of ['ios', 'web']) for (let destination of ['add-machine', 'account']) {
+    let h = loadLogin(os, { return_to: destination });
+    await h.press('Sign in with Google');
+    assert.deepEqual(h.events.at(-1), ['replace', `/${destination}`]);
+  }
+});

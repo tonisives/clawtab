@@ -1,4 +1,4 @@
-import type { ReactNode } from "react"
+import { Children, type ReactNode } from "react"
 import { View, Text, Pressable, ScrollView, StyleSheet } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
 import { ContentContainer } from "../ContentContainer"
@@ -6,12 +6,18 @@ import { useResponsive } from "../../hooks/useResponsive"
 import { colors } from "../../theme/colors"
 import { radius, spacing } from "../../theme/spacing"
 
-export let SettingsPage = ({ children }: { children: ReactNode }) => {
+export let SettingsPage = ({ children, wide = false }: { children: ReactNode; wide?: boolean }) => {
   let { isIosPadPortrait } = useResponsive()
   return <ScrollView style={styles.scrollContainer} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={[styles.pageContent, isIosPadPortrait && styles.pageContentPad]} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
-    <ContentContainer><View style={styles.container}>{children}</View></ContentContainer>
+    <ContentContainer wide={wide}><View style={styles.container}>{children}</View></ContentContainer>
   </ScrollView>
 }
+export let SettingsGroup = ({ children }: { children: ReactNode }) => <View style={styles.listGroup}>
+  {Children.toArray(children).map((child, index) => <View key={typeof child === "object" && "key" in child ? child.key : index}>
+    {index > 0 && <View style={styles.rowSeparator} />}
+    {child}
+  </View>)}
+</View>
 export let SettingsRow = ({ title, detail, onPress, disabled = false, chevron = true }: { title: string; detail?: string; onPress: () => void; disabled?: boolean; chevron?: boolean }) => <Pressable accessibilityRole="button" disabled={disabled} accessibilityState={{ disabled }} onPress={onPress} style={({ pressed }) => [styles.row, (pressed || disabled) && styles.pressed]}>
   <View style={styles.rowText}><Text style={styles.rowTitle}>{title}</Text>{detail && <Text style={styles.rowDetail}>{detail}</Text>}</View>
   {chevron && <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />}
@@ -55,6 +61,7 @@ export let styles = StyleSheet.create({
     overflow: "hidden",
     backgroundColor: colors.surface,
   },
+  rowSeparator: { height: StyleSheet.hairlineWidth, backgroundColor: colors.borderLight, marginHorizontal: spacing.lg },
   row: {
     minHeight: 56,
     gap: spacing.md,
@@ -63,8 +70,6 @@ export let styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: colors.surface,
     padding: spacing.lg,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.borderLight,
   },
   label: {
     color: colors.textSecondary,

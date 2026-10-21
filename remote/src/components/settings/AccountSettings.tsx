@@ -8,7 +8,7 @@ import { useResponsive } from "../../hooks/useResponsive"
 import * as api from "../../api/client"
 import { confirm, alertError, openUrl } from "../../lib/platform"
 import { colors } from "../../theme/colors"
-import { SettingsPage, SettingsRow, styles } from "./SettingsPage"
+import { SettingsGroup, SettingsPage, SettingsRow, styles } from "./SettingsPage"
 import { useSettingsNavigation } from "./navigation"
 export let AccountSettings = () => {
   let userId = useAuthStore((s) => s.userId)
@@ -180,21 +180,21 @@ export let AccountSettings = () => {
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>Account</Text>
       {email && (
-        <View style={styles.listGroup}>
+        <SettingsGroup>
           <View style={styles.row}>
             <Text style={styles.label}>Email</Text>
             <Text style={styles.value} numberOfLines={1}>
               {email}
             </Text>
           </View>
-        </View>
+        </SettingsGroup>
       )}
     </View>
     {subLoading && <ActivityIndicator color={colors.accent} />}
     {!subLoading && sub?.subscribed && (
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Subscription</Text>
-        <View style={styles.listGroup}>
+        <SettingsGroup>
           <View style={styles.row}>
             <Text style={styles.label}>Status</Text>
             <Text style={[styles.value, { color: colors.success }]}>{sub.relay_included ? "Included with your box" : "Active"}</Text>
@@ -207,44 +207,44 @@ export let AccountSettings = () => {
               </Text>
             </View>
           )}
-        </View>
+        </SettingsGroup>
         {sub.relay_included && <Text style={styles.usageDescription}>Your box includes relay access. Any separate relay subscription continues on its normal billing schedule until you cancel it.</Text>}
-        {Platform.OS !== "android" && ((sub.providers?.length ?? 0) > 1 ? <View style={styles.listGroup}>
+        {Platform.OS !== "android" && ((sub.providers?.length ?? 0) > 1 ? <SettingsGroup>
           <SettingsRow title="Manage Apple subscription" onPress={manageApple} disabled={actionLoading} chevron={false} />
           <SettingsRow title="Manage Stripe subscription" onPress={manageStripe} disabled={actionLoading} chevron={false} />
-        </View> : (!sub.relay_included || sub.provider) && <View style={styles.listGroup}><SettingsRow
+        </SettingsGroup> : (!sub.relay_included || sub.provider) && <SettingsGroup><SettingsRow
           title={actionLoading ? "Loading…" : sub.relay_included ? `Manage existing ${sub.provider === "apple" ? "Apple" : "Stripe"} subscription` : "Manage subscription"}
           onPress={handleManageBilling}
           disabled={actionLoading}
           chevron={false}
-        /></View>)}
-        {sub.relay_included && <View style={styles.listGroup}><SettingsRow title="Manage boxes" onPress={openMachines} /></View>}
+        /></SettingsGroup>)}
+        {sub.relay_included && <SettingsGroup><SettingsRow title="Manage boxes" onPress={openMachines} /></SettingsGroup>}
       </View>
     )}
     {!subLoading && !sub?.subscribed && <View style={styles.section}>
       <Text style={styles.sectionTitle}>Relay subscription</Text>
-      {Platform.OS === "android" ? <Text style={styles.usageDescription}>Relay access requires an existing ClawTab subscription.</Text> : <View style={styles.listGroup}>
+      {Platform.OS === "android" ? <Text style={styles.usageDescription}>Relay access requires an existing ClawTab subscription.</Text> : <SettingsGroup>
         <SettingsRow title={actionLoading || iap.purchasing ? "Please wait…" : Platform.OS === "ios" && iap.loading ? "Loading purchases…" : iap.price ? `Subscribe · ${iap.price} / month` : "Subscribe"} detail={Platform.OS === "ios" && iap.error ? iap.error : "Connect your machines through the relay"} onPress={handleSubscribe} disabled={!sub || actionLoading || iap.purchasing || (Platform.OS === "ios" && !iap.available)} chevron={false} />
-      </View>}
+      </SettingsGroup>}
     </View>}
     {Platform.OS === "ios" && !sub?.subscribed && !!iap.error && <View style={styles.section}>
-      <View style={styles.listGroup}><SettingsRow title="Retry loading purchases" onPress={iap.retry} disabled={iap.loading || actionLoading || iap.purchasing} chevron={false} /></View>
+      <SettingsGroup><SettingsRow title="Retry loading purchases" onPress={iap.retry} disabled={iap.loading || actionLoading || iap.purchasing} chevron={false} /></SettingsGroup>
     </View>}
-    {Platform.OS === "ios" && <View style={styles.listGroup}>
+    {Platform.OS === "ios" && <SettingsGroup>
       <SettingsRow title="Restore Purchases" onPress={handleRestore} disabled={subLoading || actionLoading || iap.purchasing} chevron={false} />
-    </View>}
+    </SettingsGroup>}
     {Platform.OS === "ios" && !!iap.diagnostic && <View style={styles.section}>
-      <View style={styles.listGroup}><SettingsRow title={diagnosticsExpanded ? "Hide purchase diagnostics" : "View purchase diagnostics"} onPress={toggleDiagnostics} chevron={false} /></View>
+      <SettingsGroup><SettingsRow title={diagnosticsExpanded ? "Hide purchase diagnostics" : "View purchase diagnostics"} onPress={toggleDiagnostics} chevron={false} /></SettingsGroup>
       {diagnosticsExpanded && <Text selectable style={styles.usageDescription}>{iap.diagnostic}</Text>}
     </View>}
     {!!subscriptionError && <Text accessibilityRole="alert" style={styles.usageDescription}>{subscriptionError}</Text>}
-    {subscriptionCheckFailed && <View style={styles.listGroup}><SettingsRow title={actionLoading ? "Checking…" : "Retry subscription check"} onPress={handleRefreshSubscription} disabled={subLoading || actionLoading || iap.purchasing} chevron={false} /></View>}
+    {subscriptionCheckFailed && <SettingsGroup><SettingsRow title={actionLoading ? "Checking…" : "Retry subscription check"} onPress={handleRefreshSubscription} disabled={subLoading || actionLoading || iap.purchasing} chevron={false} /></SettingsGroup>}
     {Platform.OS === "ios" && <View style={styles.section}>
       {!sub?.subscribed && <Text style={styles.usageDescription}>Relay access renews monthly until canceled. Manage or cancel your subscription in your Apple account settings.</Text>}
-      <View style={styles.listGroup}>
+      <SettingsGroup>
         <SettingsRow title="Terms of Use" onPress={openTerms} chevron={false} />
         <SettingsRow title="Privacy Policy" onPress={openPrivacy} chevron={false} />
-      </View>
+      </SettingsGroup>
     </View>}
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>Session</Text>

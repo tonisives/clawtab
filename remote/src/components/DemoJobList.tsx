@@ -5,7 +5,8 @@ import { Ionicons } from "@expo/vector-icons"
 import { JobListView, colors, type JobListMode, type JobSortMode, type RemoteJob, type DetectedProcess } from "@clawtab/shared"
 import { DEMO_JOBS, DEMO_PROCESSES, DEMO_STATUSES } from "../demo/data"
 import { useJobFilterStore } from "../store/jobFilter"
-import { showDemoInfo } from "../demo/info"
+import { MachineModal } from "../../../shared/src/machines/Onboarding"
+import { DemoOverview } from "./DemoOverview"
 
 let savedGroups: [] = []
 type DemoJobListProps = {
@@ -13,9 +14,12 @@ type DemoJobListProps = {
   onSelectJob?: (job: RemoteJob) => void
   onSelectProcess?: (process: DetectedProcess) => void
   selectedSlug?: string
+  onShowOverview?: () => void
 }
-export let DemoJobList = ({ onConnect, onSelectJob, onSelectProcess, selectedSlug }: DemoJobListProps) => {
+export let DemoJobList = ({ onConnect, onSelectJob, onSelectProcess, selectedSlug, onShowOverview }: DemoJobListProps) => {
   let router = useRouter()
+  let [overview, setOverview] = useState(false)
+  let showOverview = onShowOverview ?? (() => setOverview(true))
   let searchQuery = useJobFilterStore((state) => state.query)
   let setSearchQuery = useJobFilterStore((state) => state.setQuery)
   let [collapsedGroups, setCollapsedGroups] = useState(new Set<string>())
@@ -33,14 +37,15 @@ export let DemoJobList = ({ onConnect, onSelectJob, onSelectProcess, selectedSlu
   let openJob = onSelectJob ?? ((job: RemoteJob) => router.push({ pathname: "/demo-agent", params: { id: job.slug, kind: "job" } }))
   let openProcess = onSelectProcess ?? ((process: DetectedProcess) => router.push({ pathname: "/demo-agent", params: { id: process.pane_id, kind: "process" } }))
   let notice = <View style={styles.notice}>
-    <Pressable accessibilityRole="button" accessibilityLabel="About demo mode" onPress={showDemoInfo} style={styles.demoButton}>
+    <Pressable accessibilityRole="button" accessibilityLabel="About demo mode" onPress={showOverview} style={styles.demoButton}>
       <Ionicons name="alert-circle-outline" size={20} color={colors.warning} />
       <Text style={styles.title}>Demo</Text>
     </Pressable>
     <Text style={styles.separator}>·</Text>
     <Pressable accessibilityRole="button" accessibilityLabel="Connect to relay" onPress={onConnect} style={styles.connectButton}><Text style={styles.connect}>Connect to relay</Text></Pressable>
   </View>
-  return <JobListView selectedSlug={selectedSlug} jobs={DEMO_JOBS} statuses={DEMO_STATUSES} detectedProcesses={DEMO_PROCESSES} savedGroups={savedGroups} compactMobileToolbar mobileAppearance searchQuery={searchQuery} onSearchQueryChange={setSearchQuery} groupTabView={groupTabView} onGroupTabViewChange={changeGroupView} onSetAllGroupTabView={changeAllGroupViews} collapsedGroups={collapsedGroups} onToggleGroup={toggleGroup} listMode={listMode} onListModeChange={setListMode} sortMode={sortMode} onSortChange={setSortMode} onSelectJob={openJob} onSelectProcess={openProcess} headerContent={notice} contentContainerStyle={styles.content} showEmpty />
+  let list = <JobListView selectedSlug={selectedSlug} jobs={DEMO_JOBS} statuses={DEMO_STATUSES} detectedProcesses={DEMO_PROCESSES} savedGroups={savedGroups} compactMobileToolbar mobileAppearance searchQuery={searchQuery} onSearchQueryChange={setSearchQuery} groupTabView={groupTabView} onGroupTabViewChange={changeGroupView} onSetAllGroupTabView={changeAllGroupViews} collapsedGroups={collapsedGroups} onToggleGroup={toggleGroup} listMode={listMode} onListModeChange={setListMode} sortMode={sortMode} onSortChange={setSortMode} onSelectJob={openJob} onSelectProcess={openProcess} headerContent={notice} contentContainerStyle={styles.content} showEmpty />
+  return overview ? <>{list}<MachineModal title="Demo" onClose={() => setOverview(false)}><DemoOverview onConnect={() => { setOverview(false); onConnect() }} /></MachineModal></> : list
 }
 
 let styles = StyleSheet.create({

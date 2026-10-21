@@ -46,6 +46,35 @@ export let recommendRegion = (timezone: string, regions: string[]) => {
     : /^(Asia|Australia|Pacific)\//.test(timezone) ? ["sin", "hel1"] : ["fsn1", "nbg1", "hel1"]
   return preferred.find((region) => regions.includes(region)) ?? regions[0]
 }
+type RegionGroup = "all" | "emea" | "americas" | "asia" | "other"
+type QuoteSort = "price-asc" | "price-desc" | "memory"
+export let rentalRegionGroup = (region: string): Exclude<RegionGroup, "all"> => {
+  if (["ash", "hil"].includes(region)) return "americas"
+  if (["sin"].includes(region)) return "asia"
+  if (["fsn1", "nbg1", "hel1"].includes(region)) return "emea"
+  return "other"
+}
+export let sortRentalQuotes = <T extends Quote>(quotes: T[], region: RegionGroup, sort: QuoteSort): T[] => quotes
+  .filter((quote) => region === "all" || rentalRegionGroup(quote.region) === region)
+  .sort((a, b) => (sort === "memory" ? b.memory_gb - a.memory_gb : 0)
+    || (sort === "price-desc" ? b.monthly_cents - a.monthly_cents : a.monthly_cents - b.monthly_cents)
+    || a.region_description.localeCompare(b.region_description) || a.server_type.localeCompare(b.server_type))
+export let recommendRentalQuotes = <T extends Quote>(quotes: T[], timezone: string): T[] => {
+  let sorted = sortRentalQuotes(quotes, "all", "price-asc")
+  let region = recommendRegion(timezone, sorted.map((quote) => quote.region))
+  let suggestions = [sorted.find((quote) => quote.region === region && quote.memory_gb === 4),
+    sorted.find((quote) => quote.region === region && quote.memory_gb === 8),
+    sorted.find((quote) => quote.region !== region), ...sorted]
+  return suggestions.filter((quote): quote is T => !!quote)
+    .filter((quote, index, items) => items.findIndex((item) => quoteId(item) === quoteId(quote)) === index).slice(0, 3)
+}
+let regionGroups: { id: RegionGroup; label: string }[] = [
+  { id: "all", label: "All regions" }, { id: "emea", label: "EMEA" },
+  { id: "americas", label: "Americas" }, { id: "asia", label: "Asia Pacific" }, { id: "other", label: "Other" },
+]
+let quoteSorts: { id: QuoteSort; label: string }[] = [
+  { id: "price-asc", label: "Price: low to high" }, { id: "price-desc", label: "Price: high to low" }, { id: "memory", label: "Memory: high to low" },
+]
 let Button = ({ label, onPress, disabled = false, primary = false }: { label: string; onPress: () => void; disabled?: boolean; primary?: boolean }) => (
   <Pressable accessibilityRole="button" accessibilityState={{ disabled }} onPress={onPress} disabled={disabled} style={[styles.button, primary && styles.primaryButton, disabled && styles.disabled]}>
     <Text style={[styles.buttonText, primary && styles.primaryText]}>{label}</Text>
@@ -65,6 +94,11 @@ export let RentalsPanel = ({ children, style, api, purchases, platform = "web", 
   let [enabled, setEnabled] = useState(false)
   let [managed, setManaged] = useState<string | null>(null)
   let [customize, setCustomize] = useState(false)
+  let [regionGroup, setRegionGroup] = useState<RegionGroup>("all")
+  let [quoteSort, setQuoteSort] = useState<QuoteSort>("price-asc")
+  let timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
+  let recommended = recommendRentalQuotes(catalog, timezone)
+  let filteredCatalog = sortRentalQuotes(catalog, regionGroup, quoteSort)
   let [showTerms, setShowTerms] = useState(false)
   let [showOrder, setShowOrder] = useState(false)
   useEffect(() => { onOrderingChange?.(showOrder) }, [showOrder, onOrderingChange])
@@ -114,11 +148,12 @@ export let RentalsPanel = ({ children, style, api, purchases, platform = "web", 
     setEnabled(result.enabled)
     let quotes: Quote[] = result.quotes
     setCatalog(quotes)
-    let region = recommendRegion(Intl.DateTimeFormat().resolvedOptions().timeZone, quotes.map((quote) => quote.region))
-    let suggested = quotes.find((quote) => quote.region === region && quote.memory_gb === 4) ?? quotes[0]
+    let suggested = recommendRentalQuotes(quotes, timezone)[0]
     setSelected(suggested ? quoteId(suggested) : "")
     setShowOrder(true)
     setCustomize(false)
+    setRegionGroup("all")
+    setQuoteSort("price-asc")
     setShowTerms(false)
     setAccepted(false)
     requestId.current = null
@@ -202,17 +237,33 @@ export let RentalsPanel = ({ children, style, api, purchases, platform = "web", 
       {showOrder && <View style={styles.card}>
         {!enabled ? <Text style={styles.text}>New rentals are currently unavailable.</Text> : <>
           <Text style={styles.heading}>Choose your box</Text>
-          <View style={styles.row}>{(customize ? catalog : quote ? [quote] : []).map((candidate) => <Pressable key={quoteId(candidate)} accessibilityRole="button" accessibilityState={{ selected: selected === quoteId(candidate) }} onPress={choose(candidate)} style={[styles.choice, selected === quoteId(candidate) && styles.selected]}>
-            <Text style={styles.text}>{candidate.memory_gb} GB · {candidate.region_description}</Text>
-            <Text style={styles.detail}>{candidate.cores} vCPU · {candidate.disk_gb} GB disk · {(candidate.traffic_bytes / 1e12).toFixed(1)} TB outgoing traffic</Text>
-            <Text style={styles.text}>{money(candidate)} / month, plus applicable tax</Text>
+          <Text style={styles.detail}>A few suggestions based on your device timezone ({timezone.replaceAll("_", " ")}). You can choose any available region.</Text>
+          <View style={styles.quoteGrid}>{recommended.map((candidate) => <Pressable key={quoteId(candidate)} accessibilityRole="radio" accessibilityLabel={`${candidate.memory_gb} GB, ${candidate.region_description}, ${money(candidate)} per month`} accessibilityState={{ checked: selected === quoteId(candidate) }} onPress={choose(candidate)} style={[styles.choice, selected === quoteId(candidate) && styles.selected]}>
+            <Text style={styles.choiceHeading}>{candidate.memory_gb} GB memory</Text>
+            <Text style={styles.text}>{candidate.region_description}</Text>
+            <Text style={styles.detail}>{candidate.cores} vCPU · {candidate.disk_gb} GB disk · {(candidate.traffic_bytes / 1e12).toFixed(1)} TB traffic</Text>
+            <Text style={styles.price}>{money(candidate)} / month</Text>
           </Pressable>)}</View>
           {!catalog.length && <Text style={styles.text}>No eligible boxes are available right now.</Text>}
-          <Pressable accessibilityRole="button" accessibilityState={{ expanded: customize }} onPress={toggleCustomize} style={styles.disclosure}><Text style={styles.link}>{customize ? "Done customizing" : "Customize box"}</Text></Pressable>
+          <Pressable accessibilityRole="button" accessibilityState={{ expanded: customize }} onPress={toggleCustomize} style={styles.disclosure}><Text style={styles.link}>{customize ? "Hide all boxes" : "Browse all boxes"}</Text></Pressable>
           {customize && <>
-            <Text style={styles.text}>Box name</Text>
-            <TextInput accessibilityLabel="Box name" value={name} onChangeText={editName} maxLength={80} style={styles.input} />
+            <Text style={styles.text}>Region</Text>
+            <View accessibilityRole="radiogroup" accessibilityLabel="Box region" style={styles.row}>{regionGroups.filter((group) => group.id === "all" || catalog.some((candidate) => rentalRegionGroup(candidate.region) === group.id)).map((group) => <Pressable key={group.id} accessibilityRole="radio" accessibilityState={{ checked: regionGroup === group.id }} onPress={() => setRegionGroup(group.id)} style={[styles.button, regionGroup === group.id && styles.selected]}><Text style={styles.buttonText}>{group.label}</Text></Pressable>)}</View>
+            <Text style={styles.text}>Sort by</Text>
+            <View accessibilityRole="radiogroup" accessibilityLabel="Box sort order" style={styles.row}>{quoteSorts.map((sort) => <Pressable key={sort.id} accessibilityRole="radio" accessibilityState={{ checked: quoteSort === sort.id }} onPress={() => setQuoteSort(sort.id)} style={[styles.button, quoteSort === sort.id && styles.selected]}><Text style={styles.buttonText}>{sort.label}</Text></Pressable>)}</View>
+            <Text accessibilityLiveRegion="polite" style={styles.detail}>{filteredCatalog.length} {filteredCatalog.length === 1 ? "box" : "boxes"}</Text>
+            <View style={styles.quoteGrid}>{filteredCatalog.map((candidate) => <Pressable key={quoteId(candidate)} accessibilityRole="radio" accessibilityLabel={`${candidate.memory_gb} GB, ${candidate.region_description}, ${money(candidate)} per month`} accessibilityState={{ checked: selected === quoteId(candidate) }} onPress={choose(candidate)} style={[styles.choice, selected === quoteId(candidate) && styles.selected]}>
+              <Text style={styles.choiceHeading}>{candidate.memory_gb} GB · {candidate.region_description}</Text>
+              <Text style={styles.detail}>{candidate.cores} vCPU · {candidate.disk_gb} GB disk · {(candidate.traffic_bytes / 1e12).toFixed(1)} TB traffic</Text>
+              <Text style={styles.price}>{money(candidate)} / month</Text>
+            </Pressable>)}</View>
           </>}
+          {quote && <View accessibilityLiveRegion="polite" style={styles.selectionSummary}>
+            <Text style={styles.text}>Selected: {quote.memory_gb} GB · {quote.region_description}</Text>
+            <Text style={styles.detail}>{money(quote)} / month, plus applicable tax</Text>
+          </View>}
+          <Text style={styles.text}>Box name</Text>
+          <TextInput accessibilityLabel="Box name" value={name} onChangeText={editName} maxLength={80} style={styles.input} />
           <Text style={styles.text}>First agent</Text>
           <View style={styles.row}>{["codex", "claude", "opencode"].map((choice) => <Pressable key={choice} accessibilityRole="radio" accessibilityState={{ selected: provider === choice }} onPress={() => { setProvider(choice); requestId.current = null }} style={[styles.button, styles.providerChoice, provider === choice && styles.selected]}><Text style={styles.buttonText}>{choice === "claude" ? "Claude" : choice === "codex" ? "Codex" : "OpenCode"}</Text></Pressable>)}</View>
           {customize && <>
@@ -297,7 +348,11 @@ let styles = StyleSheet.create({
   detail: { color: colors.textSecondary, fontSize: 13, lineHeight: 20 },
   error: { color: colors.danger, fontSize: 13 },
   card: { gap: 10, padding: 14, backgroundColor: colors.surface, borderRadius: Platform.OS === "ios" ? 24 : 16, borderWidth: 1, borderColor: colors.border },
-  choice: { gap: 6, padding: 12, borderRadius: Platform.OS === "ios" ? 20 : 12, borderWidth: 1, borderColor: colors.borderLight },
+  quoteGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
+  choiceHeading: { color: colors.text, fontSize: 15, fontWeight: "600" },
+  price: { color: colors.text, fontSize: 16, fontWeight: "600", marginTop: 4 },
+  selectionSummary: { gap: 4, paddingVertical: 12 },
+  choice: { flexGrow: 1, flexBasis: 240, minWidth: 0, gap: 6, padding: 12, borderRadius: Platform.OS === "ios" ? 20 : 12, borderWidth: 1, borderColor: colors.borderLight },
   disclosure: { minHeight: 40, justifyContent: "center", alignSelf: "flex-start" },
   link: { color: colors.accent, fontSize: 13 },
   providerChoice: { flex: 1, paddingHorizontal: 10 },
