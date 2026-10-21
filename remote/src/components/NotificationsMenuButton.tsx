@@ -1,77 +1,39 @@
-import { useRef, useState } from "react";
-import { Dimensions, Modal, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { GlassView, isGlassEffectAPIAvailable } from "expo-glass-effect";
 import { useRouter } from "expo-router";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { colors } from "@clawtab/shared";
 import { useNotificationStore } from "../store/notifications";
-import { NotificationsPanel } from "./NotificationsPanel";
-import type { NotificationDetailTarget } from "./notificationTypes";
+import { useResponsive } from "../hooks/useResponsive";
 
 export function NotificationsMenuButton({
   hideWhenEmpty = false,
   variant = "compact",
   countOnly = false,
+  onOpen,
+  active = false,
 }: {
   hideWhenEmpty?: boolean;
   variant?: "compact" | "fluid";
   countOnly?: boolean;
+  onOpen?: () => void;
+  active?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
-  const [detailTarget, setDetailTarget] = useState<NotificationDetailTarget | null>(null);
   const router = useRouter();
-  const [position, setPosition] = useState<{ top: number; right: number }>({ top: 48, right: 12 });
-  const windowSize = useWindowDimensions();
-  const insets = useSafeAreaInsets();
-  const buttonRef = useRef<View | null>(null);
+  const { isSplitView } = useResponsive();
   const questions = useNotificationStore((s) => s.questions);
-  const autoYesPaneIds = useNotificationStore((s) => s.autoYesPaneIds);
 
   const activeQuestionCount = questions.length;
 
-  const hasContent = activeQuestionCount > 0 || autoYesPaneIds.size > 0;
-  const closeMenu = () => {
-    setOpen(false);
-    setDetailTarget(null);
-  };
-  const popupFrame = Platform.OS === "web"
-    ? {
-        top: position.top,
-        right: position.right,
-        width: Math.min(560, windowSize.width - 20),
-        maxHeight: Math.min(720, windowSize.height * 0.82),
-      }
-    : {
-        top: 0,
-        right: 0,
-        bottom: 0,
-        left: 0,
-      };
-
   const openMenu = () => {
-    if (Platform.OS !== "web") {
-      router.push("/notifications");
-      return;
-    }
-
-    const screen = Dimensions.get("window");
-    const node = buttonRef.current as unknown as {
-      measureInWindow?: (callback: (x: number, y: number, width: number, height: number) => void) => void;
-      getBoundingClientRect?: () => DOMRect;
-    } | null;
-
-    if (Platform.OS === "web" && node?.getBoundingClientRect) {
-      const rect = node.getBoundingClientRect();
-      setPosition({ top: rect.bottom + 6, right: Math.max(10, screen.width - rect.right) });
+    if (onOpen) {
+      onOpen();
+    } else if (Platform.OS === "web" && isSplitView) {
+      router.navigate({ pathname: "/(tabs)/(jobs)", params: { section: "notifications" } });
     } else {
-      node?.measureInWindow?.((x, y, width, height) => {
-        setPosition({ top: y + height + 6, right: Math.max(10, screen.width - x - width) });
-      });
+      router.push("/notifications");
     }
-
-    setOpen((value) => !value);
   };
 
   if (hideWhenEmpty && activeQuestionCount === 0) {
@@ -90,12 +52,13 @@ export function NotificationsMenuButton({
     <Pressable
       onPress={openMenu}
       accessibilityRole="button"
+      accessibilityState={{ selected: active }}
       accessibilityLabel={activeQuestionCount > 0 ? `${activeQuestionCount} active question${activeQuestionCount === 1 ? "" : "s"}` : "Notifications"}
       style={({ pressed }) => [
         countOnly ? [styles.countButton, activeQuestionCount === 0 && styles.countButtonEmpty] : glassAvailable ? styles.fluidGlassPressable : variant === "fluid" ? styles.fluidButton : styles.button,
         variant === "fluid" && activeQuestionCount > 0 && !glassAvailable && styles.fluidButtonHasQuestions,
         variant === "compact" && activeQuestionCount > 0 && !countOnly && styles.buttonHasQuestions,
-        (pressed || open) && (glassAvailable ? styles.fluidGlassPressableActive : variant === "fluid" ? styles.fluidButtonActive : styles.buttonActive),
+        (pressed || active) && (glassAvailable ? styles.fluidGlassPressableActive : variant === "fluid" ? styles.fluidButtonActive : styles.buttonActive),
       ]}
     >
       {countOnly ? (
@@ -115,7 +78,7 @@ export function NotificationsMenuButton({
   );
 
   return (
-    <View ref={buttonRef} collapsable={false} style={countOnly ? styles.countButtonFrame : styles.buttonFrame}>
+    <View style={countOnly ? styles.countButtonFrame : styles.buttonFrame}>
       {glassAvailable ? (
         <GlassView
           glassEffectStyle="regular"
@@ -134,41 +97,6 @@ export function NotificationsMenuButton({
           <Text style={variant === "fluid" ? styles.fluidBadgeText : styles.badgeText}>{activeQuestionCount}</Text>
         </View>
       )}
-
-      <Modal
-        visible={open}
-        transparent={Platform.OS === "web"}
-        animationType={Platform.OS === "ios" ? "slide" : "fade"}
-        presentationStyle={Platform.OS === "web" ? "overFullScreen" : "fullScreen"}
-        statusBarTranslucent
-        onRequestClose={detailTarget ? () => setDetailTarget(null) : closeMenu}
-      >
-        <View style={styles.modalRoot}>
-          {Platform.OS === "web" ? (
-            <Pressable style={StyleSheet.absoluteFill} onPress={closeMenu} />
-          ) : null}
-          <View style={[styles.popup, Platform.OS !== "web" && [styles.nativePopup, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 16 }], popupFrame]}>
-            <View style={styles.modalHeader}>
-              <Pressable
-                onPress={detailTarget ? () => setDetailTarget(null) : closeMenu}
-                style={styles.closeButton}
-                accessibilityRole="button"
-                accessibilityLabel={detailTarget ? "Back to notifications" : "Close notifications"}
-              >
-                <Ionicons name={detailTarget ? "chevron-back" : "close"} size={20} color={colors.text} />
-              </Pressable>
-              <Text style={styles.title} numberOfLines={1}>{detailTarget ? "Details" : "Notifications"}</Text>
-              <View style={styles.modalHeaderSpacer} />
-            </View>
-            <NotificationsPanel
-              mode="popup"
-              onNavigateAway={closeMenu}
-              detailTarget={detailTarget}
-              onDetailTargetChange={setDetailTarget}
-            />
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -305,53 +233,5 @@ const styles = StyleSheet.create({
     fontSize: 9,
     lineHeight: 12,
     fontWeight: "800",
-  },
-  modalRoot: {
-    flex: 1,
-  },
-  popup: {
-    position: "absolute",
-    padding: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-    backgroundColor: colors.bg,
-    overflow: "hidden",
-    ...(Platform.OS === "web" ? { boxShadow: "0 18px 48px rgba(0, 0, 0, 0.35)" as any } : { elevation: 12 }),
-  },
-  nativePopup: {
-    flex: 1,
-    minHeight: 0,
-    paddingHorizontal: 12,
-    borderWidth: 0,
-    borderRadius: 0,
-    elevation: 0,
-  },
-  title: {
-    color: colors.text,
-    fontSize: 17,
-    fontWeight: "700",
-  },
-  modalHeader: {
-    height: 44,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 4,
-    marginBottom: 8,
-  },
-  closeButton: {
-    width: 36,
-    height: 36,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 18,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  modalHeaderSpacer: {
-    width: 36,
-    height: 36,
   },
 });

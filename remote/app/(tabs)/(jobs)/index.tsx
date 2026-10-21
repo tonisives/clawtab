@@ -21,7 +21,7 @@ import {
   Image,
   Linking,
 } from "react-native"
-import { useRouter } from "expo-router"
+import { useLocalSearchParams, useRouter } from "expo-router"
 import { Ionicons } from "@expo/vector-icons"
 import { GlassView, isGlassEffectAPIAvailable } from "expo-glass-effect"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
@@ -250,6 +250,13 @@ export default function JobsScreen() {
   const [stoppingJobSlugs, setStoppingJobSlugs] = useState<Set<string>>(() => new Set())
   const { width, isIosPad, isIosPadPortrait, isIosPhoneLandscape, isSplitView, isWide } = useResponsive()
   const router = useRouter()
+  const { section } = useLocalSearchParams<{ section?: string }>()
+
+  useEffect(() => {
+    if (Platform.OS !== "web" || !isSplitView || section !== "notifications") return
+    setSidebarSection("notifications")
+    router.setParams({ section: undefined })
+  }, [isSplitView, router, section])
   const insets = useSafeAreaInsets()
   const setFocusedShell = useLandscapeShellStore((s) => s.setFocusedShell)
   const showSidebar = useLandscapeShellStore((s) => s.showSidebar)
@@ -1199,7 +1206,7 @@ export default function JobsScreen() {
           <Pressable style={styles.sidebarIconButton} onPress={handleOpenSidebarSettings} accessibilityRole="button" accessibilityLabel="Settings" accessibilityState={{ selected: sidebarSection === "settings" }}>
             <Ionicons name="settings-outline" size={20} color={sidebarSection === "settings" ? colors.accent : colors.textSecondary} />
           </Pressable>
-          <NotificationsMenuButton variant="compact" />
+          <NotificationsMenuButton variant="compact" onOpen={handleOpenSidebarNotifications} active={sidebarSection === "notifications"} />
         </View> : !isIosPad ? <NotificationsMenuButton variant={isWide ? "compact" : "fluid"} /> : null}
       </View>
 
