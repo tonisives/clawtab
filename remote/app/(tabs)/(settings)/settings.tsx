@@ -1,5 +1,6 @@
+import { useEffect, useRef } from "react"
 import { createNativeStackNavigator } from "expo-router/build/react-navigation/native-stack"
-import { NavigationContainer, NavigationIndependentTree, DarkTheme, useIsFocused } from "expo-router/react-navigation"
+import { NavigationContainer, NavigationIndependentTree, DarkTheme, useIsFocused, useNavigationContainerRef, type NavigationState } from "expo-router/react-navigation"
 import { useMachines } from "@clawtab/shared"
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
@@ -85,12 +86,33 @@ let pages = {
   terminal: { title: "Terminal", component: TerminalSettings },
   tokens: { title: "API tokens", component: TokenSettings },
 }
-let SettingsScreen = ({ inModal = false }: { inModal?: boolean }) => {
+type SettingsScreenProps = {
+  inModal?: boolean
+  active?: boolean
+  historyBack?: () => void
+  restoreState?: { state: NavigationState | undefined }
+  onNavigationStateChange?: (state: NavigationState) => void
+}
+let SettingsScreen = ({ inModal = false, active = true, historyBack, restoreState, onNavigationStateChange }: SettingsScreenProps) => {
+  let navigation = useNavigationContainerRef<Routes>()
+  let pendingRestore = useRef(restoreState)
+  pendingRestore.current = restoreState
+  useEffect(() => {
+    if (restoreState && navigation.isReady()) navigation.resetRoot(restoreState.state ?? { index: 0, routes: [{ name: "home" }] })
+  }, [navigation, restoreState])
   let focused = useIsFocused()
   let { isWide, isSplitView, isIosPadPortrait } = useResponsive()
   let largeTitle = Platform.OS === "ios" && !inModal && !isWide && !isSplitView && !isIosPadPortrait
-  return <SettingsVisibility.Provider value={focused}><NavigationIndependentTree><NavigationContainer theme={DarkTheme}>
-    <Stack.Navigator screenOptions={{ headerTintColor: colors.text, headerStyle: { backgroundColor: colors.bg }, headerBackButtonDisplayMode: "minimal", headerShadowVisible: false, contentStyle: styles.scrollContainer }}>
+  return <SettingsVisibility.Provider value={focused && active}><NavigationIndependentTree><NavigationContainer
+    ref={navigation}
+    theme={DarkTheme}
+    onReady={() => {
+      if (pendingRestore.current) navigation.resetRoot(pendingRestore.current.state ?? { index: 0, routes: [{ name: "home" }] })
+      else onNavigationStateChange?.(navigation.getRootState())
+    }}
+    onStateChange={(state) => { if (state) onNavigationStateChange?.(state) }}
+  >
+    <Stack.Navigator screenOptions={{ headerTintColor: colors.text, headerStyle: { backgroundColor: colors.bg }, headerBackButtonDisplayMode: "minimal", ...(historyBack ? { headerLeft: () => null } : {}), headerShadowVisible: false, contentStyle: styles.scrollContainer }}>
       {(Object.keys(pages) as SettingsRoute[]).map((name) => {
         let Page = pages[name].component
         return <Stack.Screen key={name} name={name} options={{ title: pages[name].title, headerShown: name !== "home" || !inModal, headerLargeTitleEnabled: name === "home" && largeTitle, headerStyle: name === "home" && largeTitle ? undefined : { backgroundColor: colors.bg } }}>
