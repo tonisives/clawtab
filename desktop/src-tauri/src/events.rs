@@ -162,6 +162,7 @@ impl EventSink for IpcBroadcastEventSink {
                 pane_id: item.pane_id,
                 working: item.working,
                 asking: item.asking,
+                alert: item.alert.clone(),
             })
             .collect();
         if let Some(handle) = relay.lock().as_ref() {

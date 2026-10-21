@@ -116,6 +116,7 @@ fn resolve_session_info_with_details(
     info.session_started_at = format_local_timestamp(started_secs);
 
     if let Some(rollout_path) = thread.rollout_path.as_deref() {
+        info.session_file_size_bytes = session_file_size(std::path::Path::new(rollout_path));
         info.last_user_message_at = read_last_user_message_at(std::path::Path::new(rollout_path));
         let needs_messages = info.first_query.is_none() || info.last_query.is_none();
         if include_details || needs_messages {
@@ -141,6 +142,22 @@ fn resolve_session_info_with_details(
     }
 
     info
+}
+
+pub(crate) fn session_file_size_for_pane(
+    pane_pid: &str,
+    snapshot: &ProcessSnapshot,
+) -> Option<u64> {
+    let thread_id = thread_id_for_pane(pane_pid, Some(snapshot))?;
+    let thread = read_codex_thread(&thread_id)?;
+    session_file_size(std::path::Path::new(&thread.rollout_path?))
+}
+
+fn session_file_size(path: &std::path::Path) -> Option<u64> {
+    fs::metadata(path)
+        .ok()
+        .filter(|metadata| metadata.is_file())
+        .map(|metadata| metadata.len())
 }
 
 pub(crate) fn thread_id_for_pane(
@@ -822,6 +839,21 @@ fn read_codex_rollout_messages(path: &PathBuf) -> (Option<String>, Option<String
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn session_file_size_tracks_growth_truncation_and_removal() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("rollout.jsonl");
+        assert_eq!(super::session_file_size(&path), None);
+        let file = std::fs::File::create(&path).unwrap();
+        file.set_len(1_200_000_000).unwrap();
+        assert_eq!(super::session_file_size(&path), Some(1_200_000_000));
+        file.set_len(5).unwrap();
+        assert_eq!(super::session_file_size(&path), Some(5));
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(super::session_file_size(&path), None);
+        assert_eq!(super::session_file_size(directory.path()), None);
+    }
+
     #[test]
     fn message_time_ignores_agent_output_and_refreshes_for_identical_prompts() {
         use std::io::Write;

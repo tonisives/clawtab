@@ -933,6 +933,7 @@ pub fn run() {
             commands::processes::get_detected_process_logs,
             commands::processes::send_detected_process_input,
             commands::processes::get_active_questions,
+            commands::processes::get_agent_activity,
             commands::processes::get_auto_yes_panes,
             commands::processes::set_auto_yes_panes,
             commands::processes::set_protected_panes,

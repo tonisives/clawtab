@@ -1,5 +1,6 @@
+import { useEffect, useRef } from "react"
 import { createNativeStackNavigator } from "expo-router/build/react-navigation/native-stack"
-import { NavigationContainer, NavigationIndependentTree, DarkTheme, useIsFocused } from "expo-router/react-navigation"
+import { NavigationContainer, NavigationIndependentTree, DarkTheme, useIsFocused, useNavigationContainerRef, type NavigationState } from "expo-router/react-navigation"
 import { useMachines } from "@clawtab/shared"
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
@@ -8,7 +9,7 @@ import { useWsStore } from "../../../src/store/ws"
 import { showDemoInfo } from "../../../src/demo/info"
 import { useResponsive } from "../../../src/hooks/useResponsive"
 import { ApiTokensSection } from "../../../src/components/ApiTokensSection"
-import { MachinePageScreen, type MachinePageParams } from "../../../src/components/MachineNavigation"
+import { MachinePageHistoryProvider, MachinePageScreen, type MachinePageParams } from "../../../src/components/MachineNavigation"
 import { MachineSetup } from "../../../src/components/MachineSetup"
 import { AccountSettings } from "../../../src/components/settings/AccountSettings"
 import { SharingSettings } from "../../../src/components/settings/SharingSettings"
@@ -33,15 +34,18 @@ export let SettingsHome = () => {
   return <SettingsPage>
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>Relay connection</Text>
-      <View style={[styles.listGroup, homeStyles.relayRow]}>
-        <View style={homeStyles.relayConnection}>
-          <SettingsRow title={relay.connected ? "Connected to relay" : "Connect to relay"} detail={relay.error ?? (relay.connected ? "Online" : "Disconnected")} onPress={open("account")} />
+      <SettingsGroup>
+        <View style={homeStyles.relayRow}>
+          <View style={homeStyles.relayConnection}>
+            <SettingsRow title={relay.connected ? "Connected to relay" : "Connect to relay"} detail={relay.error ?? (relay.connected ? "Online" : "Disconnected")} onPress={open("account")} />
+          </View>
+          {demoMode && <Pressable accessibilityRole="button" accessibilityLabel="About demo mode" onPress={showDemoInfo} style={homeStyles.demoButton}>
+            <Ionicons name="alert-circle-outline" size={20} color={colors.warning} />
+            <Text style={homeStyles.demoText}>Demo</Text>
+          </Pressable>}
         </View>
-        {demoMode && <Pressable accessibilityRole="button" accessibilityLabel="About demo mode" onPress={showDemoInfo} style={homeStyles.demoButton}>
-          <Ionicons name="alert-circle-outline" size={20} color={colors.warning} />
-          <Text style={homeStyles.demoText}>Demo</Text>
-        </Pressable>}
-      </View>
+        <SettingsRow title="Manage machines" detail="Connections, models, and rented boxes" onPress={open("machines")} disabled={unavailable} />
+      </SettingsGroup>
     </View>
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>Account</Text>
@@ -51,10 +55,9 @@ export let SettingsHome = () => {
       </SettingsGroup>
     </View>
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>Machines & models</Text>
+      <Text style={styles.sectionTitle}>Models</Text>
       <SettingsGroup>
         <SettingsRow title="Model usage" detail="Usage limits by machine and provider" onPress={open("usage")} disabled={unavailable} />
-        <SettingsRow title="Manage machines" detail="Connections, models, and rented boxes" onPress={open("machines")} disabled={unavailable} />
       </SettingsGroup>
     </View>
     <View style={styles.section}>
@@ -83,12 +86,33 @@ let pages = {
   terminal: { title: "Terminal", component: TerminalSettings },
   tokens: { title: "API tokens", component: TokenSettings },
 }
-let SettingsScreen = ({ inModal = false }: { inModal?: boolean }) => {
+type SettingsScreenProps = {
+  inModal?: boolean
+  active?: boolean
+  historyBack?: () => void
+  restoreState?: { state: NavigationState | undefined }
+  onNavigationStateChange?: (state: NavigationState) => void
+}
+let SettingsScreen = ({ inModal = false, active = true, historyBack, restoreState, onNavigationStateChange }: SettingsScreenProps) => {
+  let navigation = useNavigationContainerRef<Routes>()
+  let pendingRestore = useRef(restoreState)
+  pendingRestore.current = restoreState
+  useEffect(() => {
+    if (restoreState && navigation.isReady()) navigation.resetRoot(restoreState.state ?? { index: 0, routes: [{ name: "home" }] })
+  }, [navigation, restoreState])
   let focused = useIsFocused()
   let { isWide, isSplitView, isIosPadPortrait } = useResponsive()
   let largeTitle = Platform.OS === "ios" && !inModal && !isWide && !isSplitView && !isIosPadPortrait
-  return <SettingsVisibility.Provider value={focused}><NavigationIndependentTree><NavigationContainer theme={DarkTheme}>
-    <Stack.Navigator screenOptions={{ headerTintColor: colors.text, headerStyle: { backgroundColor: colors.bg }, headerBackButtonDisplayMode: "minimal", headerShadowVisible: false, contentStyle: styles.scrollContainer }}>
+  return <SettingsVisibility.Provider value={focused && active}><MachinePageHistoryProvider onBack={historyBack}><NavigationIndependentTree><NavigationContainer
+    ref={navigation}
+    theme={DarkTheme}
+    onReady={() => {
+      if (pendingRestore.current) navigation.resetRoot(pendingRestore.current.state ?? { index: 0, routes: [{ name: "home" }] })
+      else onNavigationStateChange?.(navigation.getRootState())
+    }}
+    onStateChange={(state) => { if (state) onNavigationStateChange?.(state) }}
+  >
+    <Stack.Navigator screenOptions={{ headerTintColor: colors.text, headerStyle: { backgroundColor: colors.bg }, headerBackButtonDisplayMode: "minimal", ...(historyBack ? { headerLeft: () => null } : {}), headerShadowVisible: false, contentStyle: styles.scrollContainer }}>
       {(Object.keys(pages) as SettingsRoute[]).map((name) => {
         let Page = pages[name].component
         return <Stack.Screen key={name} name={name} options={{ title: pages[name].title, headerShown: name !== "home" || !inModal, headerLargeTitleEnabled: name === "home" && largeTitle, headerStyle: name === "home" && largeTitle ? undefined : { backgroundColor: colors.bg } }}>
@@ -97,6 +121,6 @@ let SettingsScreen = ({ inModal = false }: { inModal?: boolean }) => {
       })}
       <Stack.Screen name="machine-page" component={MachinePageScreen} options={({ route }) => ({ title: route.params.title })} />
     </Stack.Navigator>
-  </NavigationContainer></NavigationIndependentTree></SettingsVisibility.Provider>
+  </NavigationContainer></NavigationIndependentTree></MachinePageHistoryProvider></SettingsVisibility.Provider>
 }
 export default SettingsScreen

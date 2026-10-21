@@ -1,3 +1,4 @@
+import { agentAlertTitle } from "../../util/alert";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -124,6 +125,7 @@ export interface JobDetailViewProps {
   optionBarBottomInset?: number;
   onTerminalOverlayHeightChange?: (height: number) => void;
   // Runtime query info (from detected processes)
+  agentAlert?: string;
   firstQuery?: string;
   lastQuery?: string;
   tokenCount?: number | null;
@@ -210,6 +212,7 @@ export function JobDetailView({
   hideMessageInput,
   optionBarBottomInset,
   onTerminalOverlayHeightChange,
+  agentAlert,
   firstQuery,
   lastQuery,
   tokenCount,
@@ -802,6 +805,7 @@ export function JobDetailView({
         </View>
       </View>
 
+      {agentAlert && <Text accessibilityRole="alert" selectable style={{ color: colors.warning, paddingHorizontal: 16, paddingVertical: 8 }}>{agentAlertTitle(agentAlert)}: {agentAlert}</Text>}
       {isRunning && (firstQuery || lastQuery || tokenLabel) ? (
         <View style={styles.querySummaryRow}>
           <QuerySummary firstQuery={firstQuery} lastQuery={lastQuery} />

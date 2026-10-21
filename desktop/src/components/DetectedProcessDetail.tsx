@@ -283,6 +283,8 @@ export function DetectedProcessDetail({
         onToggleAutoYes={onToggleAutoYes}
         renderTerminal={renderTerminal}
         hideMessageInput
+        agentAlert={process._agent_alert}
+        paneOverview={{ paneId: process.pane_id, alert: process._agent_alert, cwd: process.cwd, tmuxSession: process.tmux_session, windowName: process.window_name, startedAt: process.session_started_at, firstQuery: process.first_query, lastQuery: process.last_query }}
         firstQuery={process.first_query ?? undefined}
         lastQuery={process.last_query ?? undefined}
         tokenCount={process.token_count}

@@ -696,13 +696,15 @@ mod tests {
             vec![
                 AgentActivity {
                     pane_id: "allowed".into(),
-                    working: true,
+                    working: false,
                     asking: false,
+                    alert: Some("Selected model is at capacity.".into()),
                 },
                 AgentActivity {
                     pane_id: "denied".into(),
                     working: false,
                     asking: true,
+                    alert: None,
                 },
             ],
         );
@@ -713,6 +715,7 @@ mod tests {
         let activity = rx.try_recv().unwrap_or_default();
         assert!(activity.contains("allowed"), "got {activity}");
         assert!(!activity.contains("denied"), "got {activity}");
+        assert!(activity.contains("Selected model is at capacity."), "got {activity}");
     }
 
     #[test]
@@ -842,11 +845,13 @@ mod tests {
                     pane_id: "pane-1".into(),
                     working: false,
                     asking: true,
+                    alert: Some("Selected model is at capacity.".into()),
                 },
                 AgentActivity {
                     pane_id: "pane-2".into(),
                     working: false,
                     asking: true,
+                    alert: None,
                 },
             ],
         );
@@ -856,6 +861,7 @@ mod tests {
         assert_eq!(hub.last_questions[&user].len(), 1);
         assert_eq!(hub.last_questions[&user][0].pane_id, "pane-2");
         assert!(!hub.last_agent_activity[&user][0].asking);
+        assert!(hub.last_agent_activity[&user][0].alert.is_some());
         assert!(hub.last_agent_activity[&user][1].asking);
     }
 

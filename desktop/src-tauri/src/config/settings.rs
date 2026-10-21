@@ -235,6 +235,9 @@ pub struct AppSettings {
     /// connected mobile clients don't receive notifications.
     #[serde(default = "default_true")]
     pub notify_questions_remote: bool,
+    /// Session transcript size warning in MB. Zero disables the warning.
+    #[serde(default = "default_session_file_warning_mb")]
+    pub session_file_warning_mb: u64,
     /// Auto-release captured panes back to their original tmux windows when
     /// the ClawTab app loses focus, and re-capture when it regains focus.
     #[serde(default)]
@@ -243,6 +246,10 @@ pub struct AppSettings {
     pub managed_close_with_terminal: bool,
     #[serde(default = "default_terminal_backend")]
     pub default_terminal_backend: clawtab_protocol::TerminalBackend,
+}
+
+fn default_session_file_warning_mb() -> u64 {
+    200
 }
 
 fn default_true() -> bool {
@@ -287,6 +294,7 @@ impl Default for AppSettings {
             notify_questions_local: true,
             notify_job_failures_local: true,
             notify_questions_remote: true,
+            session_file_warning_mb: default_session_file_warning_mb(),
             auto_release_on_blur: false,
             managed_close_with_terminal: false,
             default_terminal_backend: default_terminal_backend(),

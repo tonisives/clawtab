@@ -11,6 +11,7 @@ type StoredAgentActivity = AgentActivity & {
 };
 
 const agentStateFor = (activity: AgentActivity): ProcessAgentState => {
+  if (activity.alert) return "alert";
   if (activity.asking) return "asking";
   if (activity.working) return "working";
   return "finished";
@@ -113,7 +114,8 @@ export const useJobsStore = create<JobsState>((set) => ({
         _last_log_change: lastLogChange,
         _last_user_message: lastUserMessage,
         _last_activity: lastActivity,
-        _agent_state: state.questionPaneIds.has(process.pane_id)
+        _agent_alert: activity?.alert,
+        _agent_state: activity?.alert ? "alert" : state.questionPaneIds.has(process.pane_id)
           ? "asking"
           : activity
             ? agentStateFor(activity)
@@ -148,9 +150,10 @@ export const useJobsStore = create<JobsState>((set) => ({
       const previous = state.agentActivity[item.pane_id];
       const changed = !previous
         || previous.working !== item.working
-        || previous.asking !== item.asking;
+        || previous.asking !== item.asking
+        || previous.alert !== item.alert;
       const process = processesByPaneId.get(item.pane_id);
-      const initialActivity = item.working || item.asking
+      const initialActivity = item.working || item.asking || item.alert
         ? now
         : process?._last_activity ?? parsedTimestamp(process?.session_started_at);
       nextActivity[item.pane_id] = {
@@ -167,12 +170,14 @@ export const useJobsStore = create<JobsState>((set) => ({
         if (!item) {
           return {
             ...process,
+            _agent_alert: undefined,
             _agent_state: state.questionPaneIds.has(process.pane_id) ? "asking" : undefined,
           };
         }
         return {
           ...process,
-          _agent_state: state.questionPaneIds.has(process.pane_id)
+          _agent_alert: item.alert,
+          _agent_state: item.alert ? "alert" : state.questionPaneIds.has(process.pane_id)
             ? "asking"
             : agentStateFor(item),
           _last_activity: Math.max(process._last_activity ?? 0, item.last_activity),
@@ -193,7 +198,7 @@ export const useJobsStore = create<JobsState>((set) => ({
         const activity = state.agentActivity[process.pane_id];
         return {
           ...process,
-          _agent_state: isAsking
+          _agent_state: activity?.alert ? "alert" : isAsking
             ? "asking"
             : activity
               ? agentStateFor(activity)
@@ -220,6 +225,7 @@ export const useJobsStore = create<JobsState>((set) => ({
               ...currentActivity,
               working: true,
               asking: false,
+              alert: undefined,
               last_activity: now,
             },
           }
@@ -229,6 +235,7 @@ export const useJobsStore = create<JobsState>((set) => ({
           ? {
               ...process,
               _agent_state: currentActivity ? "working" : undefined,
+              _agent_alert: undefined,
               _last_log_change: now,
               _last_user_message: now,
               _last_activity: now,

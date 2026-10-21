@@ -121,6 +121,13 @@ if [[ "$current_border" != *"@clawtab-agent-title"* ]]; then
     agent_title='#{?#{@clawtab-pane-has-info},,#{?#{@clawtab-agent-title},#{@clawtab-agent-title} ,}}'
     current_border="${agent_title}${current_border}"
 fi
+old_alert_border='#{?#{@clawtab-daemon-running},#{?#{==:#{@clawtab-agent-pane-alert},1},#[fg=colour208#,bold]! Alert #[default],},}'
+alert_border='#{?#{@clawtab-daemon-running},#{?#{==:#{@clawtab-agent-pane-alert},1},#[fg=colour208#,bold]! Alert#{?#{@clawtab-agent-pane-size-mb}, ↑#{@clawtab-agent-pane-size-mb} MB,} #[default],},}'
+if [[ "$current_border" == *"$old_alert_border"* ]]; then
+    current_border="${current_border/"$old_alert_border"/"$alert_border"}"
+elif [[ "$current_border" != *"@clawtab-agent-pane-alert"* ]]; then
+    current_border="${alert_border}${current_border}"
+fi
 tmux set-option -g pane-border-format "$current_border"
 tmux set-option -g pane-border-status top
 
@@ -152,8 +159,13 @@ clawtab_check_part="#{?#{@clawtab-agent-present},#{?#{@clawtab-agent-question},,
 clawtab_activity_prefix="#{?#{||:#{@clawtab-agent-question},#{||:#{@clawtab-agent-working},#{@clawtab-agent-present}}}, ,}"
 old_clawtab_activity_core="${clawtab_question_part}${clawtab_working_part}${clawtab_check_part}"
 old_clawtab_activity_part="${clawtab_activity_prefix}${old_clawtab_activity_core}"
-clawtab_activity_core="#{?#{@clawtab-daemon-running},${old_clawtab_activity_core},}"
-clawtab_activity_part="#{?#{@clawtab-daemon-running},${old_clawtab_activity_part},}"
+previous_clawtab_activity_core="#{?#{@clawtab-daemon-running},${old_clawtab_activity_core},}"
+previous_static_activity_part="#{?#{@clawtab-daemon-running},${old_clawtab_activity_part},}"
+old_clawtab_alert_part="#{?#{@clawtab-agent-alert},#[fg=colour208#,bold]!#[default],}"
+clawtab_alert_part="#{?#{@clawtab-agent-alert},#[fg=colour208#,bold]!#{?#{@clawtab-agent-size-mb}, ↑#{@clawtab-agent-size-mb} MB,}#[default],}"
+clawtab_current_activity_core="${clawtab_alert_part}#{?#{@clawtab-agent-alert},#{?#{||:#{@clawtab-agent-question},#{@clawtab-agent-working}}, ,},}${clawtab_question_part}${clawtab_working_part}#{?#{@clawtab-agent-alert},,${clawtab_check_part}}"
+clawtab_activity_core="#{?#{@clawtab-daemon-running},${clawtab_current_activity_core},}"
+clawtab_activity_part="#{?#{@clawtab-daemon-running},${clawtab_activity_prefix}${clawtab_current_activity_core},}"
 animated_clawtab_working_part="#{?#{@clawtab-agent-working},#{?#{@clawtab-agent-question}, ,}#[fg=cyan]#(${spinner_command})#[default],}"
 animated_clawtab_activity_core="${clawtab_question_part}${animated_clawtab_working_part}${clawtab_check_part}"
 previous_clawtab_activity_part="#{?#{@clawtab-agent-question}, #[fg=yellow#,bold]!#[default],}#{?#{@clawtab-agent-working}, #[fg=cyan]#(${spinner_command})#[default],}#{?#{@clawtab-agent-present}, #[fg=green#,bold]✓#[default],}"
@@ -177,12 +189,27 @@ append_activity_format() {
     local activity_part
     current_format=$(tmux show-option -gqv "$option_name")
 
+    # Upgrade the alert marker in place before checking for existing indicators.
+    if [[ "$current_format" == *"$old_clawtab_alert_part"* ]]; then
+        current_format="${current_format/"$old_clawtab_alert_part"/"$clawtab_alert_part"}"
+        tmux set-option -g "$option_name" "$current_format"
+    fi
+
     # Do not append the current indicators more than once when the plugin is
     # reloaded.
     if [[ "$current_format" == *"$clawtab_activity_core"* ]]; then
         return
     fi
     if [[ "$current_format" == *"$clawtab_activity_part"* ]]; then
+        return
+    fi
+
+    if [[ "$current_format" == *"$previous_static_activity_part"* ]]; then
+        tmux set-option -g "$option_name" "${current_format/"$previous_static_activity_part"/"$clawtab_activity_part"}"
+        return
+    fi
+    if [[ "$current_format" == *"$previous_clawtab_activity_core"* ]]; then
+        tmux set-option -g "$option_name" "${current_format/"$previous_clawtab_activity_core"/"$clawtab_activity_core"}"
         return
     fi
 

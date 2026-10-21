@@ -5,6 +5,7 @@ mod common;
 mod opencode;
 
 pub(crate) use codex::completed_turn_after as codex_completed_turn_after;
+pub(crate) use codex::session_file_size_for_pane as codex_session_file_size_for_pane;
 pub(crate) use codex::thread_id_for_pane as codex_thread_id_for_pane;
 
 use serde::{Deserialize, Serialize};
@@ -23,6 +24,18 @@ pub struct SessionInfo {
     pub session_started_at: Option<String>,
     pub started_epoch: Option<u64>,
     pub token_count: Option<u64>,
+    pub session_file_size_bytes: Option<u64>,
+}
+
+pub fn session_file_size_alert(size: Option<u64>, threshold_mb: u64) -> Option<String> {
+    let size = size?;
+    if threshold_mb == 0 || size < threshold_mb.saturating_mul(1_000_000) {
+        return None;
+    }
+    Some(format!(
+        "Codex session file is {} MB (warning at {} MB). Start a new session; compacting does not shrink the file.",
+        size / 1_000_000, threshold_mb
+    ))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -481,6 +494,32 @@ fn provider_for_command(command: Option<&str>) -> Option<ProcessProvider> {
 #[cfg(test)]
 mod tests {
     use super::{ProcessProvider, ProcessSnapshot};
+
+    #[test]
+    fn session_size_warnings_follow_the_configured_threshold() {
+        assert_eq!(super::session_file_size_alert(None, 200), None);
+        assert_eq!(super::session_file_size_alert(Some(1_200_000_000), 0), None);
+        assert_eq!(super::session_file_size_alert(Some(199_999_999), 200), None);
+        assert!(super::session_file_size_alert(Some(200_000_000), 200)
+            .unwrap()
+            .contains("200 MB"));
+        assert!(super::session_file_size_alert(Some(1_200_000_000), 500)
+            .unwrap()
+            .contains("1200 MB (warning at 500 MB)"));
+        assert_eq!(
+            super::session_file_size_alert(Some(1_200_000_000), 1500),
+            None
+        );
+    }
+
+    #[test]
+    fn old_settings_enable_size_warnings_by_default() {
+        let settings: crate::config::settings::AppSettings = serde_json::from_str("{}").unwrap();
+        assert_eq!(settings.session_file_warning_mb, 200);
+        let settings: crate::config::settings::AppSettings =
+            serde_json::from_str(r#"{"session_file_warning_mb":0}"#).unwrap();
+        assert_eq!(settings.session_file_warning_mb, 0);
+    }
 
     #[test]
     fn model_flags_preserve_a_single_literal_shell_argument() {

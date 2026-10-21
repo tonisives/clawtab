@@ -625,15 +625,23 @@ fn process_inbox(
         runtime.apply(event.clone());
         for pane_id in runtime.event_panes(&event) {
             let mut activity = agent_activity.lock().clone();
+            let size_warning = activity
+                .iter()
+                .find(|item| item.pane_id == pane_id)
+                .and_then(|item| item.alert.as_deref())
+                .and_then(|alert| {
+                    alert
+                        .lines()
+                        .find(|line| line.starts_with("Codex session file is "))
+                })
+                .map(str::to_string);
             activity.retain(|item| item.pane_id != pane_id);
             if let Some(state) = runtime.pane_state(&pane_id, event.provider) {
                 let auto_yes = auto_yes_panes.lock().contains(&pane_id);
-                activity.push(activity_from_hook_state(
-                    &pane_id,
-                    state.state,
-                    state.attention,
-                    auto_yes,
-                ));
+                let mut item =
+                    activity_from_hook_state(&pane_id, state.state, state.attention, auto_yes);
+                item.alert = size_warning;
+                activity.push(item);
             }
             activity.sort_by(|left, right| left.pane_id.cmp(&right.pane_id));
             *agent_activity.lock() = activity.clone();
@@ -657,6 +665,7 @@ fn activity_from_hook_state(
         pane_id: pane_id.to_string(),
         working: state == HookAgentState::Working && attention.is_none(),
         asking: !auto_yes && (state == HookAgentState::Waiting || attention.is_some()),
+        alert: None,
     }
 }
 

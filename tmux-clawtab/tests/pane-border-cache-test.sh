@@ -27,6 +27,8 @@ case "$1" in
     show-option)
         if [ "${3:-}" = "pane-border-format" ]; then
             printf '%s\n' "$TEST_BORDER_FORMAT"
+        else
+            printf '%s\n' "${TEST_WINDOW_FORMAT:-}"
         fi
         ;;
     set-option)
@@ -103,6 +105,20 @@ export TEST_BORDER_FORMAT='before #{?#{==:#{@clawtab-auto-yes},1},[Y],#{?#{m:*co
 : >"$TEST_TMUX_OPTIONS"
 bash "$PLUGIN_DIR/clawtab.tmux"
 grep -Fq 'before #{?#{@clawtab-daemon-running},#{?#{==:#{@clawtab-auto-yes},1},[Y],#{?#{m:*codex*,#{pane_current_command}},[y],}},} after' "$TEST_TMUX_OPTIONS"
+
+# Reloading upgrades existing alert labels without duplicating the markers.
+export TEST_BORDER_FORMAT='#{?#{@clawtab-daemon-running},#{?#{==:#{@clawtab-agent-pane-alert},1},#[fg=colour208#,bold]! Alert #[default],},} #{@clawtab-agent-title}'
+export TEST_WINDOW_FORMAT='#{?#{@clawtab-agent-alert},#[fg=colour208#,bold]!#[default],}'
+: >"$TEST_TMUX_OPTIONS"
+bash "$PLUGIN_DIR/clawtab.tmux"
+grep -Fq '! Alert#{?#{@clawtab-agent-pane-size-mb}, ↑#{@clawtab-agent-pane-size-mb} MB,}' "$TEST_TMUX_OPTIONS"
+grep -Fq '!#{?#{@clawtab-agent-size-mb}, ↑#{@clawtab-agent-size-mb} MB,}' "$TEST_TMUX_OPTIONS"
+[ "$(grep -o '! Alert' "$TEST_TMUX_OPTIONS" | wc -l | tr -d ' ')" = 1 ]
+export TEST_BORDER_FORMAT="$(sed -n '/^pane-border-format$/{n;p;}' "$TEST_TMUX_OPTIONS")"
+: >"$TEST_TMUX_OPTIONS"
+bash "$PLUGIN_DIR/clawtab.tmux"
+[ "$(grep -o '! Alert' "$TEST_TMUX_OPTIONS" | wc -l | tr -d ' ')" = 1 ]
+unset TEST_WINDOW_FORMAT
 
 # Exercise the listener's real event decoder without starting a listener.
 JQ_BIN="$(command -v jq)"

@@ -1008,6 +1008,11 @@ async fn main() {
                 println!("started_epoch={}", epoch);
             }
             let settings = clawtab_lib::config::settings::AppSettings::load();
+            if let Some(alert) = clawtab_lib::agent_session::session_file_size_alert(
+                info.session_file_size_bytes, settings.session_file_warning_mb,
+            ) {
+                println!("alert={}", alert);
+            }
             let process_override = settings
                 .process_overrides
                 .get(&pane_id)

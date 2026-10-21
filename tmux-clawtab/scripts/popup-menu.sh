@@ -419,6 +419,7 @@ SESSION_FIRST_QUERY=""
 SESSION_LAST_QUERY=""
 SESSION_STARTED_AT=""
 SESSION_RELATIVE_TIME=""
+SESSION_ALERT=""
 declare -a QUERY_LINES
 QUERY_EXCERPT_ROWS_DRAWN=0
 
@@ -483,11 +484,13 @@ load_session_info() {
     SESSION_LAST_QUERY=""
     SESSION_STARTED_AT=""
     SESSION_RELATIVE_TIME=""
+    SESSION_ALERT=""
 
     if [ -n "$session_file" ] && [ -f "$session_file" ]; then
         raw=$(<"$session_file")
     fi
     if [ -n "$raw" ]; then
+        SESSION_ALERT=$(echo "$raw" | grep '^alert=' | cut -d= -f2-)
         SESSION_ID=$(echo "$raw" | grep '^session_id=' | cut -d= -f2-)
         SESSION_PROVIDER=$(echo "$raw" | grep '^provider=' | cut -d= -f2-)
         SESSION_STARTED_AT=$(echo "$raw" | grep '^started_at=' | cut -d= -f2-)
@@ -1252,6 +1255,23 @@ draw_shortcuts() {
 
     draw_empty_row $row
     ((row++))
+
+    if [ -n "$SESSION_ALERT" ]; then
+        local alert_size
+        alert_size=$(printf '%s\n' "$SESSION_ALERT" | sed -n 's/^Codex session file is \([0-9][0-9]*\) MB.*/↑\1 MB/p')
+        draw_section_header $row "Alert${alert_size:+ $alert_size}"
+        ((row++))
+        wrap_query_lines "$SESSION_ALERT"
+        for alert_line in "${QUERY_LINES[@]}"; do
+            [ "$row" -ge "$((TERM_ROWS - 2))" ] && break
+            draw_row_start $row
+            printf "${C_NORMAL}%s${C_RESET}" "$alert_line" >&3
+            draw_row_end $row
+            ((row++))
+        done
+        draw_empty_row $row
+        ((row++))
+    fi
 
     # Session info
     if [ -n "$SESSION_ID" ] || [ -n "$SESSION_STARTED_AT" ] || [ -n "$SESSION_FIRST_QUERY" ] || [ -n "$SESSION_LAST_QUERY" ]; then

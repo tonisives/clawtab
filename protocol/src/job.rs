@@ -241,7 +241,21 @@ pub struct JobUpdate {
 
 #[cfg(test)]
 mod tests {
-    use super::JobUpdate;
+    use super::{AgentActivity, JobUpdate};
+
+    #[test]
+    fn activity_accepts_old_snapshots_and_preserves_alert_messages() {
+        let old = r#"{"pane_id":"%1","working":false,"asking":false}"#;
+        let mut activity: AgentActivity = serde_json::from_str(old).unwrap();
+        assert_eq!(activity.alert, None);
+        assert_eq!(serde_json::to_value(&activity).unwrap().get("alert"), None);
+        activity.alert = Some("Selected model is at capacity.".into());
+        let encoded = serde_json::to_string(&activity).unwrap();
+        assert_eq!(
+            serde_json::from_str::<AgentActivity>(&encoded).unwrap(),
+            activity
+        );
+    }
 
     #[test]
     fn job_update_preserves_omitted_and_cleared_optional_fields() {
@@ -320,6 +334,8 @@ pub struct AgentActivity {
     pub pane_id: String,
     pub working: bool,
     pub asking: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alert: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-# Select the first remaining question after an active pane's question was
-# answered. Only advance while the answered pane is still selected, so manual
+# Select the first remaining question or alert after the active pane's
+# attention state clears. Only advance while the answered pane is still selected, so manual
 # pane navigation cancels the automatic focus change.
 set -u
 

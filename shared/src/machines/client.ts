@@ -1,6 +1,6 @@
 import type { SavedJobGroup } from "../util/jobGroups"
 import { useSyncExternalStore } from "react"
-import type { DetectedProcess } from "../types/process"
+import type { AgentActivity, DetectedProcess } from "../types/process"
 import type { RemoteJob, JobStatus } from "../types/job"
 import { machineSecurity, signedCommand } from "./Security"
 
@@ -604,11 +604,15 @@ export let machineJobs = (exclude?: string) => {
 export let machineProcesses = (exclude?: string): DetectedProcess[] =>
   state.machines
     .filter((m) => m.id !== exclude && (!state.filter || m.id === state.filter))
-    .flatMap(
-      (m) =>
-        scopedMessage(m.id, state.snapshots[m.id]?.detected_processes ?? { processes: [] })
-          .processes,
-    )
+    .flatMap((m) => {
+      let snapshot = state.snapshots[m.id];
+      let activity = new Map<string, AgentActivity>((snapshot?.agent_activity?.activity ?? []).map((item: AgentActivity) => [item.pane_id, item]));
+      let processes: DetectedProcess[] = snapshot?.detected_processes?.processes ?? [];
+      return scopedMessage(m.id, { processes: processes.map((process) => {
+        let item = activity.get(process.pane_id);
+        return { ...process, _agent_alert: item?.alert, _agent_state: item ? (item.alert ? "alert" : item.asking ? "asking" : item.working ? "working" : "finished") : undefined };
+      }) }).processes;
+    })
 
 let transferRequest = async (
   machine: string,

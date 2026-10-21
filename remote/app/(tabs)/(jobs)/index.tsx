@@ -22,6 +22,9 @@ import {
   Linking,
 } from "react-native"
 import { useLocalSearchParams, useRouter } from "expo-router"
+import { useIsFocused, type NavigationState } from "expo-router/react-navigation"
+import { useWebBackStack } from "../../../src/hooks/useWebBackStack"
+import type { NotificationDetailTarget } from "../../../src/components/notificationTypes"
 import { Ionicons } from "@expo/vector-icons"
 import { GlassView, isGlassEffectAPIAvailable } from "expo-glass-effect"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
@@ -74,6 +77,21 @@ import { buildModelOptions } from "../../../src/lib/agentModels"
 type GroupTabView = Record<string, "tabs" | "jobs">
 type GroupLatestSortMode = Record<string, LatestSortMode>
 type SidebarSection = LiquidSidebarSection | "notifications"
+
+type SplitNavigationEntry = {
+  section: SidebarSection
+  selectedJob: string | null
+  selectedProcess: string | null
+  content: PaneContent | null
+  demoSelection: DemoSelection | null
+  settingsState: NavigationState | undefined
+  notificationDetail: NotificationDetailTarget | null
+}
+
+function settingsPath(state: NavigationState | undefined): unknown {
+  if (!state) return [["home", undefined, null]]
+  return state.routes.slice(0, state.index + 1).map((route) => [route.name, route.params, route.state ? settingsPath(route.state as NavigationState) : null])
+}
 
 const COLLAPSED_GROUPS_STORAGE_KEY = "remote_collapsed_groups"
 const GROUP_TAB_VIEW_STORAGE_KEY = "remote_group_tab_view"
@@ -246,10 +264,15 @@ export default function JobsScreen() {
   const [selectedProcess, setSelectedProcess] = useState<string | null>(() =>
     readSelection("process"),
   )
+  const [settingsState, setSettingsState] = useState<NavigationState>()
+  const [settingsRestore, setSettingsRestore] = useState<{ state: NavigationState | undefined }>()
+  const [notificationDetail, setNotificationDetail] = useState<NotificationDetailTarget | null>(null)
+  const [settingsMounted, setSettingsMounted] = useState(false)
   const [sidebarSection, setSidebarSection] = useState<SidebarSection>("jobs")
   const [stoppingJobSlugs, setStoppingJobSlugs] = useState<Set<string>>(() => new Set())
   const { width, isIosPad, isIosPadPortrait, isIosPhoneLandscape, isSplitView, isWide } = useResponsive()
   const router = useRouter()
+  const screenFocused = useIsFocused()
   const { section } = useLocalSearchParams<{ section?: string }>()
 
   useEffect(() => {
@@ -786,6 +809,39 @@ export default function JobsScreen() {
 
   let viewState = jobListState({ authenticated, authLoading, connected: connected || machines.connected, hostOnline, loaded })
   let demoMode = viewState.demo
+  const webSplit = Platform.OS === "web" && isSplitView
+  const activeContent = focusedPaneContent(split.tree, split.focusedLeafId) ?? currentContent
+  const navigationEntry: SplitNavigationEntry = {
+    section: sidebarSection, selectedJob, selectedProcess, content: activeContent,
+    demoSelection, settingsState, notificationDetail,
+  }
+  const navigationKey = JSON.stringify(sidebarSection === "settings"
+    ? ["settings", settingsPath(settingsState)]
+    : sidebarSection === "notifications"
+      ? ["notifications", notificationDetail]
+      : ["jobs", demoMode ? demoSelection : activeContent])
+  const navigationHistory = useWebBackStack({
+    enabled: webSplit && screenFocused,
+    navigationKey,
+    value: navigationEntry,
+    onRestore: (entry) => {
+      setSidebarSection(entry.section)
+      setSelectedJob(entry.selectedJob)
+      setSelectedProcess(entry.selectedProcess)
+      persistSelection(entry.selectedJob, entry.selectedProcess)
+      setDemoSelection(entry.demoSelection)
+      setNotificationDetail(entry.notificationDetail)
+      setSettingsState(entry.settingsState)
+      setSettingsRestore({ state: entry.settingsState })
+      if (entry.section === "settings") setSettingsMounted(true)
+      if (entry.content) {
+        if (!split.handleSelectInTree(entry.content) && split.tree) split.openContent(entry.content)
+      }
+    },
+  })
+  useEffect(() => {
+    if (sidebarSection === "settings") setSettingsMounted(true)
+  }, [sidebarSection])
   let connectRelay = () => authenticated ? router.push("/account") : router.push({ pathname: "/login", params: { return_to: "account" } })
   let connectionLoading = viewState.loading ? <ConnectionLoadingView label={viewState.loading} error={machines.error} onAccount={connectRelay} /> : null
 
@@ -1339,10 +1395,23 @@ export default function JobsScreen() {
       </View>
       <View ref={handleRef} style={styles.resizeHandle} />
       <View ref={split.detailPaneRef as unknown as React.Ref<View>} style={styles.detailPane}>
+        {webSplit && navigationHistory.canGoBack && (
+          <View style={styles.navigationToolbar}>
+            <Pressable onPress={navigationHistory.goBack} style={styles.navigationBack} accessibilityRole="button" accessibilityLabel="Go back">
+              <Ionicons name="chevron-back" size={20} color={colors.text} />
+              <Text style={styles.navigationBackText}>Back</Text>
+            </Pressable>
+          </View>
+        )}
+        {webSplit && settingsMounted && (
+          <View style={[styles.sectionPane, sidebarSection !== "settings" && styles.hiddenSection]}>
+            <SettingsScreen inModal active={sidebarSection === "settings"} historyBack={navigationHistory.goBack} restoreState={settingsRestore} onNavigationStateChange={setSettingsState} />
+          </View>
+        )}
         {sidebarSection === "settings" ? (
-          <SettingsScreen inModal />
+          webSplit ? null : <SettingsScreen inModal />
         ) : sidebarSection === "notifications" ? (
-          <NotificationsPanel mode="screen" />
+          <NotificationsPanel mode="screen" detailTarget={notificationDetail} onDetailTargetChange={setNotificationDetail} onBack={webSplit && navigationHistory.canGoBack ? navigationHistory.goBack : undefined} />
         ) : (
           <SplitDetailArea
             tree={demoMode || connectionLoading ? null : split.tree}
@@ -1396,6 +1465,11 @@ export default function JobsScreen() {
 }
 
 const styles = StyleSheet.create({
+  sectionPane: { flex: 1, minHeight: 0 },
+  hiddenSection: { display: "none" },
+  navigationToolbar: { height: 40, borderBottomWidth: 1, borderBottomColor: colors.border, justifyContent: "center" },
+  navigationBack: { alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: spacing.md, height: 40 },
+  navigationBackText: { color: colors.text, fontSize: 13, fontWeight: "600" },
   sidebarIconButtons: { flexDirection: "row", alignItems: "center", gap: 4 },
   sidebarIconButton: { width: 32, height: 36, alignItems: "center", justifyContent: "center" },
   screenRoot: { flex: 1, backgroundColor: colors.bg },
