@@ -33,15 +33,18 @@ export let SettingsHome = () => {
   return <SettingsPage>
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>Relay connection</Text>
-      <View style={[styles.listGroup, homeStyles.relayRow]}>
-        <View style={homeStyles.relayConnection}>
-          <SettingsRow title={relay.connected ? "Connected to relay" : "Connect to relay"} detail={relay.error ?? (relay.connected ? "Online" : "Disconnected")} onPress={open("account")} />
+      <SettingsGroup>
+        <View style={homeStyles.relayRow}>
+          <View style={homeStyles.relayConnection}>
+            <SettingsRow title={relay.connected ? "Connected to relay" : "Connect to relay"} detail={relay.error ?? (relay.connected ? "Online" : "Disconnected")} onPress={open("account")} />
+          </View>
+          {demoMode && <Pressable accessibilityRole="button" accessibilityLabel="About demo mode" onPress={showDemoInfo} style={homeStyles.demoButton}>
+            <Ionicons name="alert-circle-outline" size={20} color={colors.warning} />
+            <Text style={homeStyles.demoText}>Demo</Text>
+          </Pressable>}
         </View>
-        {demoMode && <Pressable accessibilityRole="button" accessibilityLabel="About demo mode" onPress={showDemoInfo} style={homeStyles.demoButton}>
-          <Ionicons name="alert-circle-outline" size={20} color={colors.warning} />
-          <Text style={homeStyles.demoText}>Demo</Text>
-        </Pressable>}
-      </View>
+        <SettingsRow title="Manage machines" detail="Connections, models, and rented boxes" onPress={open("machines")} disabled={unavailable} />
+      </SettingsGroup>
     </View>
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>Account</Text>
@@ -51,10 +54,9 @@ export let SettingsHome = () => {
       </SettingsGroup>
     </View>
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>Machines & models</Text>
+      <Text style={styles.sectionTitle}>Models</Text>
       <SettingsGroup>
         <SettingsRow title="Model usage" detail="Usage limits by machine and provider" onPress={open("usage")} disabled={unavailable} />
-        <SettingsRow title="Manage machines" detail="Connections, models, and rented boxes" onPress={open("machines")} disabled={unavailable} />
       </SettingsGroup>
     </View>
     <View style={styles.section}>
