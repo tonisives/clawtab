@@ -8,6 +8,7 @@ import {
   Platform,
   Modal,
   Image,
+  ScrollView,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useGoogleBrowserAuth } from "../src/lib/googleBrowserAuth";
@@ -55,10 +56,14 @@ export default function LoginScreen() {
   let { return_to } = useLocalSearchParams<{ return_to?: string }>();
   let destination = return_to === "add-machine" ? "/add-machine" : return_to === "account" ? "/account" : ["devices", "machines"].includes(return_to ?? "") ? "/machines" : "/(tabs)";
   const googleLogin = useAuthStore((s) => s.googleLogin);
+  const passwordLogin = useAuthStore((s) => s.passwordLogin);
   const appleLogin = useAuthStore((s) => s.appleLogin);
 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [showEmail, setShowEmail] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [showServer, setShowServer] = useState(false);
   const [serverUrl, setServerUrl] = useState("https://relay.clawtab.cc");
   const [tempServerUrl, setTempServerUrl] = useState("");
@@ -97,6 +102,25 @@ export default function LoginScreen() {
   }, [completeGoogleLogin, googleAuthSessionResult, loading]);
 
   let openDemo = () => router.push("/demo");
+
+  const handlePasswordLogin = async () => {
+    if (loading) return;
+    if (!email.trim() || !password) {
+      setError("Enter your email and password.");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      await passwordLogin(email.trim(), password);
+      setPassword("");
+      router.replace(destination);
+    } catch (e: any) {
+      setError(e.status === 401 ? "Email or password is incorrect." : e.message || "Sign-in failed");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleGoogleLogin = async () => {
     setLoading(true);
@@ -218,7 +242,7 @@ export default function LoginScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
       <View style={styles.card}>
         <View style={styles.header}>
           <Image source={appIcon} style={styles.logo} resizeMode="contain" />
@@ -246,6 +270,48 @@ export default function LoginScreen() {
           >
             <Text style={styles.googleBtnText}>Sign in with Google</Text>
           </Pressable>
+
+          <Pressable accessibilityRole="button" onPress={() => setShowEmail(!showEmail)} disabled={loading} style={[styles.googleBtn, loading && styles.btnDisabled]}>
+            <Text style={styles.googleBtnText}>Sign in with email</Text>
+          </Pressable>
+
+          {showEmail && (
+            <View style={styles.emailForm}>
+              <TextInput
+                accessibilityLabel="Email"
+                style={styles.input}
+                value={email}
+                onChangeText={setEmail}
+                placeholder="Email"
+                placeholderTextColor={colors.textMuted}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="email-address"
+                autoComplete="username"
+                textContentType="username"
+                editable={!loading}
+              />
+              <TextInput
+                accessibilityLabel="Password"
+                style={styles.input}
+                value={password}
+                onChangeText={setPassword}
+                placeholder="Password"
+                placeholderTextColor={colors.textMuted}
+                secureTextEntry
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="current-password"
+                textContentType="password"
+                editable={!loading}
+                onSubmitEditing={handlePasswordLogin}
+                returnKeyType="go"
+              />
+              <Pressable accessibilityRole="button" onPress={handlePasswordLogin} disabled={loading} style={[styles.googleBtn, loading && styles.btnDisabled]}>
+                <Text style={styles.googleBtnText}>Sign in</Text>
+              </Pressable>
+            </View>
+          )}
 
           <Pressable accessibilityRole="button" onPress={openDemo} disabled={loading} style={[styles.googleBtn, loading && styles.btnDisabled]}>
             <Text style={styles.googleBtnText}>Try demo</Text>
@@ -295,13 +361,13 @@ export default function LoginScreen() {
           </View>
         </Pressable>
       </Modal>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    flexGrow: 1,
     justifyContent: "center",
     alignItems: "center",
     padding: spacing.xl,
@@ -333,6 +399,9 @@ const styles = StyleSheet.create({
   },
   form: {
     gap: spacing.lg,
+  },
+  emailForm: {
+    gap: spacing.md,
   },
   error: {
     color: colors.danger,

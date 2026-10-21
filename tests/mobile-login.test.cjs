@@ -4,8 +4,9 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const ts = require('../desktop/node_modules/typescript');
 
-let loadLogin = (os, params = {}) => {
+let loadLogin = (os, params = {}, options = {}) => {
   let events = [], browserRequests = 0, configured;
+  let state = [], cursor = 0;
   let provider = { useIdTokenAuthRequest: (config) => {
     browserRequests++;
     assert.equal(os, 'web', 'native rendering must not create a browser OAuth request');
@@ -30,12 +31,20 @@ let loadLogin = (os, params = {}) => {
   let browserAuth = load(require.resolve(`../remote/src/lib/googleBrowserAuth${os === 'web' ? '.web' : ''}.ts`), {
     'expo-auth-session/providers/google': provider,
   });
-  let auth = { googleLogin: async (token) => events.push(['login', token]), appleLogin: async () => {} };
+  let auth = { googleLogin: async (token) => events.push(['login', token]), appleLogin: async () => {},
+    passwordLogin: async (email, password) => {
+      events.push(['password', email, password]);
+      if (options.passwordError) throw options.passwordError;
+    } };
   let login = load(require.resolve('../remote/app/login.tsx'), {
-    react: { useState: (initial) => [initial, () => {}], useCallback: (fn) => fn, useEffect: () => {} },
+    react: { useState: (initial) => {
+      let index = cursor++;
+      if (!(index in state)) state[index] = initial;
+      return [state[index], (value) => { state[index] = value; }];
+    }, useCallback: (fn) => fn, useEffect: () => {} },
     'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
     'react-native': { Platform: { OS: os }, StyleSheet: { create: (value) => value },
-      View: 'View', Text: 'Text', TextInput: 'TextInput', Pressable: 'Pressable', Modal: 'Modal', Image: 'Image' },
+      View: 'View', Text: 'Text', TextInput: 'TextInput', Pressable: 'Pressable', Modal: 'Modal', Image: 'Image', ScrollView: 'ScrollView' },
     'expo-router': { useLocalSearchParams: () => params, useRouter: () => ({
       push: (route) => events.push(['push', route]), replace: (route) => events.push(['replace', route]),
     }) },
@@ -52,10 +61,12 @@ let loadLogin = (os, params = {}) => {
   });
   let all = (node) => Array.isArray(node) ? node.flatMap(all) : node && typeof node === 'object'
     ? [node, ...all(node.props?.children)] : [];
-  let nodes = all(login.default());
-  let press = (label) => nodes.find((node) => node.type === 'Pressable'
+  let render = () => { cursor = 0; return all(login.default()); };
+  let press = (label) => render().find((node) => node.type === 'Pressable'
     && all(node).some((child) => child.type === 'Text' && child.props.children === label)).props.onPress();
-  return { events, configured, browserRequests, press };
+  let input = (label) => render().find((node) => node.type === 'TextInput' && node.props.accessibilityLabel === label);
+  render();
+  return { events, configured, browserRequests, press, input, render };
 };
 
 for (let os of ['android', 'ios', 'web']) {
@@ -76,4 +87,30 @@ test('sign-in preserves the selected demo setup path', async () => {
     await h.press('Sign in with Google');
     assert.deepEqual(h.events.at(-1), ['replace', `/${destination}`]);
   }
+});
+
+test('email sign-in uses the existing account and preserves the selected destination', async () => {
+  for (let os of ['android', 'ios', 'web']) {
+    let h = loadLogin(os, { return_to: 'machines' });
+    h.press('Sign in with email');
+    h.input('Email').props.onChangeText(' reviewer@example.com ');
+    h.input('Password').props.onChangeText(' password with spaces ');
+    assert.equal(h.input('Password').props.secureTextEntry, true);
+    await h.press('Sign in');
+    assert.deepEqual(h.events, [['password', 'reviewer@example.com', ' password with spaces '], ['replace', '/machines']]);
+    assert.equal(h.input('Password').props.value, '');
+  }
+});
+
+test('email sign-in validates missing fields and keeps rejected credentials on the sign-in screen', async () => {
+  let h = loadLogin('android', {}, { passwordError: Object.assign(new Error('Unauthorized'), { status: 401 }) });
+  h.press('Sign in with email');
+  await h.press('Sign in');
+  assert.equal(h.events.length, 0);
+  assert.ok(h.render().some((node) => node.props?.children === 'Enter your email and password.'));
+  h.input('Email').props.onChangeText('reviewer@example.com');
+  h.input('Password').props.onChangeText('wrong-password');
+  await h.press('Sign in');
+  assert.equal(h.events.length, 1);
+  assert.ok(h.render().some((node) => node.props?.children === 'Email or password is incorrect.'));
 });

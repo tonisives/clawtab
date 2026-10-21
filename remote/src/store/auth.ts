@@ -12,6 +12,7 @@ interface AuthState {
 
   init: () => Promise<void>
   googleLogin: (idToken: string) => Promise<void>
+  passwordLogin: (email: string, password: string) => Promise<void>
   appleLogin: (idToken: string, displayName?: string, email?: string) => Promise<void>
   setAuth: (userId: string, accessToken: string) => void
   logout: () => Promise<void>
@@ -66,6 +67,14 @@ export const useAuthStore = create<AuthState>((set) => ({
     await clearCache()
     terminalCache.clear()
     const resp = await api.googleAuth(idToken)
+    trackRemoteEvent("login")
+    set({ isAuthenticated: true, userId: resp.user_id, email: emailFromToken(resp.access_token) })
+  },
+
+  passwordLogin: async (email, password) => {
+    const resp = await api.passwordLogin(email, password)
+    await clearCache()
+    terminalCache.clear()
     trackRemoteEvent("login")
     set({ isAuthenticated: true, userId: resp.user_id, email: emailFromToken(resp.access_token) })
   },

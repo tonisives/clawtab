@@ -278,6 +278,15 @@ export async function googleAuth(idToken: string): Promise<AuthResponse> {
   return resp;
 }
 
+export async function passwordLogin(email: string, password: string): Promise<AuthResponse> {
+  const resp = await request<AuthResponse>("/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email: email.trim(), password }),
+  });
+  await storeTokens(resp.access_token, resp.refresh_token, resp.user_id);
+  return resp;
+}
+
 export async function appleAuth(
   idToken: string,
   displayName?: string,
