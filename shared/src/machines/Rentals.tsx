@@ -237,7 +237,7 @@ export let RentalsPanel = ({ children, style, api, purchases, platform = "web", 
       {showOrder && <View style={styles.card}>
         {!enabled ? <Text style={styles.text}>New rentals are currently unavailable.</Text> : <>
           <Text style={styles.heading}>Choose your box</Text>
-          <Text style={styles.detail}>A few suggestions based on your device timezone ({timezone.replaceAll("_", " ")}). You can choose any available region.</Text>
+          <Text style={styles.detail}>A few suggestions based on your device timezone ({timezone.replace(/_/g, " ")}). You can choose any available region.</Text>
           <View style={styles.quoteGrid}>{recommended.map((candidate) => <Pressable key={quoteId(candidate)} accessibilityRole="radio" accessibilityLabel={`${candidate.memory_gb} GB, ${candidate.region_description}, ${money(candidate)} per month`} accessibilityState={{ checked: selected === quoteId(candidate) }} onPress={choose(candidate)} style={[styles.choice, selected === quoteId(candidate) && styles.selected]}>
             <Text style={styles.choiceHeading}>{candidate.memory_gb} GB memory</Text>
             <Text style={styles.text}>{candidate.region_description}</Text>
