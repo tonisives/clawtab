@@ -152,8 +152,12 @@ clawtab_check_part="#{?#{@clawtab-agent-present},#{?#{@clawtab-agent-question},,
 clawtab_activity_prefix="#{?#{||:#{@clawtab-agent-question},#{||:#{@clawtab-agent-working},#{@clawtab-agent-present}}}, ,}"
 old_clawtab_activity_core="${clawtab_question_part}${clawtab_working_part}${clawtab_check_part}"
 old_clawtab_activity_part="${clawtab_activity_prefix}${old_clawtab_activity_core}"
-clawtab_activity_core="#{?#{@clawtab-daemon-running},${old_clawtab_activity_core},}"
-clawtab_activity_part="#{?#{@clawtab-daemon-running},${old_clawtab_activity_part},}"
+previous_clawtab_activity_core="#{?#{@clawtab-daemon-running},${old_clawtab_activity_core},}"
+previous_static_activity_part="#{?#{@clawtab-daemon-running},${old_clawtab_activity_part},}"
+clawtab_alert_part="#{?#{@clawtab-agent-alert},#[fg=colour208#,bold]!#[default],}"
+clawtab_current_activity_core="${clawtab_alert_part}#{?#{@clawtab-agent-alert},#{?#{||:#{@clawtab-agent-question},#{@clawtab-agent-working}}, ,},}${clawtab_question_part}${clawtab_working_part}#{?#{@clawtab-agent-alert},,${clawtab_check_part}}"
+clawtab_activity_core="#{?#{@clawtab-daemon-running},${clawtab_current_activity_core},}"
+clawtab_activity_part="#{?#{@clawtab-daemon-running},${clawtab_activity_prefix}${clawtab_current_activity_core},}"
 animated_clawtab_working_part="#{?#{@clawtab-agent-working},#{?#{@clawtab-agent-question}, ,}#[fg=cyan]#(${spinner_command})#[default],}"
 animated_clawtab_activity_core="${clawtab_question_part}${animated_clawtab_working_part}${clawtab_check_part}"
 previous_clawtab_activity_part="#{?#{@clawtab-agent-question}, #[fg=yellow#,bold]!#[default],}#{?#{@clawtab-agent-working}, #[fg=cyan]#(${spinner_command})#[default],}#{?#{@clawtab-agent-present}, #[fg=green#,bold]✓#[default],}"
@@ -183,6 +187,15 @@ append_activity_format() {
         return
     fi
     if [[ "$current_format" == *"$clawtab_activity_part"* ]]; then
+        return
+    fi
+
+    if [[ "$current_format" == *"$previous_static_activity_part"* ]]; then
+        tmux set-option -g "$option_name" "${current_format/"$previous_static_activity_part"/"$clawtab_activity_part"}"
+        return
+    fi
+    if [[ "$current_format" == *"$previous_clawtab_activity_core"* ]]; then
+        tmux set-option -g "$option_name" "${current_format/"$previous_clawtab_activity_core"/"$clawtab_activity_core"}"
         return
     fi
 

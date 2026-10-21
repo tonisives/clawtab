@@ -657,6 +657,7 @@ fn activity_from_hook_state(
         pane_id: pane_id.to_string(),
         working: state == HookAgentState::Working && attention.is_none(),
         asking: !auto_yes && (state == HookAgentState::Waiting || attention.is_some()),
+        alert: None,
     }
 }
 

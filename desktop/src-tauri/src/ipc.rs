@@ -228,12 +228,14 @@ pub struct JobSummary {
 /// visible agent UI has a repeated color-only animation, and it is not asking
 /// a question. Echoed input and layout reflows are ignored. `asking` is
 /// independent so a window containing both kinds of panes can render both
-/// indicators.
+/// indicators. `alert` carries an actionable provider error from the live terminal.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AgentActivity {
     pub pane_id: String,
     pub working: bool,
     pub asking: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alert: Option<String>,
 }
 
 /// Direction for pane focus changes. Used by external integrations
@@ -669,6 +671,7 @@ mod tests {
             pane_id: "%12".to_string(),
             working: true,
             asking: false,
+            alert: None,
         }];
 
         assert_eq!(

@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use clawtab_protocol::{ClaudeQuestion, QuestionOption};
 
-use crate::agent_hooks::{HookAgentState, HookPaneState, HookRuntime};
+use crate::agent_hooks::{HookAgentState, HookRuntime};
 use crate::agent_session::{detect_process_provider, ProcessProvider, ProcessSnapshot};
 use crate::config::jobs::{JobStatus, JobsConfig};
 use crate::config::settings::AppSettings;
@@ -206,15 +206,79 @@ fn has_interactive_prompt_indicator(text: &str) -> bool {
         || joined.contains("yes, proceed (y)")
 }
 
-fn should_capture_question_screen(
-    provider: ProcessProvider,
-    hook_state: Option<&HookPaneState>,
-) -> bool {
-    hook_state.is_none_or(|state| {
-        provider == ProcessProvider::Codex
-            || state.state == HookAgentState::Waiting
-            || state.attention.is_some()
-    })
+fn should_capture_agent_screen(provider: ProcessProvider) -> bool {
+    // Provider errors can appear without a lifecycle hook, even while idle.
+    provider != ProcessProvider::Shell
+}
+
+/// Only inspect the latest output block above the composer. Older failures in
+/// the transcript must not turn a recovered session back into an alert.
+fn terminal_alert(screen: &str, provider: ProcessProvider) -> Option<String> {
+    if codex_working_status(screen) || claude_working_status(screen) == Some(true) {
+        return None;
+    }
+    let plain = strip_ansi(screen);
+    let lines: Vec<&str> = plain.lines().map(str::trim).collect();
+    let composer = lines
+        .iter()
+        .rposition(|line| line.starts_with('\u{203a}') || line.starts_with('\u{276f}'));
+    let end = composer.unwrap_or(lines.len());
+    let output = &lines[..end];
+    let mut blocks = output
+        .rsplit(|line| line.is_empty() || line.chars().all(|ch| "─━═".contains(ch)))
+        .filter(|block| !block.is_empty());
+    let mut block = blocks.next()?;
+    if block.first() == Some(&"\u{2022} Queued follow-up inputs") {
+        block = blocks.next()?;
+    }
+    let message = block.join(" ");
+    let lower = message.to_lowercase();
+    let is_error = match provider {
+        ProcessProvider::Codex => message.starts_with('\u{25a0}'),
+        ProcessProvider::Claude => {
+            lower.starts_with("api error:")
+                || lower.starts_with("you've hit your limit")
+                || lower.starts_with("you’ve hit your limit")
+                || lower.starts_with("usage limit reached")
+        }
+        _ => {
+            lower.starts_with("error:")
+                || lower.starts_with("api error:")
+                || lower.starts_with("provider error:")
+        }
+    };
+    let actionable = [
+        "at capacity",
+        "overloaded",
+        "rate limit",
+        "rate_limit",
+        "usage limit",
+        "hit your limit",
+        "quota",
+        "insufficient_quota",
+        "too many requests",
+        "authentication",
+        "unauthorized",
+        "invalid api key",
+        "invalid_api_key",
+        "failed to connect",
+        "connection",
+        "network",
+        "timed out",
+        "timeout",
+        "stream disconnected",
+        "stream error",
+        "internal server error",
+        "service unavailable",
+        "context window",
+        "context length",
+        "api error:",
+        "please try again",
+        "please try a different model",
+    ]
+    .iter()
+    .any(|pattern| lower.contains(pattern));
+    (is_error && actionable).then(|| message.chars().take(500).collect())
 }
 
 /// Check whether stripped terminal output looks like an opencode select-box prompt.
@@ -1304,13 +1368,15 @@ impl ActivityTracker {
         ) in processes
         {
             seen_panes.insert(pane_id.clone());
+            let alert = terminal_alert(screen, *provider);
             if let Some(hook_state) = hook_runtime.pane_state(pane_id, *provider) {
                 let asking = asking_panes.contains(pane_id);
                 let (working, asking) = resolved_hook_activity(hook_state.state, asking);
                 activity.push(AgentActivity {
                     pane_id: pane_id.clone(),
-                    working,
+                    working: working && alert.is_none(),
                     asking,
+                    alert,
                 });
                 continue;
             }
@@ -1376,8 +1442,9 @@ impl ActivityTracker {
             };
             activity.push(AgentActivity {
                 pane_id: pane_id.clone(),
-                working: working && !asking,
+                working: working && !asking && alert.is_none(),
                 asking,
+                alert,
             });
         }
 
@@ -1555,7 +1622,7 @@ fn detect_question_processes(
         let cursor_y = cursor_y.parse().unwrap_or_default();
         let hook_state = hook_runtime.pane_state(pane_id, provider);
         let hook_backed = hook_state.is_some();
-        let should_capture = should_capture_question_screen(provider, hook_state.as_ref());
+        let should_capture = should_capture_agent_screen(provider);
         if should_capture {
             capture_requests.push((results.len(), pane_id.to_string(), pane_height, cursor_y));
         }
@@ -1672,10 +1739,9 @@ mod tests {
     use super::{
         collect_q_running_panes, evict_stale_cache_entries, filter_auto_yes_questions,
         find_yes_option, parse_numbered_options, parse_opencode_buttons, record_pane_capture,
-        resolved_hook_activity, should_capture_question_screen, update_question_cache,
+        resolved_hook_activity, should_capture_agent_screen, terminal_alert, update_question_cache,
         ActivityTracker, DetectedAgent, HookAgentState, ProcessProvider,
     };
-    use crate::agent_hooks::HookPaneState;
     use clawtab_protocol::{ClaudeQuestion, QuestionOption};
     use std::collections::HashSet;
     use std::time::{Duration, Instant};
@@ -1777,6 +1843,72 @@ mod tests {
 
     fn agent(pane_id: &str, log_lines: &str) -> DetectedAgent {
         agent_with_history(pane_id, log_lines, log_lines)
+    }
+
+    #[test]
+    fn terminal_alerts_detect_provider_failures_and_wrapping() {
+        for message in [
+            "\u{25a0} Selected model is at capacity. Please try a different model.",
+            "\u{25a0} Selected model is at capacity. Please try a\n  different model.",
+            "\x1b[31m\u{25a0} Rate limit reached. Please try again.\x1b[0m",
+            "\u{25a0} stream disconnected before completion: connection reset",
+            "\u{25a0} Quota exceeded",
+        ] {
+            let screen = format!("Earlier response\n\n{message}\n\n\u{203a} Ask Codex to do anything\n  ? for shortcuts");
+            assert!(
+                terminal_alert(&screen, ProcessProvider::Codex).is_some(),
+                "{message}"
+            );
+        }
+        assert!(terminal_alert(
+            "API Error: 529 overloaded\n\n────\n\u{276f} \n────",
+            ProcessProvider::Claude
+        )
+        .is_some());
+        assert!(terminal_alert(
+            "You've hit your limit · resets 5pm\n\n────\n\u{276f} \n────",
+            ProcessProvider::Claude
+        )
+        .is_some());
+        assert!(terminal_alert(
+            "Error: provider connection failed",
+            ProcessProvider::Opencode
+        )
+        .is_some());
+    }
+
+    #[test]
+    fn terminal_alerts_ignore_prose_old_errors_and_resumed_work() {
+        for screen in [
+            "The selected model is at capacity. Please try a different model.\n\n\u{203a} ",
+            "\u{25a0} Selected model is at capacity.\n\nTask finished successfully\n\n\u{203a} ",
+            "\u{25a0} Selected model is at capacity.\n\n\u{2022} Working (2s · esc to interrupt)\n\n\u{203a} ",
+            "\u{203a} explain this error: Selected model is at capacity.",
+        ] {
+            assert_eq!(terminal_alert(screen, ProcessProvider::Codex), None, "{screen}");
+        }
+        assert_eq!(
+            terminal_alert(
+                "API Error: overloaded\n\nRecovered successfully\n\n────\n\u{276f} \n────",
+                ProcessProvider::Claude
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn alert_overrides_activity_without_becoming_an_answerable_question() {
+        let mut tracker = ActivityTracker::default();
+        let mut process = agent("%1", "\u{25a0} Selected model is at capacity.\n\n\u{203a} ");
+        process.12 = ProcessProvider::Codex;
+        let initial = tracker.update(&[process.clone()], &HashSet::new(), Instant::now());
+        assert!(initial[0].alert.is_some());
+        assert!(!initial[0].working);
+        assert!(!initial[0].asking);
+        process.4 = "\u{25a0} Selected model is at capacity.\n\n\u{2022} Working (2s · esc to interrupt)\n\n\u{203a} ".into();
+        let resumed = tracker.update(&[process], &HashSet::new(), Instant::now());
+        assert!(resumed[0].working);
+        assert_eq!(resumed[0].alert, None);
     }
 
     #[test]
@@ -2354,34 +2486,16 @@ $ curl -s https://boards-api.greenhouse.io/v1/boards/slack/jobs | sed -n '1,40p'
     }
 
     #[test]
-    fn captures_codex_for_terminal_only_questions() {
-        let idle = HookPaneState {
-            event: "stop".into(),
-            session_id: "fixture".into(),
-            state: HookAgentState::Idle,
-            attention: None,
-            updated_at_ms: 1,
-        };
-        let working = HookPaneState {
-            event: "user_prompt_submit".into(),
-            session_id: "fixture".into(),
-            state: HookAgentState::Working,
-            attention: None,
-            updated_at_ms: 2,
-        };
-
-        assert!(should_capture_question_screen(
+    fn captures_agents_for_terminal_only_questions_and_errors() {
+        for provider in [
             ProcessProvider::Codex,
-            Some(&idle)
-        ));
-        assert!(should_capture_question_screen(
-            ProcessProvider::Codex,
-            Some(&working)
-        ));
-        assert!(!should_capture_question_screen(
             ProcessProvider::Claude,
-            Some(&idle)
-        ));
+            ProcessProvider::Opencode,
+            ProcessProvider::Antigravity,
+        ] {
+            assert!(should_capture_agent_screen(provider));
+        }
+        assert!(!should_capture_agent_screen(ProcessProvider::Shell));
     }
 
     #[test]

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-# Select a pane with an active question when entering a window. If there is no
-# question, leave tmux's remembered active pane untouched.
+# Select a pane with an active question or alert when entering a window.
+# Otherwise leave tmux's remembered active pane untouched.
 set -u
 
 window_id="${1:-}"

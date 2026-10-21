@@ -73,9 +73,10 @@ export type AgentActivity = {
   pane_id: string;
   working: boolean;
   asking: boolean;
+  alert?: string;
 };
 
-export type ProcessAgentState = "working" | "asking" | "finished";
+export type ProcessAgentState = "working" | "asking" | "alert" | "finished";
 
 export interface DetectedProcess {
   machine_id?: string;
@@ -109,6 +110,7 @@ export interface DetectedProcess {
   _last_user_message?: number;
   /** Authoritative agent state received from the daemon. */
   _agent_state?: ProcessAgentState;
+  _agent_alert?: string;
   /** Timestamp (ms) of the latest observed user or agent activity. */
   _last_activity?: number;
 }

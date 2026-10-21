@@ -123,6 +123,7 @@ clear_activity_options() {
         tmux set-window-option -q -t "$window_id" @clawtab-agent-present 0 2>/dev/null || true
         tmux set-window-option -q -t "$window_id" @clawtab-agent-working 0 2>/dev/null || true
         tmux set-window-option -q -t "$window_id" @clawtab-agent-question 0 2>/dev/null || true
+        tmux set-window-option -q -t "$window_id" @clawtab-agent-alert 0 2>/dev/null || true
         tmux set-window-option -q -t "$window_id" @clawtab-agent-seen 0 2>/dev/null || true
         tmux set-window-option -q -t "$window_id" @clawtab-agent-present-next 0 2>/dev/null || true
         tmux set-window-option -q -t "$window_id" @clawtab-agent-working-next 0 2>/dev/null || true
@@ -162,12 +163,12 @@ apply_snapshot() {
 
     # Keep a non-empty first input so the portable awk FNR == NR idiom also
     # works when there are no agents in the snapshot.
-    printf '__header__\tfalse\tfalse\n' >"$ACTIVITY_TSV"
+    printf '__header__\tfalse\tfalse\tfalse\n' >"$ACTIVITY_TSV"
     printf '%s\n' "$snapshot" | "$JQ_BIN" -r \
-        '.AgentActivity[]? | [.pane_id, (.working | tostring), (.asking | tostring)] | @tsv' \
+        '.AgentActivity[]? | [.pane_id, (.working | tostring), (.asking | tostring), ((.alert != null and .alert != "") | tostring)] | @tsv' \
         2>/dev/null >>"$ACTIVITY_TSV" || return 1
 
-    tmux list-panes -a -F '#{pane_id}|||#{window_id}|||#{@clawtab-agent-pane-present}|||#{@clawtab-agent-present}|||#{@clawtab-agent-working}|||#{@clawtab-agent-question}|||#{@clawtab-agent-asking}|||#{pane_active}' \
+    tmux list-panes -a -F '#{pane_id}|||#{window_id}|||#{@clawtab-agent-pane-present}|||#{@clawtab-agent-present}|||#{@clawtab-agent-working}|||#{@clawtab-agent-question}|||#{@clawtab-agent-asking}|||#{pane_active}|||#{@clawtab-agent-alert}|||#{@clawtab-agent-pane-alert}' \
         >"$PANE_STATE_FILE" 2>/dev/null || return 1
 
     awk -F '\t' 'BEGIN { OFS = "\t" }
@@ -176,6 +177,7 @@ apply_snapshot() {
                 desired_pane[$1] = 1
                 desired_working[$1] = ($2 == "true")
                 desired_asking[$1] = ($3 == "true")
+                desired_alert[$1] = ($4 == "true")
             }
             next
         }
@@ -187,26 +189,33 @@ apply_snapshot() {
             pane_current[pane] = (field[3] == "1")
             pane_asking_current[pane] = (field[7] == "1")
             pane_active[pane] = (field[8] == "1")
+            pane_alert_current[pane] = (field[10] == "1")
+            pane_window[pane] = window
             windows[window] = 1
             if (!(window in window_initialized)) {
                 window_initialized[window] = 1
                 window_present_current[window] = (field[4] == "1")
                 window_working_current[window] = (field[5] == "1")
                 window_asking_current[window] = (field[6] == "1")
+                window_alert_current[window] = (field[9] == "1")
             }
             if (desired_pane[pane]) {
                 window_present[window] = 1
                 if (desired_working[pane]) window_working[window] = 1
                 if (desired_asking[pane]) window_asking[window] = 1
+                if (desired_alert[pane]) window_alert[window] = 1
             }
         }
         END {
             for (pane in panes) {
                 wanted = desired_pane[pane] ? 1 : 0
                 working = desired_working[pane] ? 1 : 0
-                asking = desired_asking[pane] ? 1 : 0
-                if (pane_current[pane] != wanted || pane_asking_current[pane] != asking) {
-                    print "pane", pane, wanted, working, asking
+                asking = (desired_asking[pane] || desired_alert[pane]) ? 1 : 0
+                alert = desired_alert[pane] ? 1 : 0
+                window = pane_window[pane]
+                if (pane_current[pane] != wanted || pane_asking_current[pane] != asking ||
+                    pane_alert_current[pane] != alert) {
+                    print "pane", pane, wanted, working, asking, alert
                 }
                 if (pane_active[pane] && pane_asking_current[pane] && !asking &&
                     !(window in advance_pane)) {
@@ -217,21 +226,23 @@ apply_snapshot() {
                 present = window_present[window] ? 1 : 0
                 working = window_working[window] ? 1 : 0
                 asking = window_asking[window] ? 1 : 0
+                alert = window_alert[window] ? 1 : 0
                 if (window_present_current[window] != present ||
                     window_working_current[window] != working ||
-                    window_asking_current[window] != asking) {
-                    print "window", window, present, working, asking
+                    window_asking_current[window] != asking ||
+                    window_alert_current[window] != alert) {
+                    print "window", window, present, working, asking, alert
                 }
             }
             for (window in advance_pane) {
-                if (window_asking[window]) {
+                if (window_asking[window] || window_alert[window]) {
                     print "advance", window, advance_pane[window]
                 }
             }
         }
     ' "$ACTIVITY_TSV" "$PANE_STATE_FILE" >"$OPTION_CHANGES_FILE" || return 1
 
-    while IFS=$'\t' read -r kind target first second third; do
+    while IFS=$'\t' read -r kind target first second third fourth; do
         case "$kind" in
             pane)
                 if [ "$first" = "0" ]; then
@@ -241,12 +252,14 @@ apply_snapshot() {
                 fi
                 tmux set-option -pq -t "$target" @clawtab-agent-pane-present "$first" \
                     \; set-option -pq -t "$target" @clawtab-agent-asking "$third" \
+                    \; set-option -pq -t "$target" @clawtab-agent-pane-alert "$fourth" \
                     2>/dev/null || true
                 ;;
             window)
                 tmux set-window-option -q -t "$target" @clawtab-agent-present "$first" \
                     \; set-window-option -q -t "$target" @clawtab-agent-working "$second" \
                     \; set-window-option -q -t "$target" @clawtab-agent-question "$third" \
+                    \; set-window-option -q -t "$target" @clawtab-agent-alert "$fourth" \
                     2>/dev/null || true
                 ;;
             advance)

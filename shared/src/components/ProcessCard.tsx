@@ -80,22 +80,26 @@ export function ProcessCard({
     !process._last_log_change
     || activityClock - process._last_log_change < AGENT_ACTIVITY_WINDOW_MS
   );
-  const effectiveAgentState = agentState === "asking"
-    ? "asking"
+  const effectiveAgentState = agentState === "alert" || agentState === "asking"
+    ? agentState
     : agentState === "working" || recentActivity
       ? "working"
       : "finished";
-  const agentStatusLabel = effectiveAgentState === "asking"
-    ? "Question"
-    : effectiveAgentState === "working"
-      ? "Working"
-      : "Finished";
-  const agentStatusIcon = effectiveAgentState === "asking" ? "!" : effectiveAgentState === "working" ? "*" : "\u2713";
-  const agentStatusStyle = effectiveAgentState === "asking"
-    ? styles.statusIconQuestion
-    : effectiveAgentState === "working"
-      ? autoYesActive ? styles.statusIconAutoYesWorking : styles.statusIconWorking
-      : styles.statusIconFinished;
+  const agentStatusLabel = effectiveAgentState === "alert"
+    ? `Alert${process._agent_alert ? `: ${process._agent_alert}` : ""}`
+    : effectiveAgentState === "asking"
+      ? "Question"
+      : effectiveAgentState === "working"
+        ? "Working"
+        : "Finished";
+  const agentStatusIcon = effectiveAgentState === "alert" || effectiveAgentState === "asking" ? "!" : effectiveAgentState === "working" ? "*" : "\u2713";
+  const agentStatusStyle = effectiveAgentState === "alert"
+    ? styles.statusIconAlert
+    : effectiveAgentState === "asking"
+      ? styles.statusIconQuestion
+      : effectiveAgentState === "working"
+        ? autoYesActive ? styles.statusIconAutoYesWorking : styles.statusIconWorking
+        : styles.statusIconFinished;
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -107,7 +111,7 @@ export function ProcessCard({
   const canRename = !!(onRename || onSaveName) && !transient;
 
   useEffect(() => {
-    if (agentState === "asking" || agentState === "working" || transient) return;
+    if (agentState === "alert" || agentState === "asking" || agentState === "working" || transient) return;
     setActivityClock(Date.now());
     const timer = setInterval(() => setActivityClock(Date.now()), 2_000);
     return () => clearInterval(timer);
@@ -449,6 +453,9 @@ const styles = StyleSheet.create({
   },
   statusIconAutoYesWorking: {
     color: colors.warning,
+  },
+  statusIconAlert: {
+    color: "#ff9f0a",
   },
   statusIconQuestion: {
     color: colors.warning,

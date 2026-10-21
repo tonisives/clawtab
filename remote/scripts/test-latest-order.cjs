@@ -76,3 +76,20 @@ test('older hosts retain observed message ordering', () => {
   state.getState().setDetectedProcesses([{ ...pane('%508', null), last_query: 'next' }, pane('%582', null)]);
   assert.equal(latest(state.getState().detectedProcesses), '%508,%582');
 });
+
+
+test('alerts survive question and process refreshes and clear when work resumes', () => {
+  let state = store();
+  let message = 'Selected model is at capacity. Please try a different model.';
+  state.getState().setDetectedProcesses([pane('%1', first)]);
+  state.getState().setAgentActivity([{ pane_id: '%1', working: false, asking: false, alert: message }]);
+  state.getState().setQuestionPanes(['%1']);
+  state.getState().setDetectedProcesses([pane('%1', first)]);
+  assert.equal(state.getState().detectedProcesses[0]._agent_state, 'alert');
+  assert.equal(state.getState().detectedProcesses[0]._agent_alert, message);
+  state.getState().markProcessActivity('%1');
+  assert.equal(state.getState().detectedProcesses[0]._agent_state, 'working');
+  assert.equal(state.getState().detectedProcesses[0]._agent_alert, undefined);
+  state.getState().setAgentActivity([{ pane_id: '%1', working: false, asking: false }]);
+  assert.equal(state.getState().detectedProcesses[0]._agent_state, 'finished');
+});

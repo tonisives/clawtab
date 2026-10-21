@@ -398,6 +398,7 @@ fn main() {
                             pane_id: item.pane_id.clone(),
                             working: item.working,
                             asking: item.asking,
+                            alert: item.alert.clone(),
                         })
                         .collect();
                     let activity_json = serde_json::to_string(&activity).unwrap_or_default();
