@@ -9,7 +9,7 @@ import { useWsStore } from "../../../src/store/ws"
 import { showDemoInfo } from "../../../src/demo/info"
 import { useResponsive } from "../../../src/hooks/useResponsive"
 import { ApiTokensSection } from "../../../src/components/ApiTokensSection"
-import { MachinePageScreen, type MachinePageParams } from "../../../src/components/MachineNavigation"
+import { MachinePageHistoryProvider, MachinePageScreen, type MachinePageParams } from "../../../src/components/MachineNavigation"
 import { MachineSetup } from "../../../src/components/MachineSetup"
 import { AccountSettings } from "../../../src/components/settings/AccountSettings"
 import { SharingSettings } from "../../../src/components/settings/SharingSettings"
@@ -103,7 +103,7 @@ let SettingsScreen = ({ inModal = false, active = true, historyBack, restoreStat
   let focused = useIsFocused()
   let { isWide, isSplitView, isIosPadPortrait } = useResponsive()
   let largeTitle = Platform.OS === "ios" && !inModal && !isWide && !isSplitView && !isIosPadPortrait
-  return <SettingsVisibility.Provider value={focused && active}><NavigationIndependentTree><NavigationContainer
+  return <SettingsVisibility.Provider value={focused && active}><MachinePageHistoryProvider onBack={historyBack}><NavigationIndependentTree><NavigationContainer
     ref={navigation}
     theme={DarkTheme}
     onReady={() => {
@@ -121,6 +121,6 @@ let SettingsScreen = ({ inModal = false, active = true, historyBack, restoreStat
       })}
       <Stack.Screen name="machine-page" component={MachinePageScreen} options={({ route }) => ({ title: route.params.title })} />
     </Stack.Navigator>
-  </NavigationContainer></NavigationIndependentTree></SettingsVisibility.Provider>
+  </NavigationContainer></NavigationIndependentTree></MachinePageHistoryProvider></SettingsVisibility.Provider>
 }
 export default SettingsScreen

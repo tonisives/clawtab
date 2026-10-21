@@ -16,6 +16,7 @@ import type { NotificationDetailTarget } from "./notificationTypes";
 interface NotificationsPanelProps {
   mode: "popup" | "screen";
   onNavigateAway?: () => void;
+  onBack?: () => void;
   onSelectDetail?: (target: NotificationDetailTarget) => void;
   detailTarget?: NotificationDetailTarget | null;
   onDetailTargetChange?: (target: NotificationDetailTarget | null) => void;
@@ -24,6 +25,7 @@ interface NotificationsPanelProps {
 export function NotificationsPanel({
   mode,
   onNavigateAway,
+  onBack,
   onSelectDetail,
   detailTarget: controlledDetailTarget,
   onDetailTargetChange,
@@ -48,6 +50,8 @@ export function NotificationsPanel({
       setLocalDetailTarget(target);
     }
   }, [onDetailTargetChange, onSelectDetail]);
+
+  const closeDetail = onBack ?? (() => setDetailTarget(null));
 
   let handleSelectNextNotification = (question: ClaudeQuestion) => {
     if (question.matched_job) {
@@ -104,7 +108,7 @@ export function NotificationsPanel({
         {mode === "screen" && (
           <View style={styles.detailToolbar}>
             <Pressable
-              onPress={() => setDetailTarget(null)}
+              onPress={closeDetail}
               style={styles.detailBackButton}
               accessibilityRole="button"
               accessibilityLabel="Back to notifications"
@@ -122,14 +126,14 @@ export function NotificationsPanel({
               key={`job-${detailTarget.jobName}`}
               jobName={detailTarget.jobName}
               embedded
-              onClose={() => setDetailTarget(null)}
+              onClose={closeDetail}
             />
           ) : (
             <ProcessDetailPane
               key={`process-${detailTarget.paneId}`}
               paneId={detailTarget.paneId}
               embedded
-              onClose={() => setDetailTarget(null)}
+              onClose={closeDetail}
             />
           )}
         </View>

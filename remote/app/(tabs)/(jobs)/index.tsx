@@ -22,7 +22,7 @@ import {
   Linking,
 } from "react-native"
 import { useLocalSearchParams, useRouter } from "expo-router"
-import type { NavigationState } from "expo-router/react-navigation"
+import { useIsFocused, type NavigationState } from "expo-router/react-navigation"
 import { useWebBackStack } from "../../../src/hooks/useWebBackStack"
 import type { NotificationDetailTarget } from "../../../src/components/notificationTypes"
 import { Ionicons } from "@expo/vector-icons"
@@ -272,6 +272,7 @@ export default function JobsScreen() {
   const [stoppingJobSlugs, setStoppingJobSlugs] = useState<Set<string>>(() => new Set())
   const { width, isIosPad, isIosPadPortrait, isIosPhoneLandscape, isSplitView, isWide } = useResponsive()
   const router = useRouter()
+  const screenFocused = useIsFocused()
   const { section } = useLocalSearchParams<{ section?: string }>()
 
   useEffect(() => {
@@ -820,7 +821,7 @@ export default function JobsScreen() {
       ? ["notifications", notificationDetail]
       : ["jobs", demoMode ? demoSelection : activeContent])
   const navigationHistory = useWebBackStack({
-    enabled: webSplit,
+    enabled: webSplit && screenFocused,
     navigationKey,
     value: navigationEntry,
     onRestore: (entry) => {
@@ -1410,7 +1411,7 @@ export default function JobsScreen() {
         {sidebarSection === "settings" ? (
           webSplit ? null : <SettingsScreen inModal />
         ) : sidebarSection === "notifications" ? (
-          <NotificationsPanel mode="screen" detailTarget={notificationDetail} onDetailTargetChange={setNotificationDetail} />
+          <NotificationsPanel mode="screen" detailTarget={notificationDetail} onDetailTargetChange={setNotificationDetail} onBack={webSplit && navigationHistory.canGoBack ? navigationHistory.goBack : undefined} />
         ) : (
           <SplitDetailArea
             tree={demoMode || connectionLoading ? null : split.tree}
