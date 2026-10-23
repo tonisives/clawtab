@@ -66,6 +66,8 @@ ClawTab is built with Rust and Tauri. The desktop bundle is under 20 MB, while t
 
 The bundled tmux plugin adds agent status, task-based pane names, auto-yes controls, session forking, skill search, secret injection, and a terminal sidebar.
 
+Window tabs show a colored age before the agent status: `jn` under a minute, then `13m`, `2h`, or `3d` since the last window visit. Ages are green under an hour, amber under a day, and red from one day onward. Existing windows use their last known activity until their first visit.
+
 The daemon publishes agent activity to tmux without replacing your theme. Working windows get a cyan activity marker, agents asking for input get a yellow attention marker, and present-but-idle agents get a green check.
 
 ClawTab picks up generated session names from Codex, Claude Code, OpenCode, and Hermes as they become available, usually on the next five-second scan. The name appears in ClawTab and on the top pane border. A window with exactly one agent also gets that name if tmux's automatic naming is enabled. Windows with multiple agents keep their window name. Explicitly renaming a window stops ClawTab from renaming it again; existing named windows and custom pane names are preserved.
