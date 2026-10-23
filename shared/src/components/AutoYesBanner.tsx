@@ -14,14 +14,14 @@ export interface AutoYesBannerProps {
   entries: AutoYesEntry[];
   onDisable: (paneId: string) => void;
   onPress?: (entry: AutoYesEntry) => void;
-  /** Limit the number of entries shown before the user expands the list. */
+  /** Collapse lists above this count. Zero always shows an accordion. */
   maxVisibleEntries?: number;
 }
 
 export function AutoYesBanner({ entries, onDisable, onPress, maxVisibleEntries }: AutoYesBannerProps) {
   const collapseLimit = maxVisibleEntries == null
     ? entries.length
-    : Math.max(1, Math.floor(maxVisibleEntries));
+    : Math.max(0, Math.floor(maxVisibleEntries));
   const isCollapsible = entries.length > collapseLimit;
   const [expanded, setExpanded] = useState(false);
 
@@ -35,9 +35,11 @@ export function AutoYesBanner({ entries, onDisable, onPress, maxVisibleEntries }
           onPress={() => setExpanded((value) => !value)}
           activeOpacity={0.7}
           accessibilityRole="button"
+          accessibilityState={{ expanded }}
+          aria-expanded={expanded}
           accessibilityLabel={expanded ? "Collapse auto-yes panes" : "Expand auto-yes panes"}
         >
-          <Text style={styles.label} numberOfLines={1}>Auto-yes: {entries.length} panes</Text>
+          <Text style={styles.label} numberOfLines={1}>Auto-yes: {entries.length} {entries.length === 1 ? "pane" : "panes"}</Text>
           <View style={styles.toggleChevron}>
             <View style={[styles.toggleChevronMark, expanded ? styles.toggleChevronUp : styles.toggleChevronDown]} />
           </View>

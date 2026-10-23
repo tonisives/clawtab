@@ -1,3 +1,5 @@
+import { normalizeTerminalNewlines } from "./ansi";
+
 // eslint-disable-next-line no-control-regex
 const ANSI_STRIP = /\x1b\[[0-9;]*[A-Za-z]/g;
 
@@ -18,7 +20,7 @@ function isBlank(line: string): boolean {
  * adjacent to separators.
  */
 export function collapseSeparators(text: string): string {
-  const lines = text.replace(/\r/g, "").split("\n");
+  const lines = normalizeTerminalNewlines(text).split("\n");
 
   // First pass: mark separator lines
   const seps = lines.map(isSeparator);

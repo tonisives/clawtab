@@ -69,6 +69,8 @@ export function NotificationSection({
   const [activeIndex, setActiveIndex] = useState(0);
   const [cardWidth, setCardWidth] = useState(0);
   const [optionScrollActive, setOptionScrollActive] = useState(false);
+  const webSwipe = useRef<{ x: number; y: number; index: number; dragging: boolean } | null>(null);
+  const suppressSwipeClick = useRef(false);
   const [departing, setDeparting] = useState<DepartingQuestion[]>([]);
   const prevQuestionsRef = useRef<ClaudeQuestion[]>([]);
   const [entering, setEntering] = useState<Set<string>>(new Set());
@@ -133,19 +135,19 @@ export function NotificationSection({
       }
     }
 
-    if (allRemoved.length === 0) return;
-
-    // Adjust scroll position and slide-in the promoted card
+    // Keep the current question selected when earlier cards arrive or disappear.
+    const currentId = prev[activeIndex]?.question_id;
+    const retainedIndex = questions.findIndex((q) => q.question_id === currentId);
+    const newIndex = retainedIndex >= 0 ? retainedIndex : Math.min(activeIndex, questions.length - 1);
     if (questions.length > 0 && cardWidth > 0) {
-      const newIndex = Math.min(activeIndex, questions.length - 1);
-      setActiveIndex(newIndex);
-      setTimeout(() => {
-        scrollRef.current?.scrollTo({ x: newIndex * cardWidth, animated: true });
-      }, 50);
+      if (newIndex !== activeIndex || allRemoved.length > 0) {
+        setActiveIndex(newIndex);
+        scrollRef.current?.scrollTo({ x: newIndex * cardWidth, animated: false });
+      }
 
       // Slide-in the card at the new active position (it's being promoted)
       const promotedQ = questions[newIndex];
-      if (promotedQ && !added.some((a) => a.question_id === promotedQ.question_id)) {
+      if (retainedIndex < 0 && promotedQ && !added.some((a) => a.question_id === promotedQ.question_id)) {
         if (isWeb) {
           pendingSlideIn.current.add(promotedQ.question_id);
         }
@@ -230,9 +232,9 @@ export function NotificationSection({
       if (cardWidth <= 0) return;
       const offset = e.nativeEvent.contentOffset.x;
       const idx = Math.round(offset / cardWidth);
-      setActiveIndex(idx);
+      setActiveIndex(Math.max(0, Math.min(idx, count - 1)));
     },
-    [cardWidth],
+    [cardWidth, count],
   );
 
   const handleLayout = useCallback(
@@ -258,6 +260,23 @@ export function NotificationSection({
   const goNext = useCallback(() => {
     if (clampedIndex < count - 1) scrollToIndex(clampedIndex + 1);
   }, [clampedIndex, count, scrollToIndex]);
+
+  // Keep the selected page aligned when a split view or browser is resized.
+  useEffect(() => {
+    if (cardWidth > 0) scrollRef.current?.scrollTo({ x: clampedIndex * cardWidth, animated: false });
+  }, [cardWidth]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const finishWebSwipe = (event: React.PointerEvent<HTMLDivElement>, cancelled = false) => {
+    const swipe = webSwipe.current;
+    webSwipe.current = null;
+    if (!swipe?.dragging) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    const delta = swipe.x - event.clientX;
+    const step = !cancelled && Math.abs(delta) >= Math.min(80, cardWidth * 0.2) ? Math.sign(delta) : 0;
+    scrollToIndex(Math.max(0, Math.min(count - 1, swipe.index + step)));
+  };
 
   // Collapse animation: when sectionFlying becomes true, pin height then transition to 0
   useEffect(() => {
@@ -402,6 +421,21 @@ export function NotificationSection({
     );
   };
 
+  const pager = (
+    <ScrollView
+      ref={scrollRef}
+      horizontal
+      pagingEnabled
+      style={styles.pager}
+      scrollEnabled={count > 1 && !optionScrollActive}
+      showsHorizontalScrollIndicator={false}
+      onScroll={handleScroll}
+      scrollEventThrottle={16}
+    >
+      {questions.map(renderQuestionCard)}
+    </ScrollView>
+  );
+
   const sectionContent = (
     <View style={isWeb ? styles.container : [styles.container, styles.nativeEdgeToEdge]}>
       {showHeader && onToggleCollapse && (
@@ -423,6 +457,8 @@ export function NotificationSection({
             <View style={styles.navRow}>
               <TouchableOpacity
                 onPress={goPrev}
+                accessibilityRole="button"
+                accessibilityLabel="Previous notification"
                 disabled={clampedIndex === 0}
                 style={[styles.navBtn, styles.navBtnLeft]}
                 activeOpacity={0.6}
@@ -439,6 +475,8 @@ export function NotificationSection({
 
               <TouchableOpacity
                 onPress={goNext}
+                accessibilityRole="button"
+                accessibilityLabel="Next notification"
                 disabled={clampedIndex >= count - 1}
                 style={[styles.navBtn, styles.navBtnRight]}
                 activeOpacity={0.6}
@@ -451,18 +489,42 @@ export function NotificationSection({
             </View>
           )}
 
-          <ScrollView
-            ref={scrollRef}
-            horizontal
-            pagingEnabled
-            style={styles.pager}
-            scrollEnabled={count > 1 && !optionScrollActive}
-            showsHorizontalScrollIndicator={false}
-            onScroll={handleScroll}
-            scrollEventThrottle={16}
-          >
-            {questions.map(renderQuestionCard)}
-          </ScrollView>
+          {isWeb ? (
+            <div
+              onPointerDown={(event) => {
+                suppressSwipeClick.current = false;
+                if (wrapQuestionCard || event.pointerType === "touch" || event.button !== 0 || count < 2 || cardWidth <= 0) return;
+                if ((event.target as HTMLElement).closest("[data-testid=notification-actions], button, input, textarea, a")) return;
+                webSwipe.current = { x: event.clientX, y: event.clientY, index: clampedIndex, dragging: false };
+              }}
+              onPointerMove={(event) => {
+                const swipe = webSwipe.current;
+                if (!swipe) return;
+                const dx = event.clientX - swipe.x;
+                const dy = event.clientY - swipe.y;
+                if (!swipe.dragging) {
+                  if (Math.max(Math.abs(dx), Math.abs(dy)) < 8) return;
+                  if (Math.abs(dy) > Math.abs(dx)) { webSwipe.current = null; return; }
+                  swipe.dragging = true;
+                  suppressSwipeClick.current = true;
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                }
+                event.preventDefault();
+                scrollRef.current?.scrollTo({ x: swipe.index * cardWidth - dx, animated: false });
+              }}
+              onPointerUp={(event) => finishWebSwipe(event)}
+              onPointerCancel={(event) => finishWebSwipe(event, true)}
+              onLostPointerCapture={() => { webSwipe.current = null; }}
+              onClickCapture={(event) => {
+                if (!suppressSwipeClick.current) return;
+                event.preventDefault();
+                event.stopPropagation();
+                suppressSwipeClick.current = false;
+              }}
+            >
+              {pager}
+            </div>
+          ) : pager}
         </View>
       )}
     </View>

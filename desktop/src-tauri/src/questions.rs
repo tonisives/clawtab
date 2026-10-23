@@ -36,7 +36,7 @@ const RECENT_ACTIVITY_WINDOW: Duration = Duration::from_secs(8);
 const PROCESS_SNAPSHOT_INTERVAL: Duration = Duration::from_secs(5);
 
 /// Strip ANSI escape sequences from text.
-fn strip_ansi(text: &str) -> String {
+pub(crate) fn strip_ansi(text: &str) -> String {
     let mut result = String::with_capacity(text.len());
     let mut chars = text.chars().peekable();
     while let Some(c) = chars.next() {
@@ -1347,36 +1347,47 @@ fn pick_sleep_ms(
 /// Strips terminal instruction lines but preserves bottom padding so the last
 /// option is not visually flush against the edge.
 fn last_context_lines(text: &str) -> String {
-    let clean = strip_ansi(text);
-    let lines: Vec<&str> = clean.lines().collect();
-    let tail = if lines.len() > 30 {
-        &lines[lines.len() - 30..]
-    } else {
-        &lines
+    let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+    let lines: Vec<&str> = normalized.lines().collect();
+    let start = lines.len().saturating_sub(30);
+    let keep: Vec<bool> = lines
+        .iter()
+        .enumerate()
+        .map(|(index, line)| {
+            let plain = strip_ansi(line);
+            let lower = plain.trim().to_lowercase();
+            index >= start
+                && !(lower.contains("enter to select")
+                    || lower.contains("to navigate")
+                    || lower.contains("esc to cancel")
+                    || lower.contains("enter confirm"))
+        })
+        .collect();
+    let meaningful = |index: &usize| keep[*index] && !strip_ansi(lines[*index]).trim().is_empty();
+    let Some(first) = (0..lines.len()).find(meaningful) else {
+        return String::new();
     };
-    let mut context = Vec::new();
-    for line in tail {
-        let lower = line.trim().to_lowercase();
-        if lower.contains("enter to select")
-            || lower.contains("to navigate")
-            || lower.contains("esc to cancel")
-            || lower.contains("enter confirm")
-        {
-            continue;
+    let last = (first..lines.len()).rfind(meaningful).unwrap();
+    let mut context = String::new();
+    for (index, line) in lines.iter().enumerate().take(last + 1) {
+        if index >= first && keep[index] {
+            context.push_str(line);
+            context.push('\n');
+        } else {
+            // Carry styling across trimmed history and filtered instruction lines.
+            for escape in line.split('\x1b').skip(1) {
+                if let Some(csi) = escape.strip_prefix('[') {
+                    if let Some(end) = csi.find(|c: char| ('@'..='~').contains(&c)) {
+                        if csi.as_bytes()[end] == b'm' {
+                            context.push_str("\x1b[");
+                            context.push_str(&csi[..=end]);
+                        }
+                    }
+                }
+            }
         }
-        context.push(*line);
     }
-    // Trim leading/trailing empty lines
-    while context.first().map_or(false, |l| l.trim().is_empty()) {
-        context.remove(0);
-    }
-    while context.last().map_or(false, |l| l.trim().is_empty()) {
-        context.pop();
-    }
-    if !context.is_empty() {
-        context.push("");
-    }
-    context.join("\n")
+    context
 }
 
 #[derive(Default)]
@@ -1913,6 +1924,37 @@ fn record_pane_capture(process: &mut DetectedAgent, visible: &str, cursor_y: u16
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn notification_context_preserves_colors_and_return_line_breaks() {
+        let preview = super::last_context_lines(
+            "\x1b[32m$ cargo check\x1b[0m\r\n\x1b[38;2;1;2;3mFinished\x1b[0m\rWould you like to run this command?\r1. Yes\r2. No",
+        );
+        assert_eq!(preview, "\x1b[32m$ cargo check\x1b[0m\n\x1b[38;2;1;2;3mFinished\x1b[0m\nWould you like to run this command?\n1. Yes\n2. No\n");
+        assert_eq!(super::parse_numbered_options(&preview).len(), 2);
+    }
+
+    #[test]
+    fn notification_context_carries_styles_from_trimmed_and_filtered_lines() {
+        let input = format!(
+            "\x1b[31mold output\n{}Allow?\n\x1b[0mEnter to select\n1. Yes\n2. No\n\x1b[0m \n",
+            "history\n".repeat(30)
+        );
+        let preview = super::last_context_lines(&input);
+        assert!(preview.starts_with("\x1b[31mhistory\n"));
+        assert!(!preview.contains("old output"));
+        assert!(!preview.contains("Enter to select"));
+        assert!(preview.ends_with("Allow?\n\x1b[0m1. Yes\n2. No\n"));
+    }
+
+    #[test]
+    fn notification_context_trims_styled_empty_lines_and_keeps_indentation() {
+        assert_eq!(
+            super::last_context_lines("\x1b[32m \r\n  command\n\x1b[0m \n"),
+            "\x1b[32m  command\n"
+        );
+        assert_eq!(super::last_context_lines("\x1b[31m \n\x1b[0m"), "");
+    }
+
     #[test]
     fn hermes_approval_options_preserve_prompt_identity_and_safe_default() {
         let options = super::parse_hermes_options("ClawTab harmless test approval\nprintf HERMES_TOOL_OK\n/approve req_123 <once|session|always|deny>\n> ").unwrap();

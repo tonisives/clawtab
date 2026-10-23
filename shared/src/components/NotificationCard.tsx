@@ -14,8 +14,8 @@ import {
 import type { ClaudeQuestion } from "../types/process"
 import { colors } from "../theme/colors"
 import { radius, spacing } from "../theme/spacing"
-import { AnsiText, hasAnsi } from "./AnsiText"
-import { collapseSeparators, truncateLogLines } from "../util/logs"
+import { AnsiText } from "./AnsiText"
+import { normalizeTerminalNewlines } from "../util/ansi"
 import { isFreetextOption } from "../util/jobs"
 import { fitPath, shortenPath } from "../util/format"
 
@@ -164,7 +164,7 @@ export function NotificationCard({
   const fittedPath = useFittedNotificationPath(question.cwd)
   const title = resolvedJob ? resolvedJob : fittedPath.text
 
-  const preview = truncateLogLines(collapseSeparators(question.context_lines).trim(), 160)
+  const preview = normalizeTerminalNewlines(question.context_lines)
   const cardSizeStyle = cardMinHeight
     ? {
         minHeight: cardMinHeight + (!isWeb ? cardBottomInset : 0),
@@ -178,72 +178,34 @@ export function NotificationCard({
           borderBottomRightRadius: cardBottomRadius,
         }
       : null
-  const nativeActionBottomStyle = !isWeb ? { paddingBottom: spacing.md } : null
+  const actionBottomStyle = { paddingBottom: spacing.md }
   const maxButtonWidth = Math.min(520, Math.max(240, Math.floor(width * 0.66)))
 
-  const optionControls = (
-    <>
-      {question.options.map((opt) => (
-        <TouchableOpacity
-          key={opt.number}
-          style={styles.optionBtn}
-          onPress={() => handleOptionPress(opt.number, opt.label)}
-          activeOpacity={0.6}
-        >
-          <Text style={styles.optionBtnText} numberOfLines={2}>
-            {question.input_mode === "select" || question.input_mode === "command" ? opt.label : `${opt.number}. ${opt.label}`}
-          </Text>
-        </TouchableOpacity>
-      ))}
-      {onToggleAutoYes && (
-        <>
-          <View style={styles.separator} />
-          <TouchableOpacity
-            style={[styles.autoYesBtn, autoYesActive && styles.autoYesBtnActive]}
-            onPress={() => onToggleAutoYes(question)}
-            activeOpacity={0.6}
-          >
-            <Text style={styles.autoYesBtnText} numberOfLines={2}>
-              {autoYesActive ? "! Auto ON" : "! Yes all"}
-            </Text>
-          </TouchableOpacity>
-        </>
-      )}
-    </>
-  )
   const answerOptionControls = question.options.map((opt) => (
     <TouchableOpacity
       key={opt.number}
       style={[
         styles.optionBtn,
-        !isWeb && styles.optionBtnNative,
-        !isWeb && opt.label.length > 18 && { width: maxButtonWidth },
+        styles.optionBtnRounded,
+        opt.label.length > 18 && { width: maxButtonWidth },
       ]}
+      accessibilityRole="button"
       onPress={() => handleOptionPress(opt.number, opt.label)}
       activeOpacity={0.6}
     >
-      <Text style={[styles.optionBtnText, !isWeb && styles.optionBtnTextNative]} numberOfLines={2}>
+      <Text style={[styles.optionBtnText, styles.optionBtnTextRounded]} numberOfLines={2}>
         {question.input_mode === "select" || question.input_mode === "command" ? opt.label : `${opt.number}. ${opt.label}`}
       </Text>
     </TouchableOpacity>
   ))
-  const optionArea = isWeb ? (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      style={styles.optionRow}
-      contentContainerStyle={styles.optionRowContent}
-    >
-      {optionControls}
-    </ScrollView>
-  ) : (
-    <View style={[styles.optionRow, styles.optionRowNative, nativeActionBottomStyle]}>
+  const optionArea = (
+    <View testID="notification-actions" style={[styles.optionRow, styles.optionRowRounded, actionBottomStyle]}>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         nestedScrollEnabled
-        style={styles.answerOptionsNative}
-        contentContainerStyle={styles.answerOptionsNativeContent}
+        style={styles.answerOptions}
+        contentContainerStyle={styles.answerOptionsContent}
         onScrollBeginDrag={onOptionScrollBegin}
         onScrollEndDrag={onOptionScrollEnd}
         onMomentumScrollEnd={onOptionScrollEnd}
@@ -254,24 +216,21 @@ export function NotificationCard({
         <TouchableOpacity
           style={[
             styles.autoYesBtn,
-            styles.autoYesBtnNative,
+            styles.autoYesBtnRounded,
             autoYesActive && styles.autoYesBtnActive,
           ]}
+          accessibilityRole="button"
           onPress={() => onToggleAutoYes(question)}
           activeOpacity={0.6}
         >
-          <Text style={[styles.autoYesBtnText, styles.autoYesBtnTextNative]} numberOfLines={1}>
+          <Text style={[styles.autoYesBtnText, styles.autoYesBtnTextRounded]} numberOfLines={1}>
             {autoYesActive ? "Auto-yes on" : "Yes to all"}
           </Text>
         </TouchableOpacity>
       )}
     </View>
   )
-  const previewContent = hasAnsi(preview) ? (
-    <AnsiText content={preview} style={styles.logText} />
-  ) : (
-    <Text style={styles.logText}>{preview}</Text>
-  )
+  const previewContent = <AnsiText content={preview} style={styles.logText} />
 
   const cardContent = (
     <>
@@ -310,7 +269,7 @@ export function NotificationCard({
 
       {question.options.length > 0 &&
         (showAnswered ? (
-          <View style={[styles.sentRow, nativeActionBottomStyle]}>
+          <View style={[styles.sentRow, actionBottomStyle]}>
             <ActivityIndicator size="small" color={autoAnswered ? colors.warning : colors.accent} />
             <Text style={styles.sentText}>{autoAnswered ? "Auto-accepted" : "Sent"}</Text>
           </View>
@@ -432,34 +391,28 @@ const styles = StyleSheet.create({
   logText: {
     color: colors.textSecondary,
     fontSize: 11,
-    fontFamily: "monospace",
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
     lineHeight: 16,
   },
   optionRow: {
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
-  optionRowNative: {
+  optionRowRounded: {
     flexDirection: "column",
     alignItems: "stretch",
     gap: 8,
     paddingHorizontal: spacing.md,
     paddingVertical: 10,
   },
-  answerOptionsNative: {
+  answerOptions: {
     width: "100%",
     flexGrow: 0,
     flexShrink: 0,
   },
-  answerOptionsNativeContent: {
+  answerOptionsContent: {
     flexDirection: "row",
     gap: 8,
-  },
-  optionRowContent: {
-    gap: 6,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 6,
-    alignItems: "center",
   },
   optionBtn: {
     paddingHorizontal: spacing.sm,
@@ -469,7 +422,7 @@ const styles = StyleSheet.create({
     borderColor: colors.accent,
     maxWidth: 280,
   },
-  optionBtnNative: {
+  optionBtnRounded: {
     minHeight: 46,
     alignItems: "center",
     justifyContent: "center",
@@ -483,16 +436,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "500",
   },
-  optionBtnTextNative: {
+  optionBtnTextRounded: {
     fontSize: 15,
     lineHeight: 15,
     fontWeight: "700",
     textAlign: "center",
-  },
-  separator: {
-    width: 1,
-    height: 18,
-    backgroundColor: colors.border,
   },
   autoYesBtn: {
     paddingHorizontal: spacing.sm,
@@ -501,7 +449,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.warning,
   },
-  autoYesBtnNative: {
+  autoYesBtnRounded: {
     width: "100%",
     minHeight: 44,
     flexShrink: 0,
@@ -520,7 +468,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
   },
-  autoYesBtnTextNative: {
+  autoYesBtnTextRounded: {
     fontSize: 12,
     lineHeight: 16,
     fontWeight: "700",

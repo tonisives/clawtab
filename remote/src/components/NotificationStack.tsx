@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
 
 import { useNotificationStore } from "../store/notifications";
 import { useJobsStore } from "../store/jobs";
 import { getWsSend, nextId } from "../lib/wsRuntime";
 import { dismissQuestionNotification } from "../lib/notifications";
+import { confirm } from "../lib/platform";
 import { NotificationSection, AutoYesBanner, findYesOption } from "@clawtab/shared";
 import { colors } from "@clawtab/shared";
 import { spacing } from "@clawtab/shared";
@@ -133,34 +134,27 @@ export function NotificationStack({
       }
 
       const title = q.matched_job ?? q.cwd.replace(/^\/Users\/[^/]+/, "~");
-      Alert.alert(
+      confirm(
         "Enable auto-yes?",
         `All future questions for "${title}" will be automatically accepted with "Yes". This stays active until you disable it.`,
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Enable",
-            style: "destructive",
-            onPress: () => {
-              enableAutoYes(q.pane_id);
-              const next = new Set(autoYesPaneIds);
-              next.add(q.pane_id);
-              syncAutoYesToRelay(next);
-              // Auto-answer the current question
-              const yesOpt = findYesOption(q);
-              if (yesOpt) {
-                autoAnsweredRef.current.add(q.question_id);
-                setAutoAnsweredIds(new Set(autoAnsweredRef.current));
-                sendAnswer(q, resolveJob(q), yesOpt);
-                // Dismiss after a brief flash
-                dismissQuestionNotification(q.question_id);
-                setTimeout(() => {
-                  answerQuestion(q.question_id);
-                }, 1500);
-              }
-            },
-          },
-        ],
+        () => {
+          enableAutoYes(q.pane_id);
+          const next = new Set(autoYesPaneIds);
+          next.add(q.pane_id);
+          syncAutoYesToRelay(next);
+          // Auto-answer the current question
+          const yesOpt = findYesOption(q);
+          if (yesOpt) {
+            autoAnsweredRef.current.add(q.question_id);
+            setAutoAnsweredIds(new Set(autoAnsweredRef.current));
+            sendAnswer(q, resolveJob(q), yesOpt);
+            // Dismiss after a brief flash
+            dismissQuestionNotification(q.question_id);
+            setTimeout(() => {
+              answerQuestion(q.question_id);
+            }, 1500);
+          }
+        },
       );
     },
     [autoYesPaneIds, enableAutoYes, disableAutoYes, sendAnswer, resolveJob, answerQuestion],

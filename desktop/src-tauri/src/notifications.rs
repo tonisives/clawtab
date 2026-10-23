@@ -308,7 +308,7 @@ fn compact_cwd(cwd: &str) -> String {
 /// Format question body for the notification.
 /// Shows truncated context and a compact option summary.
 fn format_question_body(question: &ClaudeQuestion) -> String {
-    let context = &question.context_lines;
+    let context = crate::questions::strip_ansi(&question.context_lines);
 
     // Get the last meaningful line (the actual question text)
     let question_text = context

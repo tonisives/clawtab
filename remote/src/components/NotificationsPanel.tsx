@@ -164,7 +164,7 @@ export function NotificationsPanel({
             cardBottomRadius={cardBottomRadius}
             onNavigateAway={onNavigateAway}
             onSelectDetail={setDetailTarget}
-            maxAutoYesEntries={Platform.OS === "web" ? undefined : 1}
+            maxAutoYesEntries={0}
           />
       ) : (
         <Text style={styles.empty}>No pending questions.</Text>
