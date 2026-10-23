@@ -12,6 +12,8 @@ export function labelForProvider(provider: ProcessProvider | null | undefined): 
       return "OpenCode";
     case "antigravity":
       return "Antigravity";
+    case "hermes":
+      return "Hermes";
     case "shell":
       return "Terminal";
     default:
@@ -43,6 +45,7 @@ const PROVIDER_LABELS: Partial<Record<ProcessProvider, string>> = {
   codex: "cdx",
   opencode: "oc",
   antigravity: "ag",
+  hermes: "hm",
   shell: "term",
 };
 

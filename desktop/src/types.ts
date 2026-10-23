@@ -227,7 +227,7 @@ export interface DetectedProcess {
   version: string;
   display_name?: string | null;
   pane_title?: string | null;
-  provider: "claude" | "codex" | "opencode" | "antigravity";
+  provider: "claude" | "codex" | "opencode" | "antigravity" | "hermes";
   can_fork_session: boolean;
   can_send_skills: boolean;
   can_inject_secrets: boolean;

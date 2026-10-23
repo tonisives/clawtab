@@ -878,6 +878,7 @@ pub fn run() {
             commands::tools::detect_codex_models,
             commands::git::get_git_repository,
             commands::tools::detect_antigravity_models,
+            commands::tools::detect_hermes_models,
             commands::tools::install_tool,
             commands::tools::set_tool_path,
             commands::skills::list_skills,

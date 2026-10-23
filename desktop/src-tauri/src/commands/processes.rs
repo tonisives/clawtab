@@ -148,7 +148,7 @@ fn provider_capabilities(provider: ProcessProvider) -> (bool, bool, bool) {
         ProcessProvider::Claude => (true, true, true),
         ProcessProvider::Codex => (false, false, false),
         ProcessProvider::Opencode => (false, false, false),
-        ProcessProvider::Antigravity => (false, false, false),
+        ProcessProvider::Antigravity | ProcessProvider::Hermes => (false, false, false),
         ProcessProvider::Shell => (false, false, false),
     }
 }
@@ -427,7 +427,9 @@ fn pick_provider(
 
 fn provider_from_tmux_command(command: &str) -> Option<ProcessProvider> {
     let lower = command.to_ascii_lowercase();
-    if lower.contains("codex") {
+    if lower == "hermes" {
+        Some(ProcessProvider::Hermes)
+    } else if lower.contains("codex") {
         Some(ProcessProvider::Codex)
     } else if lower.contains("opencode") {
         Some(ProcessProvider::Opencode)

@@ -32,6 +32,11 @@ export function sortGroupNames(groups: string[], savedOrder: string[]): string[]
 
 /** Find the best "yes" option: prefer "Yes, during this session" over plain "Yes" */
 export function findYesOption(q: ClaudeQuestion): string | null {
+  if (q.input_mode === "command") {
+    const session = q.options.find((o) => /^Allow (for )?this session$/.test(o.label));
+    const once = q.options.find((o) => o.label === "Allow once");
+    return session?.number ?? once?.number ?? null;
+  }
   const sessionOpt = q.options.find((o) =>
     /yes.*session/i.test(o.label),
   );
@@ -39,6 +44,11 @@ export function findYesOption(q: ClaudeQuestion): string | null {
   const yesOpt = q.options.find((o) => /^yes/i.test(o.label));
   if (yesOpt) return yesOpt.number;
   return null;
+}
+
+export function questionOptionLabel(option: { number: string; label: string }): string {
+  return /^(hermes-option:|\/approve |\/answer )/.test(option.number)
+    ? option.label : `${option.number}. ${option.label}`;
 }
 
 /** Check if an option label is a "Type something" freetext option */

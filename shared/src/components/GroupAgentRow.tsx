@@ -48,10 +48,10 @@ export function GroupAgentRow({
   let settings = target ? machines.snapshots[target]?.settings_response : undefined;
   let detected = hasLocal ? settings?.detected_models : hostModelCatalog(settings);
   let settingsOptions = settings
-    ? buildModelOptions(["claude", "codex", "opencode", "antigravity"], settings.enabled_models ?? {}, detected, settings.disabled_models)
+    ? buildModelOptions(["claude", "codex", "opencode", "antigravity", "hermes"], settings.enabled_models ?? {}, detected, settings.disabled_models)
     : [];
   let options = machines.agentModels
-    ? buildModelOptions(["claude", "codex", "opencode", "antigravity"], machines.agentModels.enabled_models, detected, machines.agentModels.disabled_models)
+    ? buildModelOptions(["claude", "codex", "opencode", "antigravity", "hermes"], machines.agentModels.enabled_models, detected, machines.agentModels.disabled_models)
     : !hasLocal && settings ? settingsOptions : modelOptions.length ? modelOptions : settingsOptions;
   let refreshModels = () => {
     if (!hasLocal && target && machine?.owned && machine.online) {

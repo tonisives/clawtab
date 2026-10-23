@@ -338,7 +338,11 @@ fn format_question_body(question: &ClaudeQuestion) -> String {
     let options_str: String = question
         .options
         .iter()
-        .map(|o| format!("{}.{}", o.number, o.label))
+        .map(|o| if question.input_mode == "command" {
+            o.label.clone()
+        } else {
+            format!("{}.{}", o.number, o.label)
+        })
         .collect::<Vec<_>>()
         .join(" ");
 
@@ -351,7 +355,11 @@ fn format_question_body(question: &ClaudeQuestion) -> String {
         let options_lines: String = question
             .options
             .iter()
-            .map(|o| format!("{}. {}", o.number, o.label))
+            .map(|o| if question.input_mode == "command" {
+                o.label.clone()
+            } else {
+                format!("{}. {}", o.number, o.label)
+            })
             .collect::<Vec<_>>()
             .join("\n");
         format!("{}\n{}", question_text, options_lines)

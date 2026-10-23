@@ -626,7 +626,7 @@ fn split_legacy_effort_suffix(model: &str) -> Option<(Option<&str>, &'static str
     let (base, suffix) = model.trim().rsplit_once('-')?;
     let effort = parse_effort(suffix)?;
     let model_without_effort = match base.to_ascii_lowercase().as_str() {
-        "codex" | "claude" | "opencode" | "antigravity" | "shell" => None,
+        "codex" | "claude" | "opencode" | "antigravity" | "hermes" | "shell" => None,
         _ => Some(base),
     };
     Some((model_without_effort, effort))

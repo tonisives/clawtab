@@ -190,6 +190,19 @@ fn build_send_cmd(
             "cd {} && {}{}{} --prompt-interactive {}{}",
             work_dir, agent_command, model_flag, effort_flag, prompt_arg, cleanup
         ),
+        ProcessProvider::Hermes => {
+            let query = if prompt_content.is_empty() {
+                String::new()
+            } else if let Some(path) = prompt_file {
+                format!(" --query-file {}", shell_quote(&path.display().to_string()))
+            } else {
+                format!(" --query {}", shell_quote(prompt_content))
+            };
+            format!(
+                "cd {} && {} chat --cli{}{}{}{}",
+                work_dir, agent_command, model_flag, effort_flag, query, cleanup
+            )
+        }
         ProcessProvider::Shell => {
             if escaped_prompt.is_empty() {
                 format!("cd {}", work_dir)
@@ -239,6 +252,39 @@ fn shell_quote(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn hermes_launch_keeps_literal_prompt_and_interactive_cli() {
+        let prompt = "quote ' and $(touch never-run)\nsecond line";
+        let command = super::build_send_cmd(
+            crate::agent_session::ProcessProvider::Hermes,
+            "/tmp",
+            "printf '%s\\n'",
+            Some("provider/model"),
+            Some("high"),
+            None,
+            prompt,
+        );
+        let output = std::process::Command::new("sh")
+            .args(["-c", &command])
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        assert_eq!(
+            String::from_utf8(output.stdout).unwrap(),
+            format!("chat\n--cli\n--model\nprovider/model\n--reasoning\nhigh\n--query\n{prompt}\n")
+        );
+        let empty = super::build_send_cmd(
+            crate::agent_session::ProcessProvider::Hermes,
+            "/tmp",
+            "hermes",
+            None,
+            None,
+            None,
+            "",
+        );
+        assert_eq!(empty, "cd /tmp && hermes chat --cli");
+    }
+
     use super::*;
 
     #[test]
@@ -348,6 +394,9 @@ fn spawn_managed(
         }
         shell
     } else {
+        if args.provider == ProcessProvider::Hermes {
+            argv.extend(["chat".into(), "--cli".into()]);
+        }
         if args.provider == ProcessProvider::Codex {
             argv.push("--no-daemon".into());
         }
@@ -365,6 +414,7 @@ fn spawn_managed(
         if let Some(effort) = args.effort {
             match args.provider {
                 ProcessProvider::Claude => argv.extend(["--effort".into(), effort]),
+                ProcessProvider::Hermes => argv.extend(["--reasoning".into(), effort]),
                 ProcessProvider::Codex => {
                     argv.extend(["-c".into(), format!("model_reasoning_effort={effort}")])
                 }
@@ -377,6 +427,9 @@ fn spawn_managed(
             _ => {}
         }
         if !args.prompt_content.is_empty() {
+            if args.provider == ProcessProvider::Hermes {
+                argv.push("--query".into());
+            }
             argv.push(args.prompt_content);
         }
         args.agent_command

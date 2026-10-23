@@ -191,7 +191,7 @@ export function NotificationCard({
           activeOpacity={0.6}
         >
           <Text style={styles.optionBtnText} numberOfLines={2}>
-            {question.input_mode === "select" ? opt.label : `${opt.number}. ${opt.label}`}
+            {question.input_mode === "select" || question.input_mode === "command" ? opt.label : `${opt.number}. ${opt.label}`}
           </Text>
         </TouchableOpacity>
       ))}
@@ -223,7 +223,7 @@ export function NotificationCard({
       activeOpacity={0.6}
     >
       <Text style={[styles.optionBtnText, !isWeb && styles.optionBtnTextNative]} numberOfLines={2}>
-        {question.input_mode === "select" ? opt.label : `${opt.number}. ${opt.label}`}
+        {question.input_mode === "select" || question.input_mode === "command" ? opt.label : `${opt.number}. ${opt.label}`}
       </Text>
     </TouchableOpacity>
   ))

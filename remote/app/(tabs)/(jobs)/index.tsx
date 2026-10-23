@@ -102,7 +102,7 @@ function isProcessProvider(value: string | undefined): value is ProcessProvider 
     value === "claude" ||
     value === "codex" ||
     value === "opencode" ||
-    value === "antigravity" ||
+    value === "antigravity" || value === "hermes" ||
     value === "shell"
   )
 }
@@ -322,7 +322,7 @@ export default function JobsScreen() {
 
   const resolvedModels = enabledModels ?? {}
   const agentModelOptions: AgentModelOption[] = buildModelOptions(
-    ["claude", "codex", "opencode", "antigravity"],
+    ["claude", "codex", "opencode", "antigravity", "hermes"],
     resolvedModels,
   )
   const defaultAgentProvider: ProcessProvider | undefined = isProcessProvider(defaultProvider ?? undefined)

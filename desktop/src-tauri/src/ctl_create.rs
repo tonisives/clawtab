@@ -42,7 +42,7 @@ impl Drop for TerminalGuard {
 pub fn create(args: &[String]) -> Result<(), String> {
     if args.len() == 1 && matches!(args[0].as_str(), "--help" | "-h") {
         println!("Usage: cwtctl jobs create [--name NAME (--cron EXPR | --at 'YYYY-MM-DD HH:MM') (--description TEXT | --description-file PATH | --description-stdin) [--provider PROVIDER [--model MODEL]] [--keep-config]]");
-        println!("Providers: claude, codex, opencode, antigravity. Omit --provider to use ClawTab's default agent. --model requires --provider; OpenCode model IDs use provider/model.");
+        println!("Providers: claude, codex, opencode, antigravity, hermes. Omit --provider to use ClawTab's default agent. --model requires --provider; OpenCode model IDs use provider/model.");
         println!("With no options, opens the interactive job creator and nvim.");
         return Ok(());
     }
@@ -105,7 +105,9 @@ fn parse_args(args: &[String]) -> Result<CreateInput, String> {
                 input.provider = Some(
                     ProcessProvider::from_name(value)
                         .filter(|provider| provider.supports_model_flag())
-                        .ok_or("--provider must be claude, codex, opencode, or antigravity")?,
+                        .ok_or(
+                            "--provider must be claude, codex, opencode, antigravity, or hermes",
+                        )?,
                 );
             }
             "--model" => input.model = Some(value.trim().to_string()),

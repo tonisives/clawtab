@@ -120,7 +120,7 @@ export function JobsSidebar({
   );
 
   const agentModelOptions = useMemo(
-    () => buildModelOptions(["claude", "codex", "opencode", "antigravity", "shell"] as ProcessProvider[], enabledModels),
+    () => buildModelOptions(["claude", "codex", "opencode", "antigravity", "hermes", "shell"] as ProcessProvider[], enabledModels),
     [enabledModels],
   );
 

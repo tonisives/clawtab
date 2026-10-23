@@ -1,4 +1,4 @@
-export type ProcessProvider = "claude" | "codex" | "opencode" | "antigravity" | "shell";
+export type ProcessProvider = "claude" | "codex" | "opencode" | "antigravity" | "hermes" | "shell";
 
 export type AgentEffort = "low" | "medium" | "high" | "xhigh" | "max";
 
@@ -143,7 +143,7 @@ export interface ClaudeQuestion {
   question_id: string;
   context_lines: string;
   options: QuestionOption[];
-  input_mode?: "numbered" | "select";
+  input_mode?: "numbered" | "select" | "command";
   button_row?: number;
   matched_group?: string | null;
   matched_job?: string | null;

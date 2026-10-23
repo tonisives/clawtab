@@ -12,6 +12,9 @@ use crate::config::settings::AppSettings;
 use crate::ipc::AgentActivity;
 use crate::relay::RelayHandle;
 
+#[cfg(test)]
+mod hermes_live_tests;
+
 type DetectedAgent = (
     String,
     String,
@@ -597,11 +600,17 @@ pub async fn question_detection_loop(
             .filter(|process| process.12 == ProcessProvider::Codex)
             .map(|process| process.0.clone())
             .collect();
-        hook_runtime.retain_live_panes(&detection.all_pane_ids, &codex_panes);
+        let hermes_panes = processes
+            .iter()
+            .filter(|process| process.12 == ProcessProvider::Hermes)
+            .map(|process| process.0.clone())
+            .collect();
+        hook_runtime.retain_live_panes(&detection.all_pane_ids, &codex_panes, &hermes_panes);
 
         prune_stale_auto_yes_panes(&auto_yes_panes, &detection.all_pane_ids);
 
-        let detected_panes = update_question_cache(&processes, &mut question_cache);
+        let detected_panes =
+            update_question_cache_with_hooks(&processes, &mut question_cache, &hook_runtime);
         evict_stale_cache_entries(&mut question_cache, &detected_panes, &processes);
 
         // Keep detecting auto-yes questions internally so the responder can
@@ -842,9 +851,18 @@ fn prune_stale_auto_yes_panes(
     }
 }
 
+#[cfg(test)]
 fn update_question_cache(
     processes: &[DetectedAgent],
     question_cache: &mut HashMap<String, CachedQuestion>,
+) -> HashSet<String> {
+    update_question_cache_with_hooks(processes, question_cache, &HookRuntime::default())
+}
+
+fn update_question_cache_with_hooks(
+    processes: &[DetectedAgent],
+    question_cache: &mut HashMap<String, CachedQuestion>,
+    hooks: &HookRuntime,
 ) -> HashSet<String> {
     let mut detected = HashSet::new();
     for (
@@ -860,10 +878,53 @@ fn update_question_cache(
         _history_size,
         _pane_width,
         _pane_height,
-        _provider,
+        provider,
         _hook_backed,
     ) in processes
     {
+        if *provider == ProcessProvider::Hermes {
+            if !hooks
+                .pane_state(pane_id, *provider)
+                .is_some_and(|state| state.state == HookAgentState::Waiting)
+            {
+                question_cache.remove(pane_id);
+                continue;
+            }
+            if let Some(options) = parse_hermes_options(log_lines) {
+                let question = ClaudeQuestion {
+                    pane_id: pane_id.clone(),
+                    cwd: cwd.clone(),
+                    tmux_session: tmux_session.clone(),
+                    window_name: window_name.clone(),
+                    question_id: format!(
+                        "{}:{}",
+                        make_question_id(pane_id, &options),
+                        hooks
+                            .pane_state(pane_id, *provider)
+                            .map_or(0, |state| state.updated_at_ms)
+                    ),
+                    context_lines: last_context_lines(log_lines),
+                    options,
+                    input_mode: "command".into(),
+                    button_row: 0,
+                    matched_group: matched_group.clone(),
+                    matched_job: matched_job.clone(),
+                };
+                detected.insert(pane_id.clone());
+                question_cache.insert(
+                    pane_id.clone(),
+                    CachedQuestion {
+                        question,
+                        miss_count: 0,
+                    },
+                );
+                continue;
+            }
+            // Complex pickers remain available through the remote terminal;
+            // another provider's mouse/menu parser cannot identify their keys.
+            question_cache.remove(pane_id);
+            continue;
+        }
         if try_numbered_question(
             pane_id,
             cwd,
@@ -890,6 +951,91 @@ fn update_question_cache(
         );
     }
     detected
+}
+
+/// Classic Hermes prints a session-scoped control command. Preserve its prompt
+/// ID in the answer so an old notification cannot approve a newer request.
+fn parse_hermes_options(screen: &str) -> Option<Vec<QuestionOption>> {
+    let plain = strip_ansi(screen);
+    let command_line = plain
+        .lines()
+        .rev()
+        .map(str::trim)
+        .take(40)
+        .find(|line| line.starts_with("/approve ") || line.starts_with("/answer "));
+    let Some(line) = command_line else {
+        // Current classic CLI draws modal choices inside a bordered panel.
+        // Its number keys submit immediately; a following Enter could answer
+        // the next question in a batch, so preserve that input mode in the value.
+        let normalized = plain
+            .lines()
+            .map(|line| line.trim().trim_matches(['│', '║']).trim())
+            .collect::<Vec<_>>()
+            .join("\n")
+            .replace("Enter to confirm", "Press Enter to confirm")
+            .replace("Enter to lock", "Press Enter to confirm")
+            .replace("Enter confirm", "Press Enter to confirm");
+        let mut options = parse_numbered_options(&normalized);
+        if options.is_empty() {
+            return None;
+        }
+        for option in &mut options {
+            option.number = format!(
+                "hermes-option:{}",
+                if option.number == "10" {
+                    "0"
+                } else {
+                    &option.number
+                }
+            );
+            if option.label.to_lowercase().contains("type your own")
+                || option.label.to_lowercase().contains("other (type")
+            {
+                option.label = "Type something".into();
+            }
+        }
+        return Some(options);
+    };
+    let mut parts = line.split_whitespace();
+    let command = parts.next()?;
+    let id = parts.next()?;
+    if id.is_empty()
+        || id.len() > 128
+        || !id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"_-".contains(&byte))
+    {
+        return None;
+    }
+    let choices = parts.next()?.strip_prefix('<')?.strip_suffix('>')?;
+    if parts.next().is_some() {
+        return None;
+    }
+    let option = |value: &str, label: &str| QuestionOption {
+        number: format!("{command} {id} {value}"),
+        label: label.into(),
+        selected: false,
+        col: 0,
+    };
+    if command == "/answer" {
+        return Some(vec![option("", "Type something")]);
+    }
+    let options: Option<Vec<_>> = choices
+        .split('|')
+        .map(|choice| {
+            Some(option(
+                choice,
+                match choice {
+                    "once" => "Allow once",
+                    "session" => "Allow for this session",
+                    "always" => "Always allow",
+                    "deny" => "Deny",
+                    _ => return None,
+                },
+            ))
+        })
+        .collect();
+    options.filter(|options| !options.is_empty())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1381,7 +1527,9 @@ impl ActivityTracker {
             seen_panes.insert(pane_id.clone());
             let alert = terminal_alert(screen, *provider);
             if let Some(hook_state) = hook_runtime.pane_state(pane_id, *provider) {
-                let asking = asking_panes.contains(pane_id);
+                let asking = asking_panes.contains(pane_id)
+                    || (*provider == ProcessProvider::Hermes
+                        && hook_state.state == HookAgentState::Waiting);
                 let (working, asking) = resolved_hook_activity(hook_state.state, asking);
                 activity.push(AgentActivity {
                     pane_id: pane_id.clone(),
@@ -1765,6 +1913,52 @@ fn record_pane_capture(process: &mut DetectedAgent, visible: &str, cursor_y: u16
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn hermes_approval_options_preserve_prompt_identity_and_safe_default() {
+        let options = super::parse_hermes_options("ClawTab harmless test approval\nprintf HERMES_TOOL_OK\n/approve req_123 <once|session|always|deny>\n> ").unwrap();
+        assert_eq!(options[0].number, "/approve req_123 once");
+        assert_eq!(options[3].label, "Deny");
+        assert_eq!(
+            super::find_yes_option(&options).as_deref(),
+            Some("/approve req_123 session")
+        );
+        let new = super::parse_hermes_options("/approve req_456 <once|deny>").unwrap();
+        assert_ne!(
+            super::make_question_id("%1", &options),
+            super::make_question_id("%1", &new)
+        );
+        assert!(super::parse_hermes_options("/approve id <once|unknown>").is_none());
+        assert!(super::parse_hermes_options("/approve id;quit <once|deny>").is_none());
+        assert!(super::parse_hermes_options("example: /approve id <once|deny>").is_none());
+    }
+
+    #[test]
+    fn hermes_cli_and_tui_modals_use_immediate_choice_keys() {
+        for screen in [
+            "│ 1. Allow once │\n│ 2. Allow for this session │\n│ 3. Add to permanent allowlist │\n↑/↓ to select, Enter to confirm",
+            "║ ▸ 1. Allow once ║\n║ 2. Allow this session ║\n║ 3. Always allow ║\n║ ↑/↓ select · Enter confirm · 1-3 quick pick ║",
+        ] {
+            let options = super::parse_hermes_options(screen).unwrap();
+            assert_eq!(options[0].number, "hermes-option:1");
+            assert_eq!(options[0].label, "Allow once");
+            assert_eq!(super::find_yes_option(&options).as_deref(), Some("hermes-option:2"));
+        }
+        let choices = super::parse_hermes_options("│ 1. Blue (Recommended) │\n│ 2. Green │\n│ 3. Other (type your answer) │\n↑/↓ to select, Enter to lock, Tab next question").unwrap();
+        assert_eq!(choices[2].label, "Type something");
+        assert!(super::find_yes_option(&choices).is_none());
+        assert!(super::parse_hermes_options("1. A plan item\n2. Another plan item").is_none());
+    }
+
+    #[test]
+    fn hermes_clarification_is_never_automatically_answered() {
+        let options =
+            super::parse_hermes_options("Choose a test color\n/answer req_123 <Blue|Green>")
+                .unwrap();
+        assert_eq!(options[0].number, "/answer req_123 ");
+        assert_eq!(options[0].label, "Type something");
+        assert!(super::find_yes_option(&options).is_none());
+    }
+
     use super::{
         collect_q_running_panes, evict_stale_cache_entries, filter_auto_yes_questions,
         find_yes_option, parse_numbered_options, parse_opencode_buttons, record_pane_capture,

@@ -121,7 +121,7 @@ _cwtctl_complete() {
             _arguments \
               '(- *)'{-h,--help}'[Show job creation help]' \
               '--name[Name of the new job]:job name:' \
-              '--provider[Agent CLI for this job]:provider:(claude codex opencode antigravity)' \
+              '--provider[Agent CLI for this job]:provider:(claude codex opencode antigravity hermes)' \
               '--model[Model for the selected provider; OpenCode uses provider/model]:model:' \
               '(--at --keep-config)--cron[Repeat on a cron schedule]:cron expression:' \
               '(--cron)--at[Run once at a future local time or RFC 3339 timestamp]:date and time:' \
@@ -235,7 +235,7 @@ _cwtctl_complete() {
             _describe -t subcmd 'hooks subcommand' actions
           elif (( CURRENT == 4 )) && [[ $words[2] == hooks ]] && [[ $words[3] == status || $words[3] == install ]]; then
             local -a providers
-            providers=(claude codex opencode antigravity)
+            providers=(claude codex opencode antigravity hermes)
             compadd -a providers
           fi
           ;;

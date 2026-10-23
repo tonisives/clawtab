@@ -48,7 +48,7 @@ export function JobPane({ content, ctx }: Props) {
     : () => { const slug = job.slug; callbacks.selectAdjacentItem(slug); actions.deleteJob(slug); core.reload(); };
 
   const modelOptions = buildModelOptions(
-    ["claude", "codex", "opencode", "antigravity", "shell"],
+    ["claude", "codex", "opencode", "antigravity", "hermes", "shell"],
     enabledModels ?? {},
   );
 

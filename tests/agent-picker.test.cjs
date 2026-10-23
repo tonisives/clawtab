@@ -531,3 +531,39 @@ test('saved group Tabs and Jobs segments keep the group and launch control visib
   assert.ok(jobs.items.some((item) => item.kind === 'group-agent'));
   assert.ok(!jobs.items.some((item) => item.kind === 'process'));
 });
+
+
+test('Hermes choices follow host detection and explicit configuration', () => {
+  let { exports: models } = harness('../shared/src/util/agentModels.ts');
+  assert.equal(models.buildModelOptions(['hermes'], {}).length, 0);
+  let detected = models.buildModelOptions(['hermes'], {}, { hermes: [['provider/model', 'Configured model']] });
+  assert.equal(detected[0].modelId, 'provider/model');
+  assert.equal(detected[0].label, 'Configured model');
+  let defaults = models.buildModelOptions(['hermes'], {}, { hermes: [] });
+  assert.equal(defaults[0].modelId, null);
+  assert.equal(defaults[0].provider, 'hermes');
+  assert.equal(models.buildModelOptions(['hermes'], { hermes: [] }, { hermes: [['provider/model', 'Configured model']] }).length, 0);
+});
+
+test('Hermes approval buttons show labels and keep exact remote answer values', () => {
+  let sent;
+  let options = [{ number: 'hermes-option:2', label: 'Allow this session' }];
+  let view = harness('../shared/src/components/JobDetailView/Options.tsx', { '../components/JobKindIcon': { kindForJob: () => 'hermes' } });
+  let tree = view.render(view.exports.OptionButtons, { options, onSend: (value) => { sent = value; } });
+  assert.ok(find(tree, (node) => node.props?.children === 'Allow this session'));
+  find(tree, (node) => typeof node.props?.onPress === 'function').props.onPress();
+  assert.equal(sent, 'hermes-option:2');
+});
+
+test('Hermes quick approval excludes clarification and permanent permission', () => {
+  let { exports: jobs } = harness('../shared/src/util/jobs.ts', { '../components/JobKindIcon': { kindForJob: () => 'hermes' } });
+  let q = { input_mode: 'command', options: [
+    { number: 'hermes-option:1', label: 'Allow once' },
+    { number: 'hermes-option:2', label: 'Allow for this session' },
+    { number: 'hermes-option:3', label: 'Always allow' },
+  ] };
+  assert.equal(jobs.findYesOption(q), 'hermes-option:2');
+  assert.equal(jobs.findYesOption({ ...q, options: [q.options[2]] }), null);
+  assert.equal(jobs.findYesOption({ ...q, options: [{ number: 'hermes-option:1', label: 'Blue' }, { number: 'hermes-option:3', label: 'Type something' }] }), null);
+  assert.equal(jobs.questionOptionLabel({ number: '/approve request-1 once', label: 'Allow once' }), 'Allow once');
+});

@@ -16,7 +16,7 @@ type ModelEntry = {
   enabled: boolean
 }
 
-const PROVIDERS_WITH_MODELS: ProcessProvider[] = ["claude", "codex", "antigravity"]
+const PROVIDERS_WITH_MODELS: ProcessProvider[] = ["claude", "codex", "antigravity", "hermes"]
 
 let buildAllModels = (
   enabledModels: Record<string, string[]>,
@@ -328,6 +328,7 @@ export let ModelsPanel = () => {
   const [claudeApiModels, setClaudeApiModels] = useState<[string, string][]>([])
   const [codexApiModels, setCodexApiModels] = useState<[string, string][]>([])
   const [antigravityApiModels, setAntigravityApiModels] = useState<[string, string][]>([])
+  const [hermesModels, setHermesModels] = useState<[string, string][]>([])
   const [opencodeModels, setOpencodeModels] = useState<string[]>([])
   const [opencodeLoading, setOpencodeLoading] = useState(false)
   const [opencodeError, setOpencodeError] = useState<string | null>(null)
@@ -362,12 +363,20 @@ export let ModelsPanel = () => {
       .catch((e) => console.error("Failed to fetch Antigravity models:", e))
   }, [refreshKey])
 
+  useEffect(() => {
+    invoke<[string, string][]>("detect_hermes_models").then(setHermesModels)
+      .catch((e) => console.error("Failed to detect Hermes model:", e))
+  }, [refreshKey])
+
   // First-launch seeding: when a provider has no enabled models yet but detection
   // returned a list, enable them all once.
   useEffect(() => {
     if (!settings) return
     const enabled = settings.enabled_models ?? {}
     const updates: Record<string, string[]> = {}
+    if (enabled.hermes === undefined && hermesModels.length > 0) {
+      updates.hermes = hermesModels.map(([id]) => id).filter((id) => !settings.disabled_models?.hermes?.includes(id))
+    }
     if (enabled.claude === undefined && claudeApiModels.length > 0) {
       updates.claude = claudeApiModels.map(([id]) => id).filter((id) => !settings.disabled_models?.claude?.includes(id))
     }
@@ -382,7 +391,7 @@ export let ModelsPanel = () => {
     invoke("set_settings", { newSettings: { ...settings, enabled_models: next } })
       .then(() => setSettings({ ...settings, enabled_models: next }))
       .catch((e) => console.error("Failed to seed enabled_models:", e))
-  }, [settings, claudeApiModels, codexApiModels, antigravityApiModels])
+  }, [settings, claudeApiModels, codexApiModels, antigravityApiModels, hermesModels])
 
   useEffect(() => {
     if (!settings || !enableDetectedCodexOnRefreshRef.current || codexApiModels.length === 0) return
@@ -475,6 +484,7 @@ export let ModelsPanel = () => {
     claude: claudeApiModels,
     codex: codexApiModels,
     antigravity: antigravityApiModels,
+    hermes: hermesModels,
     opencode: [],
     shell: [],
   })
@@ -627,6 +637,7 @@ export let ModelsPanel = () => {
             <option value="codex">Codex</option>
             <option value="opencode">OpenCode</option>
             <option value="antigravity">Antigravity</option>
+            <option value="hermes">Hermes</option>
           </select>
         </div>
         <div className="form-group" style={{ marginBottom: 0 }}>

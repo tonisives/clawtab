@@ -1443,6 +1443,7 @@ fn parse_process_provider(provider: Option<&str>) -> Result<Option<ProcessProvid
         Some("codex") => Ok(Some(ProcessProvider::Codex)),
         Some("opencode") => Ok(Some(ProcessProvider::Opencode)),
         Some("antigravity") => Ok(Some(ProcessProvider::Antigravity)),
+        Some("hermes") => Ok(Some(ProcessProvider::Hermes)),
         Some("shell") => Ok(Some(ProcessProvider::Shell)),
         Some(other) => Err(format!("unsupported agent provider '{}'", other)),
     }
@@ -1495,6 +1496,10 @@ mod tests {
     #[test]
     fn parses_mobile_agent_providers() {
         assert_eq!(parse_process_provider(None).unwrap(), None);
+        assert_eq!(
+            parse_process_provider(Some("hermes")).unwrap(),
+            Some(ProcessProvider::Hermes)
+        );
         assert_eq!(
             parse_process_provider(Some("claude")).unwrap(),
             Some(ProcessProvider::Claude)

@@ -62,6 +62,15 @@ const TOOLS: &[ToolSpec] = &[
         group: Some("ai_agent"),
         brew_formula: None,
     },
+    ToolSpec {
+        name: "hermes",
+        binary: "hermes",
+        version_flag: "--version",
+        category: "AI Agent",
+        required: true,
+        group: Some("ai_agent"),
+        brew_formula: None,
+    },
     // Terminal
     ToolSpec {
         name: "ghostty",

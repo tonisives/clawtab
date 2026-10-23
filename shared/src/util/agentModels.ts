@@ -11,7 +11,7 @@ export let geminiBaseModel = (id: string): string => geminiModelEffort(id)
   : id;
 
 let modelOrder = (left: AgentModelOption, right: AgentModelOption): number => {
-  let providers = ["codex", "claude", "opencode", "antigravity", "shell"];
+  let providers = ["codex", "claude", "opencode", "antigravity", "hermes", "shell"];
   let providerRank = providers.indexOf(left.provider) - providers.indexOf(right.provider);
   if (providerRank) return providerRank;
   let rank = (option: AgentModelOption) => CURRENT_AGENT_MODEL_OPTIONS.findIndex((known) => known.provider === option.provider && known.modelId === option.modelId);
@@ -45,6 +45,7 @@ let labelForProvider = (provider: ProcessProvider): string => {
     case "codex": return "Codex";
     case "opencode": return "OpenCode";
     case "antigravity": return "Antigravity";
+    case "hermes": return "Hermes";
     case "shell": return "Shell";
   }
 }
@@ -60,6 +61,7 @@ export const BARE_PROVIDER_OPTIONS: AgentModelOption[] = [
   { provider: "codex", modelId: null, label: "Codex" },
   { provider: "opencode", modelId: null, label: "OpenCode" },
   { provider: "antigravity", modelId: null, label: "Antigravity" },
+  { provider: "hermes", modelId: null, label: "Hermes" },
 ];
 
 export type DetectedAgentModels = Record<string, [string, string][]>;
@@ -108,17 +110,21 @@ export let buildModelOptions = (
   let options: AgentModelOption[] = [];
   let enabled = resolveEnabledModels(enabledModels, detectedModels, disabledModels);
   let catalog: AgentModelOption[] = [
-    ...(["codex", "claude", "opencode", "antigravity"] as ProcessProvider[]).flatMap((provider) =>
+    ...(["codex", "claude", "opencode", "antigravity", "hermes"] as ProcessProvider[]).flatMap((provider) =>
       (detectedModels[provider] ?? []).map(([modelId, label]) => ({ provider, modelId, label }))),
     ...CURRENT_AGENT_MODEL_OPTIONS,
   ];
   for (let provider of availableProviders) {
+    // Older hosts cannot launch Hermes. Show it once the host detects it or
+    // the user has explicitly configured a Hermes model.
+    if (provider === "hermes" && enabledModels.hermes === undefined && detectedModels.hermes === undefined) continue;
     let current = catalog.filter((option) => option.provider === provider);
     let selected = enabled[provider] === undefined
       ? (provider === "opencode" ? [] : current).flatMap((option) => option.modelId ? [option.modelId] : [])
       : enabled[provider];
     let modelIds = [...new Set(selected.filter((id) => !isSyntheticAgentModel(id)))];
-    if (modelIds.length === 0 && enabled[provider] !== undefined && provider !== "shell") continue;
+    const detectedHermesDefault = provider === "hermes" && enabledModels.hermes === undefined && detectedModels.hermes !== undefined;
+    if (modelIds.length === 0 && enabled[provider] !== undefined && provider !== "shell" && !detectedHermesDefault) continue;
     if (modelIds.length === 0) {
       let bare = BARE_PROVIDER_OPTIONS.find((option) => option.provider === provider);
       options.push(bare ?? { provider, modelId: null, label: labelForProvider(provider) });

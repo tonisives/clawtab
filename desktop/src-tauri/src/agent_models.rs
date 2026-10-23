@@ -21,11 +21,12 @@ pub async fn detect_catalog(refresh: bool) -> ModelCatalog {
             }
         }
     }
-    let (codex, claude, opencode, antigravity) = tokio::join!(
+    let (codex, claude, opencode, antigravity, hermes) = tokio::join!(
         detect_installed("codex"),
         detect_installed("claude"),
         detect_installed("opencode"),
         detect_installed("antigravity"),
+        detect_installed("hermes"),
     );
     let mut catalog = ModelCatalog::default();
     for (provider, result) in [
@@ -33,6 +34,7 @@ pub async fn detect_catalog(refresh: bool) -> ModelCatalog {
         ("claude", claude),
         ("opencode", opencode),
         ("antigravity", antigravity),
+        ("hermes", hermes),
     ] {
         match result {
             Ok(Some(models)) => {
@@ -75,9 +77,30 @@ async fn detect_installed(provider: &str) -> Result<Option<Vec<(String, String)>
             .map(|id| (id.clone(), id))
             .collect(),
         "antigravity" => detect_antigravity_models().await?,
+        "hermes" => detect_hermes_models()?,
         _ => return Err("unsupported provider".into()),
     };
     Ok(Some(models))
+}
+
+/// Hermes routes models through the user's configured provider. Offer that
+/// model plus user-added IDs, without probing or changing provider credentials.
+pub fn detect_hermes_models() -> Result<Vec<(String, String)>, String> {
+    let path = crate::agent_session::hermes::integration_home().join("config.yaml");
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let content =
+        std::fs::read_to_string(path).map_err(|_| "Unable to read Hermes model configuration")?;
+    let config: serde_json::Value =
+        serde_yml::from_str(&content).map_err(|_| "Invalid Hermes model configuration")?;
+    let model = config["model"]
+        .as_str()
+        .or_else(|| config["model"]["default"].as_str());
+    Ok(model
+        .filter(|model| !model.trim().is_empty())
+        .map(|model| vec![(model.to_string(), model.to_string())])
+        .unwrap_or_default())
 }
 
 async fn model_command(binary: &str, args: &[&str]) -> Result<std::process::Output, String> {

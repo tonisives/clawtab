@@ -46,6 +46,8 @@ set_agent_label() {
         AGENT_LABEL="Claude Code"
     elif echo "$pane_command" | grep -qi 'codex'; then
         AGENT_LABEL="Codex"
+    elif [ "$pane_command" = "hermes" ]; then
+        AGENT_LABEL="Hermes"
     elif echo "$pane_command" | grep -qi 'opencode'; then
         AGENT_LABEL="OpenCode"
     elif echo "$pane_command" | grep -qiE 'agy|antigravity'; then
@@ -509,6 +511,7 @@ load_session_info() {
         opencode) AGENT_LABEL="OpenCode" ;;
         claude) AGENT_LABEL="Claude Code" ;;
         antigravity) AGENT_LABEL="Antigravity" ;;
+        hermes) AGENT_LABEL="Hermes" ;;
     esac
 }
 
@@ -1081,6 +1084,7 @@ hook_provider_for_agent() {
         Codex) printf 'codex' ;;
         OpenCode) printf 'opencode' ;;
         Antigravity) printf 'antigravity' ;;
+        Hermes) printf 'hermes' ;;
     esac
 }
 

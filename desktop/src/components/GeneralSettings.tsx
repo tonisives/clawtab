@@ -54,6 +54,7 @@ type AgentIntegrationStatus = {
 const integrationLabel = (provider: ProcessProvider): string => {
   if (provider === "opencode") return "OpenCode"
   if (provider === "antigravity") return "Antigravity"
+  if (provider === "hermes") return "Hermes"
   return provider.charAt(0).toUpperCase() + provider.slice(1)
 }
 

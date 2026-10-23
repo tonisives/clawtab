@@ -15,7 +15,7 @@ import {
   type PreferencesApi,
 } from "./client"
 
-const PROVIDERS: ProcessProvider[] = ["codex", "claude", "opencode", "antigravity"]
+const PROVIDERS: ProcessProvider[] = ["codex", "claude", "opencode", "antigravity", "hermes"]
 
 type ModelRowProps = {
   id: string

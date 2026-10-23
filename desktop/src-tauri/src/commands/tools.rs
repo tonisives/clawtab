@@ -24,6 +24,7 @@ pub async fn detect_agent_providers() -> Result<Vec<ProcessProvider>, String> {
                 ProcessProvider::Codex,
                 ProcessProvider::Opencode,
                 ProcessProvider::Antigravity,
+                ProcessProvider::Hermes,
                 ProcessProvider::Shell,
             ]
             .into_iter()
@@ -100,4 +101,9 @@ pub async fn install_tool(formula: String) -> Result<String, String> {
     } else {
         Err(format!("{}{}", stdout, stderr))
     }
+}
+
+#[tauri::command]
+pub async fn detect_hermes_models() -> Result<Vec<(String, String)>, String> {
+    crate::agent_models::detect_hermes_models()
 }

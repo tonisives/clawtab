@@ -88,7 +88,7 @@ pub async fn execute(request: HostRequest) -> Result<Value, String> {
 pub fn info() -> Value {
     let settings = crate::config::settings::AppSettings::load();
     let tools = [
-        "tmux", "git", "claude", "codex", "opencode", "agy", "python3",
+        "tmux", "git", "claude", "codex", "opencode", "agy", "hermes", "python3",
     ]
     .into_iter()
     .map(|name| {

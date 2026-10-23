@@ -142,6 +142,7 @@ fn apply_managed_fallbacks(process: &mut DetectedProcess, info: &crate::managed:
             "claude" => "Claude Code".into(),
             "opencode" => "OpenCode".into(),
             "antigravity" => "Antigravity".into(),
+            "hermes" => "Hermes".into(),
             _ => std::path::Path::new(&info.launch.program)
                 .file_name()
                 .unwrap_or_default()
@@ -310,7 +311,9 @@ fn resolve_provider(
 
 fn provider_from_tmux_command(command: &str) -> Option<crate::agent_session::ProcessProvider> {
     let lower = command.to_ascii_lowercase();
-    if lower.contains("codex") {
+    if lower == "hermes" {
+        Some(crate::agent_session::ProcessProvider::Hermes)
+    } else if lower.contains("codex") {
         Some(crate::agent_session::ProcessProvider::Codex)
     } else if lower.contains("opencode") {
         Some(crate::agent_session::ProcessProvider::Opencode)

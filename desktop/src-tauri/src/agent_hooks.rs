@@ -12,6 +12,8 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::Notify;
 
+mod hermes;
+
 #[cfg(unix)]
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 
@@ -37,6 +39,8 @@ pub enum HookAttention {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HookEventV1 {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hermes_home: Option<String>,
     pub version: u8,
     pub provider: ProcessProvider,
     pub event: String,
@@ -60,6 +64,9 @@ impl HookEventV1 {
         pane_id: Option<String>,
         process_id: Option<u32>,
     ) -> Option<Self> {
+        if provider == ProcessProvider::Hermes {
+            return hermes::event(event, payload);
+        }
         if provider == ProcessProvider::Shell {
             return None;
         }
@@ -116,6 +123,7 @@ impl HookEventV1 {
             .filter(|value| value.len() <= 2048)
             .map(str::to_string);
         Some(Self {
+            hermes_home: None,
             version: EVENT_VERSION,
             provider,
             event: event.to_string(),
@@ -134,6 +142,11 @@ impl HookEventV1 {
     fn valid(&self) -> bool {
         self.version == EVENT_VERSION
             && self.provider != ProcessProvider::Shell
+            && (self.provider != ProcessProvider::Hermes
+                || self
+                    .hermes_home
+                    .as_ref()
+                    .is_some_and(|home| Path::new(home).is_absolute() && home.len() <= 4096))
             && !self.event.is_empty()
             && self.event.len() <= 80
             && !self.session_id.is_empty()
@@ -144,6 +157,17 @@ impl HookEventV1 {
                 .pending_tool
                 .as_ref()
                 .is_none_or(|value| value.len() <= 80)
+    }
+
+    fn storage_key(&self) -> String {
+        if self.provider == ProcessProvider::Hermes {
+            hermes::session_key(
+                self.hermes_home.as_deref().unwrap_or_default(),
+                &self.session_id,
+            )
+        } else {
+            session_key(self.provider, &self.session_id)
+        }
     }
 }
 
@@ -162,11 +186,13 @@ pub struct HookRuntime {
     // A shared Codex server inherits the pane it started in. Its hooks identify
     // the session correctly, but that inherited pane/PID does not identify the TUI.
     codex_panes: Arc<Mutex<HashMap<String, HashSet<String>>>>,
+    hermes_panes: Arc<Mutex<HashMap<String, String>>>,
     notify: Arc<Notify>,
 }
 
 impl HookRuntime {
     pub fn pane_state(&self, pane_id: &str, provider: ProcessProvider) -> Option<HookPaneState> {
+        let hermes_session = self.hermes_panes.lock().get(pane_id).cloned();
         let codex_sessions = if provider == ProcessProvider::Codex {
             Some(
                 self.codex_panes
@@ -184,8 +210,13 @@ impl HookRuntime {
             .filter(|event| {
                 !event.ended
                     && event.provider == provider
+                    && (provider != ProcessProvider::Hermes
+                        || hermes_session.as_deref() == Some(event.storage_key().as_str()))
                     && codex_sessions.as_ref().map_or_else(
-                        || event.pane_id.as_deref() == Some(pane_id),
+                        || {
+                            provider == ProcessProvider::Hermes
+                                || event.pane_id.as_deref() == Some(pane_id)
+                        },
                         |ids| ids.contains(&event.session_id),
                     )
             })
@@ -221,6 +252,7 @@ impl HookRuntime {
                 .filter(|(_, ids)| !ids.is_empty())
                 .map(|(pane, _)| pane.clone()),
         );
+        panes.extend(self.hermes_panes.lock().keys().cloned());
         panes
     }
 
@@ -231,7 +263,15 @@ impl HookRuntime {
         })
     }
 
-    pub fn retain_live_panes(&self, live_panes: &HashSet<String>, codex_panes: &HashSet<String>) {
+    pub fn retain_live_panes(
+        &self,
+        live_panes: &HashSet<String>,
+        codex_panes: &HashSet<String>,
+        hermes_panes: &HashSet<String>,
+    ) {
+        self.hermes_panes
+            .lock()
+            .retain(|pane, _| hermes_panes.contains(pane));
         if live_panes.is_empty() {
             return;
         }
@@ -266,6 +306,20 @@ impl HookRuntime {
         provider: ProcessProvider,
         snapshot: &ProcessSnapshot,
     ) {
+        if provider == ProcessProvider::Hermes {
+            let identity =
+                crate::agent_session::hermes::identity_for_pane(pane_pid, Some(snapshot));
+            let mut panes = self.hermes_panes.lock();
+            if let Some(identity) = identity {
+                panes.insert(
+                    pane_id.to_string(),
+                    hermes::session_key(&identity.home.to_string_lossy(), &identity.session_id),
+                );
+            } else {
+                panes.remove(pane_id);
+            }
+            return;
+        }
         let candidate_pids = snapshot.process_tree_pids(pane_pid);
         if provider == ProcessProvider::Codex {
             let ids = match crate::agent_session::codex_thread_id_for_pane(pane_pid, Some(snapshot))
@@ -365,6 +419,16 @@ impl HookRuntime {
     }
 
     fn event_panes(&self, event: &HookEventV1) -> Vec<String> {
+        if event.provider == ProcessProvider::Hermes {
+            let key = event.storage_key();
+            return self
+                .hermes_panes
+                .lock()
+                .iter()
+                .filter(|(_, session)| **session == key)
+                .map(|(pane, _)| pane.clone())
+                .collect();
+        }
         if event.provider == ProcessProvider::Codex {
             return self
                 .codex_panes
@@ -377,9 +441,15 @@ impl HookRuntime {
         event.pane_id.iter().cloned().collect()
     }
 
-    fn apply(&self, event: HookEventV1) {
-        let key = session_key(event.provider, &event.session_id);
+    fn apply(&self, event: HookEventV1) -> bool {
+        let key = event.storage_key();
         let mut sessions = self.sessions.lock();
+        if sessions
+            .get(&key)
+            .is_some_and(|previous| previous.occurred_at_ms > event.occurred_at_ms)
+        {
+            return false;
+        }
         if event.ended {
             sessions.remove(&key);
         } else {
@@ -387,6 +457,7 @@ impl HookRuntime {
         }
         drop(sessions);
         self.notify.notify_waiters();
+        true
     }
 }
 
@@ -462,6 +533,8 @@ pub fn integration_statuses() -> Vec<AgentIntegrationStatus> {
                 if provider == ProcessProvider::Codex {
                     "Enabled in Codex, but no events received; approve it in /hooks, then fully relaunch Codex"
                         .to_string()
+                } else if provider == ProcessProvider::Hermes {
+                    format!("Configured for {}; restart that Hermes gateway and open a session", crate::agent_session::hermes::integration_home().display())
                 } else {
                     "Configured; restart running agent sessions".to_string()
                 }
@@ -499,6 +572,9 @@ pub fn install_provider(
         ProcessProvider::Codex => install_codex(),
         ProcessProvider::Opencode => install_opencode(),
         ProcessProvider::Antigravity => install_antigravity(),
+        ProcessProvider::Hermes => {
+            hermes::install(&crate::agent_session::hermes::integration_home())
+        }
         ProcessProvider::Shell => unreachable!(),
     }
 }
@@ -509,6 +585,9 @@ pub fn remove_provider(provider: ProcessProvider) -> Result<(), String> {
         ProcessProvider::Codex => remove_json_hooks(&codex_hooks_path()),
         ProcessProvider::Opencode => remove_opencode(),
         ProcessProvider::Antigravity => remove_antigravity(),
+        ProcessProvider::Hermes => {
+            hermes::remove(&crate::agent_session::hermes::integration_home())
+        }
         ProcessProvider::Shell => Err("Shell does not support hooks".to_string()),
     }
 }
@@ -621,8 +700,10 @@ fn process_inbox(
         let Some(event) = event else {
             continue;
         };
+        if !runtime.apply(event.clone()) {
+            continue;
+        }
         persist_session_event(&event);
-        runtime.apply(event.clone());
         for pane_id in runtime.event_panes(&event) {
             let mut activity = agent_activity.lock().clone();
             let size_warning = activity
@@ -690,10 +771,7 @@ fn replay_session_markers(runtime: &HookRuntime) {
 }
 
 fn persist_session_event(event: &HookEventV1) {
-    let path = sessions_dir().join(format!(
-        "{}.json",
-        session_key(event.provider, &event.session_id)
-    ));
+    let path = sessions_dir().join(format!("{}.json", event.storage_key()));
     if event.ended {
         let _ = fs::remove_file(path);
     } else if let Err(error) = atomic_write_json(&path, event) {
@@ -701,18 +779,22 @@ fn persist_session_event(event: &HookEventV1) {
     }
 }
 
-fn supported_providers() -> [ProcessProvider; 4] {
+fn supported_providers() -> [ProcessProvider; 5] {
     [
         ProcessProvider::Claude,
         ProcessProvider::Codex,
         ProcessProvider::Opencode,
         ProcessProvider::Antigravity,
+        ProcessProvider::Hermes,
     ]
 }
 
 fn provider_capabilities(provider: ProcessProvider) -> Vec<String> {
     match provider {
-        ProcessProvider::Claude | ProcessProvider::Codex | ProcessProvider::Opencode => {
+        ProcessProvider::Claude
+        | ProcessProvider::Codex
+        | ProcessProvider::Opencode
+        | ProcessProvider::Hermes => {
             vec!["lifecycle".to_string(), "attention".to_string()]
         }
         ProcessProvider::Antigravity => vec!["lifecycle".to_string()],
@@ -721,6 +803,9 @@ fn provider_capabilities(provider: ProcessProvider) -> Vec<String> {
 }
 
 fn hooks_root() -> PathBuf {
+    if let Some(root) = std::env::var_os("CLAWTAB_AGENT_HOOKS_DIR") {
+        return PathBuf::from(root);
+    }
     crate::config::config_dir()
         .unwrap_or_else(|| PathBuf::from(".clawtab"))
         .join("agent-hooks")
@@ -969,6 +1054,9 @@ fn provider_configured(provider: ProcessProvider) -> bool {
             .ok()
             .and_then(|root| root.get("clawtab").cloned())
             .is_some(),
+        ProcessProvider::Hermes => {
+            hermes::configured(&crate::agent_session::hermes::integration_home())
+        }
         ProcessProvider::Shell => false,
     }
 }
@@ -1003,6 +1091,9 @@ fn provider_configuration_complete(provider: ProcessProvider) -> bool {
                 && !codex_hooks_disabled()
         }
         ProcessProvider::Opencode => provider_configured(provider),
+        ProcessProvider::Hermes => {
+            hermes::complete(&crate::agent_session::hermes::integration_home())
+        }
         ProcessProvider::Antigravity => read_json_object(&antigravity_hooks_path())
             .ok()
             .and_then(|root| root.get("clawtab").cloned())
@@ -1056,10 +1147,23 @@ fn provider_has_active_marker(provider: ProcessProvider) -> bool {
     let Ok(entries) = fs::read_dir(sessions_dir()) else {
         return false;
     };
+    let hermes_home = (provider == ProcessProvider::Hermes).then(|| {
+        let home = crate::agent_session::hermes::integration_home();
+        home.canonicalize()
+            .unwrap_or(home)
+            .to_string_lossy()
+            .into_owned()
+    });
     entries
         .flatten()
         .filter_map(|entry| read_event_file(&entry.path()))
-        .any(|event| event.provider == provider && !event.ended)
+        .any(|event| {
+            event.provider == provider
+                && !event.ended
+                && hermes_home
+                    .as_ref()
+                    .is_none_or(|home| event.hermes_home.as_ref() == Some(home))
+        })
 }
 
 fn enable_codex_hooks() -> Result<(), String> {
@@ -1535,6 +1639,7 @@ mod tests {
     fn pane_state_aggregates_waiting_above_working() {
         let runtime = HookRuntime::default();
         runtime.apply(HookEventV1 {
+            hermes_home: None,
             version: 1,
             provider: ProcessProvider::Opencode,
             event: "session.status".to_string(),
@@ -1549,6 +1654,7 @@ mod tests {
             ended: false,
         });
         runtime.apply(HookEventV1 {
+            hermes_home: None,
             version: 1,
             provider: ProcessProvider::Opencode,
             event: "permission.asked".to_string(),
@@ -1581,6 +1687,7 @@ mod tests {
             ("current-idle", 42, 20, HookAgentState::Idle),
         ] {
             runtime.apply(HookEventV1 {
+                hermes_home: None,
                 version: 1,
                 provider: ProcessProvider::Codex,
                 event: "test".to_string(),
@@ -1703,6 +1810,7 @@ mod tests {
         runtime.retain_live_panes(
             &HashSet::from(["%71".to_string(), "%74".to_string()]),
             &HashSet::from(["%71".to_string()]),
+            &HashSet::new(),
         );
         assert!(runtime.pane_state("%74", ProcessProvider::Codex).is_none());
     }

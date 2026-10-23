@@ -42,7 +42,7 @@ import { buildModelOptions } from "../../src/lib/agentModels";
 const KEYBOARD_EXTRA_CLEARANCE = 10;
 const KEYBOARD_TOOLBAR_HEIGHT = 48;
 const TERMINAL_BG = "#1c1c1e";
-const AGENT_PROVIDERS: ProcessProvider[] = ["claude", "codex", "opencode", "antigravity"];
+const AGENT_PROVIDERS: ProcessProvider[] = ["claude", "codex", "opencode", "antigravity", "hermes"];
 
 
 const wsTransport = createWsTransport();

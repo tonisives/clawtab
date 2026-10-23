@@ -13,9 +13,10 @@ import codexIcon from "../assets/codex-icon.png";
 import opencodeIcon from "../assets/opencode-icon.png";
 import antigravityIcon from "../assets/antigravity-icon.png";
 
-export type JobKind = "cron" | "manual" | "claude" | "codex" | "opencode" | "antigravity" | "shell";
+export type JobKind = "cron" | "manual" | "claude" | "codex" | "opencode" | "antigravity" | "hermes" | "shell";
 
 export function kindForJob(job: RemoteJob): JobKind {
+  if (job.agent_provider === "hermes" || job.job_type === "hermes") return "hermes";
   if (job.agent_provider === "antigravity" || job.job_type === "antigravity") return "antigravity";
   if (job.agent_provider === "codex" || job.job_type === "codex") return "codex";
   if (job.agent_provider === "opencode" || job.job_type === "opencode") return "opencode";
@@ -32,6 +33,7 @@ export function providerKindForJob(job: RemoteJob): ProcessProvider | null {
     job.agent_provider === "codex" ||
     job.agent_provider === "opencode" ||
     job.agent_provider === "antigravity" ||
+    job.agent_provider === "hermes" ||
     job.agent_provider === "shell"
   ) {
     return job.agent_provider;
@@ -39,6 +41,7 @@ export function providerKindForJob(job: RemoteJob): ProcessProvider | null {
   if (job.job_type === "claude") return "claude";
   if (job.job_type === "codex") return "codex";
   if (job.job_type === "opencode") return "opencode";
+  if (job.job_type === "hermes") return "hermes";
   if (job.job_type === "antigravity") return "antigravity";
   if (job.job_type === "shell") return "shell";
   return null;
@@ -60,6 +63,8 @@ export function kindForProcess(process: DetectedProcess): JobKind {
       return "opencode";
     case "antigravity":
       return "antigravity";
+    case "hermes":
+      return "hermes";
     case "shell":
       return "shell";
     default:
@@ -89,6 +94,7 @@ function paletteForKind(kind: JobKind) {
       return { bg: "transparent", fg: colors.text };
     case "opencode":
       return { bg: "transparent", fg: colors.text };
+    case "hermes":
     case "antigravity":
       return { bg: "transparent", fg: colors.text };
     case "shell":
@@ -118,6 +124,8 @@ function sourceForKind(kind: JobKind) {
       return opencodeIcon;
     case "antigravity":
       return antigravityIcon;
+    case "hermes":
+      return null;
   }
 }
 
@@ -131,6 +139,8 @@ function fallbackLabelForKind(kind: JobKind) {
       return "OC";
     case "antigravity":
       return "AG";
+    case "hermes":
+      return "H";
     case "shell":
       return "$";
     case "cron":
@@ -178,7 +188,7 @@ export function JobKindIcon({
             },
       ]}
     >
-      {imageFailed ? (
+      {imageFailed || !source ? (
         <Text
           style={[
             styles.fallbackText,

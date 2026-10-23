@@ -979,7 +979,10 @@ async fn main() {
                 )
             };
             if restore_command {
-                match restore_command_for_provider(provider, info.session_id.as_deref()) {
+                match info
+                    .restore_command
+                    .or_else(|| restore_command_for_provider(provider, info.session_id.as_deref()))
+                {
                     Some(command) => println!("{}", command),
                     None => {
                         eprintln!("No restore command found");
@@ -1106,7 +1109,7 @@ async fn main() {
                 })
                 .unwrap_or_else(|| {
                     eprintln!(
-                        "Usage: cwtctl agent hooks <status|install> <claude|codex|opencode|antigravity>"
+                        "Usage: cwtctl agent hooks <status|install> <claude|codex|opencode|antigravity|hermes>"
                     );
                     std::process::exit(1);
                 });
@@ -1115,7 +1118,7 @@ async fn main() {
                 "install" => Target::Daemon(IpcCommand::InstallAgentIntegration { provider }),
                 _ => {
                     eprintln!(
-                        "Usage: cwtctl agent hooks <status|install> <claude|codex|opencode|antigravity>"
+                        "Usage: cwtctl agent hooks <status|install> <claude|codex|opencode|antigravity|hermes>"
                     );
                     std::process::exit(1);
                 }
@@ -1998,6 +2001,23 @@ Do not use tools.\n\n",
             }
             command.arg(&prompt);
         }
+        ProcessProvider::Hermes => {
+            command.args([
+                "chat",
+                "--cli",
+                "--oneshot",
+                "--quiet",
+                "--toolsets",
+                "clarify",
+            ]);
+            if let Some(model) = model.as_ref() {
+                command.args(["--model", model]);
+            }
+            if let Some(effort) = effort {
+                command.args(["--reasoning", effort]);
+            }
+            command.args(["--query", &prompt]);
+        }
         ProcessProvider::Shell => unreachable!(),
     }
 
@@ -2097,6 +2117,10 @@ fn restore_command_for_provider(
         clawtab_lib::agent_session::ProcessProvider::Antigravity => {
             Some(format!("agy --conversation {}", session_id))
         }
+        clawtab_lib::agent_session::ProcessProvider::Hermes => Some(format!(
+            "hermes chat --resume '{}'",
+            session_id.replace('\'', "'\\''")
+        )),
         clawtab_lib::agent_session::ProcessProvider::Shell => None,
     }
 }

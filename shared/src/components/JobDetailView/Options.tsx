@@ -1,5 +1,5 @@
 import { View, Text, TouchableOpacity, ScrollView, useWindowDimensions } from "react-native";
-import { isFreetextOption } from "../../util/jobs";
+import { isFreetextOption, questionOptionLabel } from "../../util/jobs";
 import { styles } from "./styles";
 
 // eslint-disable-next-line no-control-regex
@@ -64,7 +64,7 @@ export function OptionButtons({ options, onSend, onFreetextOption, autoYesActive
             activeOpacity={0.6}
           >
             <Text style={styles.optionBtnText} numberOfLines={2}>
-              {opt.number}. {opt.label}
+              {questionOptionLabel(opt)}
             </Text>
           </TouchableOpacity>
         ))}

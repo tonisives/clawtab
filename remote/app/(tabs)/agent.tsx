@@ -25,7 +25,7 @@ import { BARE_PROVIDER_OPTIONS, buildModelOptions } from "../../src/lib/agentMod
 const STORAGE_KEY = "clawtab_agent_selection_v3";
 const LEGACY_STORAGE_KEY = "clawtab_agent_model_v2";
 
-const DEFAULT_PROVIDERS: ProcessProvider[] = ["claude", "codex", "opencode", "antigravity"];
+const DEFAULT_PROVIDERS: ProcessProvider[] = ["claude", "codex", "opencode", "antigravity", "hermes"];
 // Start with the provider entry; the shared current catalog and server-pushed models
 // populate the concrete choices in the selector.
 const DEFAULT_MODEL: AgentModelOption =
@@ -33,7 +33,7 @@ const DEFAULT_MODEL: AgentModelOption =
 const DEFAULT_SELECTION: AgentSelection = { provider: DEFAULT_MODEL.provider, modelId: DEFAULT_MODEL.modelId, effort: null };
 
 function isProcessProvider(value: string | undefined): value is ProcessProvider {
-  return value === "claude" || value === "codex" || value === "opencode" || value === "antigravity" || value === "shell";
+  return value === "claude" || value === "codex" || value === "opencode" || value === "antigravity" || value === "hermes" || value === "shell";
 }
 
 function getStoredSelection(): AgentSelection {

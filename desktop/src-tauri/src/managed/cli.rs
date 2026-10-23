@@ -152,7 +152,7 @@ fn provider_for_program(program: &str) -> String {
         .and_then(|name| name.to_str())
         .unwrap_or(program);
     match name.to_ascii_lowercase().as_str() {
-        "claude" | "codex" | "opencode" => name.to_ascii_lowercase(),
+        "claude" | "codex" | "opencode" | "hermes" => name.to_ascii_lowercase(),
         "agy" => "antigravity".into(),
         _ => "shell".into(),
     }
@@ -168,6 +168,7 @@ fn resume_launch(info: SessionInfo) -> Result<Launch, String> {
         "claude" => vec!["-r".into(), conversation.into()],
         "codex" => vec!["resume".into(), conversation.into()],
         "opencode" => vec!["-s".into(), conversation.into()],
+        "hermes" => vec!["chat".into(), "--resume".into(), conversation.into()],
         "antigravity" => vec!["--conversation".into(), conversation.into()],
         _ => return Err("this command does not support conversation resume".into()),
     };

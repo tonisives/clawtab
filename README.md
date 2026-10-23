@@ -1,7 +1,7 @@
 <h3 align="center">ClawTab - Tmux-Native Agent Control Plane</h3>
 
 <p align="center">
-  Run Claude Code, Codex, OpenCode, and shell jobs in durable tmux panes or managed terminals, then control the same sessions from your terminal, desktop, web, or phone.
+  Run Claude Code, Codex, OpenCode, Hermes, and shell jobs in durable tmux panes or managed terminals, then control the same sessions from your terminal, desktop, web, or phone.
 </p>
 
 <p align="center">
@@ -50,11 +50,13 @@ A headless daemon adds the agent-aware layer: schedules, session metadata, task 
 - **Agent-aware tmux UI** - See working, waiting, and idle states; replace generic process names with useful task titles.
 - **Terminal-native controls** - Use `cwtctl`, `cwttui`, or the tmux popup to manage agents and scheduled jobs.
 - **Session continuity** - Open the same pane in tmux, the desktop app, web Remote, or mobile without starting a new process.
-- **Multiple providers** - Run Claude Code, Codex, OpenCode, Antigravity, and normal shells in one workspace.
+- **Multiple providers** - Run Claude Code, Codex, OpenCode, Antigravity, Hermes, and normal shells in one workspace.
 - **Scheduled jobs** - Create prompt, project-folder, and binary jobs with cron expressions or calendar-anchored weekly recurrences.
 - **Remote answers** - View live output and answer agent questions from web, mobile, push notifications, or Telegram.
 - **Secrets management** - Inject selected macOS Keychain or gopass secrets into jobs without storing them in project files.
 - **Optional visual workspace** - Arrange split panes and use the agent Mind Map in the Tauri desktop app.
+
+Hermes supports live terminal control, session information, hook-driven activity, approvals, and scheduled launches. See [Hermes setup and validation](docs/hermes.md).
 
 ### Small Bundle
 
@@ -66,7 +68,7 @@ The bundled tmux plugin adds agent status, task-based pane names, auto-yes contr
 
 The daemon publishes agent activity to tmux without replacing your theme. Working windows get a cyan activity marker, agents asking for input get a yellow attention marker, and present-but-idle agents get a green check.
 
-ClawTab picks up generated session names from Codex, Claude Code, and OpenCode as they become available, usually on the next five-second scan. The name appears in ClawTab and on the top pane border. A window with exactly one agent also gets that name if tmux's automatic naming is enabled. Windows with multiple agents keep their window name. Explicitly renaming a window stops ClawTab from renaming it again; existing named windows and custom pane names are preserved.
+ClawTab picks up generated session names from Codex, Claude Code, OpenCode, and Hermes as they become available, usually on the next five-second scan. The name appears in ClawTab and on the top pane border. A window with exactly one agent also gets that name if tmux's automatic naming is enabled. Windows with multiple agents keep their window name. Explicitly renaming a window stops ClawTab from renaming it again; existing named windows and custom pane names are preserved.
 
 <p align="center">
   <img src="https://cdn.clawtab.cc/assets/articles/daemon-tmux/tmux-agent-working.png?v=20260716" alt="Tmux status bar showing working and idle activity indicators across AI agent windows" width="1000" />

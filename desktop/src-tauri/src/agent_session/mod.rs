@@ -2,6 +2,7 @@ mod antigravity;
 mod claude;
 mod codex;
 mod common;
+pub(crate) mod hermes;
 mod opencode;
 
 pub(crate) use codex::completed_turn_after as codex_completed_turn_after;
@@ -14,6 +15,7 @@ use std::process::Command;
 
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct SessionInfo {
+    pub restore_command: Option<String>,
     pub session_id: Option<String>,
     pub title: Option<String>,
     pub model_id: Option<String>,
@@ -45,6 +47,7 @@ pub enum ProcessProvider {
     Codex,
     Opencode,
     Antigravity,
+    Hermes,
     Shell,
 }
 
@@ -55,6 +58,7 @@ impl ProcessProvider {
             ProcessProvider::Codex => "codex",
             ProcessProvider::Opencode => "opencode",
             ProcessProvider::Antigravity => "antigravity",
+            ProcessProvider::Hermes => "hermes",
             ProcessProvider::Shell => "shell",
         }
     }
@@ -72,6 +76,7 @@ impl ProcessProvider {
             "codex" => Some(Self::Codex),
             "opencode" => Some(Self::Opencode),
             "antigravity" => Some(Self::Antigravity),
+            "hermes" => Some(Self::Hermes),
             "shell" => Some(Self::Shell),
             _ => None,
         }
@@ -84,6 +89,7 @@ impl ProcessProvider {
                 | ProcessProvider::Codex
                 | ProcessProvider::Opencode
                 | ProcessProvider::Antigravity
+                | ProcessProvider::Hermes
         )
     }
 
@@ -98,6 +104,7 @@ impl ProcessProvider {
     pub fn effort_flag_format(self, effort: &str) -> String {
         match self {
             ProcessProvider::Claude => format!(" --effort {}", shell_quote(effort)),
+            ProcessProvider::Hermes => format!(" --reasoning {}", shell_quote(effort)),
             ProcessProvider::Codex => format!(
                 " -c {}",
                 shell_quote(&format!("model_reasoning_effort={}", effort))
@@ -320,6 +327,7 @@ fn resolve_session_info_for_provider_with_cwd_mode(
         }
         Some(ProcessProvider::Opencode) => opencode::resolve_session_info(pane_pid, snapshot, cwd),
         Some(ProcessProvider::Antigravity) => antigravity::resolve_session_info(pane_pid, snapshot),
+        Some(ProcessProvider::Hermes) => hermes::resolve_session_info(pane_pid, snapshot),
         Some(ProcessProvider::Shell) | None => SessionInfo::default(),
     };
     if info.session_id.is_none() {
@@ -400,7 +408,9 @@ fn effort_from_command(command: &str) -> Option<String> {
         if let Some(effort) = part.strip_prefix("model_reasoning_effort=") {
             return valid_effort(effort.trim_matches(['\'', '"']));
         }
-        if (*part == "--effort" || *part == "-c") && index + 1 < parts.len() {
+        if (*part == "--effort" || *part == "--reasoning" || *part == "-c")
+            && index + 1 < parts.len()
+        {
             let value = parts[index + 1].trim_matches(['\'', '"']);
             let effort = value
                 .strip_prefix("model_reasoning_effort=")
@@ -438,17 +448,17 @@ pub fn detect_process_provider(
     {
         return Some(provider);
     }
-    if let Some(provider) = provider_for_command(snapshot.command_for_pid(pane_pid)) {
+    if let Some(provider) = provider_for_pid(snapshot, pane_pid) {
         return Some(provider);
     }
 
     for child in snapshot.child_pids(pane_pid) {
-        if let Some(provider) = provider_for_command(snapshot.command_for_pid(child)) {
+        if let Some(provider) = provider_for_pid(snapshot, child) {
             return Some(provider);
         }
 
         for grandchild in snapshot.child_pids(child) {
-            if let Some(provider) = provider_for_command(snapshot.command_for_pid(grandchild)) {
+            if let Some(provider) = provider_for_pid(snapshot, grandchild) {
                 return Some(provider);
             }
         }
@@ -476,7 +486,29 @@ pub fn detect_version_from_command(command: &str) -> Option<String> {
     found.into_iter().find(|item| common::is_semver(item))
 }
 
+fn provider_for_pid(snapshot: &ProcessSnapshot, pid: &str) -> Option<ProcessProvider> {
+    let command = snapshot.command_for_pid(pid)?;
+    if let Some(interactive) = hermes::kind_for_pid(pid, command) {
+        return interactive.then_some(ProcessProvider::Hermes);
+    }
+    provider_for_command(Some(command))
+}
+
 fn provider_for_command(command: Option<&str>) -> Option<ProcessProvider> {
+    if let Some(interactive) = hermes::command_kind(command?) {
+        return interactive.then_some(ProcessProvider::Hermes);
+    }
+    // Inspect the actual child of a shell launcher. Its command text can contain
+    // model names such as "claude" or "codex" even when it is launching Hermes.
+    let executable = command?
+        .split_whitespace()
+        .next()?
+        .trim_matches(['\'', '"'])
+        .rsplit('/')
+        .next()?;
+    if matches!(executable, "sh" | "bash" | "zsh" | "fish" | "dash" | "env") {
+        return None;
+    }
     let lower = command?.to_ascii_lowercase();
     if lower.contains("codex") {
         Some(ProcessProvider::Codex)
@@ -494,6 +526,24 @@ fn provider_for_command(command: Option<&str>) -> Option<ProcessProvider> {
 #[cfg(test)]
 mod tests {
     use super::{ProcessProvider, ProcessSnapshot};
+
+    #[test]
+    fn hermes_shell_launcher_is_not_the_provider_named_in_its_model() {
+        let mut snapshot = ProcessSnapshot::default();
+        snapshot.commands.insert(
+            "1".into(),
+            "zsh -c hermes chat --model anthropic/claude-sonnet".into(),
+        );
+        snapshot.commands.insert(
+            "2".into(),
+            "python /venv/bin/hermes chat --model anthropic/claude-sonnet".into(),
+        );
+        snapshot.children.insert("1".into(), vec!["2".into()]);
+        assert_eq!(
+            super::detect_process_provider("1", Some(&snapshot)),
+            Some(ProcessProvider::Hermes)
+        );
+    }
 
     #[test]
     fn session_size_warnings_follow_the_configured_threshold() {

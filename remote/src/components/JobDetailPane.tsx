@@ -28,7 +28,7 @@ import { useAgentActions } from "../hooks/useAgentActions"
 import { useTerminalKeyboard } from "../hooks/useTerminalKeyboard"
 
 const wsTransport = createWsTransport()
-const AGENT_PROVIDERS: ProcessProvider[] = ["claude", "codex", "opencode", "antigravity"]
+const AGENT_PROVIDERS: ProcessProvider[] = ["claude", "codex", "opencode", "antigravity", "hermes"]
 
 
 function agentJobFromSlug(slug: string): RemoteJob {

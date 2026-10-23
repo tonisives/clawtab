@@ -23,6 +23,8 @@ export function labelForProvider(provider: ProcessProvider): string {
       return "OpenCode";
     case "antigravity":
       return "Antigravity";
+    case "hermes":
+      return "Hermes";
     case "shell":
       return "Shell";
   }
@@ -40,6 +42,7 @@ export const BARE_PROVIDER_OPTIONS: ModelOption[] = [
   { provider: "codex", modelId: null, label: "Codex" },
   { provider: "opencode", modelId: null, label: "OpenCode" },
   { provider: "antigravity", modelId: null, label: "Antigravity" },
+  { provider: "hermes", modelId: null, label: "Hermes" },
   { provider: "shell", modelId: null, label: "Shell" },
 ];
 

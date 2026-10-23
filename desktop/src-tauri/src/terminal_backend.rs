@@ -122,6 +122,9 @@ pub fn send_keys_to_pane(session: &str, id: &str, text: &str) -> Result<(), Stri
     }
 }
 pub fn send_keys_to_tui_pane(id: &str, text: &str) -> Result<(), String> {
+    if is_hermes_pane(id) {
+        return send_hermes_text(id, text);
+    }
     if managed::is_managed(id) {
         input(id, format!("{text}\r").into_bytes())
     } else {
@@ -129,6 +132,25 @@ pub fn send_keys_to_tui_pane(id: &str, text: &str) -> Result<(), String> {
     }
 }
 pub fn send_keys_to_tui_pane_freetext(id: &str, key: &str, text: &str) -> Result<(), String> {
+    if is_hermes_pane(id) {
+        if key.starts_with("/answer ") {
+            return send_hermes_text(id, &format!("{key}{text}"));
+        }
+        if let Some(number) = hermes_option_key(key) {
+            // Both Hermes interfaces accept arrow navigation. The node TUI's
+            // "Other" choice has no numeric shortcut, unlike the classic CLI.
+            let index = if number == "0" {
+                9
+            } else {
+                number.parse::<usize>().unwrap_or(1) - 1
+            };
+            send_key_to_pane_repeated(id, "Up", 10)?;
+            send_key_to_pane_repeated(id, "Down", index)?;
+            send_key_to_pane(id, "Enter")?;
+            std::thread::sleep(std::time::Duration::from_millis(150));
+            return send_hermes_text(id, text);
+        }
+    }
     if !managed::is_managed(id) {
         return crate::tmux::send_keys_to_tui_pane_freetext(id, key, text);
     }
@@ -136,6 +158,29 @@ pub fn send_keys_to_tui_pane_freetext(id: &str, key: &str, text: &str) -> Result
     bytes.extend_from_slice(text.as_bytes());
     bytes.push(b'\r');
     input(id, bytes)
+}
+
+fn is_hermes_pane(id: &str) -> bool {
+    pane_pid(id).ok().is_some_and(|pid| {
+        crate::agent_session::detect_process_provider(&pid, None)
+            == Some(crate::agent_session::ProcessProvider::Hermes)
+    })
+}
+
+fn send_hermes_text(id: &str, text: &str) -> Result<(), String> {
+    if let Some(number) = hermes_option_key(text) {
+        return send_literal_to_pane(id, number);
+    }
+    send_literal_to_pane(id, text)?;
+    // Hermes treats Enter within 50ms of a buffer change as a pasted newline.
+    // Give its input loop time to consume the text before submitting once.
+    std::thread::sleep(std::time::Duration::from_millis(150));
+    send_key_to_pane(id, "Enter")
+}
+
+fn hermes_option_key(text: &str) -> Option<&str> {
+    text.strip_prefix("hermes-option:")
+        .filter(|number| number.len() == 1 && number.bytes().all(|byte| byte.is_ascii_digit()))
 }
 pub fn key_bytes(key: &str) -> Result<Vec<u8>, String> {
     let text = match key {
