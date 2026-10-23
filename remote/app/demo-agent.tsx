@@ -8,7 +8,6 @@ import { XtermLog, JobKindIcon, colors, kindForProcess, type XtermLogHandle } fr
 import { HeaderTitleWithIcon } from "../src/components/HeaderButtons"
 import { DEMO_JOBS, DEMO_LOGS, DEMO_PROCESSES } from "../src/demo/data"
 import { demoShell } from "../src/demo/shell"
-import { showDemoInfo } from "../src/demo/info"
 
 let DemoAgentScreen = () => {
   let { id, kind } = useLocalSearchParams<{ id: string; kind?: string }>()
@@ -35,7 +34,7 @@ let DemoAgentScreen = () => {
   let headerRight = () => <Pressable accessibilityRole="button" accessibilityLabel="Open pane overview" onPress={openDetails} style={styles.menu} hitSlop={8}><Ionicons name="ellipsis-horizontal" size={22} color={colors.text} /></Pressable>
   return <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={headerHeight}>
     <Stack.Screen options={{ title, headerTitle, headerRight }} />
-    <Pressable style={styles.notice} accessibilityRole="button" accessibilityLabel="About demo mode" onPress={showDemoInfo}><Ionicons name="alert-circle-outline" size={18} color={colors.warning} /><Text style={styles.noticeText}>Demo</Text></Pressable>
+    <Pressable style={styles.notice} accessibilityRole="button" accessibilityLabel="About demo mode" onPress={() => router.push("/demo-overview")}><Ionicons name="information-circle-outline" size={18} color={colors.warning} /><Text style={styles.noticeText}>Demo</Text></Pressable>
     <View style={styles.terminal} accessibilityLabel="Shell logs"><XtermLog ref={terminal} interactive={false} forceDarkTheme extendedViewport /></View>
     <SafeAreaView edges={["bottom"]} style={styles.composer}>
       <TextInput ref={input} value={draft} onChangeText={setDraft} placeholder={shell.placeholder} placeholderTextColor="#a1a1aa" accessibilityLabel="Demo prompt" accessibilityHint="Try typing locally. Demo prompts are not sent to an agent." multiline submitBehavior="blurAndSubmit" blurOnSubmit onSubmitEditing={dismissInput} returnKeyType="done" autoCapitalize="none" autoCorrect={false} style={styles.input} />

@@ -71,11 +71,11 @@ export const DEMO_STATUSES: Record<string, JobStatus> = {
   "sync-assets": { state: "success", last_run: ago(1440) },
 };
 
-let demoPaneBase = Math.floor(Math.random() * 9000) + 1000;
+// Stable, URL-safe IDs keep sample routes valid across reloads and native navigation.
 const DEMO_PANE_IDS = {
-  claude: `%${demoPaneBase}`,
-  codex: `%${demoPaneBase + 1}`,
-  opencode: `%${demoPaneBase + 2}`,
+  claude: "demo-claude",
+  codex: "demo-codex",
+  opencode: "demo-opencode",
 };
 
 export const DEMO_QUESTIONS: ClaudeQuestion[] = [

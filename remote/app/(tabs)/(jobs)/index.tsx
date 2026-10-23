@@ -1172,7 +1172,7 @@ export default function JobsScreen() {
   }
 
   // Non-tree primary content (when no split tree)
-  const primaryContent = connectionLoading ?? (demoMode ? (demoSelection ? <DemoAgentPane key={`${demoSelection.kind}:${demoSelection.id}`} {...demoSelection} /> : <DemoOverview onConnect={connectRelay} />) : selectedJob ? (
+  const primaryContent = connectionLoading ?? (demoMode ? (demoSelection ? <DemoAgentPane key={`${demoSelection.kind}:${demoSelection.id}`} {...demoSelection} onShowOverview={() => setDemoSelection(null)} /> : <DemoOverview onConnect={connectRelay} />) : selectedJob ? (
     <JobDetailPane
       key={selectedJob}
       jobName={selectedJob}

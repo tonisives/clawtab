@@ -180,14 +180,60 @@ test('native demo keeps navigation to sample detail screens', () => {
   assert.equal(tree.props.onSelectJob, undefined);
 });
 
-test('demo overview explains sample sessions and links to box setup and relay subscription', () => {
+test('demo overview explains relay, host setup, and launches, with setup links', () => {
   let connected = false;
   let demo = loadDemo('overview', {}, 'web');
   let nodes = all(demo.render({ onConnect: () => { connected = true; } }));
   let press = (label) => nodes.find((node) => node.type === 'Pressable' && all(node).some((child) => child.type === 'Text' && child.props.children === label)).props.onPress();
-  assert.ok(nodes.some((node) => node.type === 'Text' && node.props.children.includes('sample sessions')));
+  let text = nodes.filter((node) => node.type === 'Text').map((node) => node.props.children).join('\n');
+  for (let phrase of ['sample agents', 'Set up relay access', 'Connect a desktop or server', 'cwtctl setup', 'Launch agents from any device', 'where its CLI is installed']) assert.ok(text.includes(phrase), phrase);
   press('Choose a box');
   assert.equal(demo.pushed[0], '/add-machine');
-  press('Subscribe to relay');
+  press('Add machine');
+  assert.equal(demo.pushed[1], '/add-machine');
+  press('Set up relay');
   assert.equal(connected, true);
+});
+
+test('sample navigation survives native URL decoding and a fresh module load', () => {
+  let list = loadDemo('index.tsx');
+  let props = list.render().props;
+  for (let sample of props.detectedProcesses) props.onSelectProcess(sample);
+  for (let sample of props.jobs) props.onSelectJob(sample);
+  for (let route of list.pushed) {
+    let params = Object.fromEntries(Object.entries(route.params).map(([key, value]) => [key, decodeURIComponent(value)]));
+    let terminal = loadDemo('terminal', params);
+    let nodes = all(terminal.render());
+    assert.notEqual(nodes.find((node) => node.type === 'Screen').props.options.title, 'Sample agent');
+    assert.ok(terminal.writes[1].length > 0, route.params.id);
+    assert.ok(!terminal.writes[1].includes('Sample not found'));
+    let details = all(loadDemo('[id].tsx', params).render());
+    assert.ok(details.some((node) => node.type === 'Text' && node.props.children === 'Output'));
+  }
+});
+
+test('native sample list lets the root scroll view adjust below the large title and tabs', () => {
+  for (let platform of ['ios', 'android', 'web']) {
+    let props = loadDemo('index.tsx', {}, platform).render().props;
+    assert.equal(props.contentInsetAdjustmentBehavior, platform === 'web' ? 'never' : 'automatic');
+    assert.equal(props.renderAsScrollRoot, platform !== 'web');
+  }
+});
+
+test('mobile Demo info buttons open the onboarding screen from list, terminal, and details', () => {
+  for (let entry of ['index.tsx', 'terminal', '[id].tsx']) {
+    let demo = loadDemo(entry, { id: 'claude', kind: 'process' });
+    let tree = demo.render();
+    let nodes = all(entry === 'index.tsx' ? tree.props.headerContent : tree);
+    nodes.find((node) => node.props?.accessibilityLabel === 'About demo mode').props.onPress();
+    assert.equal(demo.pushed[0], '/demo-overview');
+  }
+});
+
+test('web Demo info returns the main pane to onboarding', () => {
+  let demo = loadDemo('workspace', {}, 'web');
+  all(demo.render()).find((node) => node.type === 'DemoJobList').props.onSelectProcess(demo.processes[0]);
+  all(demo.render()).find((node) => node.type === 'DemoAgentPane').props.onShowOverview();
+  assert.ok(all(demo.render()).some((node) => node.type === 'DemoOverview'));
+  assert.deepEqual(demo.pushed, []);
 });

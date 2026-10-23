@@ -9,7 +9,7 @@ import { DemoDetailsContent } from "./DemoDetailsContent"
 
 export type DemoSelection = { id: string; kind: "job" | "process" }
 
-export let DemoAgentPane = ({ id, kind }: DemoSelection) => {
+export let DemoAgentPane = ({ id, kind, onShowOverview }: DemoSelection & { onShowOverview: () => void }) => {
   let terminal = useRef<XtermLogHandle | null>(null)
   let [draft, setDraft] = useState("")
   let [detailsOpen, setDetailsOpen] = useState(false)
@@ -31,7 +31,10 @@ export let DemoAgentPane = ({ id, kind }: DemoSelection) => {
     <View style={styles.header}>
       <JobKindIcon kind={process ? kindForProcess(process) : "shell"} size={24} bare />
       <Text style={styles.title} numberOfLines={1}>{title}</Text>
-      <Text style={styles.demo}>Demo</Text>
+      <Pressable accessibilityRole="button" accessibilityLabel="About demo mode" onPress={onShowOverview} style={styles.demoButton}>
+        <Ionicons name="information-circle-outline" size={18} color={colors.warning} />
+        <Text style={styles.demo}>Demo</Text>
+      </Pressable>
       <Pressable accessibilityRole="button" accessibilityLabel="Agent details" onPress={openDetails} style={styles.menu}>
         <Ionicons name="ellipsis-horizontal" size={22} color={colors.text} />
       </Pressable>
@@ -41,7 +44,7 @@ export let DemoAgentPane = ({ id, kind }: DemoSelection) => {
       <TextInput value={draft} onChangeText={setDraft} placeholder={shell.placeholder} placeholderTextColor={colors.textMuted} accessibilityLabel="Demo prompt" accessibilityHint="Try typing locally. Demo prompts are not sent to an agent." multiline autoCapitalize="none" autoCorrect={false} style={styles.input} />
       <Text style={styles.model}>{shell.model}</Text>
     </View>
-    {detailsOpen && <MachineModal title="Agent details" onClose={closeDetails}><DemoDetailsContent id={id} kind={kind} /></MachineModal>}
+    {detailsOpen && <MachineModal title="Agent details" onClose={closeDetails}><DemoDetailsContent id={id} kind={kind} onShowOverview={onShowOverview} /></MachineModal>}
   </View>
 }
 
@@ -50,6 +53,7 @@ let styles = StyleSheet.create({
   header: { minHeight: 56, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: colors.border },
   title: { flex: 1, minWidth: 0, color: colors.text, fontSize: 16, fontWeight: "600" },
   demo: { color: colors.warning, fontSize: 12 },
+  demoButton: { minHeight: 44, flexDirection: "row", alignItems: "center", gap: 6 },
   menu: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
   terminal: { flex: 1, minHeight: 0 },
   composer: { backgroundColor: colors.surface, padding: 16, gap: 8, borderTopWidth: 1, borderTopColor: colors.border },

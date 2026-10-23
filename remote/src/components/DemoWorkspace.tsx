@@ -14,7 +14,7 @@ export let DemoWorkspace = ({ onConnect }: { onConnect: () => void }) => {
   if (Platform.OS !== "web" || !isSplitView) return <DemoJobList onConnect={onConnect} />
   return <View style={styles.workspace}>
     <View style={styles.sidebar}><DemoJobList onConnect={onConnect} onShowOverview={() => setSelection(null)} selectedSlug={selection?.id} onSelectJob={selectJob} onSelectProcess={selectProcess} /></View>
-    {selection ? <DemoAgentPane key={`${selection.kind}:${selection.id}`} {...selection} /> : <DemoOverview onConnect={onConnect} />}
+    {selection ? <DemoAgentPane key={`${selection.kind}:${selection.id}`} {...selection} onShowOverview={() => setSelection(null)} /> : <DemoOverview onConnect={onConnect} />}
   </View>
 }
 

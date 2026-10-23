@@ -1,19 +1,21 @@
 import { Pressable, StyleSheet, Text, View } from "react-native"
 import { colors } from "@clawtab/shared"
+import { useRouter } from "expo-router"
 import { InsetList, InsetListRow } from "../../../shared/src/components/InsetList"
 import { SettingsPage } from "./settings/SettingsPage"
 import { DEMO_JOBS, DEMO_LOGS, DEMO_PROCESSES, DEMO_RUNS, DEMO_STATUSES } from "../demo/data"
-import { showDemoInfo } from "../demo/info"
 
 let unavailable = () => {}
-export let DemoDetailsContent = ({ id, kind }: { id: string; kind?: string }) => {
+export let DemoDetailsContent = ({ id, kind, onShowOverview }: { id: string; kind?: string; onShowOverview?: () => void }) => {
+  let router = useRouter()
+  let showOverview = onShowOverview ?? (() => router.push("/demo-overview"))
   let job = kind === "job" ? DEMO_JOBS.find((item) => item.slug === id) : undefined
   let process = kind === "process" ? DEMO_PROCESSES.find((item) => item.pane_id === id) : undefined
   let title = job?.display_name ?? job?.name ?? process?.display_name ?? "Sample agent"
   let output = job ? DEMO_LOGS[job.slug] : process?.log_lines
   if (!job && !process) return <SettingsPage><Text style={styles.description}>This sample was not found. Go back to the demo list.</Text></SettingsPage>
   return <SettingsPage>
-    <Pressable accessibilityRole="button" accessibilityLabel="About demo mode" onPress={showDemoInfo} style={styles.demoButton}>
+    <Pressable accessibilityRole="button" accessibilityLabel="About demo mode" onPress={showOverview} style={styles.demoButton}>
       <Text style={[styles.description, styles.demoNotice]}>Demo mode · Sample data</Text>
     </Pressable>
     <InsetList>
