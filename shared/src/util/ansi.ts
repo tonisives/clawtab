@@ -64,7 +64,22 @@ export function stripAnsi(text: string): string {
   return normalizeTerminalNewlines(text).replace(ANSI_RE, "");
 }
 
-export function parseAnsi(raw: string, foreground = "#dee2e6", background = "#000000"): AnsiSpan[] {
+// ANSI colors above use hex or rgb(). Compare their brightness before removing
+// a fill so dark text selected against a light terminal background stays legible.
+function brightness(color: string): number {
+  const rgb = color.startsWith("#")
+    ? color.slice(1).match(/../g)?.map((part) => parseInt(part, 16))
+    : color.match(/[\d.]+/g)?.map(Number);
+  if (!rgb || rgb.length < 3) return 255;
+  return rgb[0] * 0.299 + rgb[1] * 0.587 + rgb[2] * 0.114;
+}
+
+export function parseAnsi(
+  raw: string,
+  foreground = "#dee2e6",
+  background = "#000000",
+  showBackgrounds = true,
+): AnsiSpan[] {
   const text = normalizeTerminalNewlines(raw);
   const spans: AnsiSpan[] = [];
   let lastIndex = 0;
@@ -79,6 +94,16 @@ export function parseAnsi(raw: string, foreground = "#dee2e6", background = "#00
     if (inverse) {
       style.color = bg ?? background;
       style.backgroundColor = fg ?? foreground;
+    }
+    if (!showBackgrounds && style.backgroundColor) {
+      const textColor = (style.color ?? foreground) as string;
+      const fillColor = style.backgroundColor as string;
+      if (Math.abs(brightness(textColor) - brightness(background)) < 80) {
+        style.color = Math.abs(brightness(fillColor) - brightness(background)) >= 80
+          ? fillColor
+          : foreground;
+      }
+      delete style.backgroundColor;
     }
     if (bold) style.fontWeight = "bold";
     if (dim) style.opacity = 0.6;

@@ -68,3 +68,24 @@ test('invalid extended colors keep the current style and do not leak control byt
   assert.ok(result.every((s) => s.style.color === '#69db7c' && !s.style.backgroundColor));
   assert.equal(result.map((s) => s.text).join(''), 'greenbad indexbad RGB');
 });
+
+test('notification previews omit gray row fills and preserve colored text and newlines', () => {
+  const input = '\x1b[48;2;72;76;92m    \r\nWould you like to run this command?\r\n'
+    + '\x1b[38;2;166;227;161mcommand\x1b[39m\r\n';
+  const result = parseAnsi(input, '#aaaaaa', '#000000', false);
+  assert.ok(result.every((s) => !s.style.backgroundColor));
+  assert.equal(result.find((s) => s.text === 'command').style.color, 'rgb(166,227,161)');
+  assert.equal(result.map((s) => s.text).join(''), '    \nWould you like to run this command?\ncommand\n');
+});
+
+test('notification selections remain readable when their ANSI fills are removed', () => {
+  const input = '\x1b[1;38;2;0;0;46;48;2;99;168;248mYes, proceed'
+    + '\x1b[0;7minverse\x1b[0;30;40mdark\x1b[0mplain';
+  const result = JSON.parse(JSON.stringify(parseAnsi(input, '#aaaaaa', '#000000', false)));
+  assert.deepEqual(result, [
+    { text: 'Yes, proceed', style: { color: 'rgb(99,168,248)', fontWeight: 'bold' } },
+    { text: 'inverse', style: { color: '#aaaaaa' } },
+    { text: 'dark', style: { color: '#aaaaaa' } },
+    { text: 'plain', style: {} },
+  ]);
+});

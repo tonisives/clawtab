@@ -11,12 +11,17 @@ export function AnsiText({
   content,
   style,
   selectable,
+  showBackgrounds = true,
 }: {
   content: string;
   style?: TextStyle;
   selectable?: boolean;
+  showBackgrounds?: boolean;
 }) {
-  const spans = useMemo(() => parseAnsi(content, style?.color as string | undefined), [content, style?.color]);
+  const spans = useMemo(
+    () => parseAnsi(content, style?.color as string | undefined, undefined, showBackgrounds),
+    [content, style?.color, showBackgrounds],
+  );
   if (spans.length === 0) return null;
 
   return (

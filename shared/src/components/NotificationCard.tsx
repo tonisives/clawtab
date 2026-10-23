@@ -230,7 +230,7 @@ export function NotificationCard({
       )}
     </View>
   )
-  const previewContent = <AnsiText content={preview} style={styles.logText} />
+  const previewContent = <AnsiText content={preview} style={styles.logText} showBackgrounds={false} />
 
   const cardContent = (
     <>
