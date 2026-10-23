@@ -807,7 +807,7 @@ export default function JobsScreen() {
     })
   }, [visibleDetectedProcesses, selectedProcess, processesLoaded, split.cleanStaleLeaves])
 
-  let viewState = jobListState({ authenticated, authLoading, connected: connected || machines.connected, hostOnline, loaded })
+  let viewState = jobListState({ authenticated, authLoading, connected: connected || machines.connected, hostOnline, loaded, error: machines.error })
   let demoMode = viewState.demo
   const webSplit = Platform.OS === "web" && isSplitView
   const activeContent = focusedPaneContent(split.tree, split.focusedLeafId) ?? currentContent

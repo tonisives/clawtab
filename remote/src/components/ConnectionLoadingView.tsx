@@ -2,8 +2,8 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-nati
 import { reconnectMachines, colors } from "@clawtab/shared"
 
 export let ConnectionLoadingView = ({ label, error, onAccount }: { label: string; error?: string | null; onAccount?: () => void }) => <View style={styles.container}>
-  <ActivityIndicator color={colors.accent} />
-  <Text accessibilityLiveRegion="polite" style={styles.label}>{label}</Text>
+  {!error && <ActivityIndicator color={colors.accent} />}
+  <Text accessibilityLiveRegion="polite" style={styles.label}>{error ? "Unable to connect to relay" : label}</Text>
   {error && <>
     <Text style={styles.detail}>{error}</Text>
     <Pressable accessibilityRole="button" onPress={reconnectMachines} style={styles.button}><Text style={styles.action}>Try again</Text></Pressable>
