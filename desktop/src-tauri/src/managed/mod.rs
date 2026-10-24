@@ -6,6 +6,7 @@ mod screen;
 mod store;
 
 pub use cli::run_cli;
+pub(crate) use client::launch_preapproved;
 pub use client::{connect, launch, list, request, Client};
 pub use store::{directory, read_info};
 

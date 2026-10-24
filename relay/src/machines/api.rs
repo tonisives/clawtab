@@ -112,9 +112,11 @@ pub async fn list_for(state: &AppState, user: Uuid) -> Result<Value, AppError> {
         .bind(user).fetch_all(&state.pool).await?;
     let rentals: Vec<(Uuid, Value)> = sqlx::query_as("SELECT device_id,jsonb_build_object('id',id,'state',state,'traffic_paused',traffic_paused) FROM rentals WHERE device_id IS NOT NULL")
         .fetch_all(&state.pool).await?;
+    let hosted: Vec<(Uuid, Value)> = sqlx::query_as("SELECT device_id,jsonb_build_object('id',id,'state',state,'delete_at',delete_at) FROM hosted_workspaces WHERE device_id IS NOT NULL AND user_id=$1")
+        .bind(user).fetch_all(&state.pool).await?;
     let hub = state.machines.read().await;
     Ok(Value::Array(rows.into_iter().map(|(id, owner, name, platform, architecture, version, capabilities, last_seen)| {
-        json!({"id":id,"name":name,"owner_id":owner,"owned":owner==user,"platform":platform,"architecture":architecture,"version":version,"capabilities":capabilities,"last_seen":last_seen,"online":hub.online(id),"connection_id":hub.hosts.get(&id).map(|host|host.connection),"rental":rentals.iter().find(|(machine,_)|*machine==id).map(|(_,info)|info)})
+        json!({"id":id,"name":name,"owner_id":owner,"owned":owner==user,"platform":platform,"architecture":architecture,"version":version,"capabilities":capabilities,"last_seen":last_seen,"online":hub.online(id),"connection_id":hub.hosts.get(&id).map(|host|host.connection),"rental":rentals.iter().find(|(machine,_)|*machine==id).map(|(_,info)|info),"hosted":hosted.iter().find(|(machine,_)|*machine==id).map(|(_,info)|info)})
     }).collect()))
 }
 #[derive(Deserialize)]

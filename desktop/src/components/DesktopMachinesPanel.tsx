@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { AddMachineButton, ConnectMachine, ManageMachinesButton, MachineOnboardingProvider, MachinesPanel, RentalsPanel } from "@clawtab/shared"
+import { AddMachineButton, ConnectMachine, HostedWorkspacePanel, ManageMachinesButton, MachineOnboardingProvider, MachinesPanel, RentalsPanel } from "@clawtab/shared"
 import { openUrl } from "@tauri-apps/plugin-opener"
 import { approveDesktopMachine, localHostRequest, desktopMachineApi, localMachineId } from "../machines/connection"
 import { checkRemoteConnection, retryRemoteConnection, useRemoteConnection } from "../machines/remoteConnection"
@@ -37,6 +37,7 @@ export let DesktopMachinesPanel = ({ onOpenAccount, manage = true }: { onOpenAcc
       <RemoteConnectionStatus label={remote.label} phase={remote.phase} />
       {remote.error && <><p role="alert">{remote.error}</p><button className="btn" onClick={retryConnection}>Retry connection</button></>}
       {remote.phase !== "connected" && <button className="btn" onClick={onOpenAccount}>Open Remote Access</button>}
+      <HostedWorkspacePanel api={desktopMachineApi} />
       {manage && <div className="desktop-machines-tabs" role="group" aria-label="Machine type">
         <button className="desktop-machines-tab" aria-pressed={machineType === "personal"} onClick={showPersonal}>Personal machines</button>
         <button className="desktop-machines-tab" aria-pressed={machineType === "rented"} onClick={showRented}>Rented boxes</button>

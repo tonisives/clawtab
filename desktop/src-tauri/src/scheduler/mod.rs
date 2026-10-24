@@ -29,6 +29,7 @@ pub async fn start(
         tokio::time::sleep(std::time::Duration::from_secs(30)).await;
         let now = Local::now();
         run_due_jobs(&jobs_config, &ctx, &launching_once, last_check, now);
+        run_hosted_queue(&jobs_config, &ctx);
         cleanup_stale_running(&jobs_config, &ctx, event_sink.as_ref());
         last_check = now;
     }
@@ -269,6 +270,12 @@ fn spawn_one_shot(
 }
 
 fn spawn_scheduled_job(job: crate::config::jobs::Job, ctx: JobContext, trigger: &'static str) {
+    if crate::hosted::enabled() {
+        if let Err(error) = crate::hosted::queue_job(&job.slug, false) {
+            log::error!("Could not queue scheduled job: {error}");
+        }
+        return;
+    }
     tokio::spawn(async move {
         executor::execute_job(
             &job,
@@ -283,6 +290,54 @@ fn spawn_scheduled_job(job: crate::config::jobs::Job, ctx: JobContext, trigger: 
         )
         .await;
     });
+}
+
+fn run_hosted_queue(jobs_config: &Arc<Mutex<JobsConfig>>, ctx: &JobContext) {
+    if !crate::hosted::enabled() {
+        return;
+    }
+    let pending = match crate::hosted::pending_jobs() {
+        Ok(pending) => pending,
+        Err(error) => {
+            log::error!("{error}");
+            return;
+        }
+    };
+    for slug in pending {
+        let job = jobs_config
+            .lock()
+            .jobs
+            .iter()
+            .find(|job| job.slug == slug && job.enabled)
+            .cloned();
+        let Some(job) = job else {
+            let _ = crate::hosted::queue_job(&slug, true);
+            continue;
+        };
+        let lease = match crate::hosted::admit() {
+            Ok(lease) => lease,
+            Err(_) => break,
+        };
+        if let Err(error) = crate::hosted::queue_job(&slug, true) {
+            log::error!("{error}");
+            break;
+        }
+        let ctx = ctx.clone();
+        tokio::spawn(async move {
+            executor::execute_job(
+                &job,
+                &ctx,
+                "scheduled",
+                &std::collections::HashMap::new(),
+                executor::ExecuteOpts {
+                    hosted_lease: lease,
+                    use_auto_yes: true,
+                    ..Default::default()
+                },
+            )
+            .await;
+        });
+    }
 }
 
 fn job_is_scheduled(job: &crate::config::jobs::Job) -> bool {

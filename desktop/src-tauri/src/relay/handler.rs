@@ -1189,6 +1189,7 @@ fn run_job(
         job.agent_effort = options.effort;
     }
     let resource_lease = acquire_resource(ctx, policy)?;
+    let hosted_lease = crate::hosted::admit().map_err(LaunchFailure::rejected)?;
 
     let ctx = ctx.clone();
     let params = params.clone();
@@ -1208,6 +1209,7 @@ fn run_job(
                 trigger_id,
                 policy,
                 resource_lease,
+                hosted_lease,
                 ..Default::default()
             },
         )
@@ -1388,6 +1390,7 @@ async fn run_agent(
     )
     .map_err(LaunchFailure::rejected)?;
     let resource_lease = acquire_resource(ctx, policy)?;
+    let hosted_lease = crate::hosted::admit().map_err(LaunchFailure::rejected)?;
     let job_id = job.name.clone();
     let work_dir = job
         .work_dir
@@ -1415,6 +1418,7 @@ async fn run_agent(
                 pane_tx: Some(pane_tx),
                 policy,
                 resource_lease,
+                hosted_lease,
                 ..Default::default()
             },
         )
@@ -1424,7 +1428,11 @@ async fn run_agent(
     let (pane_id, tmux_session) =
         match tokio::time::timeout(std::time::Duration::from_secs(10), pane_rx).await {
             Ok(Ok((pane_id, tmux_session))) => (Some(pane_id), Some(tmux_session)),
-            _ => (None, None),
+            _ => {
+                return Err(LaunchFailure::rejected(
+                    "Could not start the session. Check workspace capacity and provider setup.",
+                ))
+            }
         };
 
     Ok(RunAgentRelayResult {

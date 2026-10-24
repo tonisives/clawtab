@@ -134,6 +134,21 @@ pub fn launcher_path() -> Result<std::path::PathBuf, String> {
 }
 
 pub fn launch(launch: Launch, env: &[(String, String)]) -> Result<SessionInfo, String> {
+    let mut lease = crate::hosted::admit()?;
+    let info = launch_preapproved(launch, env)?;
+    if let Some(lease) = lease.as_mut() {
+        if let Err(error) = lease.bind(&info.id) {
+            let _ = request(&info.id, Request::Stop);
+            return Err(error);
+        }
+    }
+    Ok(info)
+}
+
+pub(crate) fn launch_preapproved(
+    launch: Launch,
+    env: &[(String, String)],
+) -> Result<SessionInfo, String> {
     launch_with_id(
         launcher_path()?.as_path(),
         &format!("{PREFIX}{}", uuid::Uuid::new_v4()),

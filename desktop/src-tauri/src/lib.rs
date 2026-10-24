@@ -30,6 +30,7 @@ pub mod events;
 mod focus;
 pub mod history;
 pub mod host;
+pub mod hosted;
 pub mod ipc;
 pub mod job_context;
 pub mod local_transport;

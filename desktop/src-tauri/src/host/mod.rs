@@ -109,7 +109,7 @@ pub fn info() -> Value {
             capabilities.push("secure_move_v1");
         }
     }
-    json!({"platform":std::env::consts::OS,"architecture":std::env::consts::ARCH,"version":env!("CARGO_PKG_VERSION"),"capabilities":capabilities,"home":dirs::home_dir(),"tools":tools,"models":settings.enabled_models,"machine_id":settings.relay.as_ref().map(|r|&r.device_id)})
+    json!({"platform":std::env::consts::OS,"architecture":std::env::consts::ARCH,"version":env!("CARGO_PKG_VERSION"),"capabilities":capabilities,"home":dirs::home_dir(),"tools":tools,"models":settings.enabled_models,"hosted":crate::hosted::info(),"machine_id":settings.relay.as_ref().map(|r|&r.device_id)})
 }
 
 pub fn resolve_path(value: &str) -> Result<PathBuf, String> {

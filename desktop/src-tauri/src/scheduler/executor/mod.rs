@@ -41,6 +41,7 @@ pub(super) struct TmuxHandle {
 /// basic fire-and-forget run.
 #[derive(Default)]
 pub struct ExecuteOpts {
+    pub hosted_lease: Option<crate::hosted::SessionLease>,
     /// Explicit run id supplied by a local CLI caller. Other callers leave
     /// this unset and receive a generated UUID (or their trigger id).
     pub run_id: Option<String>,
@@ -109,6 +110,19 @@ pub async fn execute_job(
     let merged_params = merge_param_defaults(job, params);
     let params: &HashMap<String, String> = merged_params.as_ref().unwrap_or(params);
 
+    let hosted_lease = match opts.hosted_lease {
+        Some(lease) => Some(lease),
+        None => match crate::hosted::admit() {
+            Ok(lease) => lease,
+            Err(error) => {
+                log::warn!("{}", error);
+                if let Some(trigger_id) = opts.trigger_id.as_deref() {
+                    reject_trigger(ctx, trigger_id, &error);
+                }
+                return false;
+            }
+        },
+    };
     let mut pane_tx = opts.pane_tx;
     let trigger_id = opts.trigger_id;
     let policy = opts.policy;
@@ -174,7 +188,15 @@ pub async fn execute_job(
         telegram_config: &telegram_config,
     };
 
-    handle_result(&rc, result, &mut pane_tx, opts.use_auto_yes, resource_lease).await
+    handle_result(
+        &rc,
+        result,
+        &mut pane_tx,
+        opts.use_auto_yes,
+        resource_lease,
+        hosted_lease,
+    )
+    .await
 }
 
 fn reject_trigger(ctx: &JobContext, trigger_id: &str, message: &str) {
@@ -547,9 +569,17 @@ async fn handle_result(
     pane_tx: &mut Option<tokio::sync::oneshot::Sender<(String, String)>>,
     use_auto_yes: bool,
     resource_lease: Option<crate::resource_policy::ResourceLease>,
+    mut hosted_lease: Option<crate::hosted::SessionLease>,
 ) -> bool {
     match result {
         Ok((_, _, _, Some(handle))) => {
+            if let Some(lease) = hosted_lease.as_mut() {
+                if let Err(error) = lease.bind(&handle.pane_id) {
+                    let _ = crate::terminal_backend::kill_pane(&handle.pane_id);
+                    log::error!("{error}");
+                    return false;
+                }
+            }
             // monitor owns finalization for tmux jobs; drop the unused output.
             attach_monitor(rc, handle, pane_tx, use_auto_yes, resource_lease);
             true

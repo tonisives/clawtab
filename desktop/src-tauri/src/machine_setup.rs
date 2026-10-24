@@ -97,7 +97,16 @@ async fn enroll_rental(path: &str, args: &[String]) -> Result<(), String> {
             return Err("enrollment requires HTTPS".into());
         }
     }
-    let rental = field("rental_id")?;
+    let hosted = config["kind"] == "hosted";
+    if hosted
+        && AppSettings::load()
+            .relay
+            .as_ref()
+            .is_some_and(|relay| !relay.device_id.is_empty())
+    {
+        return Ok(());
+    }
+    let rental = field(if hosted { "workspace_id" } else { "rental_id" })?;
     let token = field("token")?;
     let name = field("name")?;
     let mut settings = AppSettings::load();
@@ -130,8 +139,19 @@ async fn enroll_rental(path: &str, args: &[String]) -> Result<(), String> {
         .map_err(|_| "could not create enrollment client")?;
     for _ in 0..30 {
         let response = client
-            .post(format!("{backend}/rentals/enroll"))
-            .json(&json!({"rental_id":rental,"token":token,"device_token":credential}))
+            .post(format!(
+                "{backend}/{}/enroll",
+                if hosted {
+                    "hosted-workspace"
+                } else {
+                    "rentals"
+                }
+            ))
+            .json(&if hosted {
+                json!({"workspace_id":rental,"token":token,"device_token":credential})
+            } else {
+                json!({"rental_id":rental,"token":token,"device_token":credential})
+            })
             .send()
             .await;
         match response {

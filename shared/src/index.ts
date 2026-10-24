@@ -145,6 +145,7 @@ export * from "./machines/client";
 export * from "./machines/Terminal";
 export * from "./machines/Panel";
 export * from "./machines/Rentals";
+export * from "./machines/HostedWorkspace";
 
 export { buildModelOptions, hostModelCatalog, resolveEnabledModels, BARE_PROVIDER_OPTIONS, labelForProviderModel } from "./util/agentModels";
 export { useHiddenGroups } from "./hooks/useHiddenGroups";

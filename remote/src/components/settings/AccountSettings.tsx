@@ -218,13 +218,14 @@ export let AccountSettings = () => {
           disabled={actionLoading}
           chevron={false}
         /></SettingsGroup>)}
+        {sub.hosted_workspace_eligible && <SettingsGroup><SettingsRow title="Open included workspace" detail="Two parallel sessions and two saved jobs" onPress={openMachines} /></SettingsGroup>}
         {sub.relay_included && <SettingsGroup><SettingsRow title="Manage boxes" onPress={openMachines} /></SettingsGroup>}
       </View>
     )}
     {!subLoading && !sub?.subscribed && <View style={styles.section}>
       <Text style={styles.sectionTitle}>Relay subscription</Text>
       {Platform.OS === "android" ? <Text style={styles.usageDescription}>Relay access requires an existing ClawTab subscription.</Text> : <SettingsGroup>
-        <SettingsRow title={actionLoading || iap.purchasing ? "Please wait…" : Platform.OS === "ios" && iap.loading ? "Loading purchases…" : iap.price ? `Subscribe · ${iap.price} / month` : "Subscribe"} detail={Platform.OS === "ios" && iap.error ? iap.error : "Connect your machines through the relay"} onPress={handleSubscribe} disabled={!sub || actionLoading || iap.purchasing || (Platform.OS === "ios" && !iap.available)} chevron={false} />
+        <SettingsRow title={actionLoading || iap.purchasing ? "Please wait…" : Platform.OS === "ios" && iap.loading ? "Loading purchases…" : iap.price ? `Subscribe · ${iap.price} / month` : "Subscribe"} detail={Platform.OS === "ios" && iap.error ? iap.error : "Includes a workspace for two parallel sessions. Bring your own AI account."} onPress={handleSubscribe} disabled={!sub || actionLoading || iap.purchasing || (Platform.OS === "ios" && !iap.available)} chevron={false} />
       </SettingsGroup>}
     </View>}
     {Platform.OS === "ios" && !sub?.subscribed && !!iap.error && <View style={styles.section}>

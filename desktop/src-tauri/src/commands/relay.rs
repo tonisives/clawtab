@@ -758,6 +758,8 @@ pub async fn machine_api(
         || path == "/account/preferences"
         || path == "/shares"
         || path == "/rentals"
+        || path == "/hosted-workspace"
+        || path.starts_with("/hosted-workspace/")
         || path.starts_with("/rentals/"))
         || path.contains(['?', '#', '\\'])
         || path.contains("..")
@@ -771,9 +773,13 @@ pub async fn machine_api(
         _ => return Err("unsupported machine API method".into()),
     };
     let (server, access, refresh) = get_relay_auth(&state)?;
-    let destination = if path == "/rentals" || path.starts_with("/rentals/") {
+    let destination = if path == "/rentals"
+        || path.starts_with("/rentals/")
+        || path == "/hosted-workspace"
+        || path.starts_with("/hosted-workspace/")
+    {
         if server.trim_end_matches('/') != "https://relay.clawtab.cc" {
-            return Err("Rentals are available through the ClawTab hosted service".into());
+            return Err("Hosted machines are available through the ClawTab hosted service".into());
         }
         "https://backend.clawtab.cc"
     } else {

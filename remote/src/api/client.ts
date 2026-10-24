@@ -317,6 +317,7 @@ export async function verifyIapReceipt(req: VerifyReceiptRequest, userId: string
 }
 
 export interface SubscriptionStatus {
+  hosted_workspace_eligible?: boolean;
   relay_included: boolean;
   subscribed: boolean;
   status: string | null;

@@ -434,7 +434,7 @@ fn spawn_managed(
         }
         args.agent_command
     };
-    let info = crate::managed::launch(
+    let info = crate::managed::launch_preapproved(
         crate::managed::Launch {
             program,
             args: argv,

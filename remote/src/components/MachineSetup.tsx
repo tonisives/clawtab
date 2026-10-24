@@ -6,7 +6,7 @@ import { styles as settingsStyles } from "./settings/SettingsPage"
 import { MachineNavigationModal } from "./MachineNavigationModal"
 import { useRouter } from "expo-router"
 import { openBrowserAsync } from "expo-web-browser"
-import { MachinesPanel, RentalsPanel, ConnectMachine, AddMachineButton, ManageMachinesButton, MachineOnboardingProvider, colors, type MachineActionButtonProps, type MachineOnboardingChrome, type MachineOnboardingContent } from "@clawtab/shared"
+import { MachinesPanel, RentalsPanel, HostedWorkspacePanel, ConnectMachine, AddMachineButton, ManageMachinesButton, MachineOnboardingProvider, colors, type MachineActionButtonProps, type MachineOnboardingChrome, type MachineOnboardingContent } from "@clawtab/shared"
 import { approveMachinePairing, machineApi, rentalApi } from "../api/client"
 import { useAuthStore } from "../store/auth"
 import { resolveRentalAvailability, rentalAvailabilityMessage, type RentalAvailability, type RentalCapabilities } from "../lib/rentalAvailability"
@@ -65,6 +65,7 @@ export let MachineSetup = ({ onNavigate, manage = false }: { onNavigate?: () => 
   </View>
   return <MachineNavigation><MachineOnboardingProvider content={machineOnboardingContent} management={machineManagementContent} chrome={machineOnboardingChrome}>
     {manage && <View style={styles.managementNavigation}><AddMachineButton /></View>}
+    <HostedWorkspacePanel api={rentalApi} />
     {(manage || allowNewRentals) && <RentalsPanel style={manage ? styles.managementPanel : undefined} showExistingRentals={manage} allowNewRentals={allowNewRentals} onOrderingChange={setOrdering} api={rentalApi} {...checkout} platform={Platform.OS === "ios" ? "ios" : Platform.OS === "android" ? "android" : "web"} openUrl={openCheckout}>
       {manage && <MachinesPanel presentation="panel" approvePairing={approveMachinePairing} api={machineApi} />}
     </RentalsPanel>}

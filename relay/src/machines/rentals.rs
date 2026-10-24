@@ -2,6 +2,11 @@ use crate::{error::AppError, AppState};
 use uuid::Uuid;
 
 pub async fn host_allowed(state: &AppState, owner: Uuid, machine: Uuid) -> Result<bool, AppError> {
+    let hosted: Option<bool> = sqlx::query_scalar("SELECT state IN ('provisioning','ready') AND user_id=$2 AND hosted_relay_access(user_id) FROM hosted_workspaces WHERE device_id=$1")
+        .bind(machine).bind(owner).fetch_optional(&state.pool).await?;
+    if let Some(allowed) = hosted {
+        return Ok(allowed);
+    }
     let rental: Option<bool> = sqlx::query_scalar("SELECT r.user_id IS NOT NULL AND r.state IN ('provisioning','ready') AND (r.delete_at IS NULL OR r.delete_at>now()) AND (r.paid_until>now() OR (NOT r.cancel_requested AND r.unpaid_since IS NOT NULL AND r.unpaid_since+interval '10 days'>now())) FROM rentals r WHERE r.device_id=$1")
         .bind(machine).fetch_optional(&state.pool).await?;
     match rental {

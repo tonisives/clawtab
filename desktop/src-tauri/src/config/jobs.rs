@@ -324,6 +324,7 @@ impl JobsConfig {
         }
 
         jobs.sort_by(|a, b| a.name.cmp(&b.name));
+        crate::hosted::restrict_loaded_jobs(&mut jobs);
         Self { jobs }
     }
 
@@ -370,16 +371,20 @@ impl JobsConfig {
 
     pub fn save_job(&self, job: &Job) -> Result<(), String> {
         validate_job_schedule(job)?;
+        let hosted_guard = crate::hosted::job_write_guard()?;
+        let current = hosted_guard.as_ref().map(|_| Self::load());
+        let jobs = current.as_ref().map_or(&self.jobs, |config| &config.jobs);
         let jobs_dir = Self::jobs_dir().ok_or("Could not determine config directory")?;
         let slug = if job.slug.is_empty() {
             derive_slug(
                 &job.folder_path.as_deref().unwrap_or(&job.name),
                 job.job_id.as_deref(),
-                &self.jobs,
+                jobs,
             )
         } else {
             job.slug.clone()
         };
+        crate::hosted::check_job_count(jobs, &slug)?;
         // Slug is now "project/job-name", so join directly creates nested dirs
         let job_dir = jobs_dir.join(&slug);
         std::fs::create_dir_all(&job_dir)

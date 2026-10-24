@@ -1,0 +1,45 @@
+# syntax=docker/dockerfile:1.7
+FROM --platform=$BUILDPLATFORM rust:1.93-bookworm AS build
+RUN dpkg --add-architecture amd64 && apt-get update \
+    && apt-get install -y --no-install-recommends gcc-x86-64-linux-gnu libssl-dev:amd64 \
+    && rm -rf /var/lib/apt/lists/* \
+    && rustup target add x86_64-unknown-linux-gnu
+ENV CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=x86_64-linux-gnu-gcc
+ENV PKG_CONFIG_ALLOW_CROSS=1 OPENSSL_DIR=/usr OPENSSL_INCLUDE_DIR=/usr/include/openssl OPENSSL_LIB_DIR=/usr/lib/x86_64-linux-gnu
+WORKDIR /src
+COPY protocol protocol
+COPY desktop/src-tauri desktop/src-tauri
+RUN --mount=type=cache,id=clawtab-machine-registry,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=clawtab-machine-target,target=/src/desktop/src-tauri/target \
+    cd desktop/src-tauri && cargo build -j4 --locked --release --target x86_64-unknown-linux-gnu --no-default-features --bin clawtab-daemon --bin cwtctl --bin clawtab-hook \
+    && mkdir /out && cp target/x86_64-unknown-linux-gnu/release/clawtab-daemon target/x86_64-unknown-linux-gnu/release/cwtctl target/x86_64-unknown-linux-gnu/release/clawtab-hook /out/
+
+# Hermes' sealed runtime includes its Python dependencies and provider SDKs.
+# All four providers live in the image, outside the subscriber's home volume.
+FROM nousresearch/hermes-agent:v0.22.4@sha256:7a69201726bc64db2072a1371557137c23312d29705cda2b8ea2a0214a50a4cf
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends tmux git-lfs \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --uid 1000 --create-home --home-dir /home/clawtab --shell /bin/bash clawtab
+ARG CODEX_VERSION=0.164.0
+ARG CLAUDE_VERSION=2.1.310
+ARG OPENCODE_VERSION=1.19.4
+RUN npm install --global --prefix /usr/local --include=optional --ignore-scripts \
+    @openai/codex@${CODEX_VERSION} @anthropic-ai/claude-code@${CLAUDE_VERSION} opencode-ai@${OPENCODE_VERSION} \
+    && node /usr/local/lib/node_modules/@anthropic-ai/claude-code/install.cjs \
+    && cd /usr/local/lib/node_modules/opencode-ai && node postinstall.mjs \
+    && npm cache clean --force
+COPY --from=build /out/ /usr/local/bin/
+COPY etc/agent-plugins/ /opt/clawtab/plugins/
+COPY etc/machine-entrypoint.sh /usr/local/bin/machine-entrypoint
+COPY etc/machine-profile.sh /etc/profile.d/clawtab.sh
+COPY etc/machine-tmux.conf /etc/tmux.conf
+ENV HOME=/home/clawtab HERMES_HOME=/home/clawtab/.hermes HERMES_WRITE_SAFE_ROOT=/home/clawtab
+ENV PATH="/home/clawtab/.local/bin:/usr/local/bin:/opt/hermes/.venv/bin:/usr/bin:/bin"
+ENV NPM_CONFIG_PREFIX=/home/clawtab/.local PYTHONDONTWRITEBYTECODE=1
+ENV LANG=C.UTF-8 LC_ALL=C.UTF-8 COLORTERM=truecolor
+ENV NODE_OPTIONS=--max-old-space-size=128
+USER clawtab
+WORKDIR /home/clawtab
+RUN codex --version && claude --version && opencode --version && hermes --version
+ENTRYPOINT ["sh", "/usr/local/bin/machine-entrypoint"]

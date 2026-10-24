@@ -16,6 +16,7 @@ export type Machine = {
   capabilities: string[]
   last_seen: string | null
   rental?: { id: string; state: string; traffic_paused: boolean } | null
+  hosted?: { id: string; state: string; delete_at: string | null } | null
 }
 export type MachineMessage = Record<string, any>
 export type AgentModelPreferences = {
