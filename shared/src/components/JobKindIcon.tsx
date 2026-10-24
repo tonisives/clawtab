@@ -12,7 +12,7 @@ import shellIcon from "../assets/shell-icon.png";
 import codexIcon from "../assets/codex-icon.png";
 import opencodeIcon from "../assets/opencode-icon.png";
 import antigravityIcon from "../assets/antigravity-icon.png";
-// Official Hermes v0.22.4 assets/icon-master.svg, rasterized at 256px.
+// Centered Hermes artwork on an ivory badge; SVG source lives beside the PNG.
 import hermesIcon from "../assets/hermes-icon.png";
 
 export type JobKind = "cron" | "manual" | "claude" | "codex" | "opencode" | "antigravity" | "hermes" | "shell";
@@ -166,6 +166,7 @@ export function JobKindIcon({
   const [imageFailed, setImageFailed] = useState(false);
   const palette = paletteForKind(kind);
   const hasIntrinsicBadge = kind === "claude" || kind === "codex" || kind === "opencode" || kind === "antigravity" || kind === "hermes";
+  const badgeRadius = kind === "hermes" ? size * 0.23 : radius.sm;
   const imageSize = hasIntrinsicBadge
     ? size
     : compact ? Math.round(size * 0.62) : Math.round(size * 0.66);
@@ -185,7 +186,7 @@ export function JobKindIcon({
           : {
               width: size,
               height: size,
-              borderRadius: radius.sm,
+              borderRadius: badgeRadius,
               backgroundColor: hasIntrinsicBadge ? "transparent" : palette.bg,
             },
       ]}
@@ -210,7 +211,7 @@ export function JobKindIcon({
           style={{
             width: imageSize,
             height: imageSize,
-            borderRadius: hasIntrinsicBadge ? radius.sm : 0,
+            borderRadius: hasIntrinsicBadge ? badgeRadius : 0,
           }}
           resizeMode="contain"
           onError={() => setImageFailed(true)}
