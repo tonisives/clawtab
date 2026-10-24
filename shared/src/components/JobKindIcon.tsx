@@ -12,6 +12,8 @@ import shellIcon from "../assets/shell-icon.png";
 import codexIcon from "../assets/codex-icon.png";
 import opencodeIcon from "../assets/opencode-icon.png";
 import antigravityIcon from "../assets/antigravity-icon.png";
+// Official Hermes v0.22.4 assets/icon-master.svg, rasterized at 256px.
+import hermesIcon from "../assets/hermes-icon.png";
 
 export type JobKind = "cron" | "manual" | "claude" | "codex" | "opencode" | "antigravity" | "hermes" | "shell";
 
@@ -125,7 +127,7 @@ function sourceForKind(kind: JobKind) {
     case "antigravity":
       return antigravityIcon;
     case "hermes":
-      return null;
+      return hermesIcon;
   }
 }
 
@@ -163,7 +165,7 @@ export function JobKindIcon({
 }) {
   const [imageFailed, setImageFailed] = useState(false);
   const palette = paletteForKind(kind);
-  const hasIntrinsicBadge = kind === "claude" || kind === "codex" || kind === "opencode" || kind === "antigravity";
+  const hasIntrinsicBadge = kind === "claude" || kind === "codex" || kind === "opencode" || kind === "antigravity" || kind === "hermes";
   const imageSize = hasIntrinsicBadge
     ? size
     : compact ? Math.round(size * 0.62) : Math.round(size * 0.66);

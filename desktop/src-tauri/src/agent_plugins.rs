@@ -2278,17 +2278,23 @@ async fn restore_stashed_draft(host: &HostRun, cancel: &CancellationToken) -> Re
     let Some(draft) = host.stashed_draft.as_deref() else {
         return Ok(());
     };
+    // Model confirmation can arrive before Codex redraws the Vim footer.
+    // Wait for the editor mode instead of treating that frame as a mode change.
+    let vim_modes = match host.stashed_vim_mode {
+        Some(original) => Some((
+            original,
+            wait_for_codex_vim_mode(|| capture_plain(&host.pane_id), cancel).await?,
+        )),
+        None => None,
+    };
     let state = codex_screen_state(&host.pane_id)?;
     if state.draft.as_deref().is_none_or(|value| !value.is_empty()) {
         return Err("Codex composer is not empty; draft was not restored".into());
     }
-    if let Some(original_mode) = host.stashed_vim_mode {
-        let screen = capture_plain(&host.pane_id)?;
-        if codex_vim_insert_mode(&screen) {
+    if let Some((original_mode, mode)) = vim_modes {
+        if mode == CodexVimMode::Insert {
             crate::terminal_backend::send_key_to_pane(&host.pane_id, "Escape")?;
             wait_for_codex_vim_normal(&host.pane_id, cancel).await?;
-        } else if !codex_vim_normal_mode(&screen) {
-            return Err("Codex Vim mode changed before restoring its draft".into());
         }
         crate::terminal_backend::send_key_to_pane(&host.pane_id, "p")?;
         wait_for_codex_draft(&host.pane_id, draft, cancel, "restore its draft").await?;
@@ -2317,6 +2323,28 @@ fn codex_vim_mode(screen: &str) -> Option<CodexVimMode> {
         Some(CodexVimMode::Normal)
     } else {
         None
+    }
+}
+
+async fn wait_for_codex_vim_mode(
+    mut capture: impl FnMut() -> Result<String, String>,
+    cancel: &CancellationToken,
+) -> Result<CodexVimMode, String> {
+    let started = Instant::now();
+    loop {
+        if cancel.is_cancelled() {
+            return Err("Plugin cancelled".into());
+        }
+        let screen = capture()?;
+        if !codex_active_model_dialog(&screen) {
+            if let Some(mode) = codex_vim_mode(&screen) {
+                return Ok(mode);
+            }
+        }
+        if started.elapsed() >= CODEX_MENU_READY_TIMEOUT {
+            return Err("Codex did not show its Vim mode before restoring its draft".into());
+        }
+        tokio::time::sleep(CODEX_MENU_POLL_INTERVAL).await;
     }
 }
 
@@ -2472,12 +2500,14 @@ mod tests {
     use std::fs;
 
     use clawtab_protocol::AgentSessionData;
+    use tokio_util::sync::CancellationToken;
 
     use super::{
         baseline_from_session, codex_active_model_dialog, codex_composer_draft,
         codex_draft_to_stash, codex_vim_mode, live_model_selection, load_plugin,
         redact_internal_values, selected_option_matches, strip_ansi, valid_plugin_id,
-        valid_version_pattern, version_matches, BaselineState, CodexVimMode, LiveModelSelection,
+        valid_version_pattern, version_matches, wait_for_codex_vim_mode, BaselineState,
+        CodexVimMode, LiveModelSelection,
     };
 
     #[test]
@@ -2652,6 +2682,57 @@ actions:
         assert_eq!(
             codex_draft_to_stash(screen, false),
             Ok(Some("first logical line second logical line".into()))
+        );
+    }
+
+    #[tokio::test]
+    async fn draft_restoration_waits_for_vim_footer_after_model_confirmation() {
+        for (label, expected) in [
+            ("Insert", CodexVimMode::Insert),
+            ("Normal", CodexVimMode::Normal),
+        ] {
+            let mut frames = [
+                "› Ask Codex to do anything\n\nVim: Insert\n\nSelect Reasoning Level for gpt-6.1-sol".to_string(),
+                "• Model changed to gpt-6.1-sol max\n\n› Ask Codex to do anything\n\nGPT-6.1-Sol max · Context 100% left".to_string(),
+                format!("› Ask Codex to do anything\n\nGPT-6.1-Sol max · Context 100% left · Vim: {label}"),
+            ]
+            .into_iter();
+            let mode = wait_for_codex_vim_mode(
+                || Ok(frames.next().expect("should stop at the restored footer")),
+                &CancellationToken::new(),
+            )
+            .await;
+
+            assert_eq!(mode, Ok(expected));
+            assert!(frames.next().is_none());
+        }
+    }
+
+    #[tokio::test]
+    async fn draft_restoration_stops_when_vim_footer_never_returns() {
+        let result = wait_for_codex_vim_mode(
+            || Ok("› Ask Codex to do anything\n\nGPT-6.1-Sol max · Context 100% left".into()),
+            &CancellationToken::new(),
+        )
+        .await;
+
+        assert_eq!(
+            result,
+            Err("Codex did not show its Vim mode before restoring its draft".into())
+        );
+    }
+
+    #[tokio::test]
+    async fn draft_restoration_vim_wait_honors_cancellation_and_capture_errors() {
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+        assert_eq!(
+            wait_for_codex_vim_mode(|| panic!("cancelled before capture"), &cancel).await,
+            Err("Plugin cancelled".into())
+        );
+        assert_eq!(
+            wait_for_codex_vim_mode(|| Err("pane closed".into()), &CancellationToken::new()).await,
+            Err("pane closed".into())
         );
     }
 

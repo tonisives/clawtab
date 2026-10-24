@@ -195,6 +195,7 @@ _cwtctl_complete() {
             sub=(
               'auto-yes:Manage auto-yes for a pane'
               'info:Show agent session info'
+              'identities:List live tmux agent identities as JSON'
               'rename:Rename an agent pane'
               'pin:Pin an agent across ClawTab'
               'unpin:Unpin an agent across ClawTab'

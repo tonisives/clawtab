@@ -309,6 +309,33 @@ pub fn resolve_session_info_for_provider_with_cwd_fast(
     resolve_session_info_for_provider_with_cwd_mode(pane_pid, provider, snapshot, cwd, false)
 }
 
+/// Resolve the session identity needed by pane lists.
+pub fn resolve_session_identity(
+    pane_pid: &str,
+    provider: ProcessProvider,
+    snapshot: &ProcessSnapshot,
+    cwd: Option<&str>,
+) -> Option<String> {
+    let identity = match provider {
+        ProcessProvider::Codex => codex::thread_id_for_pane(pane_pid, Some(snapshot)),
+        ProcessProvider::Claude => claude::session_id(pane_pid, Some(snapshot)),
+        ProcessProvider::Hermes => {
+            hermes::identity_for_pane(pane_pid, Some(snapshot)).map(|identity| identity.session_id)
+        }
+        ProcessProvider::Shell => None,
+        _ => {
+            resolve_session_info_for_provider_with_cwd_fast(
+                pane_pid,
+                Some(provider),
+                Some(snapshot),
+                cwd,
+            )
+            .session_id
+        }
+    };
+    identity.or_else(|| snapshot.managed.get(pane_pid)?.conversation_id.clone())
+}
+
 fn resolve_session_info_for_provider_with_cwd_mode(
     pane_pid: &str,
     provider: Option<ProcessProvider>,

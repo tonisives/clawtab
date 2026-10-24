@@ -51,20 +51,12 @@ fn jsonl_cache() -> &'static Mutex<HashMap<PathBuf, CachedMessages>> {
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-pub(super) fn resolve_session_info(
-    pane_pid: &str,
-    snapshot: Option<&ProcessSnapshot>,
-) -> SessionInfo {
-    let mut info = SessionInfo::default();
-
+fn live_session(pane_pid: &str, snapshot: Option<&ProcessSnapshot>) -> Option<SessionFile> {
     // The pane_pid might be claude itself (e.g. forked sessions), or a shell with claude as child.
     let claude_pid = if has_session_file(pane_pid) {
         pane_pid.to_string()
     } else {
-        match find_claude_child(pane_pid, snapshot) {
-            Some(pid) => pid,
-            None => return info,
-        }
+        find_claude_child(pane_pid, snapshot)?
     };
 
     let session_path = dirs::home_dir()
@@ -72,12 +64,22 @@ pub(super) fn resolve_session_info(
         .join(".claude/sessions")
         .join(format!("{}.json", claude_pid));
 
-    let session: SessionFile = match fs::read_to_string(&session_path)
+    fs::read_to_string(&session_path)
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
-    {
-        Some(s) => s,
-        None => return info,
+}
+
+pub(super) fn session_id(pane_pid: &str, snapshot: Option<&ProcessSnapshot>) -> Option<String> {
+    live_session(pane_pid, snapshot).map(|session| session.session_id)
+}
+
+pub(super) fn resolve_session_info(
+    pane_pid: &str,
+    snapshot: Option<&ProcessSnapshot>,
+) -> SessionInfo {
+    let mut info = SessionInfo::default();
+    let Some(session) = live_session(pane_pid, snapshot) else {
+        return info;
     };
 
     info.session_id = Some(session.session_id.clone());
