@@ -66,7 +66,7 @@ ClawTab is built with Rust and Tauri. The desktop bundle is under 20 MB, while t
 
 The bundled tmux plugin adds agent status, task-based pane names, auto-yes controls, session forking, skill search, secret injection, and a terminal sidebar.
 
-Window tabs show a colored age before the agent status: `jn` under a minute, then `13m`, `2h`, or `3d` since the last window visit. Ages are green under an hour, amber under a day, and red from one day onward. Existing windows use their last known activity until their first visit.
+Window tabs show a colored age before the agent status: `jn` under a minute, then `13m`, `2h`, or `3d` since the latest agent action in that window. Ages are green under an hour, amber under a day, and red from one day onward. Agent events and new output update the timestamp; focus changes, spinner repaints, and layout changes do not. Windows without a known agent action omit the age.
 
 The daemon publishes agent activity to tmux without replacing your theme. Working windows get a cyan activity marker, agents asking for input get a yellow attention marker, and present-but-idle agents get a green check.
 

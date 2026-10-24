@@ -232,6 +232,9 @@ pub struct JobSummary {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AgentActivity {
     pub pane_id: String,
+    /// Unix milliseconds of the latest agent event or output change.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_action_at_ms: Option<u64>,
     pub working: bool,
     pub asking: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -669,6 +672,7 @@ mod tests {
     fn agent_activity_ipc_shapes_round_trip() {
         let activity = vec![AgentActivity {
             pane_id: "%12".to_string(),
+            last_action_at_ms: Some(1_700_000_000_000),
             working: true,
             asking: false,
             alert: None,
@@ -678,6 +682,10 @@ mod tests {
             serde_json::to_string(&IpcCommand::GetAgentActivity).unwrap(),
             "\"GetAgentActivity\""
         );
+
+        let legacy: AgentActivity =
+            serde_json::from_str(r#"{"pane_id":"%12","working":true,"asking":false}"#).unwrap();
+        assert_eq!(legacy.last_action_at_ms, None);
 
         let response = IpcResponse::AgentActivity(activity.clone());
         let decoded_response: IpcResponse =

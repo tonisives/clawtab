@@ -1399,6 +1399,7 @@ struct ActivityTracker {
     last_history_size: HashMap<String, u64>,
     last_layout: HashMap<String, (u16, u16)>,
     last_changed: HashMap<String, Instant>,
+    last_action_at_ms: HashMap<String, u64>,
 }
 
 /// Codex emits `PermissionRequest`, but no matching permission-resolved event
@@ -1537,19 +1538,6 @@ impl ActivityTracker {
         {
             seen_panes.insert(pane_id.clone());
             let alert = terminal_alert(screen, *provider);
-            if let Some(hook_state) = hook_runtime.pane_state(pane_id, *provider) {
-                let asking = asking_panes.contains(pane_id)
-                    || (*provider == ProcessProvider::Hermes
-                        && hook_state.state == HookAgentState::Waiting);
-                let (working, asking) = resolved_hook_activity(hook_state.state, asking);
-                activity.push(AgentActivity {
-                    pane_id: pane_id.clone(),
-                    working: working && alert.is_none(),
-                    asking,
-                    alert,
-                });
-                continue;
-            }
             let normalized_history = normalize_activity_history(activity_history);
             let normalized_visible = normalize_activity_visible(activity_visible);
             let visible_text = normalize_activity_history(&normalized_visible);
@@ -1601,6 +1589,34 @@ impl ActivityTracker {
             self.last_layout
                 .insert(pane_id.clone(), (*pane_width, *pane_height));
 
+            // Text/progress changes are actions. Spinner repaints, typing, and
+            // window reflows must not continually reset the action timestamp.
+            if !layout_changed && (history_changed || history_grew) {
+                let timestamp = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64;
+                self.last_action_at_ms.insert(pane_id.clone(), timestamp);
+            }
+            if let Some(hook_state) = hook_runtime.pane_state(pane_id, *provider) {
+                let last_action_at_ms = self
+                    .last_action_at_ms
+                    .entry(pane_id.clone())
+                    .or_insert(hook_state.updated_at_ms);
+                *last_action_at_ms = (*last_action_at_ms).max(hook_state.updated_at_ms);
+                let asking = asking_panes.contains(pane_id)
+                    || (*provider == ProcessProvider::Hermes
+                        && hook_state.state == HookAgentState::Waiting);
+                let (working, asking) = resolved_hook_activity(hook_state.state, asking);
+                activity.push(AgentActivity {
+                    pane_id: pane_id.clone(),
+                    last_action_at_ms: Some(*last_action_at_ms),
+                    working: working && alert.is_none(),
+                    asking,
+                    alert,
+                });
+                continue;
+            }
             let recently_active = self.last_changed.get(pane_id).is_some_and(|changed_at| {
                 now.duration_since(*changed_at) <= RECENT_ACTIVITY_WINDOW
             });
@@ -1612,6 +1628,7 @@ impl ActivityTracker {
             };
             activity.push(AgentActivity {
                 pane_id: pane_id.clone(),
+                last_action_at_ms: self.last_action_at_ms.get(pane_id).copied(),
                 working: working && !asking && alert.is_none(),
                 asking,
                 alert,
@@ -1631,6 +1648,8 @@ impl ActivityTracker {
         self.last_layout
             .retain(|pane_id, _| seen_panes.contains(pane_id));
         self.last_changed
+            .retain(|pane_id, _| seen_panes.contains(pane_id));
+        self.last_action_at_ms
             .retain(|pane_id, _| seen_panes.contains(pane_id));
 
         activity.sort_by(|left, right| left.pane_id.cmp(&right.pane_id));
@@ -2394,6 +2413,48 @@ mod tests {
         assert!(!super::codex_working_status(
             "\u{2022} Working (2s \u{2022} esc to interrupt)\n\nTask finished\n\n\u{2022} Queued follow-up inputs\n  ? 1 question\n\n\u{203a} Ask Codex to do anything"
         ));
+    }
+
+    #[test]
+    fn action_time_changes_only_for_agent_output_and_events() {
+        let now = Instant::now();
+        let mut tracker = ActivityTracker::default();
+        let no_questions = HashSet::new();
+        let original = agent_with_layout_and_visible(
+            "%1",
+            "ready",
+            "output",
+            "\x1b[31mThinking\x1b[0m",
+            20,
+            120,
+            40,
+        );
+        assert_eq!(
+            tracker.update(&[original.clone()], &no_questions, now)[0].last_action_at_ms,
+            None
+        );
+        tracker.last_action_at_ms.insert("%1".into(), 1000);
+        let mut repaint = original.clone();
+        repaint.8 = "\x1b[32mThinking\x1b[0m".into();
+        let mut resized = repaint.clone();
+        resized.7 = "reflowed output".into();
+        resized.10 = 80;
+        for process in [original, repaint, resized.clone()] {
+            assert_eq!(
+                tracker.update(&[process], &no_questions, now)[0].last_action_at_ms,
+                Some(1000)
+            );
+        }
+        resized.7 = "new tool output".into();
+        let changed = tracker.update(&[resized.clone()], &no_questions, now)[0].last_action_at_ms;
+        assert!(changed.is_some_and(|time| time > 1000));
+        assert_eq!(
+            tracker.update(&[resized], &no_questions, now + Duration::from_secs(600))[0]
+                .last_action_at_ms,
+            changed
+        );
+        tracker.update(&[], &no_questions, now);
+        assert!(tracker.last_action_at_ms.is_empty());
     }
 
     #[test]

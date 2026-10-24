@@ -63,4 +63,21 @@ grep -Fxq $'window\t@1\t1\t0\t0\t1\t591' "$OPTION_CHANGES_FILE"
 apply_snapshot '{"AgentActivity":[{"pane_id":"%1","working":false,"asking":false,"alert":"Selected model is at capacity."}]}'
 grep -Fxq $'pane\t%1\t1\t0\t1\t1\t0' "$OPTION_CHANGES_FILE"
 grep -Fxq $'window\t@1\t1\t0\t0\t1\t0' "$OPTION_CHANGES_FILE"
+# The newest actual agent action wins across panes, independently of flags.
+test_panes=$'%1|||@1|||1|||1|||0|||0|||0|||1|||0|||0|||0|||0|||0\n%2|||@1|||1|||1|||0|||0|||0|||0|||0|||0|||0|||0|||0'
+apply_snapshot '{"AgentActivity":[{"pane_id":"%1","working":false,"asking":false,"last_action_at_ms":1700000000123},{"pane_id":"%2","working":false,"asking":false,"last_action_at_ms":1700000060999}]}'
+grep -Fxq $'action\t@1\t1700000060' "$OPTION_CHANGES_FILE"
+grep -q '@clawtab-agent-last-action-at 1700000060' "$TEST_DIR/calls"
+
+# Snapshot refresh and focus have no effect when the action time is unchanged.
+test_panes=$'%1|||@1|||1|||1|||0|||0|||0|||1|||0|||0|||0|||0|||1700000060'
+apply_snapshot '{"AgentActivity":[{"pane_id":"%1","working":false,"asking":false,"last_action_at_ms":1700000060999}]}'
+if grep -q '^action' "$OPTION_CHANGES_FILE"; then exit 1; fi
+apply_snapshot '{"AgentActivity":[{"pane_id":"%1","working":false,"asking":false,"last_action_at_ms":1700000120000}]}'
+grep -Fxq $'action\t@1\t1700000120' "$OPTION_CHANGES_FILE"
+
+# A removed agent or old daemon clears the unavailable action time.
+apply_snapshot '{"AgentActivity":[]}'
+grep -Fxq $'action\t@1\t0' "$OPTION_CHANGES_FILE"
+grep -q 'set-window-option -qu -t @1 @clawtab-agent-last-action-at' "$TEST_DIR/calls"
 printf 'agent alert tests passed\n'

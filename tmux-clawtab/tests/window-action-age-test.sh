@@ -26,7 +26,7 @@ source "$TEST_DIR/formats.sh"
 now=$(date +%s)
 assert_age() {
     local seconds="$1" expected="$2" color="$3" rendered
-    tmux set-option -w @clawtab-window-visited-at "$((now - seconds))"
+    tmux set-option -w @clawtab-agent-last-action-at "$((now - seconds))"
     rendered=$(tmux display-message -p '#{E:window-status-format}')
     [[ "$rendered" == "0:first #[fg=${color}]${expected}#[default] #[fg=green,bold]✓#[default]" ]] || {
         printf 'unexpected age format: %s\n' "$rendered" >&2
@@ -44,21 +44,26 @@ assert_age 46800 13h '#e5c07b'
 assert_age 86400 1d '#e88b8b'
 assert_age 1123200 13d '#e88b8b'
 
-# The clock remains visible without an agent or a running daemon.
-tmux set-option -g @clawtab-daemon-running 0
-[[ "$(tmux display-message -p '#{E:window-status-format}')" == '0:first #[fg=#e88b8b]13d#[default]' ]]
-tmux set-option -wu @clawtab-window-visited-at
-[[ "$(tmux display-message -p '#{E:window-status-format}')" == '0:first #[fg=#a7c88d]jn#[default]' ]]
-
-# Background window creation does not overwrite visit times. Switching stamps
-# only the selected window, and an actual session change stamps its window.
-tmux set-option -w @clawtab-window-visited-at 100
+# Changing focus timestamps or selecting windows cannot reset agent action age.
+tmux set-option -w @clawtab-window-visited-at "$now"
+assert_age 1123200 13d '#e88b8b'
 tmux new-window -d -t visits -n second
-[[ "$(tmux show-option -wqv -t visits:0 @clawtab-window-visited-at)" == 100 ]]
 tmux select-window -t visits:1
-[[ "$(tmux show-option -wqv -t visits:1 @clawtab-window-visited-at)" -ge "$now" ]]
-[[ "$(tmux show-option -wqv -t visits:0 @clawtab-window-visited-at)" == 100 ]]
 tmux select-window -t visits:0
-[[ "$(tmux show-option -wqv -t visits:0 @clawtab-window-visited-at)" -ge "$now" ]]
+assert_age 1123200 13d '#e88b8b'
 
-printf 'window visit age tests passed\n'
+# A window without a known action has only its existing agent status.
+tmux set-option -wu @clawtab-agent-last-action-at
+[[ "$(tmux display-message -p '#{E:window-status-format}')" == '0:first #[fg=green,bold]✓#[default]' ]]
+
+# Reloading an installed focus-age format replaces it rather than appending.
+tmux set-option -g window-status-format "#I:#W ${visit_part}${clawtab_activity_part}"
+source "$TEST_DIR/formats.sh"
+normal=$(tmux show-option -gqv window-status-format)
+[[ "$normal" != *'@clawtab-window-visited-at'* ]]
+[[ "$normal" == *'@clawtab-agent-last-action-at'* ]]
+assert_age 780 13m '#a7c88d'
+source "$TEST_DIR/formats.sh"
+[[ "$(tmux show-option -gqv window-status-format)" == "$normal" ]]
+
+printf 'window action age tests passed\n'

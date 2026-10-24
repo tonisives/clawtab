@@ -270,41 +270,45 @@ append_activity_format() {
 append_activity_format window-status-format
 append_activity_format window-status-current-format
 
-# Window visit ages use native formats, including strftime for the current
-# epoch, so refreshing the status bar never starts a per-window shell job.
-visit_stamp="set-option -wF @clawtab-window-visited-at '#{T:#{l:%s}}'"
-tmux set-hook -g 'after-select-window[112]' "$visit_stamp"
-tmux set-hook -g 'client-session-changed[112]' "$visit_stamp"
-tmux set-hook -g 'client-attached[112]' "$visit_stamp"
+# Remove the old focus stamps; the sessions picker owns focus history.
+for focus_hook in after-select-window client-session-changed client-attached; do
+    tmux set-hook -gu "$focus_hook[112]"
+done
 
-# Existing windows retain their last known activity until their first visit.
+# Retain this expression only to upgrade already-running status formats.
 visit_time='#{?#{@clawtab-window-visited-at},#{@clawtab-window-visited-at},#{window_activity}}'
 visit_age="#{e|-:#{T:#{l:%s}},${visit_time}}"
 visit_color="#{?#{e|<:${visit_age},3600},#a7c88d,#{?#{e|<:${visit_age},86400},#e5c07b,#e88b8b}}"
 visit_label="#{?#{e|<:${visit_age},60},jn,#{?#{e|<:${visit_age},3600},#{e|/:${visit_age},60}m,#{?#{e|<:${visit_age},86400},#{e|/:${visit_age},3600}h,#{e|/:${visit_age},86400}d}}}"
 visit_part="#[fg=${visit_color}]${visit_label}#[default]"
 
-append_visit_format() {
+
+action_age='#{e|-:#{T:#{l:%s}},#{@clawtab-agent-last-action-at}}'
+action_color="#{?#{e|<:${action_age},3600},#a7c88d,#{?#{e|<:${action_age},86400},#e5c07b,#e88b8b}}"
+action_label="#{?#{e|<:${action_age},60},jn,#{?#{e|<:${action_age},3600},#{e|/:${action_age},60}m,#{?#{e|<:${action_age},86400},#{e|/:${action_age},3600}h,#{e|/:${action_age},86400}d}}}"
+action_part="#{?#{@clawtab-agent-last-action-at},#[fg=${action_color}]${action_label}#[default],}"
+
+append_action_format() {
     local option_name="$1"
-    local current_format
-    local replacement
+    local current_format replacement
     current_format=$(tmux show-option -gqv "$option_name")
-    if [[ "$current_format" == *'@clawtab-window-visited-at'* ]]; then
+    if [[ "$current_format" == *'@clawtab-agent-last-action-at'* ]]; then
         return
     fi
-
-    if [[ "$current_format" == *"$clawtab_activity_part"* ]]; then
-        replacement=" ${visit_part}${clawtab_activity_part}"
+    if [[ "$current_format" == *"$visit_part"* ]]; then
+        current_format="${current_format/"$visit_part"/$action_part}"
+    elif [[ "$current_format" == *"$clawtab_activity_part"* ]]; then
+        replacement="#{?#{@clawtab-agent-last-action-at}, ${action_part},}${clawtab_activity_part}"
         current_format="${current_format/"$clawtab_activity_part"/$replacement}"
     elif [[ "$current_format" == *"$clawtab_activity_core"* ]]; then
-        replacement="${visit_part}${clawtab_activity_part}"
+        replacement="${action_part}${clawtab_activity_part}"
         current_format="${current_format/"$clawtab_activity_core"/$replacement}"
     fi
     tmux set-option -g "$option_name" "$current_format"
 }
 
-append_visit_format window-status-format
-append_visit_format window-status-current-format
+append_action_format window-status-format
+append_action_format window-status-current-format
 
 # Older plugin versions forced a one-second status refresh to animate the
 # working marker. Restore tmux's default only when this load upgraded one of
