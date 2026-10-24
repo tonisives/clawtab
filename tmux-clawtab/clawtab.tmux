@@ -76,7 +76,7 @@ rewrite_pane_info_helper() {
     local info_call="${base_call})"
     local path_cache='#{@clawtab-pane-path}'
     local has_info_cache='#{@clawtab-pane-has-info}'
-    local info_cache='#{@clawtab-pane-info}'
+    local info_cache='#{E:@clawtab-pane-info}'
 
     if [[ "$current_border" == *"$base_call"* ]]; then
         current_border="${current_border//$path_call/$path_cache}"
@@ -90,6 +90,7 @@ rewrite_pane_info_helper "$HOME/.config/tmux/clawtab-pane-info.sh"
 rewrite_pane_info_helper "~/.config/tmux/scripts/panes/clawtab-pane-info.sh"
 rewrite_pane_info_helper "$HOME/.config/tmux/scripts/panes/clawtab-pane-info.sh"
 if [[ "$current_border" == *"@clawtab-pane-path"* && "$current_border" == *"@clawtab-pane-info"* ]]; then
+    current_border="${current_border//'#{@clawtab-pane-info}'/'#{E:@clawtab-pane-info}'}"
     border_cache_enabled=1
 fi
 

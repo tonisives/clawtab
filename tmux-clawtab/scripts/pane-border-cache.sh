@@ -37,6 +37,17 @@ refresh_pane() {
     # Values are expanded as tmux formats later, so escape literal hashes.
     path="${path//#/##}"
     info="${info//#/##}"
+
+    # Rich helpers prefix the title with session age. Render actual activity
+    # from the same snapshot as window status, and let tmux keep the age current.
+    if [[ "$info" =~ ^(just\ now|[0-9]+[mhdw]\ ago)(\ \|\ |$) ]]; then
+        info="${info:${#BASH_REMATCH[0]}}"
+        local age='#{e|-:#{T:#{l:%s}},#{@clawtab-agent-pane-last-action-at}}'
+        local label="#{?#{e|<:${age},60},just now,#{?#{e|<:${age},3600},#{e|/:${age},60}m ago,#{?#{e|<:${age},86400},#{e|/:${age},3600}h ago,#{e|/:${age},86400}d ago}}}"
+        local separator=""
+        [ -z "$info" ] || separator=" | "
+        info="#{?#{@clawtab-agent-pane-last-action-at},${label}${separator},}${info}"
+    fi
     tmux set-option -pq -t "$target" @clawtab-pane-path "$path" \
         \; set-option -pq -t "$target" @clawtab-pane-info "$info" \
         \; set-option -pq -t "$target" @clawtab-pane-has-info "$has_info" \

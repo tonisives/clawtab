@@ -6,12 +6,18 @@ pub(crate) mod hermes;
 mod opencode;
 
 pub(crate) use codex::completed_turn_after as codex_completed_turn_after;
-pub(crate) use codex::session_file_size_for_pane as codex_session_file_size_for_pane;
+pub(crate) use codex::session_activity_for_pane as codex_session_activity_for_pane;
 pub(crate) use codex::thread_id_for_pane as codex_thread_id_for_pane;
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::process::Command;
+
+#[derive(Default)]
+pub(crate) struct SessionActivity {
+    pub last_action_at_ms: Option<u64>,
+    pub file_size_bytes: Option<u64>,
+}
 
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct SessionInfo {

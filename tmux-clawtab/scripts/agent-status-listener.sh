@@ -136,6 +136,7 @@ clear_activity_options() {
         tmux set-option -pqu -t "$pane_id" @clawtab-agent-asking 2>/dev/null || true
         tmux set-option -pqu -t "$pane_id" @clawtab-agent-pane-alert 2>/dev/null || true
         tmux set-option -pqu -t "$pane_id" @clawtab-agent-pane-size-mb 2>/dev/null || true
+        tmux set-option -pqu -t "$pane_id" @clawtab-agent-pane-last-action-at 2>/dev/null || true
     done
 }
 
@@ -176,7 +177,7 @@ apply_snapshot() {
         ] | @tsv' \
         2>/dev/null >>"$ACTIVITY_TSV" || return 1
 
-    tmux list-panes -a -F '#{pane_id}|||#{window_id}|||#{@clawtab-agent-pane-present}|||#{@clawtab-agent-present}|||#{@clawtab-agent-working}|||#{@clawtab-agent-question}|||#{@clawtab-agent-asking}|||#{pane_active}|||#{@clawtab-agent-alert}|||#{@clawtab-agent-pane-alert}|||#{@clawtab-agent-size-mb}|||#{@clawtab-agent-pane-size-mb}|||#{@clawtab-agent-last-action-at}' \
+    tmux list-panes -a -F '#{pane_id}|||#{window_id}|||#{@clawtab-agent-pane-present}|||#{@clawtab-agent-present}|||#{@clawtab-agent-working}|||#{@clawtab-agent-question}|||#{@clawtab-agent-asking}|||#{pane_active}|||#{@clawtab-agent-alert}|||#{@clawtab-agent-pane-alert}|||#{@clawtab-agent-size-mb}|||#{@clawtab-agent-pane-size-mb}|||#{@clawtab-agent-last-action-at}|||#{@clawtab-agent-pane-last-action-at}' \
         >"$PANE_STATE_FILE" 2>/dev/null || return 1
 
     awk -F '\t' 'BEGIN { OFS = "\t" }
@@ -201,6 +202,7 @@ apply_snapshot() {
             pane_active[pane] = (field[8] == "1")
             pane_alert_current[pane] = (field[10] == "1")
             pane_size_current[pane] = field[12] + 0
+            pane_action_current[pane] = field[14] + 0
             pane_window[pane] = window
             windows[window] = 1
             if (!(window in window_initialized)) {
@@ -228,7 +230,11 @@ apply_snapshot() {
                 asking = (desired_asking[pane] || desired_alert[pane]) ? 1 : 0
                 alert = desired_alert[pane] ? 1 : 0
                 size = desired_size[pane] + 0
+                action = desired_action[pane] + 0
                 window = pane_window[pane]
+                if (pane_action_current[pane] != action) {
+                    print "pane-action", pane, action
+                }
                 if (pane_current[pane] != wanted || pane_asking_current[pane] != asking ||
                     pane_alert_current[pane] != alert || pane_size_current[pane] != size) {
                     print "pane", pane, wanted, working, asking, alert, size
@@ -290,6 +296,13 @@ apply_snapshot() {
                     tmux set-window-option -q -t "$target" @clawtab-agent-last-action-at "$first" 2>/dev/null || true
                 else
                     tmux set-window-option -qu -t "$target" @clawtab-agent-last-action-at 2>/dev/null || true
+                fi
+                ;;
+            pane-action)
+                if [ "$first" -gt 0 ]; then
+                    tmux set-option -pq -t "$target" @clawtab-agent-pane-last-action-at "$first" 2>/dev/null || true
+                else
+                    tmux set-option -pqu -t "$target" @clawtab-agent-pane-last-action-at 2>/dev/null || true
                 fi
                 ;;
             advance)

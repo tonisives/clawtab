@@ -6,7 +6,9 @@ use std::time::{Duration, Instant};
 use clawtab_protocol::{ClaudeQuestion, QuestionOption};
 
 use crate::agent_hooks::{HookAgentState, HookRuntime};
-use crate::agent_session::{detect_process_provider, ProcessProvider, ProcessSnapshot};
+use crate::agent_session::{
+    detect_process_provider, ProcessProvider, ProcessSnapshot, SessionActivity,
+};
 use crate::config::jobs::{JobStatus, JobsConfig};
 use crate::config::settings::AppSettings;
 use crate::ipc::AgentActivity;
@@ -658,10 +660,14 @@ pub async fn question_detection_loop(
             &asking_panes,
             Instant::now(),
             &hook_runtime,
+            &detection.session_activity,
         );
         for item in &mut activity {
             if let Some(warning) = crate::agent_session::session_file_size_alert(
-                detection.session_file_sizes.get(&item.pane_id).copied(),
+                detection
+                    .session_activity
+                    .get(&item.pane_id)
+                    .and_then(|info| info.file_size_bytes),
                 settings_snapshot.session_file_warning_mb,
             ) {
                 item.alert = Some(match item.alert.take() {
@@ -1554,7 +1560,13 @@ impl ActivityTracker {
         asking_panes: &HashSet<String>,
         now: Instant,
     ) -> Vec<AgentActivity> {
-        self.update_with_hooks(processes, asking_panes, now, &HookRuntime::default())
+        self.update_with_hooks(
+            processes,
+            asking_panes,
+            now,
+            &HookRuntime::default(),
+            &HashMap::new(),
+        )
     }
 
     #[allow(clippy::too_many_lines)]
@@ -1564,6 +1576,7 @@ impl ActivityTracker {
         asking_panes: &HashSet<String>,
         now: Instant,
         hook_runtime: &HookRuntime,
+        session_activity: &HashMap<String, SessionActivity>,
     ) -> Vec<AgentActivity> {
         let mut seen_panes = HashSet::new();
         let mut activity = Vec::with_capacity(processes.len());
@@ -1649,7 +1662,13 @@ impl ActivityTracker {
             }
             // Text/progress changes are actions. Spinner repaints, typing, and
             // window reflows must not continually reset the action timestamp.
-            if !layout_changed && (history_changed || history_grew || output_changed) {
+            if let Some(timestamp) = session_activity
+                .get(pane_id)
+                .and_then(|info| info.last_action_at_ms)
+            {
+                // Recorded actions survive daemon restarts and ignore idle TUI redraws.
+                self.last_action_at_ms.insert(pane_id.clone(), timestamp);
+            } else if !layout_changed && (history_changed || history_grew || output_changed) {
                 let timestamp = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
@@ -1719,7 +1738,7 @@ impl ActivityTracker {
 
 struct DetectionResult {
     processes: Vec<DetectedAgent>,
-    session_file_sizes: HashMap<String, u64>,
+    session_activity: HashMap<String, SessionActivity>,
     /// All pane IDs that currently exist in tmux (not just Claude processes).
     all_pane_ids: HashSet<String>,
 }
@@ -1817,7 +1836,7 @@ fn detect_question_processes(
     let running_panes = collect_q_running_panes(jobs_config, job_status);
     let match_entries = collect_q_match_entries(jobs_config);
 
-    let mut session_file_sizes = HashMap::new();
+    let mut session_activity = HashMap::new();
     let mut all_pane_ids = HashSet::new();
     let mut seen = HashSet::new();
     let mut results = Vec::new();
@@ -1853,10 +1872,10 @@ fn detect_question_processes(
             continue;
         };
         if provider == ProcessProvider::Codex {
-            if let Some(size) =
-                crate::agent_session::codex_session_file_size_for_pane(pane_pid, process_snapshot)
+            if let Some(info) =
+                crate::agent_session::codex_session_activity_for_pane(pane_pid, process_snapshot)
             {
-                session_file_sizes.insert(pane_id.to_string(), size);
+                session_activity.insert(pane_id.to_string(), info);
             }
         }
         hook_runtime.bind_process_to_pane(pane_id, pane_pid, provider, process_snapshot);
@@ -1919,11 +1938,11 @@ fn detect_question_processes(
             continue;
         };
         if provider == ProcessProvider::Codex {
-            if let Some(size) = crate::agent_session::codex_session_file_size_for_pane(
+            if let Some(activity) = crate::agent_session::codex_session_activity_for_pane(
                 &info.child_pid.to_string(),
                 process_snapshot,
             ) {
-                session_file_sizes.insert(info.id.clone(), size);
+                session_activity.insert(info.id.clone(), activity);
             }
         }
         hook_runtime.bind_process_to_pane(
@@ -1984,7 +2003,7 @@ fn detect_question_processes(
 
     DetectionResult {
         processes: results,
-        session_file_sizes,
+        session_activity,
         all_pane_ids,
     }
 }
@@ -2473,6 +2492,42 @@ mod tests {
         assert!(!super::codex_working_status(
             "\u{2022} Working (2s \u{2022} esc to interrupt)\n\nTask finished\n\n\u{2022} Queued follow-up inputs\n  ? 1 question\n\n\u{203a} Ask Codex to do anything"
         ));
+    }
+
+    #[test]
+    fn recorded_action_time_survives_redraws_and_tracker_restarts() {
+        use crate::agent_hooks::HookRuntime;
+        use crate::agent_session::SessionActivity;
+        use std::collections::HashMap;
+
+        let now = Instant::now();
+        let mut process = agent_with_layout("%1", "ready", "old output", 20, 120, 40);
+        process.12 = ProcessProvider::Codex;
+        let mut sessions = HashMap::from([(
+            "%1".to_string(),
+            SessionActivity {
+                last_action_at_ms: Some(1_700_000_000_000),
+                ..SessionActivity::default()
+            },
+        )]);
+        let mut tracker = ActivityTracker::default();
+        let no_questions = HashSet::new();
+        let hooks = HookRuntime::default();
+        let first = tracker.update_with_hooks(&[process.clone()], &no_questions, now, &hooks, &sessions);
+        assert_eq!(first[0].last_action_at_ms, Some(1700000000000));
+
+        process.7 = "old output after a TUI redraw".into();
+        let redrawn =
+            tracker.update_with_hooks(&[process.clone()], &no_questions, now, &hooks, &sessions);
+        assert_eq!(redrawn[0].last_action_at_ms, first[0].last_action_at_ms);
+        let restarted = ActivityTracker::default().update_with_hooks(
+            &[process.clone()], &no_questions, now, &hooks, &sessions,
+        );
+        assert_eq!(restarted[0].last_action_at_ms, first[0].last_action_at_ms);
+
+        sessions.get_mut("%1").unwrap().last_action_at_ms = Some(1700000060000);
+        let changed = tracker.update_with_hooks(&[process], &no_questions, now, &hooks, &sessions);
+        assert_eq!(changed[0].last_action_at_ms, Some(1700000060000));
     }
 
     #[test]

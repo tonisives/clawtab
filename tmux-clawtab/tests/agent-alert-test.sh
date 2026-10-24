@@ -68,9 +68,18 @@ test_panes=$'%1|||@1|||1|||1|||0|||0|||0|||1|||0|||0|||0|||0|||0\n%2|||@1|||1|||
 apply_snapshot '{"AgentActivity":[{"pane_id":"%1","working":false,"asking":false,"last_action_at_ms":1700000000123},{"pane_id":"%2","working":false,"asking":false,"last_action_at_ms":1700000060999}]}'
 grep -Fxq $'action\t@1\t1700000060' "$OPTION_CHANGES_FILE"
 grep -q '@clawtab-agent-last-action-at 1700000060' "$TEST_DIR/calls"
+grep -Fxq $'pane-action\t%1\t1700000000' "$OPTION_CHANGES_FILE"
+grep -Fxq $'pane-action\t%2\t1700000060' "$OPTION_CHANGES_FILE"
+
+# A single old agent replaces a newer cached window timestamp. Other shell
+# panes and removed agents cannot keep the window looking recently active.
+test_panes=$'%1|||@1|||1|||1|||0|||0|||0|||1|||0|||0|||0|||0|||1700172800|||1700000000\n%3|||@1|||0|||1|||0|||0|||0|||0|||0|||0|||0|||0|||1700172800'
+apply_snapshot '{"AgentActivity":[{"pane_id":"%1","working":false,"asking":false,"last_action_at_ms":1700000000123}]}'
+grep -Fxq $'action\t@1\t1700000000' "$OPTION_CHANGES_FILE"
+if grep -q '^pane-action' "$OPTION_CHANGES_FILE"; then exit 1; fi
 
 # Snapshot refresh and focus have no effect when the action time is unchanged.
-test_panes=$'%1|||@1|||1|||1|||0|||0|||0|||1|||0|||0|||0|||0|||1700000060'
+test_panes=$'%1|||@1|||1|||1|||0|||0|||0|||1|||0|||0|||0|||0|||1700000060|||1700000060'
 apply_snapshot '{"AgentActivity":[{"pane_id":"%1","working":false,"asking":false,"last_action_at_ms":1700000060999}]}'
 if grep -q '^action' "$OPTION_CHANGES_FILE"; then exit 1; fi
 apply_snapshot '{"AgentActivity":[{"pane_id":"%1","working":false,"asking":false,"last_action_at_ms":1700000120000}]}'
@@ -79,5 +88,7 @@ grep -Fxq $'action\t@1\t1700000120' "$OPTION_CHANGES_FILE"
 # A removed agent or old daemon clears the unavailable action time.
 apply_snapshot '{"AgentActivity":[]}'
 grep -Fxq $'action\t@1\t0' "$OPTION_CHANGES_FILE"
+grep -Fxq $'pane-action\t%1\t0' "$OPTION_CHANGES_FILE"
+grep -q 'set-option -pqu -t %1 @clawtab-agent-pane-last-action-at' "$TEST_DIR/calls"
 grep -q 'set-window-option -qu -t @1 @clawtab-agent-last-action-at' "$TEST_DIR/calls"
 printf 'agent alert tests passed\n'

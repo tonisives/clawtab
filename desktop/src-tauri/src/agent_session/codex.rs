@@ -2,7 +2,7 @@ use super::common::{
     find_child_process, format_local_timestamp, insert_bounded, normalize_optional_owned,
     normalize_optional_str, normalize_unix_timestamp_secs, SESSION_CACHE_MAX_ENTRIES,
 };
-use super::{ProcessSnapshot, SessionInfo};
+use super::{ProcessSnapshot, SessionActivity, SessionInfo};
 use parking_lot::Mutex;
 use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
 use std::collections::HashMap;
@@ -144,13 +144,17 @@ fn resolve_session_info_with_details(
     info
 }
 
-pub(crate) fn session_file_size_for_pane(
+pub(crate) fn session_activity_for_pane(
     pane_pid: &str,
     snapshot: &ProcessSnapshot,
-) -> Option<u64> {
+) -> Option<SessionActivity> {
     let thread_id = thread_id_for_pane(pane_pid, Some(snapshot))?;
     let thread = read_codex_thread(&thread_id)?;
-    session_file_size(std::path::Path::new(&thread.rollout_path?))
+    let path = PathBuf::from(thread.rollout_path?);
+    Some(SessionActivity {
+        last_action_at_ms: read_last_action_at(&path).and_then(|time| u64::try_from(time).ok()),
+        file_size_bytes: session_file_size(&path),
+    })
 }
 
 fn session_file_size(path: &std::path::Path) -> Option<u64> {
@@ -440,6 +444,20 @@ fn read_last_user_message_at(path: &std::path::Path) -> Option<i64> {
                 .pointer("/payload/type")
                 .and_then(|value| value.as_str())
                 == Some("user_message")
+    })
+}
+
+fn read_last_action_at(path: &std::path::Path) -> Option<i64> {
+    super::common::last_action_at(path, |value| match value.get("type").and_then(|value| value.as_str()) {
+        Some("response_item") => true,
+        Some("event_msg") => matches!(
+            value.pointer("/payload/type").and_then(|value| value.as_str()),
+            Some(
+                "user_message" | "agent_message" | "agent_reasoning" | "task_started"
+                    | "task_complete" | "turn_aborted"
+            )
+        ),
+        _ => false,
     })
 }
 
@@ -839,6 +857,33 @@ fn read_codex_rollout_messages(path: &PathBuf) -> (Option<String>, Option<String
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn action_time_uses_recorded_output_and_ignores_session_settings() {
+        use std::io::Write;
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("activity.jsonl");
+        std::fs::write(
+            &path,
+            concat!(
+                "{\"type\":\"event_msg\",\"timestamp\":\"2026-10-20T01:00:00Z\",\"payload\":{\"type\":\"user_message\"}}\n",
+                "{\"type\":\"response_item\",\"timestamp\":\"2026-10-20T02:00:00Z\",\"payload\":{\"type\":\"message\"}}\n",
+                "{\"type\":\"event_msg\",\"timestamp\":\"2026-10-23T01:00:00Z\",\"payload\":{\"type\":\"thread_settings_applied\"}}\n",
+            ),
+        ).unwrap();
+        let first = super::read_last_action_at(&path).unwrap();
+        assert_eq!(first, 1792461600000);
+        // The user-message cache must stay independent of the action cache.
+        assert_eq!(super::read_last_user_message_at(&path), Some(first - 3600000));
+        assert_eq!(super::read_last_action_at(&path), Some(first));
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        writeln!(file, "{{\"type\":\"event_msg\",\"timestamp\":\"2026-10-23T02:00:00Z\",\"payload\":{{\"type\":\"task_complete\"}}}}").unwrap();
+        assert_eq!(super::read_last_action_at(&path), Some(first + 3 * 86_400_000));
+        assert_eq!(super::read_last_user_message_at(&path), Some(first - 3600000));
+    }
+
     #[test]
     fn session_file_size_tracks_growth_truncation_and_removal() {
         let directory = tempfile::tempdir().unwrap();

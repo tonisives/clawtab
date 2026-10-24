@@ -41,7 +41,7 @@ cat >"$TEST_DIR/helper" <<'EOF'
 if [ "${3:-}" = "--path" ]; then
     printf '/workspace/project\n'
 else
-    printf '1h ago | holders perf\n'
+    printf '%s\n' "${TEST_HELPER_INFO:-1h ago | holders perf}"
 fi
 EOF
 chmod +x "$TEST_DIR/tmux" "$TEST_DIR/helper"
@@ -50,7 +50,9 @@ export TEST_TMUX_OPTIONS="$TEST_DIR/options"
 export CLAWTAB_PANE_INFO_HELPER="$TEST_DIR/helper"
 
 bash "$PLUGIN_DIR/scripts/pane-border-cache.sh" '%63' 427
-grep -Fxq '1h ago | holders perf' "$TEST_TMUX_OPTIONS"
+grep -Fq '@clawtab-agent-pane-last-action-at' "$TEST_TMUX_OPTIONS"
+grep -Fq 'holders perf' "$TEST_TMUX_OPTIONS"
+if grep -Fq '1h ago | holders perf' "$TEST_TMUX_OPTIONS"; then exit 1; fi
 grep -Fxq '@clawtab-pane-has-info' "$TEST_TMUX_OPTIONS"
 grep -Fxq 'refresh-client' "$TEST_TMUX_OPTIONS"
 grep -Fxq '/dev/test-client' "$TEST_TMUX_OPTIONS"
@@ -61,7 +63,7 @@ grep -Fq '#{!:#{client_control_mode}}' "$TEST_TMUX_OPTIONS"
 : >"$TEST_TMUX_OPTIONS"
 bash "$PLUGIN_DIR/scripts/pane-border-cache.sh" --window '@42'
 grep -Fxq '@42' "$TEST_TMUX_OPTIONS"
-grep -Fxq '1h ago | holders perf' "$TEST_TMUX_OPTIONS"
+grep -Fq '@clawtab-agent-pane-last-action-at' "$TEST_TMUX_OPTIONS"
 grep -Fxq 'refresh-client' "$TEST_TMUX_OPTIONS"
 
 # All supported helper locations must become pane options, including the
@@ -75,7 +77,7 @@ for helper in '~/.config/tmux/clawtab-pane-info.sh' \
     : >"$TEST_TMUX_OPTIONS"
     bash "$PLUGIN_DIR/clawtab.tmux"
     grep -Fq '#{@clawtab-pane-path}' "$TEST_TMUX_OPTIONS"
-    grep -Fq '#{@clawtab-pane-info}' "$TEST_TMUX_OPTIONS"
+    grep -Fq '#{E:@clawtab-pane-info}' "$TEST_TMUX_OPTIONS"
     grep -Fq '#{@clawtab-pane-has-info}' "$TEST_TMUX_OPTIONS"
     grep -Fq '#{@clawtab-daemon-running}' "$TEST_TMUX_OPTIONS"
     grep -Fq '#{@clawtab-agent-title}' "$TEST_TMUX_OPTIONS"
@@ -86,6 +88,17 @@ for helper in '~/.config/tmux/clawtab-pane-info.sh' \
         exit 1
     fi
 done
+
+# Re-sourcing upgrades existing caches, while editor/helper text keeps literal hashes.
+export TEST_BORDER_FORMAT='#{@clawtab-pane-path} #{@clawtab-pane-info}'
+: >"$TEST_TMUX_OPTIONS"
+bash "$PLUGIN_DIR/clawtab.tmux"
+grep -Fq '#{E:@clawtab-pane-info}' "$TEST_TMUX_OPTIONS"
+export TEST_HELPER_INFO='file #{literal}.rs'
+: >"$TEST_TMUX_OPTIONS"
+bash "$PLUGIN_DIR/scripts/pane-border-cache.sh" '%63' 427
+grep -Fxq 'file ##{literal}.rs' "$TEST_TMUX_OPTIONS"
+unset TEST_HELPER_INFO
 
 # A border already using the generated title must not get a second label.
 export TEST_BORDER_FORMAT='before #{@clawtab-agent-title} after'

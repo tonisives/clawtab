@@ -151,21 +151,38 @@ pub(super) fn last_user_message_at(
     path: &std::path::Path,
     is_user_message: impl Fn(&serde_json::Value) -> bool,
 ) -> Option<i64> {
+    cached_message_time(path, false, is_user_message)
+}
+
+pub(super) fn last_action_at(
+    path: &std::path::Path,
+    is_action: impl Fn(&serde_json::Value) -> bool,
+) -> Option<i64> {
+    cached_message_time(path, true, is_action)
+}
+
+fn cached_message_time(
+    path: &std::path::Path,
+    action: bool,
+    is_message: impl Fn(&serde_json::Value) -> bool,
+) -> Option<i64> {
     type Entry = (Option<std::time::SystemTime>, u64, Option<i64>);
+    type Key = (std::path::PathBuf, bool);
     static CACHE: std::sync::OnceLock<
-        parking_lot::Mutex<std::collections::HashMap<std::path::PathBuf, Entry>>,
+        parking_lot::Mutex<HashMap<Key, Entry>>,
     > = std::sync::OnceLock::new();
     let cache = CACHE.get_or_init(|| parking_lot::Mutex::new(std::collections::HashMap::new()));
     let metadata = std::fs::metadata(path).ok()?;
     let modified = metadata.modified().ok();
     let len = metadata.len();
-    if let Some(entry) = cache.lock().get(path) {
+    let key = (path.to_path_buf(), action);
+    if let Some(entry) = cache.lock().get(&key) {
         if entry.0 == modified && entry.1 == len {
             return entry.2;
         }
     }
     let timestamp = read_latest_jsonl(path, |value| {
-        if !is_user_message(value) {
+        if !is_message(value) {
             return None;
         }
         chrono::DateTime::parse_from_rfc3339(value.get("timestamp")?.as_str()?)
@@ -174,7 +191,7 @@ pub(super) fn last_user_message_at(
     });
     insert_bounded(
         &mut cache.lock(),
-        path.to_path_buf(),
+        key,
         (modified, len, timestamp),
         SESSION_CACHE_MAX_ENTRIES,
     );
