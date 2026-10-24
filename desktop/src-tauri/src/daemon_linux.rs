@@ -1,4 +1,9 @@
-use std::{path::PathBuf, process::Command};
+use std::{
+    io::{BufRead, BufReader, Write},
+    path::PathBuf,
+    process::Command,
+    time::Duration,
+};
 pub fn unit_path() -> Result<PathBuf, String> {
     Ok(dirs::home_dir()
         .ok_or("home directory unavailable")?
@@ -8,6 +13,9 @@ pub fn is_installed() -> bool {
     unit_path().is_ok_and(|p| p.exists())
 }
 pub fn is_running() -> (bool, Option<u32>) {
+    if ping_socket() {
+        return (true, None);
+    }
     let output = Command::new("systemctl")
         .args([
             "--user",
@@ -28,6 +36,23 @@ pub fn is_running() -> (bool, Option<u32>) {
         })
         .filter(|p| *p != 0);
     (pid.is_some(), pid)
+}
+
+fn ping_socket() -> bool {
+    let probe = || -> Result<bool, Box<dyn std::error::Error>> {
+        let mut stream = std::os::unix::net::UnixStream::connect(crate::ipc::daemon_socket_path())?;
+        stream.set_read_timeout(Some(Duration::from_millis(750)))?;
+        stream.set_write_timeout(Some(Duration::from_millis(750)))?;
+        serde_json::to_writer(&mut stream, &crate::ipc::IpcCommand::Ping)?;
+        stream.write_all(b"\n")?;
+        let mut line = String::new();
+        BufReader::new(stream).read_line(&mut line)?;
+        Ok(matches!(
+            serde_json::from_str::<crate::ipc::IpcResponse>(&line)?,
+            crate::ipc::IpcResponse::Pong
+        ))
+    };
+    probe().unwrap_or(false)
 }
 fn systemctl(args: &[&str]) -> Result<String, String> {
     let status = Command::new("systemctl")

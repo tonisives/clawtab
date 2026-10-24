@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 umask 077
-mkdir -p /home/clawtab/.config/clawtab /home/clawtab/workspace /home/clawtab/.local/bin
+mkdir -p /home/clawtab/.config/clawtab/jobs /home/clawtab/workspace /home/clawtab/.local/bin
 if [ -f /run/clawtab-enrollment/enrollment.json ]; then
     cwtctl setup --enrollment-file /run/clawtab-enrollment/enrollment.json --no-service
 fi
