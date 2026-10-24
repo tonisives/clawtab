@@ -23,7 +23,7 @@ export let SettingsRow = ({ title, detail, onPress, disabled = false, chevron = 
   {chevron && <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />}
 </Pressable>
 export let styles = StyleSheet.create({
-  pageContent: { flexGrow: 1, paddingBottom: 32 },
+  pageContent: { paddingBottom: 32 },
   pageContentPad: { paddingBottom: 110 },
   rowText: { flex: 1, gap: 4 },
   rowTitle: { color: colors.text, fontSize: 16 },
@@ -34,7 +34,6 @@ export let styles = StyleSheet.create({
     backgroundColor: colors.bg,
   },
   container: {
-    flex: 1,
     padding: spacing.xl,
     gap: spacing.xl,
   },
