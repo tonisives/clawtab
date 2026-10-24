@@ -125,6 +125,7 @@ clear_activity_options() {
         tmux set-window-option -q -t "$window_id" @clawtab-agent-question 0 2>/dev/null || true
         tmux set-window-option -q -t "$window_id" @clawtab-agent-alert 0 2>/dev/null || true
         tmux set-window-option -q -t "$window_id" @clawtab-agent-size-mb 0 2>/dev/null || true
+        tmux set-window-option -qu -t "$window_id" @clawtab-agent-last-action-at 2>/dev/null || true
         tmux set-window-option -q -t "$window_id" @clawtab-agent-seen 0 2>/dev/null || true
         tmux set-window-option -q -t "$window_id" @clawtab-agent-present-next 0 2>/dev/null || true
         tmux set-window-option -q -t "$window_id" @clawtab-agent-working-next 0 2>/dev/null || true
@@ -170,11 +171,12 @@ apply_snapshot() {
     printf '%s\n' "$snapshot" | "$JQ_BIN" -r \
         '.AgentActivity[]? | [.pane_id, (.working | tostring), (.asking | tostring),
           ((.alert != null and .alert != "") | tostring),
-          (([ (.alert // "") | capture("(?:^|\\n)Codex session file is (?<mb>[0-9]+) MB\\b") | .mb ][0]) // "0")
+          (([ (.alert // "") | capture("(?:^|\\n)Codex session file is (?<mb>[0-9]+) MB\\b") | .mb ][0]) // "0"),
+          ((.last_action_at_ms // 0) / 1000 | floor)
         ] | @tsv' \
         2>/dev/null >>"$ACTIVITY_TSV" || return 1
 
-    tmux list-panes -a -F '#{pane_id}|||#{window_id}|||#{@clawtab-agent-pane-present}|||#{@clawtab-agent-present}|||#{@clawtab-agent-working}|||#{@clawtab-agent-question}|||#{@clawtab-agent-asking}|||#{pane_active}|||#{@clawtab-agent-alert}|||#{@clawtab-agent-pane-alert}|||#{@clawtab-agent-size-mb}|||#{@clawtab-agent-pane-size-mb}' \
+    tmux list-panes -a -F '#{pane_id}|||#{window_id}|||#{@clawtab-agent-pane-present}|||#{@clawtab-agent-present}|||#{@clawtab-agent-working}|||#{@clawtab-agent-question}|||#{@clawtab-agent-asking}|||#{pane_active}|||#{@clawtab-agent-alert}|||#{@clawtab-agent-pane-alert}|||#{@clawtab-agent-size-mb}|||#{@clawtab-agent-pane-size-mb}|||#{@clawtab-agent-last-action-at}' \
         >"$PANE_STATE_FILE" 2>/dev/null || return 1
 
     awk -F '\t' 'BEGIN { OFS = "\t" }
@@ -185,6 +187,7 @@ apply_snapshot() {
                 desired_asking[$1] = ($3 == "true")
                 desired_alert[$1] = ($4 == "true")
                 desired_size[$1] = $5 + 0
+                desired_action[$1] = $6 + 0
             }
             next
         }
@@ -207,6 +210,7 @@ apply_snapshot() {
                 window_asking_current[window] = (field[6] == "1")
                 window_alert_current[window] = (field[9] == "1")
                 window_size_current[window] = field[11] + 0
+                window_action_current[window] = field[13] + 0
             }
             if (desired_pane[pane]) {
                 window_present[window] = 1
@@ -214,6 +218,7 @@ apply_snapshot() {
                 if (desired_asking[pane]) window_asking[window] = 1
                 if (desired_alert[pane]) window_alert[window] = 1
                 if (desired_size[pane] > window_size[window]) window_size[window] = desired_size[pane]
+                if (desired_action[pane] > window_action[window]) window_action[window] = desired_action[pane]
             }
         }
         END {
@@ -239,6 +244,10 @@ apply_snapshot() {
                 asking = window_asking[window] ? 1 : 0
                 alert = window_alert[window] ? 1 : 0
                 size = window_size[window] + 0
+                action = window_action[window] + 0
+                if (window_action_current[window] != action) {
+                    print "action", window, action
+                }
                 if (window_present_current[window] != present ||
                     window_working_current[window] != working ||
                     window_asking_current[window] != asking ||
@@ -275,6 +284,13 @@ apply_snapshot() {
                     \; set-window-option -q -t "$target" @clawtab-agent-alert "$fourth" \
                     \; set-window-option -q -t "$target" @clawtab-agent-size-mb "$fifth" \
                     2>/dev/null || true
+                ;;
+            action)
+                if [ "$first" -gt 0 ]; then
+                    tmux set-window-option -q -t "$target" @clawtab-agent-last-action-at "$first" 2>/dev/null || true
+                else
+                    tmux set-window-option -qu -t "$target" @clawtab-agent-last-action-at 2>/dev/null || true
+                fi
                 ;;
             advance)
                 if [ -x "$ADVANCE_QUESTION_PANE_SCRIPT" ]; then

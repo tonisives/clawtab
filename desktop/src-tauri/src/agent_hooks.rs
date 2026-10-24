@@ -706,6 +706,10 @@ fn process_inbox(
         persist_session_event(&event);
         for pane_id in runtime.event_panes(&event) {
             let mut activity = agent_activity.lock().clone();
+            let last_action_at_ms = activity
+                .iter()
+                .find(|item| item.pane_id == pane_id)
+                .and_then(|item| item.last_action_at_ms);
             let size_warning = activity
                 .iter()
                 .find(|item| item.pane_id == pane_id)
@@ -719,9 +723,15 @@ fn process_inbox(
             activity.retain(|item| item.pane_id != pane_id);
             if let Some(state) = runtime.pane_state(&pane_id, event.provider) {
                 let auto_yes = auto_yes_panes.lock().contains(&pane_id);
-                let mut item =
-                    activity_from_hook_state(&pane_id, state.state, state.attention, auto_yes);
+                let mut item = activity_from_hook_state(
+                    &pane_id,
+                    state.state,
+                    state.attention,
+                    auto_yes,
+                    state.updated_at_ms,
+                );
                 item.alert = size_warning;
+                item.last_action_at_ms = last_action_at_ms.max(Some(state.updated_at_ms));
                 activity.push(item);
             }
             activity.sort_by(|left, right| left.pane_id.cmp(&right.pane_id));
@@ -741,9 +751,11 @@ fn activity_from_hook_state(
     state: HookAgentState,
     attention: Option<HookAttention>,
     auto_yes: bool,
+    last_action_at_ms: u64,
 ) -> AgentActivity {
     AgentActivity {
         pane_id: pane_id.to_string(),
+        last_action_at_ms: Some(last_action_at_ms),
         working: state == HookAgentState::Working && attention.is_none(),
         asking: !auto_yes && (state == HookAgentState::Waiting || attention.is_some()),
         alert: None,
@@ -1730,9 +1742,11 @@ mod tests {
             HookAgentState::Waiting,
             Some(HookAttention::Permission),
             true,
+            1700000000123,
         );
 
         assert!(!activity.asking);
+        assert_eq!(activity.last_action_at_ms, Some(1700000000123));
     }
 
     #[test]
