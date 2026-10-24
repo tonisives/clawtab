@@ -54,6 +54,7 @@ fn print_usage() {
     eprintln!("Agent:");
     eprintln!("  agent auto-yes [toggle|check] [pane_id]  Manage auto-yes for an agent pane");
     eprintln!("  agent info [--fast] [pane_id]             Show agent session info");
+    eprintln!("  agent identities                         List live tmux agent identities as JSON");
     eprintln!("  agent info restore-command [pane_id]     Print an agent restore command");
     eprintln!("  agent rename <pane_id> <title>            Rename an agent pane");
     eprintln!("  agent pin [pane_id]                       Pin an agent across ClawTab");
@@ -145,6 +146,7 @@ fn print_agent_usage() {
     eprintln!("Commands:");
     eprintln!("  agent auto-yes [toggle|check] [pane_id]  Manage auto-yes for an agent pane");
     eprintln!("  agent info [pane_id]                      Show agent session info");
+    eprintln!("  agent identities                         List live tmux agent identities as JSON");
     eprintln!("  agent info restore-command [pane_id]     Print an agent restore command");
     eprintln!("  agent rename <pane_id> <title>            Rename an agent pane");
     eprintln!("  agent pin [pane_id]                       Pin an agent across ClawTab");
@@ -655,6 +657,7 @@ fn is_agent_subcommand(command: &str) -> bool {
         command,
         "auto-yes"
             | "info"
+            | "identities"
             | "rename"
             | "ai-rename"
             | "hooks"
@@ -768,7 +771,7 @@ async fn main() {
     if !agent_scope
         && matches!(
             command,
-            "auto-yes" | "pane-info" | "rename" | "ai-rename" | "pin" | "unpin"
+            "auto-yes" | "pane-info" | "identities" | "rename" | "ai-rename" | "pin" | "unpin"
         )
     {
         eprintln!(
@@ -925,6 +928,16 @@ async fn main() {
             name: require_job_reference(&args, "jobs restart"),
         }),
         "status" => Target::Daemon(IpcCommand::GetStatus),
+        "identities" => {
+            if args.len() != 2 {
+                exit_error("Usage: cwtctl agent identities");
+            }
+            match agent_identities() {
+                Ok(identities) => println!("{}", serde_json::to_string(&identities).unwrap()),
+                Err(error) => exit_error(&error),
+            }
+            return;
+        }
         "info" => {
             let restore_command = args.get(2).is_some_and(|arg| arg == "restore-command");
             let fast = args.get(2).is_some_and(|arg| arg == "--fast");
@@ -2063,6 +2076,107 @@ Do not use tools.\n\n",
     Ok(title)
 }
 
+#[derive(Debug, PartialEq)]
+struct AgentPane {
+    pane_id: String,
+    window_id: String,
+    pane_pid: String,
+    cwd: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct AgentIdentity {
+    pane_id: String,
+    window_id: String,
+    pane_pid: String,
+    provider: clawtab_lib::agent_session::ProcessProvider,
+    session_id: Option<String>,
+}
+
+fn agent_panes(output: &str) -> Vec<AgentPane> {
+    let mut seen = std::collections::HashSet::new();
+    output
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.splitn(5, '\t');
+            let pane_id = fields.next()?;
+            let window_id = fields.next()?;
+            let pane_pid = fields.next()?;
+            let dead = fields.next()?;
+            let cwd = fields.next()?;
+            if dead == "1" || pane_pid.is_empty() || !seen.insert(pane_id) {
+                return None;
+            }
+            Some(AgentPane {
+                pane_id: pane_id.into(),
+                window_id: window_id.into(),
+                pane_pid: pane_pid.into(),
+                cwd: cwd.into(),
+            })
+        })
+        .collect()
+}
+
+fn agent_identities() -> Result<Vec<AgentIdentity>, String> {
+    use clawtab_lib::agent_session::{self, ProcessProvider, ProcessSnapshot};
+
+    let output = Command::new("tmux")
+        .args([
+            "list-panes",
+            "-a",
+            "-F",
+            "#{pane_id}\t#{window_id}\t#{pane_pid}\t#{pane_dead}\t#{pane_current_path}",
+        ])
+        .output()
+        .map_err(|error| format!("Could not list tmux panes: {error}"))?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
+    let panes = agent_panes(&String::from_utf8_lossy(&output.stdout));
+    let snapshot = ProcessSnapshot::capture();
+    // Share process discovery and provider caches across the entire batch.
+    std::thread::scope(|scope| {
+        let workers: Vec<_> = panes
+            .chunks(panes.len().div_ceil(4).max(1))
+            .map(|chunk| {
+                let snapshot = &snapshot;
+                scope.spawn(move || {
+                    chunk
+                        .iter()
+                        .filter_map(|pane| {
+                            let provider = agent_session::detect_process_provider(
+                                &pane.pane_pid,
+                                Some(snapshot),
+                            )?;
+                            if provider == ProcessProvider::Shell {
+                                return None;
+                            }
+                            let session_id = agent_session::resolve_session_identity(
+                                &pane.pane_pid,
+                                provider,
+                                snapshot,
+                                Some(&pane.cwd),
+                            );
+                            Some(AgentIdentity {
+                                pane_id: pane.pane_id.clone(),
+                                window_id: pane.window_id.clone(),
+                                pane_pid: pane.pane_pid.clone(),
+                                provider,
+                                session_id,
+                            })
+                        })
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect();
+        let mut identities = Vec::new();
+        for worker in workers {
+            identities.extend(worker.join().map_err(|_| "Agent identity lookup failed")?);
+        }
+        Ok(identities)
+    })
+}
+
 fn resolve_tmux_pane_format(pane_id: &str, format: &str) -> String {
     if clawtab_lib::managed::is_managed(pane_id) {
         return clawtab_lib::terminal_backend::info(pane_id).map(|info| match format {
@@ -2353,7 +2467,42 @@ fn daemon_logs() {
 
 #[cfg(test)]
 mod tests {
-    use super::plugin_name_matches_action_id;
+    use super::{agent_panes, plugin_name_matches_action_id, AgentIdentity};
+
+    #[test]
+    fn batch_identity_discovery_skips_dead_panes_and_linked_duplicates() {
+        let panes = agent_panes(
+            "%1\t@1\t10\t0\t/path with spaces\n\
+             %1\t@2\t10\t0\t/path with spaces\n\
+             %2\t@3\t20\t1\t/dead\n\
+             %3\t@4\t30\t0\t/path\twith tab\n\
+             malformed\n",
+        );
+        assert_eq!(panes.len(), 2);
+        assert_eq!(panes[0].pane_id, "%1");
+        assert_eq!(panes[0].window_id, "@1");
+        assert_eq!(panes[0].pane_pid, "10");
+        assert_eq!(panes[0].cwd, "/path with spaces");
+        assert_eq!(panes[1].cwd, "/path\twith tab");
+    }
+
+    #[test]
+    fn batch_identities_contain_only_identity_metadata() {
+        let identity = AgentIdentity {
+            pane_id: "%1".into(),
+            window_id: "@1".into(),
+            pane_pid: "10".into(),
+            provider: clawtab_lib::agent_session::ProcessProvider::Codex,
+            session_id: Some("exact-session".into()),
+        };
+        assert_eq!(
+            serde_json::to_value(identity).unwrap(),
+            serde_json::json!({
+                "pane_id": "%1", "window_id": "@1", "pane_pid": "10",
+                "provider": "codex", "session_id": "exact-session"
+            })
+        );
+    }
 
     #[test]
     fn plugin_names_match_local_action_suffixes() {
