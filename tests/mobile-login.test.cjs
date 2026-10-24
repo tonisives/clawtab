@@ -74,10 +74,10 @@ for (let os of ['android', 'ios', 'web']) {
     let h = loadLogin(os);
     assert.equal(h.browserRequests, os === 'web' ? 1 : 0);
     if (os !== 'web') assert.equal(h.configured.webClientId, 'web-client');
-    h.press('Try demo');
-    assert.equal(h.events[0][1], '/demo');
+    if (os === 'ios') assert.equal(h.render().some((node) => node.props?.children === 'Try demo'), false);
+    else { h.press('Try demo'); assert.equal(h.events[0][1], '/demo'); }
     await h.press('Sign in with Google');
-    assert.deepEqual(h.events.slice(1), [['login', os === 'web' ? 'web-identity' : 'native-identity'], ['replace', '/(tabs)']]);
+    assert.deepEqual(h.events.slice(os === 'ios' ? 0 : 1), [['login', os === 'web' ? 'web-identity' : 'native-identity'], ['replace', '/(tabs)']]);
   });
 }
 
@@ -114,3 +114,14 @@ test('email sign-in validates missing fields and keeps rejected credentials on t
   assert.equal(h.events.length, 1);
   assert.ok(h.render().some((node) => node.props?.children === 'Email or password is incorrect.'));
 });
+
+ test('email login starts as a compact disclosure and expands the form', () => {
+   let h = loadLogin('ios');
+   assert.equal(h.input('Email'), undefined);
+   let label = h.render().find((node) => node.type === 'Text' && node.props.children === 'Sign in with email');
+   assert.equal(label.props.style.fontSize, 13);
+   h.press('Sign in with email');
+   assert.ok(h.input('Email'));
+   h.press('Sign in with email');
+   assert.equal(h.input('Email'), undefined);
+ });

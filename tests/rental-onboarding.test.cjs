@@ -181,8 +181,39 @@ test('changing the box filter retains the chosen quote through checkout', async 
   nodes = all(view.render());
   let region = nodes.find((node) => node.props?.accessibilityLabel === 'Box region');
   assert.equal(all(region).find((node) => node.props.children?.props?.children === 'EMEA').props.accessibilityState.checked, true);
-  nodes.find((node) => node.props?.accessibilityRole === 'checkbox').props.onPress();
+  nodes.find((node) => node.props?.accessibilityLabel === 'Accept rental terms').props.onPress();
   find(view.render(), 'Continue to checkout').props.onPress(); await flush();
   assert.equal(purchase.quote.region, 'sin');
   assert.equal(purchase.quote.memory_gb, 8);
+});
+
+test('rental checkout accepts several installed agents including Hermes', async () => {
+  let purchase;
+  let api = async (method, path, body) => {
+    if (path === '/rentals/catalog') return { enabled: true, quotes: quotes() };
+    if (path === '/rentals/checkout') { purchase = body; return { rental_id: 'new', url: 'https://checkout.example.com' }; }
+    return { rentals: [] };
+  };
+  let view = harness(rental(), async () => {}, { api, openUrl: async () => {} }, []);
+  let all = (node) => Array.isArray(node) ? node.flatMap(all) : node && typeof node === 'object' ? [node, ...all(node.props?.children)] : [];
+  view.render(); await flush();
+  find(view.render(), 'Rent a box').props.onPress(); await flush();
+  for (let agent of ['Claude Code', 'Hermes']) {
+    all(view.render()).find((node) => node.props?.accessibilityLabel === agent).props.onPress();
+  }
+  all(view.render()).find((node) => node.props?.accessibilityLabel === 'Accept rental terms').props.onPress();
+  find(view.render(), 'Continue to checkout').props.onPress(); await flush();
+  assert.deepEqual(Array.from(purchase.agent_providers), ['codex', 'claude', 'hermes']);
+  assert.equal(purchase.agent_provider, 'codex');
+});
+
+test('each rental agent resumes its own saved terminal', async () => {
+  let box = { ...rental(), agent_providers: ['codex', 'hermes'], setup: { providers: {
+    codex: { provider: 'codex', agent_terminal: { pane_id: '%4', tmux_session: 'codex' } },
+    hermes: { provider: 'hermes', agent_terminal: { pane_id: '%8', tmux_session: 'hermes' } },
+  } } };
+  let view = harness(box, async () => { throw new Error('Should attach to saved terminal'); });
+  let setup = view.exports.rentalAgentSetup;
+  assert.equal(setup(box, 'codex').agent_terminal.pane_id, '%4');
+  assert.equal(setup(box, 'hermes').agent_terminal.pane_id, '%8');
 });

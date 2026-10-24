@@ -95,55 +95,38 @@ test('usage immediately offers machines without a global selection and switches 
   assert.equal(queried.at(-1).machine, 'online');
 });
 
-test('settings disable relay operations offline while preserving account and debugging access', () => {
+test('settings keeps Setup available and shows the Demo banner until both steps finish', () => {
   let relay = { connected: false, error: 'Relay access is unavailable' };
-  let connected = false, demoPopups = 0, authenticated = false, authLoading = false;
-  let navigated = [];
+  let complete = false, navigated = [];
   let h = harness('remote/app/(tabs)/(settings)/settings.tsx', {
     '@clawtab/shared': { useMachines: () => relay },
     'expo-router/build/react-navigation/native-stack': { createNativeStackNavigator: () => ({}) },
     'expo-router/react-navigation': {},
+    '../../../src/hooks/useSetupProgress': { useSetupProgress: () => ({ complete }) },
+    '../../../src/components/DemoOverview': {},
     '../../../src/components/settings/AccountSettings': {},
     '../../../src/components/settings/SharingSettings': {},
     '../../../src/components/settings/TerminalSettings': {},
     '../../../src/components/settings/UsageSettings': {},
     'react-native': { Platform: { OS: 'ios' }, View: 'View', Text: 'Text', Pressable: 'Pressable', StyleSheet: { create: (styles) => styles } },
     '@expo/vector-icons': { Ionicons: 'Ionicons' },
-    '../../../src/store/ws': { useWsStore: (select) => select({ connected }) },
-    '../../../src/demo/info': { showDemoInfo: () => demoPopups++ },
-    '../../../src/store/auth': { useAuthStore: (select) => select({ email: 'account@example.com', isAuthenticated: authenticated, loading: authLoading }) },
+    '../../../src/store/auth': { useAuthStore: (select) => select({ email: 'account@example.com' }) },
     '../../../src/components/settings/SettingsPage': { SettingsPage: 'Page', SettingsRow: 'Row', styles: {} },
     '../../../src/components/settings/navigation': { useSettingsNavigation: () => (page) => navigated.push(page) },
     '../../../src/theme/colors': { colors: {} },
   });
   let rows = () => findAll(h.render(h.exports.SettingsHome), (node) => node.type === 'Row');
-  let offline = rows();
-  let demoNotices = () => findAll(h.render(h.exports.SettingsHome), (node) => node.props?.accessibilityLabel === 'About demo mode');
-  demoNotices()[0].props.onPress();
-  assert.equal(demoPopups, 1);
-  authLoading = true;
-  assert.equal(demoNotices().length, 0);
-  authLoading = false;
-  authenticated = true;
-  assert.equal(demoNotices().length, 0);
-  authenticated = false;
-  connected = true;
-  assert.equal(demoNotices().length, 0);
-  connected = false;
-  for (let title of ['Shared access', 'Model usage', 'Manage machines', 'API tokens']) {
-    assert.equal(offline.find((node) => node.props.title === title).props.disabled, true, title);
-  }
-  for (let title of ['Account & subscription', 'Terminal', 'Connect to relay']) {
-    assert.notEqual(offline.find((node) => node.props.title === title).props.disabled, true, title);
-  }
-  let connection = offline.find((node) => node.props.title === 'Connect to relay');
-  assert.equal(connection.props.detail, relay.error);
-  connection.props.onPress();
-  assert.deepEqual(navigated, ['account']);
-  offline.find((node) => node.props.title === 'Account & subscription').props.onPress();
-  assert.deepEqual(navigated, ['account', 'account']);
+  let notices = () => findAll(h.render(h.exports.SettingsHome), (node) => node.props?.accessibilityLabel === 'About demo mode');
+  notices()[0].props.onPress();
+  assert.deepEqual(navigated, ['setup']);
+  for (let title of ['Shared access', 'Model usage', 'Manage machines', 'API tokens']) assert.equal(rows().find((node) => node.props.title === title).props.disabled, true);
+  for (let title of ['Setup', 'Account & subscription', 'Terminal', 'Connect to relay']) assert.notEqual(rows().find((node) => node.props.title === title).props.disabled, true);
   relay = { connected: true, error: null };
-  assert.equal(demoNotices().length, 0);
+  assert.equal(notices().length, 1, 'relay alone does not finish setup');
+  complete = true;
+  assert.equal(notices().length, 0);
+  rows().find((node) => node.props.title === 'Setup').props.onPress();
+  assert.deepEqual(navigated, ['setup', 'setup']);
   assert.ok(rows().every((node) => !node.props.disabled));
 });
 

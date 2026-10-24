@@ -271,8 +271,8 @@ export default function LoginScreen() {
             <Text style={styles.googleBtnText}>Sign in with Google</Text>
           </Pressable>
 
-          <Pressable accessibilityRole="button" onPress={() => setShowEmail(!showEmail)} disabled={loading} style={[styles.googleBtn, loading && styles.btnDisabled]}>
-            <Text style={styles.googleBtnText}>Sign in with email</Text>
+          <Pressable accessibilityRole="button" accessibilityState={{ expanded: showEmail }} onPress={() => setShowEmail(!showEmail)} disabled={loading} style={[styles.emailToggle, loading && styles.btnDisabled]}>
+            <Text style={styles.emailToggleText}>Sign in with email</Text>
           </Pressable>
 
           {showEmail && (
@@ -313,9 +313,9 @@ export default function LoginScreen() {
             </View>
           )}
 
-          <Pressable accessibilityRole="button" onPress={openDemo} disabled={loading} style={[styles.googleBtn, loading && styles.btnDisabled]}>
+          {Platform.OS !== "ios" && <Pressable accessibilityRole="button" onPress={openDemo} disabled={loading} style={[styles.googleBtn, loading && styles.btnDisabled]}>
             <Text style={styles.googleBtnText}>Try demo</Text>
-          </Pressable>
+          </Pressable>}
 
           <Pressable onPress={() => { setTempServerUrl(serverUrl); setShowServer(true); }}>
             <Text style={styles.serverText}>
@@ -403,6 +403,8 @@ const styles = StyleSheet.create({
   emailForm: {
     gap: spacing.md,
   },
+  emailToggle: { minHeight: 44, alignItems: "center", justifyContent: "center" },
+  emailToggleText: { color: colors.textSecondary, fontSize: 13 },
   error: {
     color: colors.danger,
     fontSize: 13,

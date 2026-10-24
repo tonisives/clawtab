@@ -4,9 +4,9 @@ import { NavigationContainer, NavigationIndependentTree, DarkTheme, useIsFocused
 import { useMachines } from "@clawtab/shared"
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
+import { useSetupProgress } from "../../../src/hooks/useSetupProgress"
+import { DemoOverview } from "../../../src/components/DemoOverview"
 import { useAuthStore } from "../../../src/store/auth"
-import { useWsStore } from "../../../src/store/ws"
-import { showDemoInfo } from "../../../src/demo/info"
 import { useResponsive } from "../../../src/hooks/useResponsive"
 import { ApiTokensSection } from "../../../src/components/ApiTokensSection"
 import { MachinePageHistoryProvider, MachinePageScreen, type MachinePageParams } from "../../../src/components/MachineNavigation"
@@ -23,15 +23,14 @@ type Routes = { [Page in SettingsRoute]: undefined } & { "machine-page": Machine
 let Stack = createNativeStackNavigator<Routes>()
 export let SettingsHome = () => {
   let relay = useMachines()
-  let connected = useWsStore((state) => state.connected)
-  let authenticated = useAuthStore((state) => state.isAuthenticated)
-  let authLoading = useAuthStore((state) => state.loading)
-  let demoMode = !authLoading && !authenticated && !relay.connected && !connected
+  let { complete } = useSetupProgress()
   let unavailable = !relay.connected
   let email = useAuthStore((state) => state.email)
   let navigate = useSettingsNavigation()
   let open = (page: SettingsRoute) => () => navigate(page)
   return <SettingsPage>
+    {!complete && <Pressable accessibilityRole="button" accessibilityLabel="About demo mode" onPress={open("setup")} style={homeStyles.demoButton}><Ionicons name="information-circle-outline" size={20} color={colors.warning} /><Text style={homeStyles.demoText}>Demo</Text></Pressable>}
+    <SettingsGroup><SettingsRow title="Setup" detail="Relay access and your agent machine" onPress={open("setup")} /></SettingsGroup>
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>Relay connection</Text>
       <SettingsGroup>
@@ -39,10 +38,7 @@ export let SettingsHome = () => {
           <View style={homeStyles.relayConnection}>
             <SettingsRow title={relay.connected ? "Connected to relay" : "Connect to relay"} detail={relay.error ?? (relay.connected ? "Online" : "Disconnected")} onPress={open("account")} />
           </View>
-          {demoMode && <Pressable accessibilityRole="button" accessibilityLabel="About demo mode" onPress={showDemoInfo} style={homeStyles.demoButton}>
-            <Ionicons name="alert-circle-outline" size={20} color={colors.warning} />
-            <Text style={homeStyles.demoText}>Demo</Text>
-          </Pressable>}
+
         </View>
         <SettingsRow title="Manage machines" detail="Connections, models, and rented boxes" onPress={open("machines")} disabled={unavailable} />
       </SettingsGroup>
@@ -75,9 +71,14 @@ let homeStyles = StyleSheet.create({
   demoButton: { minHeight: 44, paddingHorizontal: 16, flexDirection: "row", alignItems: "center", gap: 8 },
   demoText: { color: colors.warning, fontSize: 14, fontWeight: "600" },
 })
+let SetupSettings = () => {
+  let navigate = useSettingsNavigation()
+  return <DemoOverview onConnect={() => navigate("account")} />
+}
 let MachineSettings = () => <SettingsPage><MachineSetup manage /></SettingsPage>
 let TokenSettings = () => <SettingsPage><ApiTokensSection /></SettingsPage>
 let pages = {
+  setup: { title: "Setup", component: SetupSettings },
   home: { title: "Settings", component: SettingsHome },
   account: { title: "Account & subscription", component: AccountSettings },
   usage: { title: "Model usage", component: UsageSettings },

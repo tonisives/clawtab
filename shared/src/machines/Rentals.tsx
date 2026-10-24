@@ -27,6 +27,7 @@ type Rental = {
   past_due: boolean
   cancel_requested: boolean
   checkout_url?: string | null
+  agent_providers?: string[]
   agent_provider: string
   setup: Record<string, any>
   apple_relay_subscription: boolean
@@ -37,6 +38,8 @@ type Rental = {
 type RentalApi = (method: string, path: string, body?: Record<string, unknown>) => Promise<any>
 type Props = { style?: StyleProp<ViewStyle>; children?: ReactNode; showExistingRentals?: boolean; allowNewRentals?: boolean; onOrderingChange?: (ordering: boolean) => void; api: RentalApi; purchases: boolean; platform?: "web" | "desktop" | "ios" | "android"; storefront?: string; openUrl?: (url: string) => Promise<unknown> }
 type Terminal = { machine: string; pane: string; session: string; command: string }
+export let RENTAL_AGENTS = [{ id: "codex", name: "Codex", login: "codex login --device-auth" }, { id: "claude", name: "Claude Code", login: "claude auth login" }, { id: "opencode", name: "OpenCode", login: "opencode auth login" }, { id: "hermes", name: "Hermes", login: "hermes setup" }]
+export let rentalAgentSetup = (rental: Rental, provider: string) => rental.setup.providers?.[provider] ?? (rental.setup.provider === provider || (!rental.setup.provider && rental.agent_provider === provider) ? rental.setup : {})
 let money = (quote: Quote) => new Intl.NumberFormat(undefined, { style: "currency", currency: quote.currency }).format(quote.monthly_cents / 100)
 let date = (value: string) => new Date(value).toLocaleString()
 let quoteId = (quote: Quote) => `${quote.region}/${quote.server_type}`
@@ -104,9 +107,9 @@ export let RentalsPanel = ({ children, style, api, purchases, platform = "web", 
   useEffect(() => { onOrderingChange?.(showOrder) }, [showOrder, onOrderingChange])
   let [selected, setSelected] = useState("")
   let [name, setName] = useState("My coding box")
-  let [provider, setProvider] = useState(() => {
+  let [providers, setProviders] = useState<string[]>(() => {
     let preferred = machines.agentModels?.default_provider
-    return preferred && ["codex", "claude", "opencode"].includes(preferred) ? preferred : "codex"
+    return [preferred && RENTAL_AGENTS.some((agent) => agent.id === preferred) ? preferred : "codex"]
   })
   let pending = useRef(false)
   let [keys, setKeys] = useState("")
@@ -162,7 +165,7 @@ export let RentalsPanel = ({ children, style, api, purchases, platform = "web", 
     if (!quote || !accepted || !openUrl) return
     requestId.current ??= newOperationId()
     let response = await api("POST", "/rentals/checkout", {
-      request_id: requestId.current, name, quote, agent_provider: provider, platform, storefront, ssh_keys: keys.split("\n").map((key) => key.trim()).filter(Boolean), accepted_terms: accepted,
+      request_id: requestId.current, name, quote, agent_provider: providers[0], agent_providers: providers, platform, storefront, ssh_keys: keys.split("\n").map((key) => key.trim()).filter(Boolean), accepted_terms: accepted,
     })
     setPurchasedRental(response.rental_id)
     await refresh()
@@ -176,11 +179,10 @@ export let RentalsPanel = ({ children, style, api, purchases, platform = "web", 
     if (!result.success || !result.pane_id || !result.tmux_session) throw new Error(result.error ?? "Could not open a terminal")
     setTerminal({ machine: rental.machine_id, pane: result.pane_id, session: result.tmux_session, command })
   })
-  let setupAgent = (rental: Rental, action: "login" | "agent", restart = false) => () => act(async () => {
+  let setupAgent = (rental: Rental, provider: string, action: "login" | "agent", restart = false) => () => act(async () => {
     if (!rental.machine_id) return
-    let provider = rental.agent_provider
     let setup = await api("POST", `/rentals/${rental.id}/setup`, { action: restart ? `restart_${action}` : "prepare", provider })
-    let command = action === "login" ? ({ codex: "codex login --device-auth", claude: "claude auth login", opencode: "opencode auth login" }[provider] ?? "") : ""
+    let command = action === "login" ? (RENTAL_AGENTS.find((agent) => agent.id === provider)?.login ?? "") : ""
     if (restart) await refresh()
     let saved = setup[`${action}_terminal`]
     let result = saved ?? await machineRequest(rental.machine_id, {
@@ -264,8 +266,9 @@ export let RentalsPanel = ({ children, style, api, purchases, platform = "web", 
           </View>}
           <Text style={styles.text}>Box name</Text>
           <TextInput accessibilityLabel="Box name" value={name} onChangeText={editName} maxLength={80} style={styles.input} />
-          <Text style={styles.text}>First agent</Text>
-          <View style={styles.row}>{["codex", "claude", "opencode"].map((choice) => <Pressable key={choice} accessibilityRole="radio" accessibilityState={{ selected: provider === choice }} onPress={() => { setProvider(choice); requestId.current = null }} style={[styles.button, styles.providerChoice, provider === choice && styles.selected]}><Text style={styles.buttonText}>{choice === "claude" ? "Claude" : choice === "codex" ? "Codex" : "OpenCode"}</Text></Pressable>)}</View>
+          <Text style={styles.text}>Agents to install</Text>
+          <Text style={styles.detail}>Choose one or more. Sign in to each agent with your own account after setup.</Text>
+          <View style={styles.row}>{RENTAL_AGENTS.map((agent) => <Pressable key={agent.id} accessibilityLabel={agent.name} accessibilityRole="checkbox" accessibilityState={{ checked: providers.includes(agent.id) }} onPress={() => { setProviders(providers.includes(agent.id) ? providers.filter((id) => id !== agent.id) : [...providers, agent.id]); requestId.current = null }} style={[styles.button, styles.providerChoice, providers.includes(agent.id) && styles.selected]}><Text style={styles.buttonText}>{agent.name}</Text></Pressable>)}</View>
           {customize && <>
             <Text style={styles.text}>SSH public keys (optional, one per line)</Text>
             <TextInput accessibilityLabel="SSH public keys" value={keys} onChangeText={editKeys} multiline autoCapitalize="none" style={styles.input} />
@@ -273,22 +276,22 @@ export let RentalsPanel = ({ children, style, api, purchases, platform = "web", 
           <Text style={styles.detail}>Relay included. Bring your own AI account. Any separate relay subscription continues until you cancel it.</Text>
           <Pressable accessibilityRole="button" accessibilityState={{ expanded: showTerms }} onPress={toggleTerms} style={styles.disclosure}><Text style={styles.link}>{showTerms ? "Hide rental terms" : "Rental and deletion terms"}</Text></Pressable>
           {showTerms && <>
-          <Text style={styles.detail}>Includes ClawTab, tmux, Git, Claude Code, Codex, and OpenCode. Authorize your own AI accounts in the terminal. Relay access for this box and your own machines is included. AI usage is billed by your AI provider.</Text>
+          <Text style={styles.detail}>Includes ClawTab, tmux, Git, and your selected agents. Authorize your own AI accounts in the terminal. Relay access for this box and your own machines is included. AI usage is billed by your AI provider.</Text>
           <Text style={styles.detail}>Renting or deleting a box does not change a separate Stripe or Apple relay subscription. It keeps its normal billing schedule until you cancel it. Keeping it preserves relay access to your own machines after your rental ends.</Text>
           <Text style={styles.detail}>Billed monthly in advance at provider cost plus 20%. No automatic backups. Cancellation ends renewal; the box is deleted at period end. A failed renewal has 10 days to recover before permanent deletion. Networking pauses at 90% of included traffic until the next provider month. Immediate deletion has no automatic prorated refund.</Text>
           </>}
-          <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: accepted }} onPress={toggleAccepted} style={styles.acceptance}>
+          <Pressable accessibilityRole="checkbox" accessibilityLabel="Accept rental terms" accessibilityState={{ checked: accepted }} onPress={toggleAccepted} style={styles.acceptance}>
             <View style={[styles.checkbox, accepted && styles.checked]}>{accepted && <View style={styles.checkmark} />}</View>
             <Text style={styles.acceptanceText}>I accept the rental and deletion terms.</Text>
           </Pressable>
-          <Button primary label={busy ? "Opening checkout…" : "Continue to checkout"} disabled={busy || !quote || !accepted || !name.trim()} onPress={purchase} />
+          <Button primary label={busy ? "Opening checkout…" : "Continue to checkout"} disabled={busy || !quote || !accepted || !name.trim() || !providers.length} onPress={purchase} />
         </>}
         <Button label="Close" onPress={closeOrder} />
       </View>}
       {activeRentals.map((rental) => {
         let available = rental.machine_id && machines.machines.some((machine) => machine.id === rental.machine_id && machine.online)
         let managing = managed === rental.id
-        let providerName = rental.agent_provider === "claude" ? "Claude Code" : rental.agent_provider === "codex" ? "Codex" : "OpenCode"
+        let agents = rental.agent_providers ?? [rental.agent_provider]
         let finished = ["deleted", "failed"].includes(rental.state)
         return <View key={rental.id} style={styles.card}>
           <Text style={styles.heading}>{rental.name}</Text>
@@ -302,10 +305,19 @@ export let RentalsPanel = ({ children, style, api, purchases, platform = "web", 
           {rental.apple_relay_subscription && !finished && <Text style={styles.detail}>Your separate Apple relay plan is managed in Apple subscription settings. Renting a box does not change its billing or cancellation settings.</Text>}
           {rental.needs_attention && !finished && <Text style={styles.detail}>An operation is being retried. Your box status will update automatically.</Text>}
           <View style={styles.row}>
-            {rental.state === "ready" && <Button primary={!rental.setup.login_terminal} label={rental.setup.login_terminal ? "Resume sign-in" : `Sign in to ${providerName}`} onPress={setupAgent(rental, "login")} disabled={busy || !available} />}
-            {rental.state === "ready" && <Button primary={!!rental.setup.login_terminal} label={rental.setup.agent_terminal ? "Open agent" : "Start agent"} onPress={setupAgent(rental, "agent")} disabled={busy || !available} />}
-            {managing && rental.state === "ready" && rental.setup.login_terminal && <Button label="New sign-in terminal" onPress={setupAgent(rental, "login", true)} disabled={busy || !available} />}
-            {managing && rental.state === "ready" && rental.setup.agent_terminal && <Button label="Start another agent" onPress={setupAgent(rental, "agent", true)} disabled={busy || !available} />}
+            {rental.state === "ready" && agents.map((provider) => {
+              let setup = rentalAgentSetup(rental, provider)
+              let providerName = RENTAL_AGENTS.find((agent) => agent.id === provider)?.name ?? provider
+              return <View key={provider} style={styles.agentSetup}>
+                {agents.length > 1 && <Text style={styles.text}>{providerName}</Text>}
+                <View style={styles.row}>
+                  <Button primary={!setup.login_terminal} label={setup.login_terminal ? `Resume ${agents.length > 1 ? providerName + " " : ""}sign-in` : `Sign in to ${providerName}`} onPress={setupAgent(rental, provider, "login")} disabled={busy || !available} />
+                  <Button primary={!!setup.login_terminal} label={setup.agent_terminal ? `Open ${agents.length > 1 ? providerName : "agent"}` : `Start ${agents.length > 1 ? providerName : "agent"}`} onPress={setupAgent(rental, provider, "agent")} disabled={busy || !available} />
+                  {managing && setup.login_terminal && <Button label="New sign-in terminal" onPress={setupAgent(rental, provider, "login", true)} disabled={busy || !available} />}
+                  {managing && setup.agent_terminal && <Button label="Start another agent" onPress={setupAgent(rental, provider, "agent", true)} disabled={busy || !available} />}
+                </View>
+              </View>
+            })}
             {!finished && <Button label={managing ? "Done managing" : "Manage box"} onPress={() => { setManaged(managing ? null : rental.id); setConfirmation(null) }} />}
             {managing && rental.state === "ready" && <Button label="Open terminal" onPress={openTerminal(rental)} disabled={busy || !available} />}
             {purchases && rental.state === "checkout" && rental.checkout_url && <Button label="Resume checkout" onPress={resumeCheckout(rental)} disabled={busy} />}
@@ -355,7 +367,8 @@ let styles = StyleSheet.create({
   choice: { flexGrow: 1, flexBasis: 240, minWidth: 0, gap: 6, padding: 12, borderRadius: Platform.OS === "ios" ? 20 : 12, borderWidth: 1, borderColor: colors.borderLight },
   disclosure: { minHeight: 40, justifyContent: "center", alignSelf: "flex-start" },
   link: { color: colors.accent, fontSize: 13 },
-  providerChoice: { flex: 1, paddingHorizontal: 10 },
+  agentSetup: { gap: 8, width: "100%" },
+  providerChoice: { flexGrow: 1, flexBasis: 120, paddingHorizontal: 10 },
   acceptance: { flexDirection: "row", alignItems: "center", gap: 10, minHeight: 44 },
   acceptanceText: { flex: 1, color: colors.text, fontSize: 13, lineHeight: 19 },
   checkbox: { width: 20, height: 20, borderWidth: 1, borderColor: colors.borderLight, borderRadius: 5, alignItems: "center", justifyContent: "center" },

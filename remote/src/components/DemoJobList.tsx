@@ -14,7 +14,7 @@ type DemoJobListProps = {
   selectedSlug?: string
   onShowOverview?: () => void
 }
-export let DemoJobList = ({ onConnect, onSelectJob, onSelectProcess, selectedSlug, onShowOverview }: DemoJobListProps) => {
+export let DemoJobList = ({ onSelectJob, onSelectProcess, selectedSlug, onShowOverview }: DemoJobListProps) => {
   let router = useRouter()
   let showOverview = onShowOverview ?? (() => router.push("/demo-overview"))
   let searchQuery = useJobFilterStore((state) => state.query)
@@ -38,8 +38,6 @@ export let DemoJobList = ({ onConnect, onSelectJob, onSelectProcess, selectedSlu
       <Ionicons name="information-circle-outline" size={20} color={colors.warning} />
       <Text style={styles.title}>Demo</Text>
     </Pressable>
-    <Text style={styles.separator}>·</Text>
-    <Pressable accessibilityRole="button" accessibilityLabel="Connect to relay" onPress={onConnect} style={styles.connectButton}><Text style={styles.connect}>Connect to relay</Text></Pressable>
   </View>
   return <JobListView selectedSlug={selectedSlug} jobs={DEMO_JOBS} statuses={DEMO_STATUSES} detectedProcesses={DEMO_PROCESSES} savedGroups={savedGroups} compactMobileToolbar mobileAppearance searchQuery={searchQuery} onSearchQueryChange={setSearchQuery} groupTabView={groupTabView} onGroupTabViewChange={changeGroupView} onSetAllGroupTabView={changeAllGroupViews} collapsedGroups={collapsedGroups} onToggleGroup={toggleGroup} listMode={listMode} onListModeChange={setListMode} sortMode={sortMode} onSortChange={setSortMode} onSelectJob={openJob} onSelectProcess={openProcess} headerContent={notice} contentContainerStyle={styles.content} contentInsetAdjustmentBehavior={Platform.OS === "web" ? "never" : "automatic"} renderAsScrollRoot={Platform.OS !== "web"} showEmpty />
 }
@@ -49,7 +47,4 @@ let styles = StyleSheet.create({
   notice: { paddingHorizontal: 24, paddingVertical: 16, flexDirection: "row", alignItems: "center", justifyContent: "center", flexWrap: "wrap", gap: 8 },
   title: { color: colors.warning, fontSize: 16, fontWeight: "600" },
   demoButton: { minHeight: 44, flexDirection: "row", alignItems: "center", gap: 8 },
-  separator: { color: colors.warning, fontSize: 14 },
-  connectButton: { minHeight: 44, paddingHorizontal: 16, justifyContent: "center", borderRadius: 22, backgroundColor: colors.surface },
-  connect: { color: colors.accent, fontSize: 16, fontWeight: "600" },
 })

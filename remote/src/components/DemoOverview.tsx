@@ -1,35 +1,37 @@
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import { useRouter } from "expo-router"
 import { colors } from "@clawtab/shared"
+import { useSetupProgress } from "../hooks/useSetupProgress"
 
 export let DemoOverview = ({ onConnect }: { onConnect: () => void }) => {
   let router = useRouter()
+  let { relayComplete, machineComplete, complete } = useSetupProgress()
   let addMachine = () => router.push("/add-machine")
   return <ScrollView style={styles.screen} contentContainerStyle={styles.scrollContent} contentInsetAdjustmentBehavior="automatic">
     <View style={styles.content}>
-      <Text style={styles.eyebrow}>DEMO MODE</Text>
-      <Text style={styles.title}>Your first agent, in three steps</Text>
+      <Text style={styles.eyebrow}>{complete ? "SETUP COMPLETE" : "GETTING STARTED"}</Text>
+      <Text style={styles.title}>Your first agent, in two steps</Text>
       <Text style={styles.description}>Explore the sample agents and terminals. When you’re ready, connect ClawTab to your computer or server and control your agents from anywhere.</Text>
       <View style={styles.steps}>
         <View style={styles.step}>
-          <View style={styles.number}><Text style={styles.numberText}>1</Text></View>
+          <View accessibilityLabel={relayComplete ? "Relay access complete" : "Step 1"} style={[styles.number, relayComplete && styles.completed]}><Text style={styles.numberText}>{relayComplete ? "✓" : "1"}</Text></View>
           <View style={styles.stepContent}>
             <Text style={styles.stepTitle}>Set up relay access</Text>
             <Text style={styles.description}>The relay connects your mobile and web apps to your machines. Sign in and subscribe to the hosted relay, or connect to a relay you host yourself.</Text>
-            <Pressable accessibilityRole="button" onPress={onConnect} style={styles.button}><Text style={styles.buttonText}>Set up relay</Text></Pressable>
+            <Pressable accessibilityRole="button" onPress={onConnect} style={styles.button}><Text style={styles.buttonText}>{relayComplete ? "Relay connected" : "Set up relay"}</Text></Pressable>
           </View>
         </View>
         <View style={styles.step}>
-          <View style={styles.number}><Text style={styles.numberText}>2</Text></View>
+          <View accessibilityLabel={machineComplete ? "Machine setup complete" : "Step 2"} style={[styles.number, machineComplete && styles.completed]}><Text style={styles.numberText}>{machineComplete ? "✓" : "2"}</Text></View>
           <View style={styles.stepContent}>
             <Text style={styles.stepTitle}>Connect a desktop or server</Text>
-            <Text style={styles.description}>Install ClawTab on the machine where your agents will run. Install and sign in to your agent CLI there, such as Codex, Claude Code, or OpenCode.</Text>
+            <Text style={styles.description}>Install ClawTab on the machine where your agents will run. Install and sign in to your agent CLI there, such as Codex, Claude Code, OpenCode, or Hermes.</Text>
             <Text style={styles.description}>Run cwtctl setup on that machine, then approve its pairing code in Add machine.</Text>
-            <Pressable accessibilityRole="button" onPress={addMachine} style={styles.button}><Text style={styles.buttonText}>Add machine</Text></Pressable>
+            <Pressable accessibilityRole="button" onPress={addMachine} style={styles.button}><Text style={styles.buttonText}>{machineComplete ? "Add another machine" : "Add machine"}</Text></Pressable>
           </View>
         </View>
         <View style={styles.step}>
-          <View style={styles.number}><Text style={styles.numberText}>3</Text></View>
+          <View style={styles.number}><Text style={styles.numberText}>→</Text></View>
           <View style={styles.stepContent}>
             <Text style={styles.stepTitle}>Launch agents from any device</Text>
             <Text style={styles.description}>From mobile, web, or desktop, choose your machine, project folder, and agent, then enter a prompt. You can also launch an agent directly in the terminal on that machine.</Text>
@@ -60,6 +62,7 @@ let styles = StyleSheet.create({
   step: { flexDirection: "row", alignItems: "flex-start", gap: 14 },
   number: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.accentBg, alignItems: "center", justifyContent: "center" },
   numberText: { color: colors.accent, fontSize: 15, fontWeight: "600" },
+  completed: { borderWidth: 1, borderColor: colors.success },
   stepContent: { flex: 1, minWidth: 0, gap: 10 },
   stepTitle: { color: colors.text, fontSize: 18, fontWeight: "600", lineHeight: 26 },
   rental: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 16, padding: 20, backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border },

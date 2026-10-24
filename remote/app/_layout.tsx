@@ -183,9 +183,12 @@ export default function RootLayout() {
             }}
           />
           <Stack.Screen name="account" options={{ title: "Account & subscription", headerShown: true, headerTintColor: colors.text, headerStyle: { backgroundColor: colors.bg }, headerBackButtonDisplayMode: "minimal", animation: "slide_from_right" }} />
-          <Stack.Screen name="demo-agent" options={{ headerShown: true, headerTintColor: colors.text, headerStyle: { backgroundColor: colors.bg }, headerBackButtonDisplayMode: "minimal", animation: "slide_from_right" }} />
-          <Stack.Screen name="demo-overview" options={{ title: "Getting started", headerShown: true, headerTintColor: colors.text, headerStyle: { backgroundColor: colors.bg }, headerBackButtonDisplayMode: "minimal", animation: "slide_from_right" }} />
-          <Stack.Screen name="demo-agent-details" options={{ title: "Agent details", headerShown: true, headerTintColor: colors.text, headerStyle: { backgroundColor: colors.bg }, headerBackButtonDisplayMode: "minimal", animation: "slide_from_right" }} />
+          <Stack.Protected guard={Platform.OS !== "ios" || isAuthenticated}>
+            <Stack.Screen name="demo" options={{ headerShown: false }} />
+            <Stack.Screen name="demo-agent" options={{ headerShown: true, headerTintColor: colors.text, headerStyle: { backgroundColor: colors.bg }, headerBackButtonDisplayMode: "minimal", animation: "slide_from_right" }} />
+            <Stack.Screen name="demo-overview" options={{ title: "Getting started", headerShown: true, headerTintColor: colors.text, headerStyle: { backgroundColor: colors.bg }, headerBackButtonDisplayMode: "minimal", animation: "slide_from_right" }} />
+            <Stack.Screen name="demo-agent-details" options={{ title: "Agent details", headerShown: true, headerTintColor: colors.text, headerStyle: { backgroundColor: colors.bg }, headerBackButtonDisplayMode: "minimal", animation: "slide_from_right" }} />
+          </Stack.Protected>
           <Stack.Screen name="machines" options={{ title: "Manage machines", headerShown: true, headerTintColor: colors.text, headerStyle: { backgroundColor: colors.bg }, headerBackButtonDisplayMode: "minimal", animation: "slide_from_right" }} />
           <Stack.Screen name="add-machine" options={{ title: "Add machine", headerShown: true, headerTintColor: colors.text, headerStyle: { backgroundColor: colors.bg }, headerBackButtonDisplayMode: "minimal", animation: "slide_from_right" }} />
           <Stack.Screen name="machine-page" options={({ route }) => ({ title: (route.params as { title?: string } | undefined)?.title ?? "Machine", headerShown: true, headerTintColor: colors.text, headerStyle: { backgroundColor: colors.bg }, headerBackButtonDisplayMode: "minimal", animation: "slide_from_right" })} />

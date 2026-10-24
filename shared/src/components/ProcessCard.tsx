@@ -225,7 +225,7 @@ export function ProcessCard({
         </View> : null}
       </View>
       {managed ? <Tooltip label="Shell session"><JobKindIcon kind="shell" size={14} bare /></Tooltip>
-        : <Text style={styles.paneId} numberOfLines={1} ellipsizeMode="tail">{resourceLabel(process.pane_id)}</Text>}
+        : <Text style={styles.paneId} numberOfLines={1} ellipsizeMode="tail">{process.pane_label ?? resourceLabel(process.pane_id)}</Text>}
     </View>
   );
   const titleControls = (

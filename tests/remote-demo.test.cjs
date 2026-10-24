@@ -6,9 +6,10 @@ const vm = require('node:vm');
 const ts = require('../desktop/node_modules/typescript');
 const { createStore } = require('../remote/node_modules/zustand/vanilla');
 
-let loadDemo = (entry, params = {}, os = 'ios') => {
+let loadDemo = (entry, params = {}, os = 'ios', progress = {}) => {
   let states = [], cursor = 0, pushed = [], cache = {}, effects = [], writes = [], filterStore;
   let modules = {
+    '../hooks/useSetupProgress': { useSetupProgress: () => ({ relayComplete: false, machineComplete: false, complete: false, ...progress }) },
     zustand: { create: (initializer) => {
       filterStore = createStore(initializer);
       return (selector) => selector(filterStore.getState());
@@ -63,11 +64,9 @@ test('demo list has isolated sample groups and no live mutation callbacks', () =
   assert.ok(props.jobs.length > 0 && props.detectedProcesses.length > 0);
   assert.equal(props.savedGroups.length, 0);
   for (let callback of ['onRunAgent', 'onStopJob', 'onStopProcess', 'groupPreferencesApi', 'onSaveProcessName', 'onTogglePin']) assert.equal(props[callback], undefined);
-  let connected = false;
-  let header = all(demo.render({ onConnect: () => { connected = true; } }).props.headerContent);
-  assert.deepEqual(header.filter((node) => node.type === 'Text').map((node) => node.props.children), ['Demo', '·', 'Connect to relay']);
-  header.find((node) => node.props?.accessibilityLabel === 'Connect to relay').props.onPress();
-  assert.equal(connected, true);
+  let header = all(demo.render().props.headerContent);
+  assert.deepEqual(header.filter((node) => node.type === 'Text').map((node) => node.props.children), ['Demo']);
+  assert.equal(header.find((node) => node.props?.accessibilityLabel === 'Connect to relay'), undefined);
   props.onSelectJob(props.jobs[0]);
   props.onSelectProcess(props.detectedProcesses[0]);
   assert.ok(demo.pushed.every((route) => route.pathname === '/demo-agent'));
@@ -198,6 +197,7 @@ test('demo overview explains relay, host setup, and launches, with setup links',
 test('sample navigation survives native URL decoding and a fresh module load', () => {
   let list = loadDemo('index.tsx');
   let props = list.render().props;
+  assert.deepEqual(Array.from(props.detectedProcesses, (process) => process.pane_label), ['%1', '%2', '%3']);
   for (let sample of props.detectedProcesses) props.onSelectProcess(sample);
   for (let sample of props.jobs) props.onSelectJob(sample);
   for (let route of list.pushed) {
@@ -209,6 +209,18 @@ test('sample navigation survives native URL decoding and a fresh module load', (
     assert.ok(!terminal.writes[1].includes('Sample not found'));
     let details = all(loadDemo('[id].tsx', params).render());
     assert.ok(details.some((node) => node.type === 'Text' && node.props.children === 'Output'));
+  }
+});
+
+test('setup checklist reflects relay and paired machine completion', () => {
+  for (let progress of [
+    { relayComplete: false, machineComplete: false },
+    { relayComplete: true, machineComplete: false },
+    { relayComplete: true, machineComplete: true, complete: true },
+  ]) {
+    let nodes = all(loadDemo('overview', {}, 'ios', progress).render({ onConnect: () => {} }));
+    assert.equal(nodes.some((node) => node.props?.accessibilityLabel === 'Relay access complete'), progress.relayComplete);
+    assert.equal(nodes.some((node) => node.props?.accessibilityLabel === 'Machine setup complete'), progress.machineComplete);
   }
 });
 

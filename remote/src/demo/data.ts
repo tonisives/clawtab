@@ -381,6 +381,7 @@ export const DEMO_PTY_OUTPUT_BY_PANE: Record<string, string> = {
 export const DEMO_PROCESSES: DetectedProcess[] = [
   {
     pane_id: DEMO_PANE_IDS.claude,
+    pane_label: "%1",
     cwd: "~/workspace/app",
     version: "demo",
     display_name: "Claude review",
@@ -403,6 +404,7 @@ export const DEMO_PROCESSES: DetectedProcess[] = [
   },
   {
     pane_id: DEMO_PANE_IDS.codex,
+    pane_label: "%2",
     cwd: "~/workspace/app",
     version: "demo",
     display_name: "Codex flake investigation",
@@ -425,6 +427,7 @@ export const DEMO_PROCESSES: DetectedProcess[] = [
   },
   {
     pane_id: DEMO_PANE_IDS.opencode,
+    pane_label: "%3",
     cwd: "~/workspace/app",
     version: "demo",
     display_name: "OpenCode UI upgrade",
