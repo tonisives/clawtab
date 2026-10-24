@@ -1400,6 +1400,7 @@ struct ActivityTracker {
     last_layout: HashMap<String, (u16, u16)>,
     last_changed: HashMap<String, Instant>,
     last_action_at_ms: HashMap<String, u64>,
+    last_action_output: HashMap<String, String>,
 }
 
 /// Codex emits `PermissionRequest`, but no matching permission-resolved event
@@ -1497,6 +1498,54 @@ fn claude_working_status(screen: &str) -> Option<bool> {
     Some(spinner || lines[footer..].join(" ").contains("esc to interrupt"))
 }
 
+// Compare transcript output without the live composer, footer, or spinner timer.
+fn action_output(screen: &str, visible: &str, provider: ProcessProvider) -> String {
+    let plain = strip_ansi(screen);
+    let lines: Vec<&str> = plain.lines().collect();
+    let marker = match provider {
+        ProcessProvider::Claude => '\u{276f}',
+        ProcessProvider::Codex => '\u{203a}',
+        _ => return normalize_activity_history(visible),
+    };
+    let Some(mut end) = lines
+        .iter()
+        .rposition(|line| line.trim_start().starts_with(marker))
+    else {
+        return normalize_activity_history(visible);
+    };
+    if provider == ProcessProvider::Claude && end > 0 {
+        let border = lines[end - 1].trim();
+        if border.chars().count() >= 3 && border.chars().all(|ch| ch == '\u{2500}') {
+            end -= 1;
+        }
+    }
+    let working = match provider {
+        ProcessProvider::Claude => claude_working_status(screen) == Some(true),
+        ProcessProvider::Codex => codex_working_status(screen),
+        _ => false,
+    };
+    if working {
+        // Codex can put queued user inputs between its spinner and composer.
+        loop {
+            while end > 0 && lines[end - 1].trim().is_empty() {
+                end -= 1;
+            }
+            let start = lines[..end]
+                .iter()
+                .rposition(|line| line.trim().is_empty())
+                .map_or(0, |index| index + 1);
+            let queued = lines
+                .get(start)
+                .is_some_and(|line| line.trim() == "\u{2022} Queued follow-up inputs");
+            end = start;
+            if !queued {
+                break;
+            }
+        }
+    }
+    normalize_activity_history(&lines[..end].join("\n"))
+}
+
 impl ActivityTracker {
     #[cfg(test)]
     fn update(
@@ -1589,9 +1638,18 @@ impl ActivityTracker {
             self.last_layout
                 .insert(pane_id.clone(), (*pane_width, *pane_height));
 
+            let output = action_output(screen, activity_visible, *provider);
+            let output_changed = !output.is_empty()
+                && self
+                    .last_action_output
+                    .get(pane_id)
+                    .is_some_and(|previous| previous != &output);
+            if !output.is_empty() {
+                self.last_action_output.insert(pane_id.clone(), output);
+            }
             // Text/progress changes are actions. Spinner repaints, typing, and
             // window reflows must not continually reset the action timestamp.
-            if !layout_changed && (history_changed || history_grew) {
+            if !layout_changed && (history_changed || history_grew || output_changed) {
                 let timestamp = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
@@ -1650,6 +1708,8 @@ impl ActivityTracker {
         self.last_changed
             .retain(|pane_id, _| seen_panes.contains(pane_id));
         self.last_action_at_ms
+            .retain(|pane_id, _| seen_panes.contains(pane_id));
+        self.last_action_output
             .retain(|pane_id, _| seen_panes.contains(pane_id));
 
         activity.sort_by(|left, right| left.pane_id.cmp(&right.pane_id));
@@ -2455,6 +2515,32 @@ mod tests {
         );
         tracker.update(&[], &no_questions, now);
         assert!(tracker.last_action_at_ms.is_empty());
+    }
+
+    #[test]
+    fn visible_output_updates_action_time_without_scrollback_growth() {
+        for (provider, initial, repainted, changed) in [
+            (ProcessProvider::Codex,
+             "Tool output\n\n\u{2022} Working (2s \u{2022} esc to interrupt)\n\n\u{203a} prompt\nVim: Insert",
+             "Tool output\n\n\u{2022} Working (8s \u{2022} esc to interrupt)\n\n\u{2022} Queued follow-up inputs\n  ? 1 question\n\n\u{203a} changed prompt\nmore input\nVim: Insert",
+             "New tool output\n\n\u{2022} Working (9s \u{2022} esc to interrupt)\n\n\u{203a} prompt\nVim: Insert"),
+            (ProcessProvider::Claude,
+             "Tool output\n\n\u{2722} Thinking\u{2026} (2s)\n\n\u{2500}\u{2500}\u{2500}\n\u{276f} prompt\n\u{2500}\u{2500}\u{2500}\n-- INSERT -- auto mode on",
+             "Tool output\n\n\u{2733} Thinking\u{2026} (8s)\n\n\u{2500}\u{2500}\u{2500}\n\u{276f} changed prompt\nmore input\n\u{2500}\u{2500}\u{2500}\n-- INSERT -- auto mode on",
+             "New tool output\n\n\u{2722} Thinking\u{2026} (9s)\n\n\u{2500}\u{2500}\u{2500}\n\u{276f} prompt\n\u{2500}\u{2500}\u{2500}\n-- INSERT -- auto mode on"),
+        ] {
+            let mut tracker = ActivityTracker::default();
+            let mut process = agent_with_layout("%1", "", "", 100, 120, 40);
+            process.12 = provider;
+            let now = Instant::now();
+            record_pane_capture(&mut process, initial, 99);
+            assert_eq!(tracker.update(&[process.clone()], &HashSet::new(), now)[0].last_action_at_ms, None);
+            tracker.last_action_at_ms.insert("%1".into(), 1000);
+            record_pane_capture(&mut process, repainted, 99);
+            assert_eq!(tracker.update(&[process.clone()], &HashSet::new(), now)[0].last_action_at_ms, Some(1000));
+            record_pane_capture(&mut process, changed, 99);
+            assert!(tracker.update(&[process], &HashSet::new(), now)[0].last_action_at_ms.is_some_and(|timestamp| timestamp > 1000));
+        }
     }
 
     #[test]
