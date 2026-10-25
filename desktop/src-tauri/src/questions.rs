@@ -1676,18 +1676,19 @@ impl ActivityTracker {
                 self.last_action_at_ms.insert(pane_id.clone(), timestamp);
             }
             if let Some(hook_state) = hook_runtime.pane_state(pane_id, *provider) {
-                let last_action_at_ms = self
-                    .last_action_at_ms
-                    .entry(pane_id.clone())
-                    .or_insert(hook_state.updated_at_ms);
-                *last_action_at_ms = (*last_action_at_ms).max(hook_state.updated_at_ms);
+                if let Some(timestamp) = hook_state.last_action_at_ms(*provider) {
+                    self.last_action_at_ms
+                        .entry(pane_id.clone())
+                        .and_modify(|previous| *previous = (*previous).max(timestamp))
+                        .or_insert(timestamp);
+                }
                 let asking = asking_panes.contains(pane_id)
                     || (*provider == ProcessProvider::Hermes
                         && hook_state.state == HookAgentState::Waiting);
                 let (working, asking) = resolved_hook_activity(hook_state.state, asking);
                 activity.push(AgentActivity {
                     pane_id: pane_id.clone(),
-                    last_action_at_ms: Some(*last_action_at_ms),
+                    last_action_at_ms: self.last_action_at_ms.get(pane_id).copied(),
                     working: working && alert.is_none(),
                     asking,
                     alert,

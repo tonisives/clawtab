@@ -180,6 +180,19 @@ pub struct HookPaneState {
     pub updated_at_ms: u64,
 }
 
+impl HookPaneState {
+    pub fn last_action_at_ms(&self, provider: ProcessProvider) -> Option<u64> {
+        match self.event.as_str() {
+            "session_start" | "on_session_start" => None,
+            "notification" if self.state == HookAgentState::Idle => None,
+            // Codex also stops housekeeping turns; its transcript records work.
+            "stop" if provider == ProcessProvider::Codex => None,
+            _ => Some(self.updated_at_ms),
+        }
+    }
+}
+
+
 #[derive(Clone, Default)]
 pub struct HookRuntime {
     sessions: Arc<Mutex<HashMap<String, HookEventV1>>>,
@@ -725,13 +738,12 @@ fn process_inbox(
                 let auto_yes = auto_yes_panes.lock().contains(&pane_id);
                 let mut item = activity_from_hook_state(
                     &pane_id,
-                    state.state,
-                    state.attention,
+                    event.provider,
+                    &state,
                     auto_yes,
-                    state.updated_at_ms,
+                    last_action_at_ms,
                 );
                 item.alert = size_warning;
-                item.last_action_at_ms = last_action_at_ms.max(Some(state.updated_at_ms));
                 activity.push(item);
             }
             activity.sort_by(|left, right| left.pane_id.cmp(&right.pane_id));
@@ -748,16 +760,16 @@ fn process_inbox(
 
 fn activity_from_hook_state(
     pane_id: &str,
-    state: HookAgentState,
-    attention: Option<HookAttention>,
+    provider: ProcessProvider,
+    state: &HookPaneState,
     auto_yes: bool,
-    last_action_at_ms: u64,
+    previous_action_at_ms: Option<u64>,
 ) -> AgentActivity {
     AgentActivity {
         pane_id: pane_id.to_string(),
-        last_action_at_ms: Some(last_action_at_ms),
-        working: state == HookAgentState::Working && attention.is_none(),
-        asking: !auto_yes && (state == HookAgentState::Waiting || attention.is_some()),
+        last_action_at_ms: previous_action_at_ms.max(state.last_action_at_ms(provider)),
+        working: state.state == HookAgentState::Working && state.attention.is_none(),
+        asking: !auto_yes && (state.state == HookAgentState::Waiting || state.attention.is_some()),
         alert: None,
     }
 }
@@ -1458,7 +1470,8 @@ export const ClawTab = async () => ({{
 mod tests {
     use super::{
         activity_from_hook_state, install_json_hooks, reconcile_completed_turn, remove_json_hooks,
-        stale_process_session_keys, HookAgentState, HookAttention, HookEventV1, HookRuntime,
+        stale_process_session_keys, HookAgentState, HookAttention, HookEventV1, HookPaneState,
+        HookRuntime,
     };
     use crate::agent_session::ProcessProvider;
     use serde_json::json;
@@ -1739,14 +1752,56 @@ mod tests {
     fn auto_yes_suppresses_waiting_hook_activity() {
         let activity = activity_from_hook_state(
             "%9",
-            HookAgentState::Waiting,
-            Some(HookAttention::Permission),
+            ProcessProvider::Codex,
+            &HookPaneState {
+                event: "permission_request".into(),
+                session_id: "session".into(),
+                state: HookAgentState::Waiting,
+                attention: Some(HookAttention::Permission),
+                updated_at_ms: 1700000000123,
+            },
             true,
-            1700000000123,
+            None,
         );
 
         assert!(!activity.asking);
         assert_eq!(activity.last_action_at_ms, Some(1700000000123));
+    }
+
+    #[test]
+    fn opening_sessions_and_idle_notifications_preserve_action_time() {
+        for (provider, event) in [
+            (ProcessProvider::Claude, "session_start"),
+            (ProcessProvider::Codex, "session_start"),
+            (ProcessProvider::Hermes, "on_session_start"),
+            (ProcessProvider::Claude, "notification"),
+            (ProcessProvider::Codex, "stop"),
+        ] {
+            let state = HookPaneState {
+                event: event.into(),
+                session_id: "session".into(),
+                state: HookAgentState::Idle,
+                attention: None,
+                updated_at_ms: 1700000000123,
+            };
+            for previous in [None, Some(1700000000000)] {
+                let activity =
+                    activity_from_hook_state("%9", provider, &state, false, previous);
+                assert_eq!(activity.last_action_at_ms, previous);
+                assert!(!activity.working);
+                assert!(!activity.asking);
+            }
+        }
+
+        let state = HookPaneState {
+            event: "stop".into(),
+            session_id: "session".into(),
+            state: HookAgentState::Idle,
+            attention: None,
+            updated_at_ms: 1700000000123,
+        };
+        let activity = activity_from_hook_state("%9", ProcessProvider::Claude, &state, false, None);
+        assert_eq!(activity.last_action_at_ms, Some(state.updated_at_ms));
     }
 
     #[test]
