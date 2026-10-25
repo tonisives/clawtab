@@ -237,6 +237,10 @@ jobs:
           if [ -d "$NESTED_DAEMON_APP" ]; then
             echo "Signing nested daemon app at: $NESTED_DAEMON_APP"
             NESTED_DAEMON_MAIN="$NESTED_DAEMON_APP/Contents/MacOS/ClawTab Daemon"
+            APP_VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
+              "${{ steps.find-app.outputs.app_path }}/Contents/Info.plist")
+            /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $APP_VERSION" "$NESTED_DAEMON_APP/Contents/Info.plist"
+            /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $APP_VERSION" "$NESTED_DAEMON_APP/Contents/Info.plist"
 
             # codesign resolves the CFBundleExecutable path to its enclosing
             # app bundle. Sign sibling helper executables first, then sign the
