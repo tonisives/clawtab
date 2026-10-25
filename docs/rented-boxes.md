@@ -1,10 +1,10 @@
-# Rented boxes: setup preview
+# Rented boxes
 
-**Status: upcoming, September 10, 2026.** Hetzner rentals are under implementation. Purchases remain disabled pending provider configuration and end-to-end validation. The steps and policies below describe the planned first version; they are not a claim that checkout is available today. To connect a host now, follow [remote machine setup](https://clawtab.cc/docs#remote-machines).
+ClawTab rentals prepare a Linux server and connect it to your account. Open **Advanced setup → Rent a server** in the web app to check current sizes, regions, and prices. The [server rental guide](https://clawtab.cc/articles/remote-machines-and-rented-boxes) includes a dated price comparison.
 
-A rented box is a Linux server prepared by ClawTab and attached to your account. It is intended to appear alongside your other machines and use the existing terminal, repository, job, and access controls. Your agent processes and repositories live on that server.
+A rented box is a Linux server prepared by ClawTab and attached to your account. It appears alongside your other machines and uses the existing terminal, repository, job, and access controls. Your agent processes and repositories live on that server.
 
-## Planned prerequisites
+## Prerequisites
 
 - A signed-in ClawTab account. A rental includes relay access for all your machines; no separate relay plan is needed.
 - Desktop, web, or a supported mobile storefront for purchasing. The first mobile rollout supports the US iOS storefront; Android external checkout requires an explicitly enabled storefront. Other storefronts can connect and use existing machines.
@@ -12,28 +12,28 @@ A rented box is a Linux server prepared by ClawTab and attached to your account.
 - Git access for any private repositories you will clone.
 - Optionally, an SSH **public** key for direct administration. Do not submit a private key.
 
-## Planned purchase and setup
+## Purchase and setup
 
-1. At the end of the job list, open **Add group / machine → + Add machine → Rent a box** when purchases become available. Existing groups also offer **+ Add machine** in the agent picker.
+1. Open **Getting started → Advanced setup → Rent a server** in the web app. Existing groups also offer **+ Add machine** in the agent picker.
 2. Choose a name, size, and region. The first version targets x86 shared-CPU boxes with 4 GB or 8 GB RAM. Review the actual CPU, disk, included outgoing traffic, region, and monthly price shown in the quote. A timezone-based region suggestion is approximate; confirm the location you want.
 3. Add an SSH public key if you want SSH access. Review the deletion and backup terms before paying.
 4. Complete the account-linked checkout in the secure browser. Return to ClawTab from the confirmation page. Provisioning starts only after the initial payment is verified. Returning from checkout alone does not mean the server is ready.
-5. Wait for provisioning to finish and the machine to connect. Enrollment is intended to happen automatically, without running `cwtctl setup` or entering a pairing code.
+5. Wait for provisioning to finish and the machine to connect. Enrollment happens automatically, without running `cwtctl setup` or entering a pairing code.
 6. A group named after the box is saved automatically, using `/home/clawtab/workspace` on that machine. Use **Sign in** for your chosen provider, then **I’ve signed in · Start agent**. The supported account default provider is preselected, with Codex as the fallback. Setup resumes from the same order and terminal after an app restart; **Start another agent** creates a new session.
 
-Exact prices and available regions come from the catalog. The plan does not silently substitute a different region after payment. A failed or timed-out setup is intended to trigger resource cleanup, rental subscription cancellation, and a full initial-payment refund.
+Exact prices and available regions come from the catalog. The selected quote is checked again before checkout. Failed provisioning triggers cleanup and initial-payment recovery through the rental service.
 
 ## What is prepared on the box
 
-The planned image includes ClawTab's daemon, CLI, hooks and plugins, tmux, Git, Python, Node, Claude Code, Codex, and OpenCode. It configures service startup, a workspace directory, and agent discovery. A normal Linux user has sudo; password and root SSH login are disabled.
+The image includes ClawTab's daemon, CLI, hooks and plugins, tmux, Git, Python, Node, and your selected Claude Code, Codex, OpenCode, and Hermes tools. It configures service startup, a workspace directory, and agent discovery. A normal Linux user has sudo; password and root SSH login are disabled.
 
 Installation is separate from authorization. A preinstalled CLI still needs your account login or API credentials. ClawTab's own sign-in authorizes machine access; it does not log you into Claude Code, Codex, OpenCode, or your Git host.
 
 ## Authorize providers and prepare work
 
-Once the box is online, open its terminal and use the guided login action for your chosen provider. Complete that tool's supported headless authorization flow with your own account. Login methods can change; use the actions and provider guidance shipped with the released setup instead of copying an unverified command from a preview.
+Once the box is online, open its terminal and use the guided login action for your chosen provider. Complete that tool's supported headless authorization flow with your own account. Login methods can change; use the setup actions and current provider guidance.
 
-You can check whether the planned tools are on the shell's PATH without displaying credentials:
+You can check whether the tools are on the shell's PATH without displaying credentials:
 
 ```sh
 command -v claude
@@ -52,11 +52,11 @@ Then prepare a repository:
 
 Provider and Git credentials remain on the host unless you explicitly transfer credential files. Connections use TLS, but ClawTab's relay can read terminal and transfer payloads. This feature does not introduce end-to-end encryption.
 
-## Planned billing and deletion rules
+## Billing and deletion rules
 
-Each box has a separate monthly subscription paid in advance. The planned price is provider cost, including required IPv4 and other mandatory provider charges, multiplied by 1.20. Applicable taxes are shown before payment. Relay access for the rental and your own machines is included; AI usage remains separate. Once the first box is ready, existing Stripe relay billing ends and unused paid time is credited to future invoices. If currencies differ, that unused amount is refunded to the original payment. Apple subscriptions must be canceled in Apple subscription settings; ClawTab cannot cancel or credit Apple billing. The quote is retained through the purchased period; future price increases require advance notice.
+Each box has a separate monthly subscription paid in advance. The price is provider cost, including required IPv4 and other mandatory provider charges, multiplied by 1.20. Applicable taxes are shown before payment. Relay access for the rental and your own machines is included; AI usage remains separate. Once the first box is ready, existing Stripe relay billing ends and unused paid time is credited to future invoices. If currencies differ, that unused amount is refunded to the original payment. Apple subscriptions must be canceled in Apple subscription settings; ClawTab cannot cancel or credit Apple billing. The quote is retained through the purchased period; future price increases require advance notice.
 
-| Event | Planned result |
+| Event | Result |
 | --- | --- |
 | Successful renewal | Extend the box's paid period. |
 | Unpaid renewal | Start a ten-day recovery deadline at the renewal's due time. Display the exact deletion time and send notices at failure and days 3, 7, and 9. |
@@ -73,19 +73,17 @@ Use the rental's billing and deletion controls for a rented server. Removing a m
 
 Keep backups outside the box. The first version does not include managed backups, paid snapshots, resizing, other hosting providers, or bundled AI usage. Deletion is permanent. Closing the client leaves agents running, but rebooting the server ends running agents; their conversations are not automatically recreated.
 
-The planned initial limit is three boxes per customer. Purchases can also be unavailable when service capacity is exhausted.
+The limit is three boxes per customer. Purchases can also be unavailable when service capacity is exhausted.
 
-The traffic policy plans a warning at 75% of included outgoing traffic and a provider-side networking restriction at 90%, with restoration at the next provider traffic-period reset. Usage checks are planned every five minutes, so enforcement cannot guarantee zero overshoot. Networking restrictions can interrupt relay and terminal access. Review the released quote and traffic policy before relying on a box for large transfers.
+The traffic policy sends a warning at 75% of included outgoing traffic and a provider-side networking restriction at 90%, with restoration at the next provider traffic-period reset. Usage checks run every five minutes, so enforcement cannot guarantee zero overshoot. Networking restrictions can interrupt relay and terminal access. Review the released quote and traffic policy before relying on a box for large transfers.
 
 ## If setup does not progress
 
 | Symptom | Check |
 | --- | --- |
-| Rent a box is unavailable | Rentals are not enabled yet, or purchasing eligibility/capacity is unavailable. Use an owned Linux host in the meantime. |
+| Rent a box is unavailable | New rentals are paused, or purchasing eligibility/capacity is unavailable. Use an owned Linux host in the meantime. |
 | Checkout completed, box still provisioning | Wait for payment verification and setup status. Avoid placing a second order just to retry the first. |
 | Machine list has an account error | Renew the existing account session under desktop Settings → Remote → Account access, then retry. |
 | Box is online, provider cannot run | Confirm the CLI is installed and authorized on that box and the selected model is supported. |
 | Terminal is visible but does not accept input | Check whether another client holds control and use Take control. |
 | Payment recovery deadline is shown | Recover payment before the exact deadline and copy out work you need to retain. Do not assume stopping the machine cancels billing. |
-
-These troubleshooting steps describe the intended flow. Purchase availability and final operational behavior must be verified against the released implementation.

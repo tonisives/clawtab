@@ -182,7 +182,7 @@ export let RelaySubscription = ({ onboarding = false }: { onboarding?: boolean }
     {!subLoading && !sub?.subscribed && <View style={styles.section}>
       {!onboarding && <Text style={styles.sectionTitle}>Relay subscription</Text>}
       {Platform.OS === "android" ? <Text style={styles.usageDescription}>Relay access requires an existing ClawTab subscription.</Text> : <SettingsGroup>
-        <SettingsRow title={actionLoading || iap.purchasing ? "Please wait…" : Platform.OS === "ios" && iap.loading ? "Loading purchases…" : iap.price ? `Subscribe · ${iap.price} / month` : "Subscribe to Relay"} detail={Platform.OS === "ios" && iap.error ? iap.error : onboarding ? undefined : "Includes a remote workspace for your existing AI account."} onPress={handleSubscribe} disabled={!sub || actionLoading || iap.purchasing || (Platform.OS === "ios" && !iap.available)} chevron={false} />
+        <SettingsRow title={actionLoading || iap.purchasing ? "Please wait…" : Platform.OS === "ios" && iap.loading ? "Loading purchases…" : iap.price ? `Subscribe · ${iap.price} / month` : "Subscribe to Relay"} detail={Platform.OS === "ios" && iap.error ? iap.error : onboarding ? undefined : "2 hosted agents and connections for up to 100 on your own machines."} onPress={handleSubscribe} disabled={!sub || actionLoading || iap.purchasing || (Platform.OS === "ios" && !iap.available)} chevron={false} />
       </SettingsGroup>}
     </View>}
     {onboarding && sub?.hosted_workspace_eligible && <HostedWorkspacePanel key={userId} api={api.rentalApi} autoStart />}

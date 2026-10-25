@@ -1,6 +1,6 @@
 # Remote machines: Linux setup and account connection
 
-Use the desktop **Machines** button to manage your Mac and paired Linux hosts. The host runs the agents and stores the repositories; desktop, web, and mobile connect to that host's terminal. This page covers machines you install yourself. [Rented boxes](https://clawtab.cc/docs#rented-boxes) are a separate, upcoming setup path.
+Use the desktop **Machines** button to manage your Mac and paired Linux hosts. The host runs the agents and stores the repositories; desktop, web, and mobile connect to that host's terminal. This page covers machines you install yourself. [Rented boxes](https://clawtab.cc/docs#rented-boxes) are a separate setup path with the server prepared for you.
 
 ## Before you start
 
