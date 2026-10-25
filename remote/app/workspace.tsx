@@ -12,16 +12,14 @@ export default function WorkspaceScreen() {
   let signIn = () => router.push({ pathname: "/login", params: { return_to: "workspace" } })
   return <SettingsPage>
     {authenticated ? <RelaySubscription onboarding /> : <RelayWelcome><View style={styles.signIn}>
-      <Text style={styles.detail}>Sign in to subscribe to Relay or open your included workspace.</Text>
-      <Pressable accessibilityRole="button" onPress={signIn} style={styles.button}><Text style={styles.action}>Sign in to get started</Text></Pressable>
+      <Pressable accessibilityRole="button" onPress={signIn} style={styles.button}><Text style={styles.action}>Sign in</Text></Pressable>
     </View></RelayWelcome>}
     <AdvancedSetupOptions />
   </SettingsPage>
 }
 
 let styles = StyleSheet.create({
-  signIn: { gap: 16 },
-  detail: { color: colors.textSecondary, fontSize: 14, lineHeight: 22 },
-  button: { minHeight: 48, paddingHorizontal: 24, alignSelf: "flex-start", alignItems: "center", justifyContent: "center", borderRadius: 999, backgroundColor: colors.accent },
-  action: { color: colors.bg, fontSize: 15, fontWeight: "600" },
+  signIn: { minWidth: 0, width: "100%" },
+  button: { minHeight: 48, width: "100%", minWidth: 0, paddingHorizontal: 16, paddingVertical: 12, alignItems: "center", justifyContent: "center", borderRadius: 999, backgroundColor: colors.accent },
+  action: { color: colors.bg, fontSize: 15, fontWeight: "600", flexShrink: 1, textAlign: "center" },
 })

@@ -8,7 +8,7 @@ export let DemoOverview = ({ onConnect, showSamples = true }: { onConnect: () =>
   return <ScrollView style={styles.screen} contentContainerStyle={styles.scrollContent} contentInsetAdjustmentBehavior="automatic">
     <View style={styles.content}>
       <RelayWelcome onContinue={onConnect} connected={relayComplete} />
-      {showSamples && <Text style={styles.hint}>Explore the sample agents and terminals. Select Demo to return here.</Text>}
+      {showSamples && <Text style={styles.hint}>Demo uses sample agents.</Text>}
       <AdvancedSetupOptions />
     </View>
   </ScrollView>
