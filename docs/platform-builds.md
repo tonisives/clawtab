@@ -1,5 +1,25 @@
 # Platform installation and release builds
 
+## macOS
+
+Install the daemon, CLI, agent hooks, and Zsh completion with Homebrew:
+
+```sh
+brew install --cask tonisives/tap/clawtab
+cwtctl daemon install
+cwtctl daemon ping
+```
+
+The default package runs headless. Add the desktop app separately for split workspaces, the Mind Map, and visual settings:
+
+```sh
+brew install --cask tonisives/tap/clawtab-desktop
+```
+
+If you used the combined cask before 0.6.1, stop any installed service with `cwtctl daemon stop`, run `brew reinstall --cask tonisives/tap/clawtab`, then run `cwtctl daemon install` to update the service path. Install `clawtab-desktop` afterward if you want to keep the desktop app.
+
+Each macOS release includes standalone host archives (`clawtab-macos-aarch64.tar.gz` and `clawtab-macos-x64.tar.gz`) with SHA-256 files, plus separate desktop DMGs. Both packages are signed and notarized. The host archive contains `ClawTab Daemon.app`, `cwtctl`, and `_cwtctl`; the background app supplies notifications and the hook helper.
+
 ## Linux
 
 GitHub releases include the Linux daemon for x86_64 and ARM64. Each package contains `clawtab-daemon`, `cwtctl`, agent hooks, and the session shortcuts plugin. Use the same package as a local daemon or a paired remote agent host. Linux packages require glibc 2.35 or newer and systemd. Install tmux for the tmux backend, Git for repository operations, and Python 3 for Python plugins. Use Ubuntu 22.04+ or Debian 12+.

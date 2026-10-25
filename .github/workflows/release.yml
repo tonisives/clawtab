@@ -111,6 +111,9 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install
 
+      - name: Test macOS host packaging
+        run: bash ../etc/tests/package-macos-host.test.sh
+
       - name: Build Tauri app
         run: pnpm tauri build ${{ matrix.args }}
         env:
@@ -272,35 +275,49 @@ jobs:
           echo "Verifying signature..."
           codesign --verify --deep --strict "${{ steps.find-app.outputs.app_path }}"
 
-      - name: Notarize the app
+      - name: Stage standalone macOS host
+        run: bash etc/package-macos-host.sh "${{ steps.find-app.outputs.app_path }}" host
+
+      - name: Notarize desktop and standalone host
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          ditto -c -k --keepParent "${{ steps.find-app.outputs.app_path }}" app.zip
+          notarize() {
+            local source="$1" archive="$2"
+            ditto -c -k --keepParent "$source" "$archive"
+            set +e
+            xcrun notarytool submit "$archive" \
+              --apple-id "$APPLE_ID" \
+              --password "$APPLE_PASSWORD" \
+              --team-id "$APPLE_TEAM_ID" \
+              --wait 2>&1 | tee notary-submit.log
+            submit_status=${PIPESTATUS[0]}
+            set -e
 
-          set +e
-          xcrun notarytool submit app.zip \
-            --apple-id "$APPLE_ID" \
-            --password "$APPLE_PASSWORD" \
-            --team-id "$APPLE_TEAM_ID" \
-            --wait 2>&1 | tee notary-submit.log
-          submit_status=${PIPESTATUS[0]}
-          set -e
-
-          submission_id=$(sed -n 's/^[[:space:]]*id: //p' notary-submit.log | head -1)
-          if [ "$submit_status" -ne 0 ] || grep -q "status: Invalid" notary-submit.log; then
-            if [ -n "$submission_id" ]; then
-              xcrun notarytool log "$submission_id" \
-                --apple-id "$APPLE_ID" \
-                --password "$APPLE_PASSWORD" \
-                --team-id "$APPLE_TEAM_ID" || true
+            submission_id=$(sed -n 's/^[[:space:]]*id: //p' notary-submit.log | head -1)
+            if [ "$submit_status" -ne 0 ] || grep -q "status: Invalid" notary-submit.log; then
+              if [ -n "$submission_id" ]; then
+                xcrun notarytool log "$submission_id" \
+                  --apple-id "$APPLE_ID" \
+                  --password "$APPLE_PASSWORD" \
+                  --team-id "$APPLE_TEAM_ID" || true
+              fi
+              exit 1
             fi
-            exit 1
-          fi
+          }
 
+          notarize "${{ steps.find-app.outputs.app_path }}" app.zip
           xcrun stapler staple "${{ steps.find-app.outputs.app_path }}"
+          notarize host host.zip
+          xcrun stapler staple "host/ClawTab Daemon.app"
+
+      - name: Archive standalone macOS host
+        run: |
+          archive="clawtab-macos-${{ matrix.arch }}.tar.gz"
+          tar -czf "$archive" -C host .
+          shasum -a 256 "$archive" > "$archive.sha256"
 
       - name: Create DMG
         run: |
@@ -322,11 +339,15 @@ jobs:
         run: |
           codesign --force --sign "$APPLE_SIGNING_IDENTITY" "clawtab_${{ matrix.arch }}.dmg"
 
-      - name: Upload DMG to release
+      - name: Upload desktop and host packages to release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload "${{ github.ref_name }}" "clawtab_${{ matrix.arch }}.dmg" --clobber --repo "${{ github.repository }}"
+          gh release upload "${{ github.ref_name }}" \
+            "clawtab-macos-${{ matrix.arch }}.tar.gz" \
+            "clawtab-macos-${{ matrix.arch }}.tar.gz.sha256" \
+            --clobber --repo "${{ github.repository }}"
 
   generate-latest-json:
     needs: [sign, sign-updater]
@@ -391,7 +412,8 @@ jobs:
           set -euo pipefail
           mkdir release-assets
           version="${RELEASE_TAG#v}"
-          for name in clawtab_aarch64.dmg clawtab_x64.dmg; do
+          for name in clawtab_aarch64.dmg clawtab_x64.dmg \
+            clawtab-macos-aarch64.tar.gz clawtab-macos-x64.tar.gz; do
             gh release download "$RELEASE_TAG" --pattern "$name" --dir release-assets --repo "$GITHUB_REPOSITORY"
             test -s "release-assets/$name"
             case "$name" in
@@ -420,15 +442,18 @@ jobs:
           if brew help trust >/dev/null 2>&1; then brew trust --tap tonisives/tap; fi
           tap_dir="$(brew --repository tonisives/tap)"
           cp homebrew-tap/Casks/clawtab.rb "$tap_dir/Casks/clawtab.rb"
-          brew style homebrew-tap/Casks/clawtab.rb
+          cp homebrew-tap/Casks/clawtab-desktop.rb "$tap_dir/Casks/clawtab-desktop.rb"
+          brew style homebrew-tap/Casks/clawtab.rb homebrew-tap/Casks/clawtab-desktop.rb
           brew audit --cask --strict tonisives/tap/clawtab
+          brew audit --cask --strict tonisives/tap/clawtab-desktop
           brew fetch --cask tonisives/tap/clawtab
+          brew fetch --cask tonisives/tap/clawtab-desktop
 
       - name: Commit and push
         working-directory: homebrew-tap
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Casks/clawtab.rb
+          git add Casks/clawtab.rb Casks/clawtab-desktop.rb
           git diff --staged --quiet || git commit -m "Update clawtab to $RELEASE_TAG"
           git push

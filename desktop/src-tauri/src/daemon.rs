@@ -42,6 +42,53 @@ pub const PLIST_CONTENT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 </dict>
 </plist>"#;
 
+fn daemon_beside(executable: &Path) -> Option<PathBuf> {
+    let directory = executable.parent()?;
+    [
+        directory.join("clawtab-daemon"),
+        directory.join("ClawTab Daemon.app/Contents/MacOS/ClawTab Daemon"),
+        directory.join("../Resources/ClawTab Daemon.app/Contents/MacOS/ClawTab Daemon"),
+    ]
+    .into_iter()
+    .find(|path| path.is_file())
+}
+
+fn daemon_executable() -> Result<PathBuf, String> {
+    which::which("clawtab-daemon")
+        .ok()
+        .or_else(|| {
+            [
+                PathBuf::from("/Applications/ClawTab Daemon.app/Contents/MacOS/ClawTab Daemon"),
+                PathBuf::from("/opt/homebrew/bin/clawtab-daemon"),
+                PathBuf::from(ENGINE_EXECUTABLE_PATH),
+            ]
+            .into_iter()
+            .find(|path| path.is_file())
+        })
+        .or_else(|| {
+            std::env::current_exe()
+                .ok()
+                .and_then(|path| daemon_beside(&path))
+        })
+        .and_then(|path| path.canonicalize().ok())
+        .ok_or_else(|| {
+            "clawtab-daemon not found. Install it with 'brew install --cask tonisives/tap/clawtab'."
+                .into()
+        })
+}
+
+fn plist_content(executable: &Path) -> Result<String, String> {
+    let executable = executable
+        .to_str()
+        .ok_or("Daemon executable path is not valid UTF-8")?
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;");
+    Ok(PLIST_CONTENT.replace(ENGINE_EXECUTABLE_PATH, &executable))
+}
+
 pub fn plist_dest() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_default()
@@ -143,6 +190,8 @@ pub fn is_running() -> (bool, Option<u32>) {
 }
 
 pub fn install() -> Result<String, String> {
+    let executable = daemon_executable()?;
+    let content = plist_content(&executable)?;
     let dest = plist_dest();
     if let Some(parent) = dest.parent() {
         std::fs::create_dir_all(parent)
@@ -151,14 +200,7 @@ pub fn install() -> Result<String, String> {
 
     let _ = std::fs::create_dir_all("/tmp/clawtab");
 
-    if !std::path::Path::new(ENGINE_EXECUTABLE_PATH).exists() {
-        return Err(
-            "clawtab-daemon not found. Run 'make daemon-build && make daemon-copy-local' first."
-                .into(),
-        );
-    }
-
-    std::fs::write(&dest, PLIST_CONTENT).map_err(|e| format!("Failed to write plist: {}", e))?;
+    std::fs::write(&dest, content).map_err(|e| format!("Failed to write plist: {}", e))?;
 
     let status = std::process::Command::new("launchctl")
         .args(["load", &dest.display().to_string()])
@@ -233,6 +275,45 @@ pub fn uninstall() -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn finds_daemon_in_standalone_host_package() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let daemon = directory
+            .path()
+            .join("ClawTab Daemon.app/Contents/MacOS/ClawTab Daemon");
+        std::fs::create_dir_all(daemon.parent().unwrap()).unwrap();
+        std::fs::write(&daemon, "daemon").unwrap();
+        assert_eq!(
+            daemon_beside(&directory.path().join("cwtctl")),
+            Some(daemon)
+        );
+    }
+
+    #[test]
+    fn finds_daemon_in_desktop_download() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let executable = directory.path().join("Contents/MacOS/ClawTab");
+        let daemon = executable
+            .parent()
+            .unwrap()
+            .join("../Resources/ClawTab Daemon.app/Contents/MacOS/ClawTab Daemon");
+        std::fs::create_dir_all(daemon.parent().unwrap()).unwrap();
+        std::fs::write(&daemon, "daemon").unwrap();
+        assert_eq!(daemon_beside(&executable), Some(daemon));
+    }
+
+    #[test]
+    fn launchd_uses_installed_daemon_path_and_escapes_xml() {
+        let content = plist_content(Path::new(
+            "/Users/test/Apps & Tools/ClawTab Daemon.app/Contents/MacOS/ClawTab Daemon",
+        ))
+        .unwrap();
+        assert!(content.contains(
+            "<string>/Users/test/Apps &amp; Tools/ClawTab Daemon.app/Contents/MacOS/ClawTab Daemon</string>"
+        ));
+        assert!(!content.contains(ENGINE_EXECUTABLE_PATH));
+    }
 
     #[test]
     fn held_daemon_lock_reports_its_pid() {

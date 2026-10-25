@@ -22,7 +22,7 @@
 
 | Platform | Availability |
 | --- | --- |
-| macOS | [Desktop app for Apple Silicon and Intel](https://github.com/tonisives/clawtab/releases/latest), or `brew install --cask tonisives/tap/clawtab` |
+| macOS | Daemon and CLI: `brew install --cask tonisives/tap/clawtab`. Optional desktop app: `brew install --cask tonisives/tap/clawtab-desktop` |
 | Linux | Local daemon or remote agent host: [x86_64](https://github.com/tonisives/clawtab/releases/latest/download/clawtab-linux-x86_64.tar.gz) / [ARM64](https://github.com/tonisives/clawtab/releases/latest/download/clawtab-linux-aarch64.tar.gz) |
 | Windows | Native host and CLI: build from source or use the [Managed terminals CI artifact](https://github.com/tonisives/clawtab/actions/workflows/managed-sessions.yml). No WSL required. |
 | iPhone / iPad | [App Store](https://apps.apple.com/us/app/clawtab/id6759683841) |
@@ -254,6 +254,12 @@ cwtctl daemon status
 ```
 
 The daemon starts at login through launchd and continues running independently of the desktop app.
+
+The default package installs the daemon, `cwtctl`, agent hooks, and Zsh completion. Add the desktop app separately for split workspaces, the Mind Map, and visual settings:
+
+```sh
+brew install --cask tonisives/tap/clawtab-desktop
+```
 
 ### Build from Source
 

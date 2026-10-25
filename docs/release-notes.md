@@ -1,3 +1,18 @@
+# ClawTab 0.6.1
+
+The default macOS install now contains the headless daemon, `cwtctl`, agent hooks, and Zsh completion. Install the desktop app separately:
+
+```sh
+brew install --cask tonisives/tap/clawtab
+brew install --cask tonisives/tap/clawtab-desktop
+```
+
+The desktop app is optional. The daemon keeps schedules, notifications, and Remote running on its own. Apple Silicon and Intel releases include signed and notarized host archives alongside the desktop DMGs.
+
+The daemon installer now finds Homebrew's installed executable and records its path in launchd. If you are moving from the combined cask, stop the service with `cwtctl daemon stop`, reinstall `clawtab`, and run `cwtctl daemon install`. Add `clawtab-desktop` afterward to keep the GUI.
+
+See the [macOS installation guide](https://clawtab.cc/docs#platform-builds).
+
 # ClawTab 0.6.0
 
 ClawTab can now keep coding agents running without tmux. Launch an agent from a regular shell, detach, and reconnect from your terminal, browser, or phone. This release also adds a native Windows host.

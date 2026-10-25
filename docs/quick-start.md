@@ -16,7 +16,18 @@ For Linux or Windows hosts, follow [platform installation](platform-builds.md).
 brew install --cask tonisives/tap/clawtab
 ```
 
-This installs the `clawtab` GUI app, `cwtctl` CLI, and `cwttui` terminal UI.
+This installs the headless daemon, `cwtctl`, agent hooks, and Zsh completion. Start the background service:
+
+```sh
+cwtctl daemon install
+cwtctl daemon ping
+```
+
+For split workspaces, the Mind Map, and visual settings, install the optional desktop app:
+
+```sh
+brew install --cask tonisives/tap/clawtab-desktop
+```
 
 ### Build from source
 
@@ -25,10 +36,11 @@ pnpm install
 cargo tauri build
 ```
 
-Both methods produce three binaries:
+Source builds can produce these binaries:
 
 | Binary | Purpose |
 |--------|---------|
+| `clawtab-daemon` | Headless scheduler, agent monitor, and Remote host |
 | `clawtab` | GUI app (Tauri window) |
 | `cwtctl` | CLI for headless control |
 | `cwttui` | Terminal UI (ratatui) |
@@ -47,7 +59,7 @@ See [sessions without tmux](managed-sessions.md) for control, shutdown, and reco
 
 ## Setup Wizard
 
-On first launch, the setup wizard walks through:
+On first launch of the optional desktop app, the setup wizard walks through:
 
 1. **Tools** -- Detects installed tools (editors, terminals, tmux, claude, gopass, aerospace)
 2. **Notifications** -- Choose notification target: ClawTab App (push), Telegram (bot), or skip
