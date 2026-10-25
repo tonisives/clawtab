@@ -809,6 +809,7 @@ export default function JobsScreen() {
 
   let viewState = jobListState({ authenticated, authLoading, connected: connected || machines.connected, hostOnline, loaded, error: machines.error })
   let demoMode = viewState.demo
+  let needsWorkspace = machines.connected && !!machines.connectionId && machines.machines.length === 0 && !hostOnline
   const webSplit = Platform.OS === "web" && isSplitView
   const activeContent = focusedPaneContent(split.tree, split.focusedLeafId) ?? currentContent
   const navigationEntry: SplitNavigationEntry = {
@@ -842,8 +843,8 @@ export default function JobsScreen() {
   useEffect(() => {
     if (sidebarSection === "settings") setSettingsMounted(true)
   }, [sidebarSection])
-  let connectRelay = () => authenticated ? router.push("/account") : router.push({ pathname: "/login", params: { return_to: "account" } })
-  let connectionLoading = viewState.loading ? <ConnectionLoadingView label={viewState.loading} error={machines.error} onAccount={connectRelay} /> : null
+  let connectRelay = () => authenticated ? router.push("/workspace") : router.push({ pathname: "/login", params: { return_to: "workspace" } })
+  let connectionLoading = viewState.loading ? <ConnectionLoadingView label={viewState.loading} error={machines.error} onAccount={() => authenticated ? router.push("/account") : router.push({ pathname: "/login", params: { return_to: "account" } })} /> : null
 
   const bannerContent = (
     <>
@@ -859,7 +860,7 @@ export default function JobsScreen() {
     <View style={styles.container}>
 
 
-      {connectionLoading ?? (demoMode ? <DemoJobList onConnect={connectRelay} /> : <JobListView
+      {connectionLoading ?? (demoMode ? <DemoJobList onConnect={connectRelay} /> : needsWorkspace ? <DemoOverview onConnect={connectRelay} showSamples={false} /> : <JobListView
         machineOnboarding={machineOnboardingContent}
         machineManagement={machineManagementContent}
         machineChrome={machineOnboardingChrome}
@@ -904,7 +905,7 @@ export default function JobsScreen() {
   )
 
   const mobileJobList = (
-    connectionLoading ?? (demoMode ? <DemoJobList onConnect={connectRelay} /> : <JobListView
+    connectionLoading ?? (demoMode ? <DemoJobList onConnect={connectRelay} /> : needsWorkspace ? <DemoOverview onConnect={connectRelay} showSamples={false} /> : <JobListView
       machineOnboarding={machineOnboardingContent}
       machineManagement={machineManagementContent}
       machineChrome={machineOnboardingChrome}
@@ -1172,7 +1173,7 @@ export default function JobsScreen() {
   }
 
   // Non-tree primary content (when no split tree)
-  const primaryContent = connectionLoading ?? (demoMode ? (demoSelection ? <DemoAgentPane key={`${demoSelection.kind}:${demoSelection.id}`} {...demoSelection} onShowOverview={() => setDemoSelection(null)} /> : <DemoOverview onConnect={connectRelay} />) : selectedJob ? (
+  const primaryContent = connectionLoading ?? (demoMode ? (demoSelection ? <DemoAgentPane key={`${demoSelection.kind}:${demoSelection.id}`} {...demoSelection} onShowOverview={() => setDemoSelection(null)} /> : <DemoOverview onConnect={connectRelay} />) : needsWorkspace ? <DemoOverview onConnect={connectRelay} showSamples={false} /> : selectedJob ? (
     <JobDetailPane
       key={selectedJob}
       jobName={selectedJob}

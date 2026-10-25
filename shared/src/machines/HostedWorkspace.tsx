@@ -10,13 +10,15 @@ type Workspace = { id: string; machine_id: string | null; state: string; delete_
 type Status = { enabled: boolean; eligible: boolean; workspace: Workspace | null }
 type Terminal = { pane_id: string; tmux_session: string; machine: string; login: boolean }
 
-export let HostedWorkspacePanel = ({ api }: { api: Api }) => {
+export let HostedWorkspacePanel = ({ api, autoStart = false }: { api: Api; autoStart?: boolean }) => {
   let machines = useMachines()
   let [status, setStatus] = useState<Status | null>(null)
   let [usage, setUsage] = useState<Record<string, any> | null>(null)
   let [error, setError] = useState<string | null>(null)
   let [busy, setBusy] = useState(false)
   let pending = useRef(false)
+  let started = useRef(false)
+  let [loadError, setLoadError] = useState(false)
   let [provider, setProvider] = useState("codex")
   let [terminal, setTerminal] = useState<Terminal | null>(null)
   let workspace = status?.workspace
@@ -28,9 +30,9 @@ export let HostedWorkspacePanel = ({ api }: { api: Api }) => {
     let load = async () => {
       try {
         let result: Status = await api("GET", "/hosted-workspace")
-        if (active) setStatus(result)
+        if (active) { setStatus(result); setLoadError(false) }
       } catch {
-        // Self-hosted relays do not provide included workspaces.
+        if (active) setLoadError(true)
       }
     }
     void load()
@@ -64,6 +66,12 @@ export let HostedWorkspacePanel = ({ api }: { api: Api }) => {
     setStatus(result)
     if (result.workspace?.machine_id) selectMachine(result.workspace.machine_id)
   })
+  useEffect(() => {
+    if (!autoStart || started.current || !status?.enabled || !status.eligible) return
+    if (["provisioning", "ready", "deleting"].includes(workspace?.state ?? "")) return
+    started.current = true
+    start()
+  }, [autoStart, status?.enabled, status?.eligible, workspace?.id, workspace?.state])
   let open = (action: "login" | "agent", restart = false) => () => act(async () => {
     if (!workspace?.machine_id) return
     let setup = await api("POST", "/hosted-workspace/setup", { provider, action: restart ? `restart_${action}` : "prepare" })
@@ -98,22 +106,23 @@ export let HostedWorkspacePanel = ({ api }: { api: Api }) => {
     setTerminal({ ...result, machine: workspace.machine_id, login: false } as Terminal)
   })
   let choose = () => { if (workspace?.machine_id) selectMachine(workspace.machine_id) }
-  if (!status || (!status.enabled && !workspace) || (!status.eligible && !workspace)) return null
+  if (!status) return autoStart ? <View style={styles.panel}><Text accessibilityLiveRegion="polite" style={styles.detail}>{loadError ? "Could not load your workspace. Retrying…" : "Connecting your Relay workspace…"}</Text></View> : null
+  if ((!status.enabled && !workspace) || (!status.eligible && !workspace)) return autoStart ? <View style={styles.panel}><Text style={styles.detail}>{!status.enabled ? "Included workspaces are currently unavailable. Please try again shortly." : "Confirming your Relay subscription… Your workspace will appear here when it is active."}</Text></View> : null
   let setup = workspace?.setup?.providers?.[provider] ?? {}
   return <View style={styles.panel}>
-    <Text style={styles.heading}>Included workspace</Text>
-    <Text style={styles.detail}>Your Relay subscription includes two parallel sessions and two saved jobs. Bring your own AI account.</Text>
-    <Text style={styles.detail}>0.5 CPU · 500 MiB memory · 500 MiB storage. Scheduled jobs keep running when you disconnect.</Text>
+    <Text style={styles.heading}>Your Relay workspace</Text>
+    <Text style={styles.detail}>Run two agents at once with your existing AI subscription. Your workspace connects to Relay automatically.</Text>
     {workspace?.state === "suspended" && <Text style={styles.detail}>Your subscription has ended. Renew to restore this workspace before {workspace.delete_at ? new Date(workspace.delete_at).toLocaleDateString() : "the retention period ends"}.</Text>}
     {workspace?.state === "provisioning" && <Text accessibilityLiveRegion="polite" style={styles.detail}>Preparing your workspace… It will connect automatically.</Text>}
     {workspace?.state === "ready" && !online && <Text style={styles.detail}>Connecting to your workspace…</Text>}
     {(error || workspace?.error) && <Text accessibilityRole="alert" style={styles.error}>{error ?? workspace?.error}</Text>}
     {status.eligible && !["provisioning", "ready", "deleting"].includes(workspace?.state ?? "") && <Button disabled={busy || !status.enabled} label={busy ? "Preparing…" : workspace?.state === "suspended" ? "Restore workspace" : "Start included workspace"} onPress={start} />}
     {online && <>
+      <Text style={styles.detail}>Choose your agent and sign in to the AI account you already use. Then start your first agent below.</Text>
       {usage && <Text style={styles.detail}>{usage.usage?.sessions ?? "–"}/2 sessions · {usage.usage?.jobs ?? "–"}/2 saved jobs · {usage.usage?.storage_bytes == null ? "–" : Math.ceil(usage.usage.storage_bytes / 1_048_576)} / 500 MiB used{usage.pending_jobs?.length ? ` · ${usage.pending_jobs.length} scheduled jobs waiting` : ""}</Text>}
-      <View style={styles.row}>{RENTAL_AGENTS.map((agent) => <Pressable key={agent.id} accessibilityRole="radio" accessibilityState={{ checked: provider === agent.id }} onPress={() => setProvider(agent.id)} style={[styles.button, provider === agent.id && styles.selected]}><Text style={styles.action}>{agent.name}</Text></Pressable>)}</View>
+      <View style={styles.row} accessibilityRole="radiogroup" accessibilityLabel="Choose your agent">{RENTAL_AGENTS.map((agent) => <Pressable key={agent.id} accessibilityRole="radio" accessibilityLabel={agent.name} accessibilityState={{ checked: provider === agent.id }} onPress={() => setProvider(agent.id)} style={[styles.button, provider === agent.id && styles.selected]}><Text style={styles.action}>{agent.name}</Text></Pressable>)}</View>
       <View style={styles.row}>
-        <Button label={setup.login_terminal ? "Open sign-in" : "Sign in to AI account"} onPress={open("login")} disabled={busy} />
+        <Button label={setup.login_terminal ? "Open sign-in" : `Sign in to ${RENTAL_AGENTS.find((agent) => agent.id === provider)?.name ?? provider}`} onPress={open("login")} disabled={busy} />
         <Button label={setup.agent_terminal ? "Open agent" : "Start agent"} onPress={open("agent")} disabled={busy} />
         {setup.agent_terminal && <Button label="New agent session" onPress={open("agent", true)} disabled={busy} />}
         {setup.login_terminal && <Button label="Sign in again" onPress={open("login", true)} disabled={busy} />}
@@ -122,7 +131,7 @@ export let HostedWorkspacePanel = ({ api }: { api: Api }) => {
       </View>
       <Text style={styles.detail}>Sign-in and shell sessions use the same two slots as agents and jobs. Stop a session to free its slot.</Text>
     </>}
-    <Text style={styles.detail}>Need more capacity? Connect your own computer or server, or rent a machine below.</Text>
+    <Text style={styles.detail}>Includes two saved jobs, 0.5 CPU, 500 MiB memory, and 500 MiB storage. Scheduled jobs keep running when you disconnect.</Text>
     {terminal && <MachineTerminalScreen machineId={terminal.machine} paneId={terminal.pane_id} tmuxSession={terminal.tmux_session} title={terminal.login ? "AI account sign-in" : "Included workspace"} signIn={terminal.login} onClose={() => setTerminal(null)} />}
   </View>
 }

@@ -183,6 +183,7 @@ export default function RootLayout() {
             }}
           />
           <Stack.Screen name="account" options={{ title: "Account & subscription", headerShown: true, headerTintColor: colors.text, headerStyle: { backgroundColor: colors.bg }, headerBackButtonDisplayMode: "minimal", animation: "slide_from_right" }} />
+          <Stack.Screen name="workspace" options={{ title: "Relay workspace", headerShown: true, headerTintColor: colors.text, headerStyle: { backgroundColor: colors.bg }, headerBackButtonDisplayMode: "minimal", animation: "slide_from_right" }} />
           <Stack.Protected guard={Platform.OS !== "ios" || isAuthenticated}>
             <Stack.Screen name="demo" options={{ headerShown: false }} />
             <Stack.Screen name="demo-agent" options={{ headerShown: true, headerTintColor: colors.text, headerStyle: { backgroundColor: colors.bg }, headerBackButtonDisplayMode: "minimal", animation: "slide_from_right" }} />

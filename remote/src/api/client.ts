@@ -338,7 +338,7 @@ export async function getSubscriptionStatus(signal?: AbortSignal, userId?: strin
 }
 
 export async function createCheckout(): Promise<{ url: string }> {
-  return backendRequest<{ url: string }>("/subscription/checkout", { method: "POST" });
+  return backendRequest<{ url: string }>("/subscription/checkout?platform=web", { method: "POST" });
 }
 
 export async function createPortal(): Promise<{ url: string }> {

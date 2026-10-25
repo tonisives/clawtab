@@ -16,7 +16,7 @@ let harness = ({ eligible = true, workspace = { id: 'included', machine_id: 'hos
   let react = {
     useState: (initial) => { let id = cursor++; if (!(id in states)) states[id] = typeof initial === 'function' ? initial() : initial; return [states[id], (value) => { states[id] = value; }]; },
     useRef: (initial) => react.useState({ current: initial })[0],
-    useEffect: (effect) => { let id = cursor++; if (!(id in states)) { states[id] = true; effects.push(effect); } },
+    useEffect: (effect, deps) => { let id = cursor++; if (!(id in states) || deps.some((value, index) => value !== states[id][index])) { states[id] = deps; effects.push(effect); } },
   };
   let element = (type, props) => ({ type, props });
   let modules = {
@@ -46,7 +46,7 @@ let harness = ({ eligible = true, workspace = { id: 'included', machine_id: 'hos
     } else if (body.action !== 'prepare') setup[`${body.action}_terminal`] = body.terminal;
     return { ...setup };
   };
-  let render = () => { cursor = 0; let tree = exports.HostedWorkspacePanel({ api }); effects.splice(0).forEach((effect) => effect()); return tree; };
+  let render = (props = {}) => { cursor = 0; let tree = exports.HostedWorkspacePanel({ api, ...props }); effects.splice(0).forEach((effect) => effect()); return tree; };
   return { render, requests, calls, machines, starts: () => starts };
 };
 
@@ -73,7 +73,7 @@ test('reopening an included agent reuses the terminal on the included host', asy
 
 test('sign-in uses a shared shell slot and exits when sign-in finishes', async () => {
   let view = harness(); view.render(); await flush();
-  find(view.render(), 'Sign in to AI account').props.onPress(); await flush();
+  find(view.render(), 'Sign in to Codex').props.onPress(); await flush();
   assert.equal(view.requests[0].request.provider, 'shell');
   assert.equal(view.requests[0].request.prompt, 'codex login --device-auth; exit');
   assert.equal(view.requests[0].request.operation_id, 'login-stable');
@@ -90,4 +90,20 @@ test('capacity rejection permits a fresh retry while a lost acknowledgement pres
   lost.render(); await flush(); find(lost.render(), 'Start agent').props.onPress(); await flush();
   find(lost.render(), 'Start agent').props.onPress(); await flush();
   assert.equal(lost.requests[0].request.operation_id, lost.requests[1].request.operation_id);
+});
+
+
+test('onboarding provisions an eligible workspace automatically only once', async () => {
+  let view = harness({ workspace: null });
+  view.render({ autoStart: true }); await flush();
+  view.render({ autoStart: true }); await flush();
+  view.render({ autoStart: true }); await flush();
+  assert.equal(view.starts(), 1);
+  let denied = harness({ eligible: false, workspace: null });
+  denied.render({ autoStart: true }); await flush();
+  denied.render({ autoStart: true }); await flush();
+  assert.equal(denied.starts(), 0);
+  let ready = harness(); ready.render({ autoStart: true }); await flush();
+  ready.render({ autoStart: true }); await flush();
+  assert.equal(ready.starts(), 0);
 });

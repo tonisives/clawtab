@@ -53,8 +53,8 @@ WebBrowser.maybeCompleteAuthSession();
 
 export default function LoginScreen() {
   const router = useRouter();
-  let { return_to } = useLocalSearchParams<{ return_to?: string }>();
-  let destination = return_to === "add-machine" ? "/add-machine" : return_to === "account" ? "/account" : ["devices", "machines"].includes(return_to ?? "") ? "/machines" : "/(tabs)";
+  let { return_to, setup } = useLocalSearchParams<{ return_to?: string; setup?: string }>();
+  let destination = return_to === "workspace" ? "/workspace" as const : return_to === "add-machine" ? { pathname: "/add-machine" as const, params: { setup: setup === "connect" || setup === "rent" ? setup : undefined } } : return_to === "account" ? "/account" as const : ["devices", "machines"].includes(return_to ?? "") ? "/machines" as const : "/(tabs)" as const;
   const googleLogin = useAuthStore((s) => s.googleLogin);
   const passwordLogin = useAuthStore((s) => s.passwordLogin);
   const appleLogin = useAuthStore((s) => s.appleLogin);
@@ -188,7 +188,7 @@ export default function LoginScreen() {
       }
     }
     return false;
-  }, [serverUrl, router, setAuth]);
+  }, [serverUrl, router, setAuth, destination]);
 
   const handleAppleLogin = async () => {
     setLoading(true);

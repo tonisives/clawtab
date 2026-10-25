@@ -37,14 +37,14 @@ export let machineOnboardingChrome: MachineOnboardingChrome = {
   renderActionButton: (props) => <MachineSetupActionButton {...props} />,
 }
 
-export let MachineSetup = ({ onNavigate, manage = false }: { onNavigate?: () => void; manage?: boolean }) => {
+export let MachineSetup = ({ onNavigate, manage = false, setup }: { onNavigate?: () => void; manage?: boolean; setup?: "connect" | "rent" }) => {
   let authenticated = useAuthStore((state) => state.isAuthenticated)
   let router = useRouter()
   let [ordering, setOrdering] = useState(false)
   let [attempt, setAttempt] = useState(0)
   let [loading, setLoading] = useState(true)
   let [checkout, setCheckout] = useState<RentalAvailability>({ purchases: false })
-  let allowNewRentals = !manage && Platform.OS === "web"
+  let allowNewRentals = !manage && setup !== "connect" && Platform.OS === "web"
   useEffect(() => {
     if (!authenticated || (!manage && !allowNewRentals)) return
     let active = true
@@ -58,14 +58,14 @@ export let MachineSetup = ({ onNavigate, manage = false }: { onNavigate?: () => 
     return () => { active = false }
   }, [authenticated, attempt, manage, allowNewRentals])
   let retry = () => setAttempt((value) => value + 1)
-  let signIn = () => { onNavigate?.(); router.push({ pathname: "/login", params: { return_to: manage ? "machines" : "add-machine" } }) }
+  let signIn = () => { onNavigate?.(); router.push({ pathname: "/login", params: { return_to: manage ? "machines" : "add-machine", setup } }) }
   if (!authenticated) return <View style={styles.intro}>
-    <Text style={styles.text}>Sign in to connect your machines and save groups across your ClawTab apps.</Text>
+    <Text style={styles.text}>Sign in to connect your own computer or server, or rent a larger box.</Text>
     <Pressable accessibilityRole="button" onPress={signIn} style={styles.button}><Text style={styles.action}>Sign in</Text></Pressable>
   </View>
   return <MachineNavigation><MachineOnboardingProvider content={machineOnboardingContent} management={machineManagementContent} chrome={machineOnboardingChrome}>
     {manage && <View style={styles.managementNavigation}><AddMachineButton /></View>}
-    <HostedWorkspacePanel api={rentalApi} />
+    {!setup && <HostedWorkspacePanel api={rentalApi} />}
     {(manage || allowNewRentals) && <RentalsPanel style={manage ? styles.managementPanel : undefined} showExistingRentals={manage} allowNewRentals={allowNewRentals} onOrderingChange={setOrdering} api={rentalApi} {...checkout} platform={Platform.OS === "ios" ? "ios" : Platform.OS === "android" ? "android" : "web"} openUrl={openCheckout}>
       {manage && <MachinesPanel presentation="panel" approvePairing={approveMachinePairing} api={machineApi} />}
     </RentalsPanel>}
@@ -74,7 +74,7 @@ export let MachineSetup = ({ onNavigate, manage = false }: { onNavigate?: () => 
       <Text style={styles.detail}>{loading ? "Checking availability…" : rentalAvailabilityMessage(checkout.reason)}</Text>
       {!loading && ["connection", "storefront"].includes(checkout.reason ?? "") && <Pressable accessibilityRole="button" onPress={retry} style={styles.button}><Text style={styles.action}>Try again</Text></Pressable>}
     </View>}
-    {!manage && !ordering && <View style={styles.connection}><ConnectMachine approvePairing={approveMachinePairing} /></View>}
+    {!manage && !ordering && setup !== "rent" && <View style={styles.connection}><ConnectMachine approvePairing={approveMachinePairing} initiallyExpanded={setup === "connect"} /></View>}
     {!manage && !ordering && <View style={styles.navigation}><ManageMachinesButton /></View>}
   </MachineOnboardingProvider></MachineNavigation>
 }

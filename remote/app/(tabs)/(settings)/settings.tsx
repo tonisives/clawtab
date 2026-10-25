@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react"
+import { useRouter } from "expo-router"
 import { createNativeStackNavigator } from "expo-router/build/react-navigation/native-stack"
 import { NavigationContainer, NavigationIndependentTree, DarkTheme, useIsFocused, useNavigationContainerRef, type NavigationState } from "expo-router/react-navigation"
 import { useMachines } from "@clawtab/shared"
@@ -22,6 +23,7 @@ import { colors } from "../../../src/theme/colors"
 type Routes = { [Page in SettingsRoute]: undefined } & { "machine-page": MachinePageParams }
 let Stack = createNativeStackNavigator<Routes>()
 export let SettingsHome = () => {
+  let router = useRouter()
   let relay = useMachines()
   let { complete } = useSetupProgress()
   let unavailable = !relay.connected
@@ -30,7 +32,7 @@ export let SettingsHome = () => {
   let open = (page: SettingsRoute) => () => navigate(page)
   return <SettingsPage>
     {!complete && <Pressable accessibilityRole="button" accessibilityLabel="About demo mode" onPress={open("setup")} style={homeStyles.demoButton}><Ionicons name="information-circle-outline" size={20} color={colors.warning} /><Text style={homeStyles.demoText}>Demo</Text></Pressable>}
-    <SettingsGroup><SettingsRow title="Setup" detail="Relay access and your agent machine" onPress={open("setup")} /></SettingsGroup>
+    <SettingsGroup><SettingsRow title="Relay workspace" detail="Run agents with your existing AI subscription" onPress={() => router.push("/workspace")} /></SettingsGroup>
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>Relay connection</Text>
       <SettingsGroup>
@@ -72,8 +74,8 @@ let homeStyles = StyleSheet.create({
   demoText: { color: colors.warning, fontSize: 14, fontWeight: "600" },
 })
 let SetupSettings = () => {
-  let navigate = useSettingsNavigation()
-  return <DemoOverview onConnect={() => navigate("account")} />
+  let router = useRouter()
+  return <DemoOverview onConnect={() => router.push("/workspace")} />
 }
 let MachineSettings = () => <SettingsPage><MachineSetup manage /></SettingsPage>
 let TokenSettings = () => <SettingsPage><ApiTokensSection /></SettingsPage>

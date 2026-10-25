@@ -32,11 +32,11 @@ export let ConnectMachine = ({ approvePairing, initiallyExpanded = false }: Prop
   }
   let editCode = (value: string) => { setCode(value); setApproved(false) }
   let openGuide = () => {
-    void Linking.openURL("https://clawtab.cc/articles/setup-remote-machines").catch(() => setError("Could not open the setup guide"))
+    void Linking.openURL("https://clawtab.cc/docs#platform-builds").catch(() => setError("Could not open the setup guide"))
   }
   return <View style={styles.card}>
     <Text style={styles.title}>Use your own machine</Text>
-    <Text style={styles.detail}>Connect a Linux server you already have.</Text>
+    <Text style={styles.detail}>Connect your computer or a server you manage. Your existing agents and projects stay on that machine.</Text>
     {!expanded ? <Pressable accessibilityRole="button" onPress={toggle} style={styles.button}>
       <Text style={styles.buttonText}>Connect machine</Text>
     </Pressable> : <>
@@ -47,16 +47,16 @@ export let ConnectMachine = ({ approvePairing, initiallyExpanded = false }: Prop
         onPress={approve} style={[styles.button, (busy || !code.trim()) && styles.disabled]}>
         <Text style={styles.buttonText}>{busy ? "Connecting…" : "Connect machine"}</Text>
       </Pressable>
-      {approved && <Text accessibilityLiveRegion="polite" style={styles.detail}>Machine approved. Keep setup running on your server until it connects.</Text>}
+      {approved && <Text accessibilityLiveRegion="polite" style={styles.detail}>Machine approved. Keep setup running on your machine until it connects.</Text>}
       {error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
       <Pressable accessibilityRole="button" accessibilityState={{ expanded: instructions }} onPress={toggleInstructions} style={styles.help}>
         <Text style={styles.detail}>{instructions ? "Hide instructions" : "Where do I get a pairing code?"}</Text>
       </Pressable>
       {instructions && <View style={styles.instructions}>
-        <Text style={styles.detail}>Install ClawTab on your Linux server, then run:</Text>
+        <Text style={styles.detail}>Install ClawTab and your agent CLI on your computer or server, then run:</Text>
         <Text selectable style={styles.command}>cwtctl setup</Text>
         <Text style={styles.detail}>Leave it running and enter the code shown above.</Text>
-        <Pressable accessibilityRole="link" onPress={openGuide} style={styles.help}><Text style={styles.link}>Linux setup guide</Text></Pressable>
+        <Pressable accessibilityRole="link" onPress={openGuide} style={styles.help}><Text style={styles.link}>Installation and setup guide</Text></Pressable>
       </View>}
     </>}
   </View>

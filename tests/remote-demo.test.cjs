@@ -16,7 +16,7 @@ let loadDemo = (entry, params = {}, os = 'ios', progress = {}) => {
     } },
     react: { useRef: (value) => ({ current: value }), useEffect: (effect) => effects.push(effect), useState: (initial) => { let index = cursor++; states[index] ??= typeof initial === 'function' ? initial() : initial; return [states[index], (value) => { states[index] = typeof value === 'function' ? value(states[index]) : value; }]; } },
     'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
-    'react-native': { Platform: { OS: os }, StyleSheet: { create: (value) => value }, Text: 'Text', View: 'View', Pressable: 'Pressable', TextInput: 'TextInput', ScrollView: 'ScrollView', KeyboardAvoidingView: 'KeyboardAvoidingView' },
+    'react-native': { Platform: { OS: os }, StyleSheet: { create: (value) => value }, Text: 'Text', View: 'View', Pressable: 'Pressable', TextInput: 'TextInput', Linking: { openURL: (url) => { writes.push(url); return Promise.resolve(); } }, ScrollView: 'ScrollView', KeyboardAvoidingView: 'KeyboardAvoidingView' },
     'expo-router/react-navigation': { useHeaderHeight: () => 96 },
     'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
     'expo-router': { useRouter: () => ({ push: (route) => pushed.push(route) }), useLocalSearchParams: () => params, Stack: { Screen: 'Screen' } },
@@ -39,6 +39,7 @@ let loadDemo = (entry, params = {}, os = 'ios', progress = {}) => {
     vm.runInNewContext(source, { exports, require: (name) => {
       if (name in modules) return modules[name];
       if (name.endsWith('/demo/data') || name.endsWith('/demo/shell') || name.endsWith('/demo/info') || name.endsWith('/store/jobFilter')) return load(path.resolve(path.dirname(file), `${name}.ts`));
+      if (name.endsWith('/RelayWelcome')) return load(path.resolve(path.dirname(file), `${name}.tsx`));
       if (name.endsWith('/DemoDetailsContent')) return load(path.resolve(path.dirname(file), `${name}.tsx`));
       throw new Error(`Demo attempted to import a live dependency: ${name}`);
     } });
@@ -50,7 +51,8 @@ let loadDemo = (entry, params = {}, os = 'ios', progress = {}) => {
   return { pushed, writes, processes, getFilter: () => filterStore.getState(), render: (props = {}) => {
     cursor = 0;
     let tree = component(props);
-    if (typeof tree.type === "function") tree = tree.type(tree.props);
+    let expand = (node) => Array.isArray(node) ? node.map(expand) : !node || typeof node !== 'object' ? node : typeof node.type === 'function' ? expand(node.type(node.props)) : { ...node, props: { ...node.props, children: expand(node.props?.children) } };
+    tree = expand(tree);
     for (let node of all(tree)) if (node.type === 'XtermLog') node.props.ref.current = { clear: () => writes.push('clear'), writeText: (text) => writes.push(text) };
     effects.splice(0).forEach((effect) => effect());
     return tree;
@@ -179,19 +181,24 @@ test('native demo keeps navigation to sample detail screens', () => {
   assert.equal(tree.props.onSelectJob, undefined);
 });
 
-test('demo overview explains relay, host setup, and launches, with setup links', () => {
+test('demo leads with included Relay agents and keeps hardware setup below the main action', () => {
   let connected = false;
   let demo = loadDemo('overview', {}, 'web');
   let nodes = all(demo.render({ onConnect: () => { connected = true; } }));
   let press = (label) => nodes.find((node) => node.type === 'Pressable' && all(node).some((child) => child.type === 'Text' && child.props.children === label)).props.onPress();
   let text = nodes.filter((node) => node.type === 'Text').map((node) => node.props.children).join('\n');
-  for (let phrase of ['sample agents', 'Set up relay access', 'Connect a desktop or server', 'cwtctl setup', 'Launch agents from any device', 'where its CLI is installed']) assert.ok(text.includes(phrase), phrase);
-  press('Choose a box');
-  assert.equal(demo.pushed[0], '/add-machine');
-  press('Add machine');
-  assert.equal(demo.pushed[1], '/add-machine');
-  press('Set up relay');
+  for (let phrase of ['remote workspace', 'existing Claude, Codex', 'automatically', '2 agents at once', 'US$6.99', 'Advanced setup']) assert.ok(text.includes(phrase), phrase);
+  assert.doesNotMatch(text, /two steps|cwtctl setup/);
+  assert.ok(text.indexOf('Get started with Relay') < text.indexOf('Advanced setup'));
+  press('Get started with Relay');
   assert.equal(connected, true);
+  press('Connect your computer or server');
+  assert.equal(demo.pushed[0].pathname, '/add-machine');
+  assert.equal(demo.pushed[0].params.setup, 'connect');
+  press('Rent a larger box');
+  assert.equal(demo.pushed[1].params.setup, 'rent');
+  press('Install or deploy the daemon');
+  assert.match(demo.writes[0], /setup-remote-machines/);
 });
 
 test('sample navigation survives native URL decoding and a fresh module load', () => {
@@ -212,15 +219,13 @@ test('sample navigation survives native URL decoding and a fresh module load', (
   }
 });
 
-test('setup checklist reflects relay and paired machine completion', () => {
-  for (let progress of [
-    { relayComplete: false, machineComplete: false },
-    { relayComplete: true, machineComplete: false },
-    { relayComplete: true, machineComplete: true, complete: true },
-  ]) {
-    let nodes = all(loadDemo('overview', {}, 'ios', progress).render({ onConnect: () => {} }));
-    assert.equal(nodes.some((node) => node.props?.accessibilityLabel === 'Relay access complete'), progress.relayComplete);
-    assert.equal(nodes.some((node) => node.props?.accessibilityLabel === 'Machine setup complete'), progress.machineComplete);
+test('connected users reopen the workspace and native onboarding uses StoreKit pricing', () => {
+  for (let platform of ['ios', 'android', 'web']) {
+    let nodes = all(loadDemo('overview', {}, platform, { relayComplete: true }).render({ onConnect: () => {} }));
+    let text = nodes.filter((node) => node.type === 'Text').map((node) => node.props.children).join('\n');
+    assert.match(text, /Open Relay workspace/);
+    assert.doesNotMatch(text, /US\$6.99/);
+    if (platform !== 'web') assert.doesNotMatch(text, /Rent a larger box/);
   }
 });
 
