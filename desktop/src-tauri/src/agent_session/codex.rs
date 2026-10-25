@@ -448,16 +448,37 @@ fn read_last_user_message_at(path: &std::path::Path) -> Option<i64> {
 }
 
 fn read_last_action_at(path: &std::path::Path) -> Option<i64> {
-    super::common::last_action_at(path, |value| match value.get("type").and_then(|value| value.as_str()) {
-        Some("response_item") => true,
-        Some("event_msg") => matches!(
-            value.pointer("/payload/type").and_then(|value| value.as_str()),
-            Some(
-                "user_message" | "agent_message" | "agent_reasoning" | "task_started"
-                    | "task_complete" | "turn_aborted"
-            )
-        ),
-        _ => false,
+    super::common::last_action_at(path, |value| {
+        match value.get("type").and_then(|value| value.as_str()) {
+            Some("response_item") => {
+                // Resuming a session can replay user, system, and developer context.
+                // Prompt events identify new user messages separately.
+                value
+                    .pointer("/payload/type")
+                    .and_then(|value| value.as_str())
+                    != Some("message")
+                    || value
+                        .pointer("/payload/role")
+                        .and_then(|value| value.as_str())
+                        == Some("assistant")
+            }
+            Some("event_msg") => match value
+                .pointer("/payload/type")
+                .and_then(|value| value.as_str())
+            {
+                Some("user_message" | "agent_message" | "agent_reasoning" | "turn_aborted") => true,
+                Some("item_completed") => value
+                    .pointer("/payload/item/type")
+                    .and_then(|value| value.as_str())
+                    .is_some_and(|kind| kind != "ContextCompaction"),
+                Some("task_complete") => value
+                    .pointer("/payload/last_agent_message")
+                    .and_then(|value| value.as_str())
+                    .is_some_and(|message| !message.trim().is_empty()),
+                _ => false,
+            },
+            _ => false,
+        }
     })
 }
 
@@ -866,7 +887,7 @@ mod tests {
             &path,
             concat!(
                 "{\"type\":\"event_msg\",\"timestamp\":\"2026-10-20T01:00:00Z\",\"payload\":{\"type\":\"user_message\"}}\n",
-                "{\"type\":\"response_item\",\"timestamp\":\"2026-10-20T02:00:00Z\",\"payload\":{\"type\":\"message\"}}\n",
+                "{\"type\":\"response_item\",\"timestamp\":\"2026-10-20T02:00:00Z\",\"payload\":{\"type\":\"message\",\"role\":\"assistant\"}}\n",
                 "{\"type\":\"event_msg\",\"timestamp\":\"2026-10-23T01:00:00Z\",\"payload\":{\"type\":\"thread_settings_applied\"}}\n",
             ),
         ).unwrap();
@@ -879,9 +900,101 @@ mod tests {
             .append(true)
             .open(&path)
             .unwrap();
-        writeln!(file, "{{\"type\":\"event_msg\",\"timestamp\":\"2026-10-23T02:00:00Z\",\"payload\":{{\"type\":\"task_complete\"}}}}").unwrap();
+        writeln!(file, "{{\"type\":\"event_msg\",\"timestamp\":\"2026-10-23T02:00:00Z\",\"payload\":{{\"type\":\"task_complete\",\"last_agent_message\":\"Done\"}}}}").unwrap();
         assert_eq!(super::read_last_action_at(&path), Some(first + 3 * 86_400_000));
         assert_eq!(super::read_last_user_message_at(&path), Some(first - 3600000));
+    }
+
+    #[test]
+    fn opening_a_session_preserves_the_last_agent_action_time() {
+        use serde_json::json;
+        use std::io::Write;
+
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("activity.jsonl");
+        let mut file = std::fs::File::create(&path).unwrap();
+        writeln!(
+            file,
+            "{}",
+            json!({
+                "type": "response_item",
+                "timestamp": "2026-10-24T07:03:40.759Z",
+                "payload": {"type": "message", "role": "assistant"}
+            })
+        )
+        .unwrap();
+        let finished = super::read_last_action_at(&path).unwrap();
+
+        // Opening the old conversation can append a fresh lifecycle marker
+        // without a prompt, output, or any other agent action.
+        for payload in [
+            json!({"type": "task_started"}),
+            json!({"type": "thread_settings_applied"}),
+            json!({"type": "item_completed", "item": {"type": "ContextCompaction"}}),
+            json!({"type": "task_complete", "last_agent_message": null}),
+        ] {
+            writeln!(
+                file,
+                "{}",
+                json!({
+                    "type": "event_msg", "timestamp": "2026-10-25T06:34:20.904Z", "payload": payload
+                })
+            )
+            .unwrap();
+            assert_eq!(super::read_last_action_at(&path), Some(finished));
+        }
+        for role in ["system", "developer", "user"] {
+            writeln!(
+                file,
+                "{}",
+                json!({
+                    "type": "response_item", "timestamp": "2026-10-25T06:34:20.904Z",
+                    "payload": {"type": "message", "role": role}
+                })
+            )
+            .unwrap();
+            assert_eq!(super::read_last_action_at(&path), Some(finished));
+        }
+
+        for (offset, (kind, payload)) in [
+            ("event_msg", json!({"type": "user_message"})),
+            (
+                "event_msg",
+                json!({"type": "item_completed", "item": {"type": "UserMessage"}}),
+            ),
+            (
+                "event_msg",
+                json!({"type": "item_completed", "item": {"type": "AgentMessage"}}),
+            ),
+            ("response_item", json!({"type": "reasoning"})),
+            ("response_item", json!({"type": "custom_tool_call"})),
+            ("response_item", json!({"type": "custom_tool_call_output"})),
+            (
+                "response_item",
+                json!({"type": "message", "role": "assistant"}),
+            ),
+            (
+                "event_msg",
+                json!({"type": "task_complete", "last_agent_message": "Done"}),
+            ),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let timestamp = format!("2026-10-25T06:35:{offset:02}Z");
+            writeln!(
+                file,
+                "{}",
+                json!({
+                    "type": kind, "timestamp": timestamp, "payload": payload
+                })
+            )
+            .unwrap();
+            let expected = chrono::DateTime::parse_from_rfc3339(&timestamp)
+                .unwrap()
+                .timestamp_millis();
+            assert_eq!(super::read_last_action_at(&path), Some(expected));
+        }
     }
 
     #[test]
