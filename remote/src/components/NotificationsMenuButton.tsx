@@ -5,6 +5,7 @@ import { useRouter } from "expo-router";
 
 import { colors } from "@clawtab/shared";
 import { useNotificationStore } from "../store/notifications";
+import { useJobsStore } from "../store/jobs";
 import { useResponsive } from "../hooks/useResponsive";
 
 export function NotificationsMenuButton({
@@ -24,7 +25,8 @@ export function NotificationsMenuButton({
   const { isSplitView } = useResponsive();
   const questions = useNotificationStore((s) => s.questions);
 
-  const activeQuestionCount = questions.length;
+  const alertCount = useJobsStore((s) => s.detectedProcesses.filter(process => process._agent_alert?.trim()).length);
+  const activeNotificationCount = questions.length + alertCount;
 
   const openMenu = () => {
     if (onOpen) {
@@ -36,7 +38,7 @@ export function NotificationsMenuButton({
     }
   };
 
-  if (hideWhenEmpty && activeQuestionCount === 0) {
+  if (hideWhenEmpty && activeNotificationCount === 0) {
     return null;
   }
 
@@ -53,25 +55,25 @@ export function NotificationsMenuButton({
       onPress={openMenu}
       accessibilityRole="button"
       accessibilityState={{ selected: active }}
-      accessibilityLabel={activeQuestionCount > 0 ? `${activeQuestionCount} active question${activeQuestionCount === 1 ? "" : "s"}` : "Notifications"}
+      accessibilityLabel={activeNotificationCount > 0 ? `${activeNotificationCount} pending notification${activeNotificationCount === 1 ? "" : "s"}` : "Notifications"}
       style={({ pressed }) => [
-        countOnly ? [styles.countButton, activeQuestionCount === 0 && styles.countButtonEmpty] : glassAvailable ? styles.fluidGlassPressable : variant === "fluid" ? styles.fluidButton : styles.button,
-        variant === "fluid" && activeQuestionCount > 0 && !glassAvailable && styles.fluidButtonHasQuestions,
-        variant === "compact" && activeQuestionCount > 0 && !countOnly && styles.buttonHasQuestions,
+        countOnly ? [styles.countButton, activeNotificationCount === 0 && styles.countButtonEmpty] : glassAvailable ? styles.fluidGlassPressable : variant === "fluid" ? styles.fluidButton : styles.button,
+        variant === "fluid" && activeNotificationCount > 0 && !glassAvailable && styles.fluidButtonHasQuestions,
+        variant === "compact" && activeNotificationCount > 0 && !countOnly && styles.buttonHasQuestions,
         (pressed || active) && (glassAvailable ? styles.fluidGlassPressableActive : variant === "fluid" ? styles.fluidButtonActive : styles.buttonActive),
       ]}
     >
       {countOnly ? (
-        activeQuestionCount > 0 ? (
-          <Text style={styles.countButtonText}>{activeQuestionCount}</Text>
+        activeNotificationCount > 0 ? (
+          <Text style={styles.countButtonText}>{activeNotificationCount}</Text>
         ) : (
           <Ionicons name="checkmark-circle-outline" size={18} color={colors.textMuted} />
         )
       ) : (
         <Ionicons
-          name={activeQuestionCount > 0 ? "notifications" : "notifications-outline"}
+          name={activeNotificationCount > 0 ? "notifications" : "notifications-outline"}
           size={variant === "fluid" ? 18 : 17}
-          color={activeQuestionCount > 0 ? colors.warning : colors.textMuted}
+          color={activeNotificationCount > 0 ? colors.warning : colors.textMuted}
         />
       )}
     </Pressable>
@@ -89,12 +91,12 @@ export function NotificationsMenuButton({
           {buttonContent}
         </GlassView>
       ) : buttonContent}
-      {activeQuestionCount > 0 && !countOnly && (
+      {activeNotificationCount > 0 && !countOnly && (
         <View
           pointerEvents="none"
           style={variant === "fluid" ? styles.fluidBadge : styles.badge}
         >
-          <Text style={variant === "fluid" ? styles.fluidBadgeText : styles.badgeText}>{activeQuestionCount}</Text>
+          <Text style={variant === "fluid" ? styles.fluidBadgeText : styles.badgeText}>{activeNotificationCount}</Text>
         </View>
       )}
     </View>

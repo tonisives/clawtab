@@ -7,7 +7,7 @@ import { useJobsStore } from "../store/jobs";
 import { getWsSend, nextId } from "../lib/wsRuntime";
 import { dismissQuestionNotification } from "../lib/notifications";
 import { confirm } from "../lib/platform";
-import { NotificationSection, AutoYesBanner, findYesOption } from "@clawtab/shared";
+import { AgentAlertCards, agentAlertProcesses, NotificationSection, AutoYesBanner, findYesOption, processDisplayTitle } from "@clawtab/shared";
 import { colors } from "@clawtab/shared";
 import { spacing } from "@clawtab/shared";
 import type { AutoYesEntry, DetectedProcess, ClaudeQuestion } from "@clawtab/shared";
@@ -42,6 +42,7 @@ export function NotificationStack({
   const router = useRouter();
   const questions = useNotificationStore((s) => s.questions);
   const detectedProcesses = useJobsStore((s) => s.detectedProcesses);
+  const alerts = useMemo(() => agentAlertProcesses(detectedProcesses), [detectedProcesses]);
   const deepLinkQuestionId = useNotificationStore(
     (s) => s.deepLinkQuestionId,
   );
@@ -238,7 +239,7 @@ export function NotificationStack({
   );
 
   // Keep rendering briefly after questions drop to 0 so departure animations play
-  const hasContent = activeQuestions.length > 0 || autoYesEntries.length > 0;
+  const hasContent = activeQuestions.length > 0 || alerts.length > 0 || autoYesEntries.length > 0;
   const [visible, setVisible] = useState(hasContent);
   const hideTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
@@ -263,6 +264,11 @@ export function NotificationStack({
         onPress={handleAutoYesPress}
         maxVisibleEntries={maxAutoYesEntries}
       />
+      <AgentAlertCards processes={alerts} onOpen={process => handleAutoYesPress({
+        paneId: process.pane_id,
+        label: processDisplayTitle(process),
+        jobSlug: process.matched_job,
+      })} />
       {activeQuestions.length > 0 && (
         <NotificationSection
           questions={activeQuestions}

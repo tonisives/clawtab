@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AutoYesEntry, ClaudeQuestion, useJobsCore } from "@clawtab/shared";
-import { AutoYesBanner, NotificationSection } from "@clawtab/shared";
+import { AgentAlertCards, agentAlertProcesses, AutoYesBanner, NotificationSection, processDisplayTitle } from "@clawtab/shared";
 import { DraggableNotificationCard } from "../../DraggableCards";
 import type { useAutoYes } from "../../../hooks/useAutoYes";
 import type { useQuestionPolling } from "../../../hooks/useQuestionPolling";
@@ -24,6 +24,7 @@ export function useJobsNotifications({
   questionPolling,
   questions,
 }: UseJobsNotificationsParams) {
+  const alerts = useMemo(() => agentAlertProcesses(core.processes), [core.processes]);
   const [nfnVisible, setNfnVisible] = useState(questions.length > 0);
   const nfnHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -38,10 +39,15 @@ export function useJobsNotifications({
   }, [questions.length]);
 
   return useMemo(() => {
-    if (!nfnVisible && autoYes.autoYesEntries.length === 0) return undefined;
+    if (!nfnVisible && alerts.length === 0 && autoYes.autoYesEntries.length === 0) return undefined;
     return (
       <>
         <AutoYesBanner entries={autoYes.autoYesEntries} onDisable={autoYes.handleDisableAutoYes} onPress={handleAutoYesPress} />
+        <AgentAlertCards processes={alerts} onOpen={process => handleAutoYesPress({
+          paneId: process.pane_id,
+          label: processDisplayTitle(process),
+          jobSlug: process.matched_job,
+        })} />
         {nfnVisible && (
           <NotificationSection
             questions={questions}
@@ -64,5 +70,5 @@ export function useJobsNotifications({
         )}
       </>
     );
-  }, [nfnVisible, questions, questionPolling, handleQuestionNavigate, core.collapsedGroups, core.toggleGroup, autoYes, handleAutoYesPress, isWide]);
+  }, [nfnVisible, alerts, questions, questionPolling, handleQuestionNavigate, core.collapsedGroups, core.toggleGroup, autoYes, handleAutoYesPress, isWide]);
 }

@@ -462,7 +462,7 @@ const styles = StyleSheet.create({
     color: colors.warning,
   },
   statusIconAlert: {
-    color: "#ff9f0a",
+    color: "#ff8700",
   },
   statusIconQuestion: {
     color: colors.warning,

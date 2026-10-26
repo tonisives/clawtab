@@ -125,6 +125,7 @@
   function resumeTimer() {
     if (expanded || queue || hovering || focused || busy || !current || collapseTimer) return;
     if (records.get(current)?.request.template !== "update") return;
+    if (records.get(current)?.request.data?.event === "agent_alert") return;
     timerStarted = performance.now(); collapseTimer = setTimeout(collapse, Math.max(100, remaining));
   }
   function collapse() {
@@ -331,7 +332,9 @@
     }
     const isPending = pending(record);
     const update = record.request.template === "update";
-    card._status.textContent = record.status === "delivering" || busy ? "Sending..." : isPending ? (update ? "Update" : "") : record.status === "resolved" ? (update ? "Seen" : "Sent") : record.status;
+    const alert = record.request.data?.event === "agent_alert";
+    card._status.classList.toggle("alert", alert && isPending);
+    card._status.textContent = record.status === "delivering" || busy ? "Sending..." : isPending ? (alert ? "! Alert" : update ? "Update" : "") : record.status === "resolved" ? (alert ? "Recovered" : update ? "Seen" : "Sent") : record.status;
     for (const control of card._actions.querySelectorAll("button")) control.disabled = !isPending || busy || Boolean(record.question_id && drafts.get(record.id)?.trim());
     if (card._send) card._send.disabled = !isPending || busy || !card._reply.value.trim();
     if (card._reply) card._reply.readOnly = !isPending || busy;

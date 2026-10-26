@@ -215,16 +215,42 @@ pub(super) async fn handle_job_notification_push(
     delete_invalid_tokens(state, &invalid).await;
 }
 
+pub(super) async fn handle_agent_alert_push(
+    state: &AppState,
+    user_id: Uuid,
+    pane_id: &str,
+    title: &str,
+    body: &str,
+) {
+    let Some(apns) = &state.apns else {
+        return;
+    };
+    if !claim_push_slot(state, &format!("agent_alert_push:{user_id}:{pane_id}")).await {
+        return;
+    }
+    let mut invalid = Vec::new();
+    for (token_id, token) in fetch_ios_push_tokens(state, user_id).await {
+        let result = apns
+            .send_agent_alert_notification(&token, pane_id, title, body)
+            .await;
+        classify_push_result(result, token_id, user_id, "agent alert push", &mut invalid);
+    }
+    delete_invalid_tokens(state, &invalid).await;
+}
+
 /// Per-job dedup via Redis SET NX with a 30s TTL. Returns true if this caller
 /// won the slot; false if a duplicate fired recently.
 async fn claim_job_push_slot(state: &AppState, user_id: Uuid, job_id: &str, event: &str) -> bool {
+    claim_push_slot(state, &format!("job_push:{user_id}:{job_id}:{event}")).await
+}
+
+async fn claim_push_slot(state: &AppState, key: &str) -> bool {
     let Some(ref redis) = state.redis else {
         return true; // no redis = no dedup
     };
     let mut conn = redis.clone();
-    let key = format!("job_push:{user_id}:{job_id}:{event}");
     let result: Result<Option<String>, _> = redis::cmd("SET")
-        .arg(&key)
+        .arg(key)
         .arg("1")
         .arg("NX")
         .arg("EX")

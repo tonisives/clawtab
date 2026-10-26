@@ -73,6 +73,7 @@ interface PaletteEntry {
   paneTitle: string;
   workspaceName: string;
   paneId?: string;
+  alert?: string;
   slug?: string;
   viewId?: PaletteViewId;
   recencyMs: number;
@@ -144,6 +145,7 @@ function buildEntries(params: {
       paneTitle,
       workspaceName: ws,
       paneId: p.pane_id,
+      alert: p._agent_alert,
       recencyMs,
       searchFields: {
         paneTitle,
@@ -633,6 +635,7 @@ export function CommandPalette({
                       <span style={{ fontSize: 13, color: isActive ? "var(--accent-color)" : "var(--text-primary)", fontWeight: isActive ? 600 : 500 }}>
                         {entry.displayName}
                       </span>
+                      {entry.alert && <span title={entry.alert} aria-label={`Alert: ${entry.alert}`} style={{ color: "#ff8700", fontWeight: 800 }}>!</span>}
                     </div>
                     {entry.cwd && (
                       <div style={{ fontSize: 11, color: "var(--text-muted, #8e8e93)", fontFamily: "monospace", paddingLeft: 76 }}>

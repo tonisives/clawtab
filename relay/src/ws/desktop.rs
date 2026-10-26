@@ -9,7 +9,8 @@ use clawtab_protocol::{DesktopMessage, JobStatus, RemoteJob, ServerMessage};
 use crate::ws::handler::{run_session_loop, LoopExit};
 use crate::ws::hub::DesktopConnection;
 use crate::ws::push::{
-    handle_claude_questions_push, handle_job_notification_push, handle_trigger_result,
+    handle_agent_alert_push, handle_claude_questions_push, handle_job_notification_push,
+    handle_trigger_result,
 };
 use crate::ws::shared::{filter_questions_for_groups, get_shared_guests, SharedGuest};
 use crate::AppState;
@@ -269,6 +270,23 @@ async fn handle_message(state: &AppState, user_id: Uuid, device_id: Uuid, text: 
                     &DesktopMessage::AgentActivity { activity },
                 );
             }
+        }
+        DesktopMessage::AgentAlert {
+            pane_id,
+            title,
+            body,
+        } => {
+            {
+                let hub = state.hub.read().await;
+                forward_agent_message(&hub, user_id, text, &guests, pane_id);
+            }
+            let state = state.clone();
+            let pane_id = format!("{device_id}::{pane_id}");
+            let title = title.clone();
+            let body = body.clone();
+            tokio::spawn(async move {
+                handle_agent_alert_push(&state, user_id, &pane_id, &title, &body).await;
+            });
         }
         DesktopMessage::AgentActions { pane_id, .. } => {
             let hub = state.hub.read().await;

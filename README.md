@@ -80,6 +80,8 @@ ClawTab picks up generated session names from Codex, Claude Code, OpenCode, and 
 
 The status bar uses a cyan `*` for working agents, a yellow `!` for questions, and an orange `!` for alerts. Alerts detect capacity, overload, rate limit, quota, authentication, and connection failures in the latest terminal error block. They clear when work resumes or newer output replaces the error. Entering a window focuses panes with questions or alerts. Process cards label alerts and show the error text in their status tooltip.
 
+Agent alerts also appear in desktop and remote notification cards, with an action to open the affected session. New alerts send an iOS push when remote notifications are enabled. Repeated snapshots update the same card; recovery or session exit resolves it.
+
 Add the plugin to `.tmux.conf`:
 
 ```sh

@@ -41,6 +41,7 @@ h1 { margin: 0; font-size: 15px; line-height: 1.35; font-weight: 600; overflow-w
 .sub:empty { display: none; }
 .status { font-size: 11px; color: var(--accent); white-space: nowrap; }
 .status:empty { display: none; }
+.status.alert { color: #ff8700; font-weight: 700; }
 .message { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; max-height: 117px; overflow: hidden; }
 .message:empty { display: none; }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; max-height: 180px; overflow-y: auto; scrollbar-width: thin; }

@@ -28,6 +28,7 @@ pub struct Service {
     mutation: tokio::sync::Mutex<()>,
     template_changes: Arc<tokio::sync::Notify>,
     seen_questions: Mutex<HashSet<String>>,
+    seen_alerts: Mutex<HashMap<String, String>>,
     questions_ready: AtomicBool,
 }
 
@@ -49,6 +50,7 @@ pub fn initialize(
         mutation: Default::default(),
         template_changes: Arc::new(tokio::sync::Notify::new()),
         seen_questions: Default::default(),
+        seen_alerts: Default::default(),
         questions_ready: AtomicBool::new(false),
     });
     SERVICE
@@ -165,6 +167,40 @@ impl Service {
             {
                 self.announce(record);
             }
+        }
+    }
+
+    pub fn sync_alerts(&self, activity: &[crate::ipc::AgentActivity]) {
+        let result = super::alerts::sync(
+            &self.store,
+            activity,
+            &mut self.seen_alerts.lock(),
+            |pane| {
+                resolve_source(pane, None).unwrap_or_else(|_| NfnSource {
+                    pane_id: Some(pane.into()),
+                    ..Default::default()
+                })
+            },
+        );
+        match result {
+            Ok(changes) => {
+                for record in &changes.created {
+                    self.announce(record);
+                    if self.ctx.settings.lock().notify_questions_remote {
+                        if let Some(handle) = self.ctx.relay.lock().as_ref() {
+                            handle.send_message(&clawtab_protocol::DesktopMessage::AgentAlert {
+                                pane_id: record.request.source.pane_id.clone().unwrap_or_default(),
+                                title: record.request.title.clone(),
+                                body: record.request.body.clone(),
+                            });
+                        }
+                    }
+                }
+                if changes.changed {
+                    self.changed();
+                }
+            }
+            Err(error) => log::warn!("[nfn] alert synchronization failed: {error}"),
         }
     }
 
@@ -730,7 +766,9 @@ impl Service {
 }
 
 fn local_enabled(settings: &crate::config::settings::AppSettings, record: &NfnRecord) -> bool {
-    if record.request.source.job_id.is_some() && record.question_id.is_none() {
+    if record.request.data["event"] == "agent_alert" {
+        settings.notify_questions_local
+    } else if record.request.source.job_id.is_some() && record.question_id.is_none() {
         !record
             .request
             .data
