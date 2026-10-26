@@ -173,6 +173,7 @@
     const message = String(error.message || error);
     if (card) card._clientError = message;
     const notice = host.querySelector(".notice"); if (notice) notice.textContent = message;
+    const menuNotice = host.querySelector(".menu-notice"); if (menuNotice) menuNotice.textContent = message;
   }
   async function act(action_id, text) {
     if (busy || !current) return;
@@ -444,6 +445,7 @@
         try { await call({ op: "dismiss", id: record.id }); collapse(); } catch (error) { showError(error); }
       }, "utility dismiss"); dismiss.title = "Remove this card from Pending"; panel.append(dismiss);
     } else panel.append(el("div", "agent-controls", "Loading..."));
+    const notice = el("div", "notice menu-notice"); notice.setAttribute("role", "status"); panel.append(notice);
     overlay.append(panel); overlay.addEventListener("click", event => { if (event.target === overlay) toggleMenu(menu); }); host.append(overlay);
     updateAutoYes();
   }
@@ -536,7 +538,8 @@
   window.addEventListener("message", event => { if (event.source === window.parent) receive(event.data || {}); });
   document.addEventListener("visibilitychange", () => { if (document.hidden) stopContext(); else startContext(); });
   window.nfn = { receive, collapse, outsideClick() {
-    if (!expanded && records.get(current)?.request.template === "update") collapse();
+    const request = records.get(current)?.request;
+    if (!expanded && request?.template === "update" && request.data?.event !== "agent_alert") collapse();
   }, setPlacement(value) {
     const next = typeof value === "string" ? { placement: value } : value;
     if (JSON.stringify(next) === JSON.stringify(geometry)) return;

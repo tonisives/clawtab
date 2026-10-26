@@ -4,6 +4,7 @@
 //   -o /tmp/clawtab-nfn-native
 // Generate the HTML with nfn-fixture.mjs FILE --native, then pass FILE here.
 // --right checks the fallback position; --geometry-only skips keyboard focus.
+// --notch-geometry checks a cached 220 x 38 cutout when no built-in screen is connected.
 #import "../src-tauri/src/nfn/macos.m"
 
 static BOOL loaded;
@@ -62,7 +63,8 @@ int main(int argc, const char **argv) {
     @autoreleasepool {
         if (argc < 2 || argc > 3) return 2;
         BOOL rightColumn = argc == 3 && strcmp(argv[2], "--right") == 0;
-        BOOL geometryOnly = argc == 3 && strcmp(argv[2], "--geometry-only") == 0;
+        BOOL simulatedNotch = argc == 3 && strcmp(argv[2], "--notch-geometry") == 0;
+        BOOL geometryOnly = simulatedNotch || (argc == 3 && strcmp(argv[2], "--geometry-only") == 0);
         NSString *html = [NSString stringWithContentsOfFile:[NSString stringWithUTF8String:argv[1]] encoding:NSUTF8StringEncoding error:nil];
         if (!html) return 2;
         previousApplication = NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier;
@@ -76,6 +78,10 @@ int main(int argc, const char **argv) {
                 snapshot[@"records"][0][@"request"][@"title"] = @"Notification layout test";
                 snapshot[@"records"][0][@"request"][@"body"] = @"Checking notch alignment and resize animation. This temporary test closes automatically.";
                 snapshot[@"settings"] = @{@"delivery":@"enhanced",@"focus":@"independent",@"placement":rightColumn ? @"right" : @"notch",@"display":@"built_in",@"preview_seconds":@8};
+                if (simulatedNotch) {
+                    NSScreen *screen = [surface selectedScreen];
+                    surface.notchGeometry[[screen.deviceDescription[@"NSScreenNumber"] stringValue]] = @{@"inset":@38, @"width":@220, @"center":@(NSMidX(screen.frame)), @"frame":[NSValue valueWithRect:screen.frame], @"scale":@(screen.backingScaleFactor)};
+                }
                 [surface push:snapshot];
                 [surface.web evaluateJavaScript:@"document.querySelector('#surface').dispatchEvent(new MouseEvent('mouseenter'))" completionHandler:nil];
                 dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC), dispatch_get_main_queue(), ^{
