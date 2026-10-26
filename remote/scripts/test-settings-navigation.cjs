@@ -1,0 +1,92 @@
+const assert = require("node:assert/strict")
+const fs = require("node:fs")
+const path = require("node:path")
+const vm = require("node:vm")
+const { test } = require("node:test")
+const ts = require("typescript")
+const { StackRouter } = require("expo-router/build/react-navigation/routers/StackRouter")
+
+const elements = (node) => {
+  if (Array.isArray(node)) return node.flatMap(elements)
+  if (!node || typeof node !== "object") return []
+  return [node, ...elements(node.props?.children)]
+}
+
+function settingsFixture(inModal = false) {
+  let navigate = () => {}
+  let jsx = (type, props) => ({ type, props })
+  let dependencies = {
+    react: { useEffect: () => {}, useRef: (current) => ({ current }) },
+    "react/jsx-runtime": { jsx, jsxs: jsx },
+    "expo-router": { useRouter: () => ({ push: () => {} }) },
+    "expo-router/build/react-navigation/native-stack": { createNativeStackNavigator: () => ({ Navigator: "Navigator", Screen: "Screen" }) },
+    "expo-router/react-navigation": {
+      NavigationContainer: "NavigationContainer", NavigationIndependentTree: "NavigationIndependentTree", DarkTheme: {},
+      useIsFocused: () => true, useNavigationContainerRef: () => ({}),
+    },
+    "@clawtab/shared": { useMachines: () => ({ connected: false, error: null, machines: [] }) },
+    "react-native": { Platform: { OS: "ios" }, Pressable: "Pressable", Text: "Text", View: "View", StyleSheet: { create: (value) => value } },
+    "@expo/vector-icons": { Ionicons: "Ionicons" },
+    "react-native-safe-area-context": { useSafeAreaInsets: () => ({ bottom: 34 }) },
+    "../../../src/hooks/useSetupProgress": { useSetupProgress: () => ({ complete: false }) },
+    "../../../src/components/DemoOverview": { DemoOverview: "DemoOverview" },
+    "../../../src/store/auth": { useAuthStore: (select) => select({ email: "test@example.invalid" }) },
+    "../../../src/hooks/useResponsive": { useResponsive: () => ({ isWide: false, isSplitView: false, isIosPadPortrait: false }) },
+    "../../../src/components/ApiTokensSection": { ApiTokensSection: "ApiTokensSection" },
+    "../../../src/components/MachineNavigation": { MachinePageHistoryProvider: "MachinePageHistoryProvider", MachinePageScreen: "MachinePageScreen" },
+    "../../../src/components/MachineSetup": { MachineSetup: "MachineSetup" },
+    "../../../src/components/settings/AccountSettings": { AccountSettings: "AccountSettings" },
+    "../../../src/components/settings/SharingSettings": { SharingSettings: "SharingSettings" },
+    "../../../src/components/settings/TerminalSettings": { TerminalSettings: "TerminalSettings" },
+    "../../../src/components/settings/UsageSettings": { UsageSettings: "UsageSettings" },
+    "../../../src/components/settings/SettingsPage": {
+      SettingsBottomInset: { Provider: "SettingsBottomInset" }, SettingsGroup: "SettingsGroup", SettingsPage: "SettingsPage", SettingsRow: "SettingsRow", styles: {},
+    },
+    "../../../src/components/settings/navigation": {
+      SettingsNavigation: { Provider: "SettingsNavigation" }, SettingsVisibility: { Provider: "SettingsVisibility" }, useSettingsNavigation: () => (name) => navigate(name),
+    },
+    "../../../src/theme/colors": { colors: {} },
+  }
+  let source = fs.readFileSync(path.join(__dirname, "../app/(tabs)/(settings)/settings.tsx"), "utf8")
+  let compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText
+  let exports = {}
+  vm.runInNewContext(compiled, { exports, require: (name) => {
+    assert.ok(name in dependencies, `Unexpected dependency: ${name}`)
+    return dependencies[name]
+  } })
+  let navigator = elements(exports.default({ inModal })).find((element) => element.type === "Navigator")
+  let screens = elements(navigator.props.children).filter((element) => element.type === "Screen")
+  let options = { routeNames: screens.map((screen) => screen.props.name), routeParamList: {}, routeGetIdList: {} }
+  let router = StackRouter({ initialRouteName: navigator.props.initialRouteName })
+  let state = router.getInitialState(options)
+  navigate = (name) => { state = router.getStateForAction(state, { type: "NAVIGATE", payload: { name } }, options) }
+  return {
+    current: () => state.routes[state.index].name,
+    render: () => {
+      let screen = screens.find((screen) => screen.props.name === state.routes[state.index].name)
+      let provider = screen.props.children({ navigation: { navigate } })
+      let page = provider.props.children
+      return typeof page.type === "function" ? page.type() : page
+    },
+  }
+}
+
+for (let inModal of [false, true]) {
+  test(`${inModal ? "embedded settings" : "Settings tab"} opens account controls before Relay setup`, () => {
+    let app = settingsFixture(inModal)
+    assert.equal(app.current(), "home")
+    let account = elements(app.render()).find((element) => element.props.title === "Account & subscription")
+    assert.ok(account, "Settings Home exposes account settings")
+    assert.ok(!account.props.disabled, "Account settings is available while disconnected")
+    account.props.onPress()
+    assert.equal(app.current(), "account")
+    assert.equal(app.render().type, "AccountSettings")
+  })
+}
+
+test("setup stays available as an explicit choice from Settings Home", () => {
+  let app = settingsFixture()
+  let setup = elements(app.render()).find((element) => element.props.accessibilityLabel === "About demo mode")
+  setup.props.onPress()
+  assert.equal(app.current(), "setup")
+})
