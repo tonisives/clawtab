@@ -8,6 +8,7 @@ pub struct NfnSettings {
     pub placement: String,
     pub focus: String,
     pub display: String,
+    pub position: Option<NfnPosition>,
     pub preview_seconds: u32,
     pub hover_expand: bool,
     pub sound: bool,
@@ -20,6 +21,7 @@ impl Default for NfnSettings {
             placement: "notch".into(),
             focus: "follow".into(),
             display: "primary".into(),
+            position: None,
             preview_seconds: 8,
             hover_expand: false,
             sound: true,
@@ -30,15 +32,26 @@ impl Default for NfnSettings {
 impl NfnSettings {
     pub fn validate(&self) -> Result<(), String> {
         if !["enhanced", "native", "both"].contains(&self.delivery.as_str())
-            || !["notch", "right"].contains(&self.placement.as_str())
+            || !["notch", "right", "custom"].contains(&self.placement.as_str())
             || !["follow", "independent"].contains(&self.focus.as_str())
             || !(2..=120).contains(&self.preview_seconds)
             || self.display.is_empty()
+            || self.position.as_ref().is_some_and(|p| {
+                !p.right.is_finite() || !p.top.is_finite() || p.right < 0.0 || p.top < 0.0
+            })
+            || (self.placement == "custom" && self.position.is_none())
         {
             return Err("Invalid notification settings".into());
         }
         Ok(())
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct NfnPosition {
+    pub right: f64,
+    pub top: f64,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -273,6 +286,10 @@ pub enum NfnCommand {
     },
     Show,
     Settings,
+    SetPosition {
+        display: String,
+        position: NfnPosition,
+    },
     ViewedPane {
         pane_id: Option<String>,
         window_id: String,

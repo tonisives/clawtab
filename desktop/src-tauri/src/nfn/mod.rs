@@ -3,6 +3,7 @@ mod alerts;
 pub mod cli;
 pub mod native;
 mod service;
+pub mod settings;
 mod store;
 pub mod templates;
 pub mod types;

@@ -22,15 +22,24 @@ pub fn set_settings(
 ) -> Result<(), String> {
     new_settings.enhanced_notifications.validate()?;
     let mut settings = state.settings.lock();
+    let notification_settings_changed =
+        new_settings.enhanced_notifications != settings.enhanced_notifications;
     // Re-read from disk so fields the frontend doesn't manage (telegram, relay)
     // aren't clobbered when they were written by another process (CLI, daemon,
     // external edit) after this in-memory copy was loaded at startup.
     let on_disk = AppSettings::load();
+    let notification_settings = on_disk.enhanced_notifications.clone();
+    if notification_settings_changed {
+        crate::nfn::settings::save(&new_settings.enhanced_notifications)?;
+    }
     let telegram = settings.telegram.clone().or(on_disk.telegram);
     let relay = settings.relay.clone().or(on_disk.relay);
     let pinned_items = on_disk.pinned_items.clone();
     let pinned_pane_identities = on_disk.pinned_pane_identities.clone();
     *settings = new_settings;
+    if !notification_settings_changed {
+        settings.enhanced_notifications = notification_settings;
+    }
     if settings.telegram.is_none() {
         settings.telegram = telegram;
     }

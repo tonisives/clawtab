@@ -28,7 +28,8 @@ button.utility:hover { color: #e4e4e4; background: #242424; }
 #surface.pill { width: 224px; border-color: #333; }
 #surface.notch.pill { width: var(--notch-width, 220px); border-radius: 0 0 12px 12px; }
 .top { position: relative; flex: none; display: grid; grid-template-columns: 30px 1fr 30px; align-items: center; gap: 8px; padding: 5px 8px; border-bottom: 1px solid var(--line); }
-button.bar-toggle { position: absolute; inset: 0; width: 100%; border: 0; border-radius: 0; background: transparent; }
+button.bar-toggle { position: absolute; inset: 0; width: 100%; border: 0; border-radius: 0; background: transparent; touch-action: none; cursor: grab; }
+button.bar-toggle:active { cursor: grabbing; }
 button.bar-toggle:hover { background: #ffffff08; }
 .top > .icon-button, .top-actions { position: relative; }
 .brand img { width: 20px; height: 20px; border-radius: 5px; }
@@ -48,21 +49,19 @@ button.icon-button { display: flex; align-items: center; justify-content: center
 .heading { display: flex; align-items: flex-start; gap: 8px; justify-content: space-between; }
 .heading h1 { flex: 1; }
 h1 { margin: 0; font-size: 15px; line-height: 1.35; font-weight: 600; overflow-wrap: anywhere; }
-.sub, .meta, .hint { font-size: 11px; line-height: 1.5; color: var(--muted); overflow-wrap: anywhere; }
-.sub { margin: 3px 0 10px; }
-.sub:empty { display: none; }
+.meta, .hint { font-size: 11px; line-height: 1.5; color: var(--muted); overflow-wrap: anywhere; }
+.heading + .message:not(:empty) { margin-top: 8px; }
 .status { font-size: 11px; color: var(--accent); white-space: nowrap; }
 .status:empty { display: none; }
 .status.alert { color: #ff8700; font-weight: 700; }
 .message { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; max-height: 117px; overflow: hidden; }
 .message:empty { display: none; }
-.actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; max-height: 180px; overflow-y: auto; scrollbar-width: thin; }
+.answer-row { display: flex; align-items: center; gap: 10px; margin-top: 12px; min-width: 0; }
+.answer-row:has(.actions:empty):not(:has(.auto-yes)) { display: none; }
+.actions { display: flex; flex: 1; min-width: 0; gap: 8px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; }
 .actions:empty { display: none; }
-.actions button { flex: 1; min-width: 80px; padding: 8px 12px; border-radius: 20px; color: #aeb8ed; border-color: #7986cb80; background: #7986cb1a; font-size: 12px; font-weight: 500; overflow-wrap: anywhere; }
+.actions button { flex: 0 0 auto; min-width: 80px; max-width: 280px; padding: 8px 12px; border-radius: 20px; color: #aeb8ed; border-color: #7986cb80; background: #7986cb1a; font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .actions button:hover { background: #7986cb30; }
-.actions.long-choices { flex-direction: column; flex-wrap: nowrap; }
-.actions.long-choices button { flex: none; text-align: left; border-radius: 8px; }
-.more-choices { font-size: 11px; margin-top: 4px; }
 .reply { margin-top: 12px; }
 .reply-label { display: block; font-size: 12px; font-weight: 500; margin-bottom: 6px; }
 .reply-row { display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
@@ -122,6 +121,8 @@ select, input { min-width: 0; border: 1px solid #333; border-radius: 6px; backgr
 .menu-link::after { content: "›"; float: right; }
 .menu-panel .dismiss { width: 100%; text-align: left; border-top: 1px solid var(--line); margin-top: 10px; padding: 10px 0 0; font-size: 12px; }
 .auto-yes { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 8px; font-size: 12px; }
+.auto-yes.inline-auto-yes { flex: none; gap: 2px; margin: 0; font-size: 11px; white-space: nowrap; }
+.inline-auto-yes .switch-state { display: none; }
 button.auto-yes-switch { display: flex; align-items: center; gap: 7px; padding: 4px 0 4px 7px; border: 0; background: transparent; color: var(--muted); font-size: 11px; }
 .switch-track { display: block; width: 28px; height: 17px; padding: 2px; border-radius: 12px; background: #3a3a3c; }
 .switch-track::after { content: ""; display: block; width: 13px; height: 13px; border-radius: 50%; background: #eee; }

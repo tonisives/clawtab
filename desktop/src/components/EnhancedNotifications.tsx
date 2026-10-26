@@ -136,6 +136,7 @@ export function EnhancedNotifications({ settings, onChange }: {
       </select></label>
       <label>Position<select value={settings.placement} onChange={e => change({ placement: e.target.value as EnhancedNotificationSettings["placement"] })}>
         <option value="notch">Notch, with right column fallback</option><option value="right">Right column</option>
+        {settings.position && <option value="custom">Dragged position</option>}
       </select></label>
       <label>Focus / Do Not Disturb<select value={settings.focus} onChange={e => change({ focus: e.target.value as EnhancedNotificationSettings["focus"] })}>
         <option value="follow">Follow macOS</option><option value="independent">Independent of macOS Focus</option>

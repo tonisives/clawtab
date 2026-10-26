@@ -11,6 +11,25 @@ static BOOL loaded;
 static BOOL platformReceived;
 static NSUInteger attempts;
 static pid_t previousApplication;
+static BOOL positionSaved;
+
+static void verifyDragging(void (^finish)(void)) {
+    NSRect before = [surface surfaceFrame];
+    [surface drag:@{@"phase":@"start"}];
+    [surface drag:@{@"phase":@"move", @"dx":@(-70), @"dy":@40}];
+    NSRect moved = [surface surfaceFrame];
+    if (fabs(NSMaxX(before) - NSMaxX(moved) - 70) > 1 || surface.notchPlacement) {
+        fprintf(stderr, "Dragging did not move the panel or detach the notch\n"); exit(1);
+    }
+    [surface drag:@{@"phase":@"end"}];
+    NSRect dropped = surface.panel.frame;
+    [surface positionWidth:surface.surfaceWidth height:surface.surfaceHeight];
+    if (!positionSaved || surface.dragging || ![surface.settings[@"placement"] isEqual:@"custom"] || !NSEqualRects(dropped, surface.panel.frame)) {
+        fprintf(stderr, "Dropped position was not saved or preserved\n"); exit(1);
+    }
+    printf("Native dragging checks passed: moves, detaches the notch, saves coordinates and preserves the dropped anchor.\n");
+    finish();
+}
 
 static void verifyEditing(void (^finish)(void)) {
     [surface.web evaluateJavaScript:@"const input = document.querySelector('textarea'); input.value = 'Reply shortcut check'; input.focus(); input.setSelectionRange(input.value.length, input.value.length)" completionHandler:^(id value, NSError *error) {
@@ -57,6 +76,7 @@ static void verifyExpansion(void (^finish)(void)) {
 static void bridge(const char *raw) {
     NSDictionary *value = [NSJSONSerialization JSONObjectWithData:[[NSString stringWithUTF8String:raw] dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
     NSString *operation = value[@"command"][@"op"];
+    if ([operation isEqual:@"set_position"]) { positionSaved = YES; return; }
     if ([operation isEqual:@"platform"]) {
         NSDictionary *state = value[@"command"][@"state"];
         for (NSString *key in @[@"available", @"sound_allowed", @"user_active", @"focused", @"authorized"]) {
@@ -123,12 +143,10 @@ int main(int argc, const char **argv) {
                         if (geometryOnly) {
                             verifyExpansion(^{
                                 printf("Native geometry checks passed: passive arrival, notch overlap, window cycling excluded, animated expansion and fixed top anchor.\n");
-                                clawtab_nfn_stop();
+                                verifyDragging(^{ clawtab_nfn_stop(); });
                             });
                             return;
                         }
-                        // A scripted pointer event does not grant the native focus that a real click does.
-                        [NSApp activateIgnoringOtherApps:YES];
                         [surface.web evaluateJavaScript:@"document.querySelector('textarea').dispatchEvent(new PointerEvent('pointerdown',{bubbles:true})); document.querySelector('textarea').focus()" completionHandler:^(id result, NSError *focusError) {
                             (void)result;
                             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 4), dispatch_get_main_queue(), ^{
@@ -137,7 +155,7 @@ int main(int argc, const char **argv) {
                                     clawtab_nfn_activate(previousApplication);
                                     verifyExpansion(^{
                                         printf("Native checks passed: platform JSON booleans, passive panel, foreground preserved, notch overlap, window cycling excluded, reply focus, Command-A selection, animated expansion and fixed top anchor. Screenshots: /tmp/clawtab-nfn-native.png, /tmp/clawtab-nfn-expanded.png\n");
-                                        clawtab_nfn_stop();
+                                        verifyDragging(^{ clawtab_nfn_stop(); });
                                     });
                                 });
                             });

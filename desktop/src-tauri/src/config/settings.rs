@@ -343,11 +343,21 @@ impl AppSettings {
                     settings.migrate_legacy_title_summary();
                     settings.shortcuts.migrate_legacy_tab_navigation();
                     settings.shortcuts.migrate_missing_fields();
+                    settings.load_notification_settings();
                     return settings;
                 }
             }
         }
-        Self::default()
+        let mut settings = Self::default();
+        settings.load_notification_settings();
+        settings
+    }
+
+    fn load_notification_settings(&mut self) {
+        match crate::nfn::settings::load(&self.enhanced_notifications) {
+            Ok(settings) => self.enhanced_notifications = settings,
+            Err(error) => log::warn!("[nfn] Could not load notifications.yaml: {error}"),
+        }
     }
 
     fn migrate_legacy_title_summary(&mut self) {

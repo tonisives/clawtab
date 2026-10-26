@@ -15,6 +15,14 @@ static NfnCallback callback;
 @implementation NfnPanel
 - (BOOL)canBecomeKeyWindow { return self.textFocus; }
 - (BOOL)canBecomeMainWindow { return NO; }
+- (void)sendEvent:(NSEvent *)event {
+    if (event.type == NSEventTypeLeftMouseDown && !self.isKeyWindow) {
+        self.textFocus = YES;
+        [NSApp activateIgnoringOtherApps:YES];
+        [self makeKeyWindow];
+    }
+    [super sendEvent:event];
+}
 - (BOOL)performKeyEquivalent:(NSEvent *)event {
     // The daemon has no Edit menu to route these commands to WebKit.
     NSEventModifierFlags modifiers = event.modifierFlags & (NSEventModifierFlagCommand | NSEventModifierFlagControl | NSEventModifierFlagOption | NSEventModifierFlagShift);
@@ -50,6 +58,8 @@ static NfnCallback callback;
 @property BOOL notchPlacement;
 @property NSString *lastGeometry;
 @property NSMutableDictionary<NSString *, NSDictionary *> *notchGeometry;
+@property BOOL dragging;
+@property NSPoint dragAnchor;
 @end
 
 static NfnSurface *surface;
@@ -108,7 +118,7 @@ static void emit(NSDictionary *value) {
         if (!self) { [timer invalidate]; return; }
         self.ticks++;
         if (self.ticks % 3 == 0) [self refreshAuthorization];
-        if ([self.settings[@"display"] isEqual:@"pointer"] && [self selectedScreen] != self.panel.screen) [self positionWidth:self.surfaceWidth height:self.surfaceHeight];
+        if (!self.dragging && [self.settings[@"display"] isEqual:@"pointer"] && [self selectedScreen] != self.panel.screen) [self positionWidth:self.surfaceWidth height:self.surfaceHeight];
         [self publishPlatform];
         if (![self allowsOverlay]) { [self.panel orderOut:nil]; [self releaseTextFocus]; }
     }];
@@ -242,6 +252,7 @@ static void emit(NSDictionary *value) {
 }
 
 - (void)positionWidth:(CGFloat)width height:(CGFloat)height {
+    if (self.dragging) return;
     NSScreen *screen = [self selectedScreen];
     if (!screen || width <= 0 || height <= 0) return;
     NSDictionary *camera = [self notchForScreen:screen];
@@ -255,6 +266,14 @@ static void emit(NSDictionary *value) {
     CGFloat x = notch ? [camera[@"center"] doubleValue] - w / 2 : NSMaxX(available) - w - MIN(384, available.size.width / 3);
     x = MAX(NSMinX(available) + 16, MIN(x, NSMaxX(available) - w - 16));
     CGFloat y = notch ? NSMaxY(screen.frame) - h : NSMaxY(available) - h - 12;
+    if ([self.settings[@"placement"] isEqual:@"custom"] && [self.settings[@"position"] isKindOfClass:NSDictionary.class]) {
+        NSDictionary *position = self.settings[@"position"];
+        CGFloat right = NSMaxX(available) - [position[@"right"] doubleValue];
+        CGFloat top = NSMaxY(available) - [position[@"top"] doubleValue];
+        right = MAX(NSMinX(available) + MIN(width, w), MIN(right, NSMaxX(available)));
+        top = MAX(NSMinY(available) + MIN(height, h), MIN(top, NSMaxY(available)));
+        x = right - w; y = top - h;
+    }
     NSRect frame = NSMakeRect(x, y, w, h);
     if (!NSEqualRects(frame, self.panel.frame)) [self.panel setFrame:frame display:YES];
     [self updateMousePassthrough];
@@ -265,6 +284,38 @@ static void emit(NSDictionary *value) {
     if (self.ready && ![json isEqual:self.lastGeometry]) {
         self.lastGeometry = json;
         [self.web evaluateJavaScript:[NSString stringWithFormat:@"window.nfn.setPlacement(%@)", json] completionHandler:nil];
+    }
+}
+
+- (void)drag:(NSDictionary *)value {
+    NSString *phase = value[@"phase"];
+    if ([phase isEqual:@"start"]) {
+        NSRect frame = [self surfaceFrame];
+        CGFloat overlap = self.notchPlacement ? [[self notchForScreen:[self selectedScreen]][@"inset"] doubleValue] : 0;
+        self.dragAnchor = NSMakePoint(NSMaxX(frame), NSMaxY(frame) - overlap);
+        self.dragging = YES;
+        self.notchPlacement = NO;
+        self.lastGeometry = nil;
+        [self.web evaluateJavaScript:[NSString stringWithFormat:@"window.nfn.setPlacement({placement:'right',overlap:0,max_width:%g,max_height:%g,reduce_motion:true})", self.panel.frame.size.width, self.panel.frame.size.height] completionHandler:nil];
+    } else if ([phase isEqual:@"move"] && self.dragging) {
+        NSRect frame = self.panel.frame;
+        frame.origin.x = self.dragAnchor.x + [value[@"dx"] doubleValue] - frame.size.width;
+        frame.origin.y = self.dragAnchor.y - [value[@"dy"] doubleValue] - frame.size.height;
+        [self.panel setFrame:frame display:YES];
+        self.panel.ignoresMouseEvents = NO;
+    } else if ([phase isEqual:@"end"] && self.dragging) {
+        self.dragging = NO;
+        NSScreen *screen = nil;
+        for (NSScreen *candidate in NSScreen.screens) if (NSPointInRect(NSEvent.mouseLocation, candidate.frame)) { screen = candidate; break; }
+        screen = screen ?: self.panel.screen ?: [self selectedScreen];
+        NSRect available = screen.visibleFrame;
+        NSDictionary *position = @{@"right":@(MAX(0, NSMaxX(available) - NSMaxX(self.panel.frame))), @"top":@(MAX(0, NSMaxY(available) - NSMaxY(self.panel.frame)))};
+        NSString *display = [screen.deviceDescription[@"NSScreenNumber"] stringValue];
+        NSMutableDictionary *settings = [self.settings mutableCopy];
+        settings[@"placement"] = @"custom"; settings[@"position"] = position; settings[@"display"] = display;
+        self.settings = settings;
+        [self positionWidth:self.surfaceWidth height:self.surfaceHeight];
+        emit(@{@"command":@{@"op":@"set_position", @"display":display, @"position":position}});
     }
 }
 
@@ -326,8 +377,18 @@ static void emit(NSDictionary *value) {
         if (self.surfaceWidth < 1 || self.surfaceHeight < 1) { [self.panel orderOut:nil]; [self releaseTextFocus]; return; }
         [self positionWidth:self.surfaceWidth height:self.surfaceHeight];
         if (!self.panel.visible && [self.snapshot[@"visible"] boolValue] && [self allowsOverlay]) [self.panel orderFrontRegardless];
+    } else if ([operation isEqual:@"drag"]) {
+        [self drag:value];
     } else if ([operation isEqual:@"text_focus"]) {
-        if ([value[@"active"] boolValue]) { self.panel.textFocus = YES; [self.panel makeKeyWindow]; [self.panel makeFirstResponder:self.web]; }
+        if ([value[@"active"] boolValue]) {
+            self.panel.textFocus = YES;
+            // The panel becomes key before WebKit handles the input click.
+            // Replacing its first responder here would blur the clicked field.
+            if (!self.panel.isKeyWindow) {
+                [NSApp activateIgnoringOtherApps:YES];
+                [self.panel makeKeyAndOrderFront:nil];
+            }
+        }
         else [self releaseTextFocus];
     } else if (!operation && value[@"command"]) emit(value);
 }

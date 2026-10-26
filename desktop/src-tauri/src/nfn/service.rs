@@ -1,4 +1,4 @@
-use super::{native, store::Store, templates, types::*};
+use super::{native, settings, store::Store, templates, types::*};
 use crate::{
     ipc::{self, EventSubscribers, IpcEvent},
     job_context::JobContext,
@@ -66,6 +66,13 @@ pub fn viewed_pane(pane_id: &str) -> bool {
 impl Service {
     pub async fn run(self: Arc<Self>) {
         use notify::Watcher;
+        {
+            let mut settings = self.ctx.settings.lock();
+            match super::settings::ensure(&settings.enhanced_notifications) {
+                Ok(value) => settings.enhanced_notifications = value,
+                Err(error) => log::warn!("[nfn] Could not initialize notifications.yaml: {error}"),
+            }
+        }
         let _ = std::fs::create_dir_all(templates::directory());
         let changes = self.template_changes.clone();
         let mut watcher =
@@ -80,12 +87,29 @@ impl Service {
         }
         let mut ticks = 0_u32;
         let mut auto_yes_panes = self.ctx.auto_yes_panes.lock().clone();
+        let mut settings_error = None;
         loop {
             tokio::select! {
                 () = tokio::time::sleep(std::time::Duration::from_secs(1)) => {},
                 () = self.template_changes.notified() => { self.push(None, false); },
             }
             ticks = ticks.wrapping_add(1);
+            let current_settings = self.ctx.settings.lock().enhanced_notifications.clone();
+            match super::settings::load(&current_settings) {
+                Ok(value) => {
+                    settings_error = None;
+                    if value != current_settings {
+                        self.ctx.settings.lock().enhanced_notifications = value;
+                        self.changed();
+                    }
+                }
+                Err(error) => {
+                    if settings_error.as_ref() != Some(&error) {
+                        log::warn!("[nfn] Could not reload notifications.yaml: {error}");
+                    }
+                    settings_error = Some(error);
+                }
+            }
             let current_auto_yes = self.ctx.auto_yes_panes.lock().clone();
             if current_auto_yes != auto_yes_panes {
                 auto_yes_panes = current_auto_yes;
@@ -384,6 +408,18 @@ impl Service {
             NfnCommand::Settings => {
                 open_notification_settings().await?;
                 return Ok(json!({"opened":true}));
+            }
+            NfnCommand::SetPosition { display, position } => {
+                let mut config = self.ctx.settings.lock();
+                let mut next = settings::load(&config.enhanced_notifications)?;
+                next.placement = "custom".into();
+                next.display = display;
+                next.position = Some(position);
+                settings::save(&next)?;
+                config.enhanced_notifications = next;
+                drop(config);
+                self.changed();
+                return Ok(json!({"saved":true}));
             }
             NfnCommand::OpenJob { id } => {
                 let record = self.store.get(&id)?;

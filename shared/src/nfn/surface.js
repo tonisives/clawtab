@@ -3,12 +3,13 @@
   "use strict";
   const host = document.getElementById("surface");
   const records = new Map(), drafts = new Map(), promises = new Map();
-  let snapshot = {}, current = null, expanded = false, details = false, allChoices = false, queue = false, history = false, preview = false;
+  let snapshot = {}, current = null, expanded = false, details = false, queue = false, history = false, preview = false;
   let renderedId = null, card = null, logTimer = null, collapseTimer = null, remaining = 8000, timerStarted = 0;
   let hovering = false, focused = false, busy = false, contextBusy = false, serial = 0, placement = "right";
   let historyOffset = 0, historyItems = [], pendingOffset = 50, hasMoreHistory = false, loadingQueue = false;
   let completionTimer = null, navigating = false, unseenPending = 0;
   let menu = null;
+  let queueReturnId = null;
   let geometry = {}, layoutAnimation = null, contentAnimations = [], lastSize = "", renderedLayout = "";
   const autoYesBusy = new Set();
   const selectedNotifications = new Set();
@@ -218,13 +219,13 @@
     timerStarted = performance.now(); collapseTimer = setTimeout(collapse, Math.max(100, remaining));
   }
   function collapse() {
-    clearTimeout(completionTimer); pauseTimer(); stopContext(); expanded = false; details = false; allChoices = false; queue = false; current = null; focused = false; menu = null;
+    clearTimeout(completionTimer); pauseTimer(); stopContext(); expanded = false; details = false; queue = false; current = null; focused = false; menu = null;
     native({ native: "text_focus", active: false }); render();
   }
   function openRecord(id) {
     if (busy) return;
     const replyFocused = card?._reply && document.activeElement === card._reply;
-    clearTimeout(completionTimer); pauseTimer(); stopContext(); current = id; expanded = true; details = false; allChoices = false; queue = false; renderedId = null; menu = null;
+    clearTimeout(completionTimer); pauseTimer(); stopContext(); current = id; queueReturnId = id; expanded = true; details = false; queue = false; renderedId = null; menu = null;
     call({ op: "read", id }).catch(showError); render();
     if (replyFocused && card?._reply) card._reply.focus({ preventScroll: true });
   }
@@ -264,7 +265,18 @@
   }
   function showQueue() {
     if (busy) return;
+    if (current) queueReturnId = current;
     clearTimeout(completionTimer); pauseTimer(); stopContext(); expanded = true; details = false; queue = true; current = null; renderedId = null; menu = null; selectedNotifications.clear(); queueError = ""; render();
+  }
+  async function toggleQueue() {
+    if (!queue) { showQueue(); return; }
+    if (queueReturnId) {
+      try {
+        const record = records.get(queueReturnId) || await call({ op: "get", id: queueReturnId });
+        if (!record.dismissed_at) { records.set(record.id, record); openRecord(record.id); return; }
+      } catch (error) { showError(error); }
+    }
+    if (pendingCount()) await openLatest(); else collapse();
   }
   function showError(error) {
     const message = String(error.message || error);
@@ -312,8 +324,9 @@
     }
   }
   function hasBlock(layout, kind) { return (layout || []).some(b => b.type === kind || hasBlock(b.children, kind)); }
-  function autoYesControl(record) {
+  function autoYesControl(record, inline = false) {
     const row = el("div", "auto-yes"); row.append(el("span", "", "Auto-yes"));
+    if (inline) row.classList.add("inline-auto-yes");
     const control = button("", async () => {
       const pane = record.request.source.pane_id;
       if (autoYesBusy.has(pane)) return;
@@ -352,7 +365,6 @@
       options.title = "Agent options"; options.setAttribute("aria-label", "Notification options"); options.setAttribute("aria-haspopup", "dialog"); node._options = options; heading.append(options);
     }
     node.append(heading);
-    const sub = el("div", "sub", sourceText(record.request.source)); node._sub = sub; node.append(sub);
     const message = el("div", "message", messageText(record)); node.append(message);
     const layout = template(record).layout, primitives = {};
     const content = el("div", "details-content"); node._content = content;
@@ -371,17 +383,15 @@
     const actions = el("div", "actions"); node._actions = actions;
     const choices = record.request.actions || [];
     for (const [index, action] of choices.entries()) {
-      if (!allChoices && index > 2) break;
       const control = button(action.label, () => act(action.id, drafts.get(record.id) || ""), index === 0 ? "primary" : "");
+      control.title = action.label;
       actions.append(control);
     }
-    if (choices.some(action => action.label.length > 55)) actions.classList.add("long-choices");
-    node.append(actions);
-    if (choices.length > 3) {
-      node.append(button(allChoices ? "Fewer choices" : `More choices (${choices.length - 3})`, () => {
-        pauseTimer(); expanded = true; allChoices = !allChoices; renderedId = null; render();
-      }, "utility more-choices"));
+    const answerRow = el("div", "answer-row"); answerRow.append(actions);
+    if (hasAgent(record) && (record.question_id || ["question", "permission"].includes(record.request.template))) {
+      answerRow.append(autoYesControl(record, true));
     }
+    node.append(answerRow);
     if (record.request.template !== "update" && (hasBlock(layout, "reply") || record.request.source?.pane_id)) {
       const toAgent = Boolean(record.question_id || record.request.response_destination === "agent_message");
       const reply = el("div", "reply");
@@ -390,7 +400,6 @@
       const input = el("textarea"); input.id = "notification-reply"; input.rows = 2;
       input.placeholder = "Message...";
       input.value = drafts.get(record.id) || "";
-      input.addEventListener("pointerdown", () => native({ native: "text_focus", active: true }));
       input.addEventListener("input", () => { drafts.set(record.id, input.value); updateCard(); });
       input.addEventListener("keydown", event => { if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) { event.preventDefault(); act("reply", input.value); } });
       node._reply = input; row.append(input);
@@ -470,7 +479,6 @@
         card._followLogs = atBottom;
         if (atBottom) scroller.scrollTop = scroller.scrollHeight;
       }
-      if (value.source) card._sub.textContent = sourceText(value.source);
       const agent = host.querySelector(".agent-controls");
       if (agent && agent.dataset.built !== "yes") {
         agent.replaceChildren();
@@ -503,7 +511,6 @@
         const input = el(options.length ? "select" : "input");
         for (const option of options) { const element = el("option", "", option); element.value = option; input.append(element); }
         if (parameter.default_value) input.value = parameter.default_value;
-        input.addEventListener("pointerdown", () => native({ native: "text_focus", active: true }));
         inputs.set(parameter.name, input); label.append(input); fields.append(label);
       }
     }
@@ -614,17 +621,45 @@
         try { await call({ op: "dismiss", id: record.id }); collapse(); } catch (error) { showError(error); }
       }, "utility dismiss"); dismiss.title = "Remove this card from Pending"; panel.append(dismiss);
     } else if (menu === "agent") panel.append(el("div", "agent-controls", "Loading..."));
-    if (menu !== "agent") panel.append(button("Notification settings...", async () => {
-      try { await call({ op: "settings" }); menu = null; native({ native: "text_focus", active: false }); render(); }
-      catch (error) { showError(error); }
-    }, "utility menu-link"));
+    if (menu !== "agent") panel.append(button("Notification settings...", openSettings, "utility menu-link"));
     const notice = el("div", "notice menu-notice"); notice.setAttribute("role", "status"); panel.append(notice);
     overlay.append(panel); overlay.addEventListener("click", event => { if (event.target === overlay) toggleMenu(menu); }); host.append(overlay);
     updateAutoYes();
   }
+  async function openSettings() {
+    try { await call({ op: "settings" }); menu = null; native({ native: "text_focus", active: false }); render(); }
+    catch (error) { showError(error); }
+  }
+  function draggableBar(control) {
+    let origin = null, dragged = false;
+    control.addEventListener("pointerdown", event => {
+      if (event.button !== 0 || preview) return;
+      origin = { x: event.screenX, y: event.screenY }; dragged = false;
+      control.setPointerCapture(event.pointerId);
+    });
+    control.addEventListener("pointermove", event => {
+      if (!origin) return;
+      const dx = event.screenX - origin.x, dy = event.screenY - origin.y;
+      if (!dragged && Math.hypot(dx, dy) < 5) return;
+      if (!dragged) { pauseTimer(); stopAnimation(); native({ native: "drag", phase: "start" }); }
+      dragged = true; native({ native: "drag", phase: "move", dx, dy });
+    });
+    const finish = () => {
+      if (!origin) return;
+      origin = null;
+      if (dragged) native({ native: "drag", phase: "end" });
+      resumeTimer();
+    };
+    control.addEventListener("pointerup", finish);
+    control.addEventListener("pointercancel", finish);
+    control.addEventListener("lostpointercapture", finish);
+    control.addEventListener("click", event => {
+      if (dragged) { event.preventDefault(); event.stopImmediatePropagation(); dragged = false; }
+    }, true);
+  }
   function render() {
     const before = host.getBoundingClientRect();
-    const signature = JSON.stringify([current, expanded, details, allChoices, queue, history, menu, geometry, snapshot.visible, records.get(current)?.request]);
+    const signature = JSON.stringify([current, expanded, details, queue, history, menu, geometry, snapshot.visible, records.get(current)?.request]);
     const continuingAnimation = layoutAnimation && signature === renderedLayout;
     if (!continuingAnimation) stopAnimation();
     renderedLayout = signature;
@@ -642,16 +677,17 @@
       top.dataset.signature = topSignature; top.replaceChildren();
       const isOpen = Boolean(current || queue || expanded);
       const toggle = button("", () => isOpen ? collapse() : openLatest(), "bar-toggle");
+      draggableBar(toggle);
       toggle.setAttribute("aria-label", isOpen ? "Collapse notifications" : "Expand notifications"); toggle.setAttribute("aria-expanded", String(isOpen));
-      toggle.title = `${isOpen ? "Collapse" : "Open"} notifications. Right-click for settings.`; top.append(toggle);
-      const latest = button("", openLatest, "utility brand icon-button"); latest.title = "Latest notification"; latest.setAttribute("aria-label", "Latest notification");
+      toggle.title = `${isOpen ? "Collapse" : "Open"} notifications. Drag to move.`; top.append(toggle);
+      const latest = button("", openSettings, "utility brand icon-button"); latest.title = "Notification settings"; latest.setAttribute("aria-label", "Notification settings");
       const logo = el("img"); logo.src = "https://cdn.clawtab.cc/assets/app-icon.png"; logo.alt = ""; latest.append(logo); top.append(latest);
       const controls = el("div", "top-actions");
       if (current && count > 1) controls.append(iconButton("Previous notification", "M14 6l-6 6 6 6", () => navigate(-1), "nav-step"));
       controls.append(el("span", "count", current && index >= 0 ? `${index + 1} / ${count}` : `${count} pending`));
       if (current && count > 1) controls.append(iconButton("Next notification", "M10 6l6 6-6 6", () => navigate(1), "nav-step"));
       top.append(controls);
-      const list = iconButton("Notification list", "M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01", showQueue, "list-toggle");
+      const list = iconButton("Notification list", "M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01", toggleQueue, "list-toggle");
       list.setAttribute("aria-pressed", String(queue)); top.append(list);
     }
     if (queue) {

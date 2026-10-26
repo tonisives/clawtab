@@ -4,7 +4,7 @@ The daemon owns the notification queue and the macOS overlay. Cards remain avail
 
 Configure delivery, display, sound, Focus behavior, and layouts in **Settings > Notifications**. Existing local notification preferences still apply. The first card shows the message, quick choices, and a reply field with a Send button. Its colors and action buttons follow the remote app. Review, question, and permission cards stay open until answered or collapsed. Status updates collapse to a pending count after eight seconds, pausing on hover.
 
-Use the previous/next arrows to move between notifications, or Command/Ctrl + Shift + [ / ]. Each card keeps its reply draft. New requests queue without replacing the card being read, and a successful reply advances to the next request. Click the bar background to open or collapse it. The ClawTab icon opens the latest notification; the list icon opens Pending and History. Pending rows have selection checkboxes and a dismiss button. Select all includes unloaded pages, and Dismiss keeps the cards in History without sending a decision to an agent. Details widens the card and adds a larger scrollable area for the full message, attachments, and recent output. Details stays at the bottom left, including when expanded. Open agent is available on agent cards; Go to job reveals the originating job folder in Finder. Open agent selects the originating conversation in an attached terminal, including when that terminal currently shows a different tmux session.
+Use the previous/next arrows to move between notifications, or Command/Ctrl + Shift + [ / ]. Each card keeps its reply draft. New requests queue without replacing the card being read, and a successful reply advances to the next request. Click the bar background to open or collapse it. The ClawTab icon opens notification settings. The list icon opens Pending and History; click it again to return to the previous card. Drag the bar background to move it, including away from the notch. The dropped position is saved. Pending rows have selection checkboxes and a dismiss button. Select all includes unloaded pages, and Dismiss keeps the cards in History without sending a decision to an agent. Details widens the card and adds a larger scrollable area for the full message, attachments, and recent output. Details stays at the bottom left, including when expanded. Open agent is available on agent cards; Go to job reveals the originating job folder in Finder. Open agent selects the originating conversation in an attached terminal, including when that terminal currently shows a different tmux session.
 
 The black, borderless notch surface reaches the physical top edge of the screen and covers the camera cutout's lower corners. Its collapsed width matches the measured cutout. Width and height animate together while the top stays attached. Display space limits the expanded size. Reduce Motion disables size animations.
 
@@ -15,6 +15,32 @@ Send sits below the full-width reply field. Command + Enter sends the reply; sta
 Clicking another app releases keyboard focus while keeping a review card visible. Click the bar background or press Escape to fold it away without answering.
 
 Following macOS Focus requires notification and Focus access for **ClawTab Daemon**. When Focus status is unavailable or Focus is active, delivery goes through macOS notifications. macOS then applies its notification settings and Focus allowlist. Independent mode allows the overlay and its sound regardless of Focus. Selecting Both uses the native notification for sound.
+
+## Settings file
+
+The daemon reads `~/.config/clawtab/notifications.yaml` and reloads edits within a second. The desktop app is optional. Existing preferences migrate to this file when the daemon starts.
+
+```sh
+cwtctl nfn settings                       # Show the path and current values
+cwtctl nfn settings ./notifications.yaml  # Apply a YAML file
+cwtctl nfn settings --stdin < ./notifications.yaml
+cwtctl nfn settings --ui                  # Open the optional desktop settings
+```
+
+Applying a partial file preserves unspecified values. Invalid values and unknown keys are rejected. Direct edits that are temporarily invalid leave the running configuration unchanged.
+
+```yaml
+delivery: enhanced       # enhanced, native, both
+placement: notch         # notch, right, custom
+focus: follow            # follow, independent
+display: primary         # primary, built_in, pointer, or a display ID
+preview_seconds: 8       # 2–120; status updates only
+hover_expand: false
+sound: true
+position: null
+```
+
+Dragging sets `placement: custom`, records the display ID, and saves `position: {right: 100, top: 40}` in points from the display's usable top-right corner. Cards grow left and down from this anchor and stay within the display. Choose Notch or Right column to restore an automatic position.
 
 ## Submit a request
 
@@ -36,7 +62,7 @@ JSON
 
 `send` returns the persisted request, including its ID. `--wait` returns the final record and response. A wait timeout returns `wait_timed_out: true` and leaves the request pending. Set `expires_at` to a Unix timestamp in milliseconds to expire the request itself.
 
-For progress reports that need no decision, send `"template": "update"` without `--wait`. Update cards show **Update** and **Got it**, with no reply composer. Use question or permission templates when the workflow needs an answer. Sending a notification alone does not pause an agent; the workflow must wait for and consume its response.
+For progress reports that need no decision, send `"template": "update"` without `--wait`. Update cards show **Got it**, with no reply composer. Use question or permission templates when the workflow needs an answer. Sending a notification alone does not pause an agent; the workflow must wait for and consume its response.
 
 ```sh
 cwtctl nfn get REQUEST_ID
@@ -52,7 +78,7 @@ The CLI infers the originating pane from `CLAWTAB_SESSION_ID` or `TMUX_PANE`. An
 
 The default response destination, `result`, records a choice for the caller to consume. `agent_message` sends the decision and optional feedback to the originating live agent instead; it cannot be combined with `--wait`. Posting to a social network, touching a security key, granting permissions, and installing a background job remain the responsibility of the requesting workflow.
 
-An explicit request can supply up to 32 actions. The first card displays three; More choices shows the rest:
+An explicit request can supply up to 32 actions. All options appear in one horizontally scrolling row of rounded, single-line buttons:
 
 ```json
 {
@@ -67,7 +93,7 @@ An explicit request can supply up to 32 actions. The first card displays three; 
 }
 ```
 
-Agent cards have a **…** menu beside their title with **Auto-yes**, Agent controls, Dismiss, and notification settings. Job cards omit the agent menu. Right-clicking the bar also opens a settings menu; `cwtctl nfn settings` opens the Notifications tab directly. Auto-yes uses the same pane-specific setting as the remote app and tmux: future prompts from that agent are automatically answered until it is turned off. Its state stays synchronized with other clients, and stale sessions cannot toggle a replacement agent.
+Agent cards have a **…** menu beside their title with **Auto-yes**, Agent controls, Dismiss, and notification settings. Job cards omit the agent menu. Right-clicking the bar also opens a settings menu; `cwtctl nfn settings --ui` opens the Notifications tab directly. Questions and permission cards also show Auto-yes at the right of the answer row. Auto-yes uses the same pane-specific setting as the remote app and tmux: future prompts from that agent are automatically answered until it is turned off. Its state stays synchronized with other clients, and stale sessions cannot toggle a replacement agent.
 
 Action kinds are `choice` (default), `focus`, `auto_yes`, `model`, and `plugin`. Model and plugin actions use `value` for the model or installed action ID and `parameters` for string values, such as reasoning `effort`. The **… > Agent controls** menu offers Codex model selection and available installed plugin actions without opening Details.
 

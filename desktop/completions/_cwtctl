@@ -93,7 +93,7 @@ _cwtctl_complete() {
         nfn)
           if (( CURRENT == 2 )); then
             local -a sub
-            sub=('send:Submit a JSON notification' 'get:Get a request and its decision' 'wait:Wait for a decision' 'cancel:Cancel a request' 'show:Open the notification queue' 'settings:Open notification settings' 'templates:List or validate layouts')
+            sub=('send:Submit a JSON notification' 'get:Get a request and its decision' 'wait:Wait for a decision' 'cancel:Cancel a request' 'show:Open the notification queue' 'settings:Read or apply notification settings' 'templates:List or validate layouts')
             _describe -t subcmd 'nfn command' sub
           elif [[ $words[2] == templates && CURRENT == 3 ]]; then
             compadd list validate
@@ -103,6 +103,9 @@ _cwtctl_complete() {
             compadd -- --stdin --wait --timeout --template
           elif [[ $words[2] == wait ]]; then
             compadd -- --timeout
+          elif [[ $words[2] == settings ]]; then
+            compadd -- --stdin --ui
+            _files -g '*.yaml'
           fi
           ;;
         login)

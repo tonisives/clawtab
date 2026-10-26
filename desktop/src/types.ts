@@ -172,7 +172,8 @@ export interface AppSettings {
 
 export interface EnhancedNotificationSettings {
   delivery: "enhanced" | "native" | "both";
-  placement: "notch" | "right";
+  placement: "notch" | "right" | "custom";
+  position?: { right: number; top: number } | null;
   focus: "follow" | "independent";
   display: string;
   preview_seconds: number;

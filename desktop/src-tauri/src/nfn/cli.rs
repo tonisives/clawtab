@@ -1,4 +1,4 @@
-use super::{templates, NfnCommand, NfnRequest};
+use super::{settings, templates, NfnCommand, NfnRequest};
 use crate::ipc::{self, IpcCommand, IpcResponse};
 use serde_json::{json, Value};
 use std::io::Read;
@@ -31,7 +31,7 @@ pub async fn run(args: &[String]) -> Result<Value, String> {
             "cwtctl nfn templates list",
             "cwtctl nfn templates validate [FILE | --stdin]",
             "cwtctl nfn show",
-            "cwtctl nfn settings"
+            "cwtctl nfn settings [FILE.yaml | --stdin | --ui]"
         ],"response_destination":["result","agent_message"],"template_directory":templates::directory()}));
     }
     let timeout = flag_value(args, "--timeout")?
@@ -101,8 +101,31 @@ pub async fn run(args: &[String]) -> Result<Value, String> {
             call(NfnCommand::Show).await
         }
         "settings" => {
-            validate_flags(&args[1..], &[], &[])?;
-            call(NfnCommand::Settings).await
+            if args.len() > 2 {
+                return Err("Use nfn settings [FILE.yaml | --stdin | --ui]".into());
+            }
+            if args.get(1).is_some_and(|arg| arg == "--ui") {
+                return call(NfnCommand::Settings).await;
+            }
+            let fallback = crate::config::settings::AppSettings::load().enhanced_notifications;
+            let current = settings::ensure(&fallback)?;
+            let Some(input) = args.get(1) else {
+                return Ok(json!({"path":settings::path()?,"settings":current}));
+            };
+            let yaml = if input == "--stdin" {
+                stdin()?
+            } else if input.starts_with('-') {
+                return Err(format!("Unknown argument: {input}"));
+            } else {
+                std::fs::read_to_string(input).map_err(|error| error.to_string())?
+            };
+            let next = settings::parse(&yaml, &current)?;
+            settings::save(&next)?;
+            let reloaded = matches!(
+                ipc::send_command(IpcCommand::ReloadSettings).await,
+                Ok(IpcResponse::Ok)
+            );
+            Ok(json!({"path":settings::path()?,"settings":next,"reloaded":reloaded}))
         }
         "templates" => match args.get(1).map(String::as_str) {
             Some("list") => Ok(templates::list()),
