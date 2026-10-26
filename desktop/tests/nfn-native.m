@@ -13,17 +13,18 @@ static NSUInteger attempts;
 static pid_t previousApplication;
 
 static void verifyExpansion(void (^finish)(void)) {
-    NSRect compact = surface.panel.frame;
+    NSRect compact = [surface surfaceFrame], canvas = surface.panel.frame;
     [surface.web evaluateJavaScript:@"document.querySelector('.details-toggle').click()" completionHandler:^(id value, NSError *error) {
         if (error) { fprintf(stderr,"Details did not open\n"); exit(1); }
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 10), dispatch_get_main_queue(), ^{
             [surface.web evaluateJavaScript:@"document.querySelector('#surface').getBoundingClientRect().width" completionHandler:^(id drawnWidth, NSError *measureError) {
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 2), dispatch_get_main_queue(), ^{
-                NSRect expanded = surface.panel.frame;
+                NSRect expanded = [surface surfaceFrame];
                 BOOL anchored = fabs(NSMaxY(expanded) - NSMaxY(compact)) < 1;
+                BOOL fixedCanvas = NSEqualRects(canvas, surface.panel.frame);
                 BOOL animation = NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion || (!measureError &&
                     [drawnWidth doubleValue] > compact.size.width && [drawnWidth doubleValue] < expanded.size.width);
-                if (expanded.size.width < 600 || expanded.size.height <= compact.size.height + 100 || !anchored || !animation) {
+                if (expanded.size.width < 600 || expanded.size.height <= compact.size.height + 100 || !anchored || !animation || !fixedCanvas) {
                     fprintf(stderr,"Expansion failed: compact=%.0fx%.0f drawn=%.0f expanded=%.0fx%.0f anchored=%d animated=%d\n",compact.size.width,compact.size.height,[drawnWidth doubleValue],expanded.size.width,expanded.size.height,anchored,animation); exit(1);
                 }
                 [surface.web takeSnapshotWithConfiguration:nil completionHandler:^(NSImage *image, NSError *snapshotError) {
@@ -87,7 +88,7 @@ int main(int argc, const char **argv) {
                 dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC), dispatch_get_main_queue(), ^{
                     BOOL nonactivating = (surface.panel.styleMask & NSWindowStyleMaskNonactivatingPanel) != 0;
                     BOOL foregroundPreserved = NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier == previousApplication;
-                    BOOL geometry = surface.panel.frame.size.width >= 390 && surface.panel.frame.size.height > 100 && surface.panel.frame.size.height < 700;
+                    BOOL geometry = surface.surfaceWidth >= 390 && surface.surfaceHeight > 100 && surface.surfaceHeight < 700;
                     BOOL passive = !surface.panel.canBecomeKeyWindow;
                     BOOL ignoresCycle = (surface.panel.collectionBehavior & NSWindowCollectionBehaviorIgnoresCycle) != 0;
                     NSScreen *screen = [surface selectedScreen];

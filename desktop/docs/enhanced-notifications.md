@@ -8,6 +8,8 @@ Use the previous/next arrows to move between notifications, or Command/Ctrl + Sh
 
 The black, borderless notch surface reaches the physical top edge of the screen and covers the camera cutout's lower corners. Its collapsed width matches the measured cutout. Width and height animate together while the top stays attached. Display space limits the expanded size. Reduce Motion disables size animations.
 
+The native canvas stays fixed while the card animates inside it, and transparent space passes pointer events through to the app below. Text keeps its final reading width during the resize. Recent output preserves terminal colors and opens at the latest line. Scrolling up pauses following until the view returns to the bottom.
+
 Clicking another app releases keyboard focus while keeping a review card visible. Use Close or Escape to fold it away without answering.
 
 Following macOS Focus requires notification and Focus access for **ClawTab Daemon**. When Focus status is unavailable or Focus is active, delivery goes through macOS notifications. macOS then applies its notification settings and Focus allowlist. Independent mode allows the overlay and its sound regardless of Focus. Selecting Both uses the native notification for sound.

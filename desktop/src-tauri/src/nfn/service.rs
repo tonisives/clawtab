@@ -723,7 +723,7 @@ impl Service {
         let mut auto_yes = false;
         if let Some(pane) = source.pane_id.as_deref() {
             validate_source(&source)?;
-            log = crate::terminal_backend::capture_pane_history(pane, 200)?;
+            log = crate::terminal_backend::capture_pane_recent_ansi(pane, 200)?;
             auto_yes = self.ctx.auto_yes_panes.lock().contains(pane);
             let settings = self.ctx.settings.lock().clone();
             let (actions, session) = crate::agent_plugins::runtime().list_actions(pane, &settings);

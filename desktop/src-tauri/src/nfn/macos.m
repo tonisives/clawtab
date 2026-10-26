@@ -33,9 +33,11 @@ static NfnCallback callback;
 @property BOOL authorizationKnown;
 @property BOOL ready;
 @property id mouseMonitor;
+@property id localMouseMonitor;
 @property NSUInteger ticks;
 @property CGFloat surfaceWidth;
 @property CGFloat surfaceHeight;
+@property BOOL notchPlacement;
 @property NSString *lastGeometry;
 @property NSMutableDictionary<NSString *, NSDictionary *> *notchGeometry;
 @end
@@ -77,6 +79,7 @@ static void emit(NSDictionary *value) {
     self.panel.backgroundColor = NSColor.clearColor;
     self.panel.hasShadow = NO;
     self.panel.releasedWhenClosed = NO;
+    self.panel.acceptsMouseMovedEvents = YES;
     self.panel.title = @"ClawTab notifications";
     WKWebViewConfiguration *configuration = [WKWebViewConfiguration new];
     [configuration.userContentController addScriptMessageHandler:self name:@"nfn"];
@@ -99,13 +102,18 @@ static void emit(NSDictionary *value) {
         [self publishPlatform];
         if (![self allowsOverlay]) { [self.panel orderOut:nil]; [self releaseTextFocus]; }
     }];
-    self.mouseMonitor = [NSEvent addGlobalMonitorForEventsMatchingMask:NSEventMaskLeftMouseDown | NSEventMaskRightMouseDown handler:^(NSEvent *event) {
-        (void)event;
+    NSEventMask pointerEvents = NSEventMaskMouseMoved | NSEventMaskLeftMouseDragged | NSEventMaskRightMouseDragged | NSEventMaskLeftMouseDown | NSEventMaskRightMouseDown;
+    self.mouseMonitor = [NSEvent addGlobalMonitorForEventsMatchingMask:pointerEvents handler:^(NSEvent *event) {
         NfnSurface *self = weakSelf;
-        if (self.panel.visible && !NSPointInRect(NSEvent.mouseLocation, self.panel.frame)) {
+        [self updateMousePassthrough];
+        if ((event.type == NSEventTypeLeftMouseDown || event.type == NSEventTypeRightMouseDown) && self.panel.visible && !NSPointInRect(NSEvent.mouseLocation, [self surfaceFrame])) {
             [self releaseTextFocus];
             [self.web evaluateJavaScript:@"window.nfn && window.nfn.outsideClick()" completionHandler:nil];
         }
+    }];
+    self.localMouseMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:pointerEvents handler:^NSEvent *(NSEvent *event) {
+        [weakSelf updateMousePassthrough];
+        return event;
     }];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(screensChanged:) name:NSApplicationDidChangeScreenParametersNotification object:nil];
     [NSWorkspace.sharedWorkspace.notificationCenter addObserver:self selector:@selector(screensChanged:) name:NSWorkspaceActiveSpaceDidChangeNotification object:nil];
@@ -229,22 +237,36 @@ static void emit(NSDictionary *value) {
     NSDictionary *camera = [self notchForScreen:screen];
     CGFloat topInset = [camera[@"inset"] doubleValue], notchWidth = [camera[@"width"] doubleValue];
     BOOL notch = [self.settings[@"placement"] isEqual:@"notch"] && topInset > 0;
+    self.notchPlacement = notch;
     NSRect available = screen.visibleFrame;
     CGFloat overlap = notch ? topInset : 0;
-    CGFloat w = MIN(width, available.size.width - 32), h = MIN(height, available.size.height - 32);
+    // Keep WebKit's canvas still. Only the shape inside it changes size.
+    CGFloat w = MIN(680, available.size.width - 32), h = MIN(900, available.size.height - 32);
     CGFloat x = notch ? [camera[@"center"] doubleValue] - w / 2 : NSMaxX(available) - w - MIN(384, available.size.width / 3);
     x = MAX(NSMinX(available) + 16, MIN(x, NSMaxX(available) - w - 16));
     CGFloat y = notch ? NSMaxY(screen.frame) - h : NSMaxY(available) - h - 12;
     NSRect frame = NSMakeRect(x, y, w, h);
     if (!NSEqualRects(frame, self.panel.frame)) [self.panel setFrame:frame display:YES];
+    [self updateMousePassthrough];
     NSDictionary *geometry = @{@"placement":notch ? @"notch" : @"right", @"overlap":@(overlap),
-        @"notch_width":@(MAX(0, notchWidth)), @"max_width":@(available.size.width - 32),
-        @"max_height":@(available.size.height - 32), @"reduce_motion":@(NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion)};
+        @"notch_width":@(MAX(0, notchWidth)), @"max_width":@(w),
+        @"max_height":@(h), @"reduce_motion":@(NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion)};
     NSString *json = [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:geometry options:NSJSONWritingSortedKeys error:nil] encoding:NSUTF8StringEncoding];
     if (self.ready && ![json isEqual:self.lastGeometry]) {
         self.lastGeometry = json;
         [self.web evaluateJavaScript:[NSString stringWithFormat:@"window.nfn.setPlacement(%@)", json] completionHandler:nil];
     }
+}
+
+- (NSRect)surfaceFrame {
+    NSRect frame = self.panel.frame;
+    CGFloat width = MIN(self.surfaceWidth, frame.size.width), height = MIN(self.surfaceHeight, frame.size.height);
+    CGFloat x = self.notchPlacement ? NSMidX(frame) - width / 2 : NSMaxX(frame) - width;
+    return NSMakeRect(x, NSMaxY(frame) - height, width, height);
+}
+
+- (void)updateMousePassthrough {
+    self.panel.ignoresMouseEvents = !NSPointInRect(NSEvent.mouseLocation, [self surfaceFrame]);
 }
 
 - (void)releaseTextFocus {
@@ -293,7 +315,7 @@ static void emit(NSDictionary *value) {
         self.surfaceWidth = [value[@"width"] doubleValue]; self.surfaceHeight = [value[@"height"] doubleValue];
         if (self.surfaceWidth < 1 || self.surfaceHeight < 1) { [self.panel orderOut:nil]; [self releaseTextFocus]; return; }
         [self positionWidth:self.surfaceWidth height:self.surfaceHeight];
-        if ([self.snapshot[@"visible"] boolValue] && [self allowsOverlay]) [self.panel orderFrontRegardless];
+        if (!self.panel.visible && [self.snapshot[@"visible"] boolValue] && [self allowsOverlay]) [self.panel orderFrontRegardless];
     } else if ([operation isEqual:@"text_focus"]) {
         if ([value[@"active"] boolValue]) { self.panel.textFocus = YES; [self.panel makeKeyWindow]; [self.panel makeFirstResponder:self.web]; }
         else [self releaseTextFocus];

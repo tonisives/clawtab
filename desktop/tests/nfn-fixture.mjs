@@ -13,7 +13,7 @@ window.webkit = { messageHandlers: { nfn: { postMessage(value) {
   fixture.calls.push(command);
   const record = fixture.records.get(command.id);
   let response = record || {};
-  if (command.op === "context") { fixture.contextCalls++; response = { source: record?.request.source, log: "Review ready\nWaiting for input", models: ["gpt-5.6-sol"], plugins: [] }; }
+  if (command.op === "context") { fixture.contextCalls++; response = { source: record?.request.source, log: fixture.log || "Review ready\nWaiting for input", models: ["gpt-5.6-sol"], plugins: [] }; }
   if (command.op === "read") record.read_at = Date.now();
   if (command.op === "auto_yes") {
     if (fixture.autoYesError) {

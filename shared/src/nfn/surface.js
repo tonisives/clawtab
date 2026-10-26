@@ -9,7 +9,7 @@
   let historyOffset = 0, historyItems = [], pendingOffset = 50, hasMoreHistory = false, loadingQueue = false;
   let completionTimer = null, navigating = false, unseenPending = 0;
   let menu = null;
-  let geometry = {}, layoutAnimation = null, animationBounds = null, lastSize = "";
+  let geometry = {}, layoutAnimation = null, contentAnimations = [], lastSize = "", renderedLayout = "";
   const autoYesBusy = new Set();
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
@@ -48,6 +48,61 @@
     if (!result.records?.length) unseenPending = 0;
   }
   function stripAnsi(text) { return String(text || "").replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "").replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, ""); }
+  function renderAnsi(parent, raw) {
+    // Match the palette in shared/util/ansi.ts, using text nodes for terminal output.
+    const palette = ["#4a4a4a", "#ff6b6b", "#69db7c", "#ffd43b", "#74c0fc", "#da77f2", "#66d9e8", "#dee2e6", "#868e96", "#ff8787", "#8ce99a", "#ffe066", "#a5d8ff", "#e599f7", "#99e9f2", "#f8f9fa"];
+    const color256 = n => {
+      if (!Number.isInteger(n) || n < 0 || n > 255) return undefined;
+      if (n < 16) return palette[n];
+      if (n >= 232) { const gray = 8 + (n - 232) * 10; return `rgb(${gray},${gray},${gray})`; }
+      const cube = n - 16, channel = value => value ? 55 + value * 40 : 0;
+      return `rgb(${channel(Math.floor(cube / 36))},${channel(Math.floor(cube % 36 / 6))},${channel(cube % 6)})`;
+    };
+    const text = String(raw).replace(/\r\n?/g, "\n"), fragment = document.createDocumentFragment();
+    let last = 0, foreground, background, bold = false, dim = false, italic = false, underline = false, inverse = false;
+    const append = value => {
+      if (!value) return;
+      const node = el("span", "", value);
+      Object.assign(node.style, { color: inverse ? background || "#000" : foreground || "", backgroundColor: inverse ? foreground || "#dee2e6" : background || "", fontWeight: bold ? "bold" : "", opacity: dim ? ".6" : "", fontStyle: italic ? "italic" : "", textDecoration: underline ? "underline" : "" });
+      fragment.append(node);
+    };
+    for (const match of text.matchAll(/\x1b\[([0-?]*[ -/]*)([@-~])|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[ -/]*[@-~]/g)) {
+      append(text.slice(last, match.index)); last = match.index + match[0].length;
+      if (match[2] !== "m") continue;
+      const params = (match[1] || "0").split(";");
+      for (let i = 0; i < params.length; i++) {
+        const parts = params[i].split(":").map(Number), code = parts[0];
+        if (code === 0) { foreground = background = undefined; bold = dim = italic = underline = inverse = false; }
+        else if (code === 1) bold = true;
+        else if (code === 2) dim = true;
+        else if (code === 3) italic = true;
+        else if (code === 4) underline = true;
+        else if (code === 7) inverse = true;
+        else if (code === 22) bold = dim = false;
+        else if (code === 23) italic = false;
+        else if (code === 24) underline = false;
+        else if (code === 27) inverse = false;
+        else if (code === 39) foreground = undefined;
+        else if (code === 49) background = undefined;
+        else if (code >= 30 && code <= 37) foreground = palette[code - 30];
+        else if (code >= 90 && code <= 97) foreground = palette[code - 90 + 8];
+        else if (code >= 40 && code <= 47) background = palette[code - 40];
+        else if (code >= 100 && code <= 107) background = palette[code - 100 + 8];
+        else if (code === 38 || code === 48) {
+          const colon = parts.length > 1, mode = colon ? parts[1] : Number(params[i + 1]);
+          let color;
+          if (mode === 5) { color = color256(colon ? parts[2] : Number(params[i + 2])); if (!colon) i += 2; }
+          else if (mode === 2) {
+            const rgb = colon ? parts.slice(parts.length >= 6 ? 3 : 2) : params.slice(i + 2, i + 5).map(Number);
+            if (rgb.length === 3 && rgb.every(n => Number.isInteger(n) && n >= 0 && n <= 255)) color = `rgb(${rgb.join(",")})`;
+            if (!colon) i += 4;
+          }
+          if (color) { if (code === 38) foreground = color; else background = color; }
+        }
+      }
+    }
+    append(text.slice(last)); parent.replaceChildren(fragment);
+  }
   function field(request, path) {
     let value = request;
     for (const key of String(path || "body").split(".")) {
@@ -77,21 +132,29 @@
     return snapshot.templates?.templates?.find(t => t.id === record.request.template) || { layout: [{ type: "text", field: "body" }, { type: "media" }, { type: "reply" }, { type: "logs" }] };
   }
   function size() {
-    const bounds = animationBounds || host.getBoundingClientRect(), hidden = host.classList.contains("empty");
+    const bounds = host.getBoundingClientRect(), hidden = host.classList.contains("empty");
     const width = hidden ? 0 : bounds.width, height = hidden ? 0 : Math.ceil(bounds.height);
     const signature = `${width}:${height}`;
     if (signature === lastSize) return;
     lastSize = signature; native({ native: "surface", width, height });
   }
+  function stopAnimation() {
+    layoutAnimation?.cancel(); layoutAnimation = null;
+    contentAnimations.forEach(animation => animation.cancel()); contentAnimations = [];
+    for (const node of host.children) node.style.width = "";
+  }
   function animateLayout(before) {
-    layoutAnimation?.cancel(); layoutAnimation = null; animationBounds = null;
     if (host.classList.contains("empty")) { size(); return; }
     const after = host.getBoundingClientRect();
     if (!reducedMotion.matches && !geometry.reduce_motion &&
         (Math.abs(before.width - after.width) > 1 || Math.abs(before.height - after.height) > 1)) {
-      // Keep one transparent native viewport around both sizes while the shape animates.
-      // Shrinking the viewport on every frame can stall WebKit underneath the notch.
-      animationBounds = { width: Math.max(before.width, after.width), height: Math.max(before.height, after.height) };
+      // Keep text at its final reading width while the surrounding shape grows.
+      // Reflowing every animation frame makes the controls and output jump.
+      for (const node of host.querySelectorAll(":scope > .top, :scope > .card, :scope > .queue")) {
+        node.style.width = `${after.width - (placement === "notch" ? 0 : 2)}px`;
+        const fade = node.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 280, delay: 60, fill: "backwards" });
+        fade.pause(); contentAnimations.push(fade);
+      }
       const opening = !before.height;
       const pillWidth = placement === "notch" ? (geometry.notch_width || 220) : 224;
       const pillHeight = placement === "notch" ? (geometry.overlap || 38) + 32 : 36;
@@ -107,10 +170,19 @@
       function advance() {
         if (layoutAnimation !== animation || animation.playState === "finished") return;
         animation.currentTime = Math.min(360, performance.now() - started);
+        contentAnimations.forEach(fade => { fade.currentTime = animation.currentTime; });
         if (animation.currentTime >= 360) animation.finish(); else setTimeout(advance, 16);
       }
       advance();
-      animation.finished.then(() => { if (layoutAnimation === animation) { layoutAnimation = null; animationBounds = null; size(); } }).catch(() => {});
+      animation.finished.then(() => {
+        if (layoutAnimation === animation) {
+          layoutAnimation = null;
+          contentAnimations.forEach(fade => fade.cancel()); contentAnimations = [];
+          for (const node of host.children) node.style.width = "";
+          if (card?._followLogs) card._content.scrollTop = card._content.scrollHeight;
+          size();
+        }
+      }).catch(() => {});
     }
     size();
   }
@@ -255,6 +327,7 @@
     const message = el("div", "message", messageText(record)); node.append(message);
     const layout = template(record).layout, primitives = {};
     const content = el("div", "details-content"); node._content = content;
+    content.addEventListener("scroll", () => { node._followLogs = content.scrollHeight - content.scrollTop - content.clientHeight < 30; });
     if (details && hasBlock(layout, "media") && record.request.media?.length) {
       const media = el("div", "media");
       record.request.media.forEach((item, index) => {
@@ -352,9 +425,12 @@
     try {
       const value = await call({ op: "context", id });
       if (id !== current || !card) return;
-      if (card._logs && card._logs.textContent !== stripAnsi(value.log)) {
-        const logs = card._logs, atBottom = logs.scrollHeight - logs.scrollTop - logs.clientHeight < 30;
-        logs.textContent = stripAnsi(value.log) || "No output yet"; if (atBottom) logs.scrollTop = logs.scrollHeight;
+      if (card._logs && card._logs._raw !== value.log) {
+        const logs = card._logs, scroller = card._content;
+        const atBottom = logs._raw == null || scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 30;
+        logs._raw = value.log; renderAnsi(logs, value.log || "No output yet");
+        card._followLogs = atBottom;
+        if (atBottom) scroller.scrollTop = scroller.scrollHeight;
       }
       if (value.source) card._sub.textContent = sourceText(value.source);
       const agent = host.querySelector(".agent-controls");
@@ -452,7 +528,10 @@
   }
   function render() {
     const before = host.getBoundingClientRect();
-    layoutAnimation?.cancel(); layoutAnimation = null; animationBounds = null;
+    const signature = JSON.stringify([current, expanded, details, allChoices, queue, history, menu, geometry, snapshot.visible, records.get(current)?.request]);
+    const continuingAnimation = layoutAnimation && signature === renderedLayout;
+    if (!continuingAnimation) stopAnimation();
+    renderedLayout = signature;
     const count = pendingCount();
     if (!preview && (!snapshot.visible || (!current && !queue && !count))) { host.className = "empty"; host.replaceChildren(); renderedId = null; card = null; stopContext(); size(); return; }
     host.className = `${placement} ${expanded ? "expanded" : !current ? "pill" : ""} ${details ? "details-open" : ""}`;
@@ -496,7 +575,7 @@
       updateCard();
     } else { host.querySelector(".card")?.remove(); host.querySelector(".queue")?.remove(); renderedId = null; card = null; }
     const agentButton = card?.querySelector(".agent-toggle"); agentButton?.setAttribute("aria-expanded", String(menu === "agent"));
-    renderMenu(); animateLayout(before);
+    renderMenu(); if (!continuingAnimation) animateLayout(before);
   }
   function receive(value) {
     if (value.type === "response") {
