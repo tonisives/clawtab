@@ -46,7 +46,7 @@ int main(int argc, const char **argv) {
                 NSMutableDictionary *snapshot = [[NSJSONSerialization JSONObjectWithData:[value dataUsingEncoding:NSUTF8StringEncoding] options:NSJSONReadingMutableContainers error:nil] mutableCopy];
                 snapshot[@"settings"] = @{@"delivery":@"enhanced",@"focus":@"independent",@"placement":@"notch",@"display":@"primary",@"preview_seconds":@8};
                 [surface push:snapshot];
-                [surface.web evaluateJavaScript:@"document.querySelector('#surface').dispatchEvent(new MouseEvent('mouseenter')); [...document.querySelectorAll('button')].find(b=>b.textContent.startsWith('Expand')).click()" completionHandler:nil];
+                [surface.web evaluateJavaScript:@"document.querySelector('#surface').dispatchEvent(new MouseEvent('mouseenter'))" completionHandler:nil];
                 dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC), dispatch_get_main_queue(), ^{
                     BOOL nonactivating = (surface.panel.styleMask & NSWindowStyleMaskNonactivatingPanel) != 0;
                     BOOL foregroundPreserved = NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier == previousApplication;

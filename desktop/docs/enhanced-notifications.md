@@ -2,7 +2,9 @@
 
 The daemon owns the notification queue and the macOS overlay. Cards remain available while the desktop app is closed. On macOS 12 or later, cards appear below the notch on the selected display, or in a right column on displays without a notch. Settings also allow the right column on every display.
 
-Configure delivery, display, sound, Focus behavior, and layouts in **Settings > General > Notifications**. Existing local notification preferences still apply. The default preview lasts eight seconds, pauses on hover or text input, then collapses to a pending count. New requests queue while a card is open. Expand a card to see all choices, reply, inspect recent output, focus the originating agent, or run agent actions.
+Configure delivery, display, sound, Focus behavior, and layouts in **Settings > General > Notifications**. Existing local notification preferences still apply. The first card shows the message, quick choices, and a reply field with a Send button. Its colors and action buttons follow the remote app. The default preview lasts eight seconds, pauses on hover or text input, then collapses to a pending count.
+
+Use the previous/next arrows to move between notifications, or Command/Ctrl + Shift + [ / ]. Each card keeps its reply draft. New requests queue without replacing the card being read, and a successful reply advances to the next request. The position count opens the full list; History is available there. Details opens the full message, attachments, and recent output. Agent controls are behind a separate button inside Details. Open agent returns to the originating conversation.
 
 Following macOS Focus requires notification and Focus access for **ClawTab Daemon**. When Focus status is unavailable or Focus is active, delivery goes through macOS notifications. macOS then applies its notification settings and Focus allowlist. Independent mode allows the overlay and its sound regardless of Focus. Selecting Both uses the native notification for sound.
 
@@ -39,7 +41,7 @@ The CLI infers the originating pane from `CLAWTAB_SESSION_ID` or `TMUX_PANE`. An
 
 The default response destination, `result`, records a choice for the caller to consume. `agent_message` sends the decision and optional feedback to the originating live agent instead; it cannot be combined with `--wait`. Posting to a social network, touching a security key, granting permissions, and installing a background job remain the responsibility of the requesting workflow.
 
-An explicit request can supply up to 32 actions. The compact card displays three and expansion displays the rest:
+An explicit request can supply up to 32 actions. The first card displays three; More choices shows the rest:
 
 ```json
 {
@@ -54,7 +56,7 @@ An explicit request can supply up to 32 actions. The compact card displays three
 }
 ```
 
-Action kinds are `choice` (default), `focus`, `auto_yes`, `model`, and `plugin`. Model and plugin actions use `value` for the model or installed action ID and `parameters` for string values, such as reasoning `effort`. Expanded agent controls also offer auto-yes, Codex model selection, and available installed plugin actions.
+Action kinds are `choice` (default), `focus`, `auto_yes`, `model`, and `plugin`. Model and plugin actions use `value` for the model or installed action ID and `parameters` for string values, such as reasoning `effort`. Details > Agent controls also offers auto-yes, Codex model selection, and available installed plugin actions.
 
 ## Custom layouts
 
@@ -86,7 +88,7 @@ actions:
     label: Reject
 ```
 
-Layout primitives are `row`, `column`, `text`, `metadata`, `media`, `command`, `diff`, `plan`, `choices`, `reply`, and `logs`. Text and code blocks bind to fields such as `body` or `data.caption`. Blocks can have a label. Layouts contain data and primitives; executable HTML and JavaScript are rejected.
+Layout primitives are `row`, `column`, `text`, `metadata`, `media`, `command`, `diff`, `plan`, `choices`, `reply`, and `logs`. Text and code blocks bind to fields such as `body` or `data.caption`. Blocks can have a label. Custom content follows the layout inside Details; choices and reply stay on the first card so they are always easy to reach. Layouts contain data and primitives; executable HTML and JavaScript are rejected.
 
 ## Request lifecycle
 

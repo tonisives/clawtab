@@ -12,9 +12,13 @@ window.webkit = { messageHandlers: { nfn: { postMessage(value) {
   fixture.calls.push(command);
   const record = fixture.records.get(command.id);
   let response = record || {};
-  if (command.op === "context") { fixture.contextCalls++; response = { source: record?.request.source, log: "Review ready\nWaiting for input", models: [], plugins: [] }; }
+  if (command.op === "context") { fixture.contextCalls++; response = { source: record?.request.source, log: "Review ready\nWaiting for input", models: ["gpt-5.6-sol"], plugins: [] }; }
   if (command.op === "read") record.read_at = Date.now();
   if (command.op === "respond") {
+    if (fixture.responseError) {
+      setTimeout(() => window.nfn.receive({ type: "response", token, error: fixture.responseError }), 1);
+      return;
+    }
     record.status = "resolved";
     record.response = { action_id: command.action_id, text: command.text };
   }
@@ -23,7 +27,7 @@ window.webkit = { messageHandlers: { nfn: { postMessage(value) {
 } } } };
 window.fixture.record = (id, actions = 4) => ({
   id, status: "pending", read_at: null, dismissed_at: null, created_at: Date.now(),
-  request: { title: "Review the launch post", body: "The launch post is ready. Review the changes and decide how to continue.\n<img src=x onerror=window.unsafeMarkup=true>", template: "review", source: { task: "Review the launch post", provider: "codex", branch: "launch", cwd: "~/projects/clawtab" },
+  request: { title: "Review the launch post", body: "The launch post is ready. Review the changes and decide how to continue.\n<img src=x onerror=window.unsafeMarkup=true>", template: "review", response_destination: "agent_message", source: { pane_id: "%test", task: "Review the launch post", provider: "codex", branch: "launch", cwd: "~/projects/clawtab" },
     data: { diff: "- Previous caption\n+ New launch caption", plan: "Review the caption\nApprove publication" },
     media: [], actions: ["Approve", "Request changes", "Reject", "Later"].slice(0, actions).map((label, i) => ({ id: String(i), label, kind: "choice" })) }
 });
