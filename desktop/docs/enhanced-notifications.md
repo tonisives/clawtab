@@ -2,7 +2,7 @@
 
 The daemon owns the notification queue and the macOS overlay. Cards remain available while the desktop app is closed. On macOS 12 or later, cards appear below the notch on the selected display, or in a right column on displays without a notch. Settings also allow the right column on every display.
 
-Configure delivery, display, sound, Focus behavior, and layouts in **Settings > Notifications**. Existing local notification preferences still apply. The first card shows the message, quick choices, and a reply field with a Send button. Its colors and action buttons follow the remote app. Review, question, and permission cards stay open until answered or collapsed. Status updates collapse to a pending count after eight seconds, pausing on hover.
+Click the ClawTab icon to configure position, display, delivery, sound, and Focus inside the notification surface. Changes save immediately to `notifications.yaml`. The desktop app also offers **Settings > Notifications** and layout previews. The first card shows the message, quick choices, and a reply field with a Send button. Its colors and action buttons follow the remote app. Review, question, and permission cards stay open until answered or collapsed. Status updates collapse to a pending count after eight seconds, pausing on hover.
 
 Use the previous/next arrows to move between notifications, or Command/Ctrl + Shift + [ / ]. Each card keeps its reply draft. New requests queue without replacing the card being read, and a successful reply advances to the next request. Click the bar background to open or collapse it. The ClawTab icon opens notification settings. The list icon opens Pending and History; click it again to return to the previous card. Drag the bar background to move it, including away from the notch. The dropped position is saved. Pending rows have selection checkboxes and a dismiss button. Select all includes unloaded pages, and Dismiss keeps the cards in History without sending a decision to an agent. Details widens the card and adds a larger scrollable area for the full message, attachments, and recent output. Details stays at the bottom left, including when expanded. Open agent is available on agent cards; Go to job reveals the originating job folder in Finder. Open agent selects the originating conversation in an attached terminal, including when that terminal currently shows a different tmux session.
 
@@ -23,10 +23,11 @@ Following macOS Focus requires notification and Focus access for **ClawTab Daemo
 The daemon reads `~/.config/clawtab/notifications.yaml` and reloads edits within a second. The desktop app is optional. Existing preferences migrate to this file when the daemon starts.
 
 ```sh
-cwtctl nfn settings                       # Show the path and current values
+cwtctl nfn settings                       # Open settings in the notification surface
+cwtctl nfn settings --json                # Show the path and current values
 cwtctl nfn settings ./notifications.yaml  # Apply a YAML file
 cwtctl nfn settings --stdin < ./notifications.yaml
-cwtctl nfn settings --ui                  # Open the optional desktop settings
+cwtctl nfn settings --ui                  # Also opens the notification settings surface
 ```
 
 Applying a partial file preserves unspecified values. Invalid values and unknown keys are rejected. Direct edits that are temporarily invalid leave the running configuration unchanged.

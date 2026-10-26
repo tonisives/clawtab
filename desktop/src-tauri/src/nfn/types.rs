@@ -286,6 +286,9 @@ pub enum NfnCommand {
     },
     Show,
     Settings,
+    SaveSettings {
+        patch: Value,
+    },
     SetPosition {
         display: String,
         position: NfnPosition,

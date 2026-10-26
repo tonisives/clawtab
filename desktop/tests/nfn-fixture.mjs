@@ -5,14 +5,23 @@ import { fileURLToPath } from "node:url";
 const root = new URL("../../shared/src/nfn/", import.meta.url);
 const read = name => readFileSync(new URL(name, root), "utf8");
 const setup = String.raw`
-window.fixture = { calls: [], records: new Map(), contextCalls: 0, autoYesPanes: new Set(), surfaces: [] };
+window.fixture = { calls: [], records: new Map(), contextCalls: 0, autoYesPanes: new Set(), surfaces: [], nativeEvents: [], settings: { delivery: "enhanced", placement: "notch", display: "primary", focus: "follow", preview_seconds: 8, hover_expand: false, sound: true, position: null } };
 window.webkit = { messageHandlers: { nfn: { postMessage(value) {
+  if (value.native) window.fixture.nativeEvents.push(value);
   if (value.native === "surface") window.fixture.surfaces.push({ ...value, at: performance.now() });
   if (!value.command) return;
   const { command, token } = value, fixture = window.fixture;
   fixture.calls.push(command);
   const record = fixture.records.get(command.id);
   let response = record || {};
+  if (command.op === "save_settings") {
+    if (fixture.settingsError) {
+      setTimeout(() => window.nfn.receive({ type: "response", token, error: fixture.settingsError }), 1);
+      return;
+    }
+    fixture.settings = { ...fixture.settings, ...command.patch };
+    response = { settings: fixture.settings };
+  }
   if (command.op === "context") { fixture.contextCalls++; response = { source: record?.request.source, log: fixture.log || "Review ready\nWaiting for input", models: ["gpt-5.6-sol"], plugins: [] }; }
   if (command.op === "read") record.read_at = Date.now();
   if (command.op === "auto_yes") {
@@ -49,7 +58,7 @@ window.fixture.record = (id, actions = 4) => ({
     media: [], actions: ["Approve", "Request changes", "Reject", "Later"].slice(0, actions).map((label, i) => ({ id: String(i), label, kind: "choice" })) }
 });
 window.fixture.snapshot = (arrival = null) => ({ type: "snapshot", visible: true, preview: false, records: [...window.fixture.records.values()].filter(r => r.status === "pending" && !r.dismissed_at).slice(0,50), pending_count: [...window.fixture.records.values()].filter(r => r.status === "pending" && !r.dismissed_at).length, arrival, auto_yes_panes: [...window.fixture.autoYesPanes],
-  settings: { preview_seconds: 8, hover_expand: false }, templates: { templates: [{ id: "review", layout: [{ type: "text", field: "body" }, { type: "row", children: [{ type: "diff", field: "data.diff" }, { type: "plan", field: "data.plan" }] }, { type: "reply" }, { type: "choices" }, { type: "logs" }] }] } });
+  settings: window.fixture.settings, platform: { displays: [{id:"test-display",name:"Test display"}] }, templates: { templates: [{ id: "review", layout: [{ type: "text", field: "body" }, { type: "row", children: [{ type: "diff", field: "data.diff" }, { type: "plan", field: "data.plan" }] }, { type: "reply" }, { type: "choices" }, { type: "logs" }] }] } });
 `;
 const ready = String.raw`
 window.fixture.records.set("first", window.fixture.record("first"));

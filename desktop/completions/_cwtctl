@@ -104,7 +104,7 @@ _cwtctl_complete() {
           elif [[ $words[2] == wait ]]; then
             compadd -- --timeout
           elif [[ $words[2] == settings ]]; then
-            compadd -- --stdin --ui
+            compadd -- --stdin --ui --json
             _files -g '*.yaml'
           fi
           ;;

@@ -406,8 +406,25 @@ impl Service {
                 return Ok(json!({}));
             }
             NfnCommand::Settings => {
-                open_notification_settings().await?;
+                if cfg!(target_os = "macos") {
+                    self.push(None, false);
+                    native::push(json!({"type":"settings"}));
+                } else {
+                    open_notification_settings().await?;
+                }
                 return Ok(json!({"opened":true}));
+            }
+            NfnCommand::SaveSettings { patch } => {
+                let next = {
+                    let mut config = self.ctx.settings.lock();
+                    let current = settings::load(&config.enhanced_notifications)?;
+                    let next = settings::parse(&patch.to_string(), &current)?;
+                    settings::save(&next)?;
+                    config.enhanced_notifications = next.clone();
+                    next
+                };
+                self.changed();
+                return Ok(json!({"settings":next}));
             }
             NfnCommand::SetPosition { display, position } => {
                 let mut config = self.ctx.settings.lock();

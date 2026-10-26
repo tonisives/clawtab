@@ -31,7 +31,7 @@ pub async fn run(args: &[String]) -> Result<Value, String> {
             "cwtctl nfn templates list",
             "cwtctl nfn templates validate [FILE | --stdin]",
             "cwtctl nfn show",
-            "cwtctl nfn settings [FILE.yaml | --stdin | --ui]"
+            "cwtctl nfn settings [FILE.yaml | --stdin | --json | --ui]"
         ],"response_destination":["result","agent_message"],"template_directory":templates::directory()}));
     }
     let timeout = flag_value(args, "--timeout")?
@@ -102,16 +102,17 @@ pub async fn run(args: &[String]) -> Result<Value, String> {
         }
         "settings" => {
             if args.len() > 2 {
-                return Err("Use nfn settings [FILE.yaml | --stdin | --ui]".into());
+                return Err("Use nfn settings [FILE.yaml | --stdin | --json | --ui]".into());
             }
-            if args.get(1).is_some_and(|arg| arg == "--ui") {
+            if args.get(1).is_none_or(|arg| arg == "--ui") {
                 return call(NfnCommand::Settings).await;
             }
             let fallback = crate::config::settings::AppSettings::load().enhanced_notifications;
             let current = settings::ensure(&fallback)?;
-            let Some(input) = args.get(1) else {
+            let input = &args[1];
+            if input == "--json" {
                 return Ok(json!({"path":settings::path()?,"settings":current}));
-            };
+            }
             let yaml = if input == "--stdin" {
                 stdin()?
             } else if input.starts_with('-') {

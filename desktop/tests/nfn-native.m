@@ -13,6 +13,31 @@ static NSUInteger attempts;
 static pid_t previousApplication;
 static BOOL positionSaved;
 
+static void verifyInlineSettings(void (^finish)(void)) {
+    [surface.web evaluateJavaScript:@"window.nfn.collapse()" completionHandler:^(id value, NSError *error) {
+        if (error) { fprintf(stderr, "Could not reset the notification fixture\n"); exit(1); }
+        NSMutableDictionary *snapshot = [surface.snapshot mutableCopy];
+        snapshot[@"visible"] = @NO; snapshot[@"records"] = @[]; snapshot[@"pending_count"] = @0;
+        snapshot[@"settings"] = @{@"delivery":@"native", @"focus":@"follow", @"placement":@"right", @"display":@"primary"};
+        [surface push:snapshot];
+        [surface push:@{@"type":@"settings"}];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 2), dispatch_get_main_queue(), ^{
+            [surface.web evaluateJavaScript:@"Boolean(document.querySelector('.notification-settings'))" completionHandler:^(id visible, NSError *viewError) {
+                if (viewError || ![visible boolValue] || !surface.panel.visible || !surface.settingsVisible) {
+                    fprintf(stderr, "Inline settings did not open with no cards and native delivery\n"); exit(1);
+                }
+                [surface.web evaluateJavaScript:@"[...document.querySelectorAll('.notification-settings button')].find(button => button.textContent === 'Done').click()" completionHandler:^(id closed, NSError *closeError) {
+                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 5), dispatch_get_main_queue(), ^{
+                        if (closeError || surface.settingsVisible || surface.panel.visible) { fprintf(stderr, "Closing empty settings left the panel visible\n"); exit(1); }
+                        printf("Native inline settings checks passed: opens with no pending cards or overlay delivery, then closes completely.\n");
+                        finish();
+                    });
+                }];
+            }];
+        });
+    }];
+}
+
 static void verifyDragging(void (^finish)(void)) {
     NSRect before = [surface surfaceFrame];
     [surface drag:@{@"phase":@"start"}];
@@ -143,7 +168,7 @@ int main(int argc, const char **argv) {
                         if (geometryOnly) {
                             verifyExpansion(^{
                                 printf("Native geometry checks passed: passive arrival, notch overlap, window cycling excluded, animated expansion and fixed top anchor.\n");
-                                verifyDragging(^{ clawtab_nfn_stop(); });
+                                verifyDragging(^{ verifyInlineSettings(^{ clawtab_nfn_stop(); }); });
                             });
                             return;
                         }
@@ -155,7 +180,7 @@ int main(int argc, const char **argv) {
                                     clawtab_nfn_activate(previousApplication);
                                     verifyExpansion(^{
                                         printf("Native checks passed: platform JSON booleans, passive panel, foreground preserved, notch overlap, window cycling excluded, reply focus, Command-A selection, animated expansion and fixed top anchor. Screenshots: /tmp/clawtab-nfn-native.png, /tmp/clawtab-nfn-expanded.png\n");
-                                        verifyDragging(^{ clawtab_nfn_stop(); });
+                                        verifyDragging(^{ verifyInlineSettings(^{ clawtab_nfn_stop(); }); });
                                     });
                                 });
                             });

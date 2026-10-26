@@ -60,6 +60,9 @@ static NfnCallback callback;
 @property NSMutableDictionary<NSString *, NSDictionary *> *notchGeometry;
 @property BOOL dragging;
 @property NSPoint dragAnchor;
+@property BOOL settingsVisible;
+@property BOOL pointerDown;
+@property NSDictionary *pendingPresentation;
 @end
 
 static NfnSurface *surface;
@@ -122,9 +125,10 @@ static void emit(NSDictionary *value) {
         [self publishPlatform];
         if (![self allowsOverlay]) { [self.panel orderOut:nil]; [self releaseTextFocus]; }
     }];
-    NSEventMask pointerEvents = NSEventMaskMouseMoved | NSEventMaskLeftMouseDragged | NSEventMaskRightMouseDragged | NSEventMaskLeftMouseDown | NSEventMaskRightMouseDown;
+    NSEventMask pointerEvents = NSEventMaskMouseMoved | NSEventMaskLeftMouseDragged | NSEventMaskRightMouseDragged | NSEventMaskLeftMouseDown | NSEventMaskRightMouseDown | NSEventMaskLeftMouseUp;
     self.mouseMonitor = [NSEvent addGlobalMonitorForEventsMatchingMask:pointerEvents handler:^(NSEvent *event) {
         NfnSurface *self = weakSelf;
+        if (event.type == NSEventTypeLeftMouseUp) self.pointerDown = NO;
         [self updateMousePassthrough];
         if ((event.type == NSEventTypeLeftMouseDown || event.type == NSEventTypeRightMouseDown) && self.panel.visible && !NSPointInRect(NSEvent.mouseLocation, [self surfaceFrame])) {
             [self releaseTextFocus];
@@ -132,6 +136,8 @@ static void emit(NSDictionary *value) {
         }
     }];
     self.localMouseMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:pointerEvents handler:^NSEvent *(NSEvent *event) {
+        if (event.type == NSEventTypeLeftMouseDown && event.window == weakSelf.panel) weakSelf.pointerDown = YES;
+        if (event.type == NSEventTypeLeftMouseUp) weakSelf.pointerDown = NO;
         [weakSelf updateMousePassthrough];
         return event;
     }];
@@ -177,6 +183,7 @@ static void emit(NSDictionary *value) {
 }
 
 - (BOOL)allowsOverlay {
+    if (self.settingsVisible) return YES;
     if ([self.settings[@"delivery"] isEqual:@"native"]) return NO;
     if ([self.settings[@"focus"] isEqual:@"independent"]) return YES;
     id focused = [self focusStatus];
@@ -327,7 +334,7 @@ static void emit(NSDictionary *value) {
 }
 
 - (void)updateMousePassthrough {
-    self.panel.ignoresMouseEvents = !NSPointInRect(NSEvent.mouseLocation, [self surfaceFrame]);
+    self.panel.ignoresMouseEvents = !self.pointerDown && !self.dragging && !NSPointInRect(NSEvent.mouseLocation, [self surfaceFrame]);
 }
 
 - (void)releaseTextFocus {
@@ -338,6 +345,10 @@ static void emit(NSDictionary *value) {
 }
 
 - (void)push:(NSDictionary *)value {
+    if ([value[@"type"] isEqual:@"settings"]) {
+        self.settingsVisible = YES;
+        if (!self.ready) self.pendingPresentation = value;
+    }
     if ([value[@"type"] isEqual:@"snapshot"]) {
         self.snapshot = value;
         self.settings = value[@"settings"] ?: @{};
@@ -351,7 +362,7 @@ static void emit(NSDictionary *value) {
             }
         }
         [self requestFocusIfNeeded];
-        if (![value[@"visible"] boolValue] || ![self allowsOverlay]) { [self.panel orderOut:nil]; [self releaseTextFocus]; }
+        if (!self.settingsVisible && (![value[@"visible"] boolValue] || ![self allowsOverlay])) { [self.panel orderOut:nil]; [self releaseTextFocus]; }
         if ([value[@"sound"] boolValue] && [value[@"visible"] boolValue] && [self allowsOverlay]) {
             if ([self.settings[@"focus"] isEqual:@"independent"] || self.soundAllowed) [[NSSound soundNamed:@"Glass"] play];
         }
@@ -365,6 +376,7 @@ static void emit(NSDictionary *value) {
 - (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {
     self.ready = YES;
     if (self.snapshot) [self push:self.snapshot];
+    if (self.pendingPresentation) { NSDictionary *value = self.pendingPresentation; self.pendingPresentation = nil; [self push:value]; }
     [self publishPlatform];
 }
 
@@ -376,7 +388,11 @@ static void emit(NSDictionary *value) {
         self.surfaceWidth = [value[@"width"] doubleValue]; self.surfaceHeight = [value[@"height"] doubleValue];
         if (self.surfaceWidth < 1 || self.surfaceHeight < 1) { [self.panel orderOut:nil]; [self releaseTextFocus]; return; }
         [self positionWidth:self.surfaceWidth height:self.surfaceHeight];
-        if (!self.panel.visible && [self.snapshot[@"visible"] boolValue] && [self allowsOverlay]) [self.panel orderFrontRegardless];
+        if (!self.panel.visible && (self.settingsVisible || [self.snapshot[@"visible"] boolValue]) && [self allowsOverlay]) [self.panel orderFrontRegardless];
+    } else if ([operation isEqual:@"settings"]) {
+        self.settingsVisible = [value[@"active"] boolValue];
+        if (self.settingsVisible) [self.panel orderFrontRegardless];
+        else if (![self.snapshot[@"visible"] boolValue] || ![self allowsOverlay]) { [self.panel orderOut:nil]; [self releaseTextFocus]; }
     } else if ([operation isEqual:@"drag"]) {
         [self drag:value];
     } else if ([operation isEqual:@"text_focus"]) {

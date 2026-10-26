@@ -10,6 +10,7 @@
   let completionTimer = null, navigating = false, unseenPending = 0;
   let menu = null;
   let queueReturnId = null;
+  let settingsOpen = false, settingsBusy = false, settingsReturnExpanded = false;
   let geometry = {}, layoutAnimation = null, contentAnimations = [], lastSize = "", renderedLayout = "";
   const autoYesBusy = new Set();
   const selectedNotifications = new Set();
@@ -165,9 +166,9 @@
         (Math.abs(before.width - after.width) > 1 || Math.abs(before.height - after.height) > 1)) {
       // Keep text at its final reading width while the surrounding shape grows.
       // Reflowing every animation frame makes the controls and output jump.
-      for (const node of host.querySelectorAll(":scope > .top, :scope > .card, :scope > .queue")) {
+      for (const node of host.querySelectorAll(":scope > .top, :scope > .card, :scope > .queue, :scope > .notification-settings")) {
         node.style.width = `${after.width - (placement === "notch" ? 0 : 2)}px`;
-        if (fadeContent) {
+        if (fadeContent && !node.classList.contains("top")) {
           const fade = node.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 280, delay: 60, fill: "backwards" });
           fade.pause(); contentAnimations.push(fade);
         }
@@ -219,11 +220,13 @@
     timerStarted = performance.now(); collapseTimer = setTimeout(collapse, Math.max(100, remaining));
   }
   function collapse() {
+    leaveSettings();
     clearTimeout(completionTimer); pauseTimer(); stopContext(); expanded = false; details = false; queue = false; current = null; focused = false; menu = null;
     native({ native: "text_focus", active: false }); render();
   }
   function openRecord(id) {
     if (busy) return;
+    leaveSettings();
     const replyFocused = card?._reply && document.activeElement === card._reply;
     clearTimeout(completionTimer); pauseTimer(); stopContext(); current = id; queueReturnId = id; expanded = true; details = false; queue = false; renderedId = null; menu = null;
     call({ op: "read", id }).catch(showError); render();
@@ -252,7 +255,7 @@
     finally { navigating = false; }
   }
   function startContext() {
-    if (!details || !current || queue || document.hidden) return;
+    if (!details || !current || queue || settingsOpen || document.hidden) return;
     refreshContext();
     if (!logTimer) logTimer = setInterval(refreshContext, 1000);
   }
@@ -265,10 +268,12 @@
   }
   function showQueue() {
     if (busy) return;
+    leaveSettings();
     if (current) queueReturnId = current;
     clearTimeout(completionTimer); pauseTimer(); stopContext(); expanded = true; details = false; queue = true; history = false; current = null; renderedId = null; menu = null; selectedNotifications.clear(); queueError = ""; render();
   }
   async function toggleQueue() {
+    if (settingsOpen) { showQueue(); return; }
     if (!queue) { showQueue(); return; }
     if (queueReturnId) {
       try {
@@ -355,7 +360,7 @@
     const heading = el("div", "heading"); heading.append(el("h1", "", record.request.title));
     const status = el("span", "status"); heading.append(status); node._status = status;
     if (hasAgent(record)) {
-      const options = button("…", () => toggleMenu("options"), "utility options-toggle");
+      const options = iconButton("Notification options", "M5 12h.01M12 12h.01M19 12h.01", () => toggleMenu("options"), "options-toggle");
       options.title = "Agent options"; options.setAttribute("aria-label", "Notification options"); options.setAttribute("aria-haspopup", "dialog"); node._options = options; heading.append(options);
     }
     node.append(heading);
@@ -470,7 +475,7 @@
     updateAutoYes();
   }
   async function refreshContext() {
-    if ((!details && menu !== "agent") || queue || !current || contextBusy) return;
+    if ((!details && menu !== "agent") || queue || settingsOpen || !current || contextBusy) return;
     const id = current; contextBusy = true;
     try {
       const value = await call({ op: "context", id });
@@ -487,6 +492,7 @@
       }
       const agent = host.querySelector(".agent-controls");
       if (agent && agent.dataset.built !== "yes") {
+        const beforeMenu = host.getBoundingClientRect();
         agent.replaceChildren();
         agent.dataset.built = "yes";
         if (value.source?.provider === "codex" && value.models?.length) {
@@ -498,6 +504,7 @@
         }
         buildPlugins(agent, value.plugins || [], value.models || [], id);
         if (!agent.childElementCount) agent.append(el("div", "meta", "No controls available"));
+        fitMenu(); animateLayout(beforeMenu, false);
       }
       if (before) animateLayout(before, false);
     } catch (error) { if (id === current) { if (card?._logs) card._logs.textContent = String(error.message || error); showError(error); } }
@@ -520,7 +527,7 @@
         inputs.set(parameter.name, input); label.append(input); fields.append(label);
       }
     }
-    select.addEventListener("change", renderFields); renderFields();
+    select.addEventListener("change", () => { const before = host.getBoundingClientRect(); renderFields(); fitMenu(); animateLayout(before, false); }); renderFields();
     group.append(select, fields, button("Run action", async () => {
       const parameters = Object.fromEntries([...inputs].map(([key, input]) => [key, input.value]));
       try { const value = await call({ op: "plugin", id, action_id: select.value, parameters }); if (card?._notice) card._notice.textContent = value.run?.progress || "Action started"; } catch (error) { showError(error); }
@@ -549,18 +556,31 @@
     finally { bulkBusy = false; render(); }
   }
   function renderQueue() {
-    const list = el("div", "queue");
-    const items = history ? historyItems : pendingRecords();
-    const segments = el("div", "segments"); segments.setAttribute("role", "tablist"); segments.setAttribute("aria-label", "Notifications");
-    for (const [label, isHistory] of [["Pending", false], ["History", true]]) {
-      const tab = button(label, () => {
-        if (history === isHistory) return;
-        history = isHistory; selectedNotifications.clear(); queueError = ""; render();
-        if (history) { historyItems = []; historyOffset = 0; hasMoreHistory = false; loadHistory(); }
-      });
-      tab.setAttribute("role", "tab"); tab.setAttribute("aria-selected", String(history === isHistory)); segments.append(tab);
+    let list = host.querySelector(".queue");
+    if (!list) {
+      list = el("div", "queue");
+      const segments = el("div", "segments"); segments.setAttribute("role", "tablist"); segments.setAttribute("aria-label", "Notifications");
+      for (const [label, isHistory] of [["Pending", false], ["History", true]]) {
+        const tab = button(label, () => {
+          if (history === isHistory) return;
+          list._scroll[history ? "history" : "pending"] = list._content.scrollTop;
+          history = isHistory; selectedNotifications.clear(); queueError = ""; render();
+          list._content.scrollTop = list._scroll[history ? "history" : "pending"] || 0;
+          if (history) loadHistory(true);
+        });
+        tab.setAttribute("role", "tab"); tab.dataset.history = String(isHistory); segments.append(tab);
+      }
+      list._scroll = {};
+      list._content = el("div", "queue-content");
+      list.append(segments, list._content);
     }
-    list.append(segments);
+    for (const tab of list.querySelectorAll('[role="tab"]')) tab.setAttribute("aria-selected", String(tab.dataset.history === String(history)));
+    const items = history ? historyItems : pendingRecords();
+    const signature = JSON.stringify([history, items.map(record => [record.id, record.read_at, record.request.title, sourceText(record.request.source)]), [...selectedNotifications], bulkBusy, queueError, loadingQueue, hasMoreHistory, unseenPending]);
+    if (list.dataset.signature === signature) return list;
+    list.dataset.signature = signature;
+    const content = list._content, scroll = content.scrollTop;
+    content.replaceChildren();
     if (!history && items.length) {
       const toolbar = el("div", "queue-selection");
       const label = el("label"); const selectAll = el("input"); selectAll.type = "checkbox"; selectAll.setAttribute("aria-label", "Select all notifications");
@@ -572,9 +592,9 @@
         const dismiss = button(`Dismiss (${selectedNotifications.size})`, () => dismissNotifications([...selectedNotifications]), "utility dismiss-selected");
         dismiss.disabled = bulkBusy; toolbar.append(dismiss);
       }
-      list.append(toolbar);
+      content.append(toolbar);
     }
-    if (queueError) { const notice = el("div", "notice", queueError); notice.setAttribute("role", "status"); list.append(notice); }
+    if (queueError) { const notice = el("div", "notice", queueError); notice.setAttribute("role", "status"); content.append(notice); }
     for (const record of items) {
       const row = el("div", "queue-row");
       if (!history) {
@@ -588,34 +608,36 @@
         const dismiss = iconButton(`Dismiss ${record.request.title}`, "M6 6l12 12M18 6L6 18", () => dismissNotifications([record.id]), "dismiss-item");
         dismiss.disabled = bulkBusy; row.append(dismiss);
       }
-      list.append(row);
+      content.append(row);
     }
-    if (!items.length) list.append(el("div", "empty-state", loadingQueue ? "Loading..." : history ? "No notification history" : "No pending requests"));
-    if ((history && hasMoreHistory) || (!history && unseenPending > 0)) list.append(button(loadingQueue ? "Loading..." : "Load more", loadHistory, "utility"));
+    if (!items.length) content.append(el("div", "empty-state", loadingQueue ? "Loading..." : history ? "No notification history" : "No pending requests"));
+    if ((history && hasMoreHistory) || (!history && unseenPending > 0)) content.append(button(loadingQueue ? "Loading..." : "Load more", () => loadHistory(), "utility"));
+    content.scrollTop = scroll;
     return list;
   }
-  async function loadHistory() {
+  async function loadHistory(reset = false) {
     if (loadingQueue) return;
+    const isHistory = history;
     loadingQueue = true; render();
     try {
-      const isHistory = history;
-      const result = await call({ op: "list", offset: isHistory ? historyOffset : pendingOffset, pending_only: !isHistory });
-      if (isHistory) { historyItems.push(...(result.records || [])); historyOffset = result.next_offset || historyOffset + 50; hasMoreHistory = result.records?.length === 50; }
+      const offset = isHistory ? reset ? 0 : historyOffset : pendingOffset;
+      const result = await call({ op: "list", offset, pending_only: !isHistory });
+      if (isHistory) { historyItems = reset ? result.records || [] : [...historyItems, ...(result.records || [])]; historyOffset = result.next_offset || offset + 50; hasMoreHistory = result.records?.length === 50; }
       else addPendingPage(result);
-    } catch (error) { showError(error); }
+    } catch (error) { queueError = String(error.message || error); }
     finally { loadingQueue = false; render(); }
   }
   function renderMenu() {
     const existing = host.querySelector(".menu-overlay");
-    if (!menu || (!current && menu !== "settings")) { existing?.remove(); return; }
+    if (!menu || !current || settingsOpen) { existing?.remove(); host.style.removeProperty("--menu-min-height"); return; }
     if (existing?.dataset.menu === menu && existing.dataset.id === (current || "")) return;
     existing?.remove();
     const record = records.get(current), overlay = el("div", "menu-overlay");
     overlay.dataset.menu = menu; overlay.dataset.id = current || "";
-    const panel = el("div", "menu-panel"); panel.setAttribute("role", "dialog"); panel.setAttribute("aria-label", menu === "agent" ? "Agent controls" : menu === "settings" ? "Notification settings menu" : "Notification options");
+    const panel = el("div", "menu-panel"); panel.setAttribute("role", "dialog"); panel.setAttribute("aria-label", menu === "agent" ? "Agent controls" : "Notification options");
     const heading = el("div", "menu-heading");
     if (menu === "agent") { const back = button("‹", () => toggleMenu("options"), "utility nav-step"); back.setAttribute("aria-label", "Back to options"); heading.append(back); }
-    heading.append(el("span", "", menu === "agent" ? "Agent controls" : menu === "settings" ? "Notifications" : "Options"));
+    heading.append(el("span", "", menu === "agent" ? "Agent controls" : "Options"));
     const close = button("×", () => toggleMenu(menu), "utility close"); close.setAttribute("aria-label", "Close menu"); heading.append(close); panel.append(heading);
     if (menu === "options") {
       if (hasAgent(record)) {
@@ -627,37 +649,138 @@
         try { await call({ op: "dismiss", id: record.id }); collapse(); } catch (error) { showError(error); }
       }, "utility dismiss"); dismiss.title = "Remove this card from Pending"; panel.append(dismiss);
     } else if (menu === "agent") panel.append(el("div", "agent-controls", "Loading..."));
-    if (menu !== "agent") panel.append(button("Notification settings...", openSettings, "utility menu-link"));
+    if (menu !== "agent") panel.append(button("Notification settings", openSettings, "utility menu-link"));
     const notice = el("div", "notice menu-notice"); notice.setAttribute("role", "status"); panel.append(notice);
     overlay.append(panel); overlay.addEventListener("click", event => { if (event.target === overlay) toggleMenu(menu); }); host.append(overlay);
-    updateAutoYes();
+    updateAutoYes(); fitMenu();
   }
-  async function openSettings() {
-    try { await call({ op: "settings" }); menu = null; native({ native: "text_focus", active: false }); render(); }
-    catch (error) { showError(error); }
+  function fitMenu() {
+    const panel = host.querySelector(".menu-panel");
+    if (!panel) return;
+    const top = placement === "notch" ? (geometry.overlap || 38) + 76 : 76;
+    host.style.setProperty("--menu-min-height", `${Math.max(menu === "agent" ? 340 : 0, top + panel.scrollHeight + 18)}px`);
+  }
+  function leaveSettings() {
+    if (!settingsOpen) return;
+    settingsOpen = false;
+    focused = false;
+    native({ native: "text_focus", active: false });
+    native({ native: "settings", active: false });
+  }
+  function closeSettings() {
+    leaveSettings(); expanded = settingsReturnExpanded; render(); startContext(); resumeTimer();
+  }
+  function openSettings() {
+    if (settingsOpen) return;
+    settingsReturnExpanded = expanded;
+    clearTimeout(completionTimer); pauseTimer(); stopContext(); menu = null; settingsOpen = true; expanded = true;
+    native({ native: "settings", active: true }); render();
+  }
+  async function saveSettings(patch, view) {
+    if (settingsBusy) return;
+    settingsBusy = true; view.setAttribute("aria-busy", "true"); view._notice.textContent = "";
+    for (const input of view.querySelectorAll("input, select")) input.disabled = true;
+    try {
+      const result = await call({ op: "save_settings", patch });
+      if (result.settings) snapshot.settings = result.settings;
+    } catch (error) { view._notice.textContent = String(error.message || error); }
+    finally { settingsBusy = false; view.setAttribute("aria-busy", "false"); render(); }
+  }
+  function renderSettings() {
+    let view = host.querySelector(".notification-settings");
+    if (!view) {
+      view = el("section", "notification-settings"); view.setAttribute("aria-label", "Notification settings");
+      const heading = el("div", "settings-heading");
+      heading.append(el("h1", "", "Notifications"), button("Done", closeSettings, "utility")); view.append(heading);
+      const form = el("div", "settings-fields"); view.append(form);
+      const fields = [
+        ["placement", "Position", [["notch", "Notch"], ["right", "Right side"], ["custom", "Custom"]]],
+        ["display", "Display", []],
+        ["delivery", "Delivery", [["enhanced", "ClawTab"], ["native", "macOS"], ["both", "Both"]]],
+        ["focus", "Focus", [["follow", "Follow macOS"], ["independent", "Always show"]]],
+        ["preview_seconds", "Update duration", null],
+        ["hover_expand", "Expand on hover", "checkbox"],
+        ["sound", "Sound", "checkbox"],
+      ];
+      for (const [key, title, options] of fields) {
+        const row = el("label", "setting-row"), input = el(Array.isArray(options) ? "select" : "input");
+        input.dataset.setting = key; input.setAttribute("aria-label", title);
+        if (Array.isArray(options)) for (const [value, text] of options) { const option = el("option", "", text); option.value = value; input.append(option); }
+        else if (options === "checkbox") input.type = "checkbox";
+        else { input.type = "number"; input.min = "2"; input.max = "120"; input.step = "1"; input.required = true; input.title = "Seconds before a status update collapses"; }
+        input.addEventListener("change", () => {
+          if (!input.checkValidity()) { view._notice.textContent = input.validationMessage; return; }
+          const value = input.type === "checkbox" ? input.checked : input.type === "number" ? Number(input.value) : input.value;
+          const patch = { [key]: value };
+          if (key === "placement" && value === "custom") patch.position = snapshot.settings?.position || { right: 16, top: 12 };
+          saveSettings(patch, view);
+        });
+        row.append(el("span", "", title), input); form.append(row);
+        if (key === "placement") {
+          const position = el("div", "setting-position"); view._position = position;
+          for (const [axis, label] of [["right", "From right"], ["top", "From top"]]) {
+            const row = el("label", "setting-row"), input = el("input"); input.type = "number"; input.min = "0"; input.step = "any"; input.required = true;
+            input.dataset.position = axis; input.setAttribute("aria-label", label);
+            input.addEventListener("change", () => {
+              if (!input.checkValidity()) { view._notice.textContent = input.validationMessage; return; }
+              saveSettings({ position: { ...snapshot.settings.position, [axis]: Number(input.value) } }, view);
+            });
+            row.append(el("span", "", label), input); position.append(row);
+          }
+          form.append(position);
+        }
+      }
+      view._notice = el("div", "notice settings-notice"); view._notice.setAttribute("role", "status"); view.append(view._notice);
+    }
+    const values = { delivery: "enhanced", placement: "notch", display: "primary", focus: "follow", preview_seconds: 8, hover_expand: false, sound: true, ...snapshot.settings };
+    const display = view.querySelector('[data-setting="display"]');
+    const displays = [["primary", "Primary display"], ["built_in", "Built-in display"], ["pointer", "Follow pointer"], ...(snapshot.platform?.displays || []).map(item => [item.id, item.name])];
+    if (!displays.some(([id]) => id === values.display)) displays.push([values.display, "Saved display"]);
+    const displaySignature = JSON.stringify(displays);
+    if (display.dataset.options !== displaySignature) {
+      display.dataset.options = displaySignature; display.replaceChildren();
+      for (const [value, text] of displays) { const option = el("option", "", text); option.value = value; display.append(option); }
+    }
+    for (const input of view.querySelectorAll("[data-setting]")) {
+      input.disabled = settingsBusy;
+      if (!settingsBusy && document.activeElement !== input) {
+        if (input.type === "checkbox") input.checked = Boolean(values[input.dataset.setting]); else input.value = values[input.dataset.setting];
+      }
+    }
+    view._position.hidden = values.placement !== "custom";
+    for (const input of view.querySelectorAll("[data-position]")) {
+      input.disabled = settingsBusy;
+      if (!settingsBusy && document.activeElement !== input) input.value = values.position?.[input.dataset.position] || 0;
+    }
+    return view;
   }
   function draggableBar(control) {
     let origin = null, dragged = false;
     control.addEventListener("pointerdown", event => {
       if (event.button !== 0 || preview) return;
-      origin = { x: event.screenX, y: event.screenY }; dragged = false;
-      control.setPointerCapture(event.pointerId);
+      origin = { x: event.screenX, y: event.screenY, pointerId: event.pointerId }; dragged = false;
+      document.addEventListener("pointermove", move);
+      document.addEventListener("pointerup", finish);
+      document.addEventListener("pointercancel", finish);
     });
-    control.addEventListener("pointermove", event => {
-      if (!origin) return;
+    const move = event => {
+      if (!origin || event.pointerId !== origin.pointerId) return;
       const dx = event.screenX - origin.x, dy = event.screenY - origin.y;
       if (!dragged && Math.hypot(dx, dy) < 5) return;
-      if (!dragged) { pauseTimer(); stopAnimation(); native({ native: "drag", phase: "start" }); }
+      if (!dragged) { control.setPointerCapture(event.pointerId); pauseTimer(); stopAnimation(); native({ native: "drag", phase: "start" }); }
       dragged = true; native({ native: "drag", phase: "move", dx, dy });
-    });
+    };
     const finish = () => {
       if (!origin) return;
+      const pointerId = origin.pointerId;
       origin = null;
+      document.removeEventListener("pointermove", move);
+      document.removeEventListener("pointerup", finish);
+      document.removeEventListener("pointercancel", finish);
       if (dragged) native({ native: "drag", phase: "end" });
+      if (control.hasPointerCapture(pointerId)) control.releasePointerCapture(pointerId);
       resumeTimer();
     };
-    control.addEventListener("pointerup", finish);
-    control.addEventListener("pointercancel", finish);
     control.addEventListener("lostpointercapture", finish);
     control.addEventListener("click", event => {
       if (dragged) { event.preventDefault(); event.stopImmediatePropagation(); dragged = false; }
@@ -665,41 +788,46 @@
   }
   function render() {
     const before = host.getBoundingClientRect();
-    const signature = JSON.stringify([current, expanded, details, queue, history, menu, geometry, snapshot.visible, records.get(current)?.request]);
+    const signature = JSON.stringify([current, expanded, details, queue, settingsOpen, menu, geometry, snapshot.visible, records.get(current)?.request]);
     const continuingAnimation = layoutAnimation && signature === renderedLayout;
     if (!continuingAnimation) stopAnimation();
     renderedLayout = signature;
     const count = pendingCount();
-    if (!preview && (!snapshot.visible || (!current && !queue && !count))) { host.className = "empty"; host.replaceChildren(); renderedId = null; card = null; stopContext(); size(); return; }
-    host.className = `${placement} ${expanded ? "expanded" : !current ? "pill" : ""} ${details ? "details-open" : ""} ${menu === "settings" && !current && !queue ? "settings-menu-open" : ""}`;
+    if (!preview && !settingsOpen && (!snapshot.visible || (!current && !queue && !count))) { host.className = "empty"; host.replaceChildren(); renderedId = null; card = null; stopContext(); size(); return; }
+    host.className = `${placement} ${expanded ? "expanded" : !current ? "pill" : ""} ${details && !settingsOpen ? "details-open" : ""} ${settingsOpen ? "settings-open" : ""} ${queue && !settingsOpen ? "queue-open" : ""} ${menu ? "menu-open" : ""}`;
     let top = host.querySelector(".top");
     if (!top) {
       top = el("div", "top"); host.prepend(top);
-      top.addEventListener("contextmenu", event => { event.preventDefault(); toggleMenu("settings"); });
-    }
-    const items = pendingRecords(), index = items.findIndex(record => record.id === current);
-    const topSignature = JSON.stringify([count, index, queue, current, expanded, menu]);
-    if (top.dataset.signature !== topSignature) {
-      top.dataset.signature = topSignature; top.replaceChildren();
-      const isOpen = Boolean(current || queue || expanded);
-      const toggle = button("", () => isOpen ? collapse() : openLatest(), "bar-toggle");
-      draggableBar(toggle);
-      toggle.setAttribute("aria-label", isOpen ? "Collapse notifications" : "Expand notifications"); toggle.setAttribute("aria-expanded", String(isOpen));
-      toggle.title = `${isOpen ? "Collapse" : "Open"} notifications. Drag to move.`; top.append(toggle);
+      top.addEventListener("contextmenu", event => { event.preventDefault(); openSettings(); });
+      const toggle = button("", () => (current || queue || expanded) ? collapse() : openLatest(), "bar-toggle");
+      draggableBar(toggle); top.append(toggle);
       const latest = button("", openSettings, "utility brand icon-button"); latest.title = "Notification settings"; latest.setAttribute("aria-label", "Notification settings");
       const logo = el("img"); logo.src = "https://cdn.clawtab.cc/assets/app-icon.png"; logo.alt = ""; latest.append(logo); top.append(latest);
       const controls = el("div", "top-actions");
-      if (current && count > 1) controls.append(iconButton("Previous notification", "M14 6l-6 6 6 6", () => navigate(-1), "nav-step"));
-      controls.append(el("span", "count", current && index >= 0 ? `${index + 1} / ${count}` : `${count} pending`));
-      if (current && count > 1) controls.append(iconButton("Next notification", "M10 6l6 6-6 6", () => navigate(1), "nav-step"));
+      controls.append(iconButton("Previous notification", "M14 6l-6 6 6 6", () => navigate(-1), "nav-step previous"));
+      const count = button("", () => queue && !settingsOpen ? toggleQueue() : settingsOpen ? openLatest() : (current || expanded) ? collapse() : openLatest(), "utility count");
+      draggableBar(count); controls.append(count);
+      controls.append(iconButton("Next notification", "M10 6l6 6-6 6", () => navigate(1), "nav-step next"));
       top.append(controls);
       const list = iconButton("Notification list", "M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01", toggleQueue, "list-toggle");
-      list.setAttribute("aria-pressed", String(queue)); top.append(list);
+      top.append(list);
     }
-    if (queue) {
-      const scroll = host.querySelector(".queue")?.scrollTop || 0;
-      host.querySelector(".card")?.remove(); host.querySelector(".queue")?.remove();
-      const list = renderQueue(); host.append(list); list.scrollTop = scroll; card = null; renderedId = null;
+    const items = pendingRecords(), index = items.findIndex(record => record.id === current);
+    const isOpen = Boolean(current || queue || expanded), toggle = top.querySelector(".bar-toggle");
+    toggle.setAttribute("aria-label", isOpen ? "Collapse notifications" : "Expand notifications"); toggle.setAttribute("aria-expanded", String(isOpen));
+    toggle.title = `${isOpen ? "Collapse" : "Open"} notifications. Drag to move.`;
+    const countButton = top.querySelector(".count");
+    countButton.textContent = current && index >= 0 && !settingsOpen ? `${index + 1} / ${count}` : `${count} pending`;
+    countButton.title = queue || settingsOpen ? "Return to notification" : isOpen ? "Collapse notifications" : "Open notifications";
+    for (const step of top.querySelectorAll(".nav-step")) step.hidden = !current || count < 2 || settingsOpen;
+    top.querySelector(".list-toggle").setAttribute("aria-pressed", String(queue && !settingsOpen));
+    if (!settingsOpen) host.querySelector(".notification-settings")?.remove();
+    if (settingsOpen) {
+      host.querySelector(".card")?.remove(); host.querySelector(".queue")?.remove(); card = null; renderedId = null;
+      const view = renderSettings(); if (!view.isConnected) host.append(view);
+    } else if (queue) {
+      host.querySelector(".card")?.remove();
+      const list = renderQueue(); if (!list.isConnected) host.append(list); card = null; renderedId = null;
     } else if (current && records.has(current)) {
       host.querySelector(".queue")?.remove();
       if (renderedId !== `${current}:${expanded}`) {
@@ -707,7 +835,7 @@
       }
       updateCard();
     } else { host.querySelector(".card")?.remove(); host.querySelector(".queue")?.remove(); renderedId = null; card = null; }
-    renderMenu(); if (!continuingAnimation) animateLayout(before);
+    renderMenu(); if (!continuingAnimation) animateLayout(before, !queue && !menu && !settingsOpen);
   }
   function receive(value) {
     if (value.type === "response") {
@@ -716,6 +844,7 @@
       if (value.error) promise.reject(new Error(value.error)); else promise.resolve(value.value); return;
     }
     if (value.type === "show") { showQueue(); return; }
+    if (value.type === "settings") { openSettings(); return; }
     if (value.type !== "snapshot") return;
     snapshot = value; preview = Boolean(value.preview);
     const incoming = new Set();
@@ -742,7 +871,7 @@
     if (!focused) { native({ native: "text_focus", active: false }); resumeTimer(); }
   }));
   document.addEventListener("keydown", event => {
-    if (event.key === "Escape") { event.preventDefault(); if (menu) toggleMenu(menu); else collapse(); }
+    if (event.key === "Escape") { event.preventDefault(); if (settingsOpen) closeSettings(); else if (menu) toggleMenu(menu); else collapse(); }
     if ((event.metaKey || event.ctrlKey) && event.shiftKey && ["[", "]", "{", "}"].includes(event.key)) {
       event.preventDefault(); navigate(event.key === "[" || event.key === "{" ? -1 : 1);
     }
@@ -756,6 +885,7 @@
     const next = typeof value === "string" ? { placement: value } : value;
     if (JSON.stringify(next) === JSON.stringify(geometry)) return;
     geometry = next; placement = next.placement;
+    host.style.setProperty("--notch-overlap", `${placement === "notch" ? next.overlap || 38 : 0}px`);
     document.body.style.justifyContent = placement === "notch" ? "center" : "flex-end";
     for (const [key, property] of [["overlap", "--notch-overlap"], ["notch_width", "--notch-width"], ["max_width", "--surface-max-width"], ["max_height", "--surface-max-height"]]) {
       if (Number.isFinite(next[key])) host.style.setProperty(property, `${next[key]}px`);
