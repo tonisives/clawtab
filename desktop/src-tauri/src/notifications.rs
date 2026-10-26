@@ -389,26 +389,79 @@ pub fn notify_new_questions(
     state: &Arc<Mutex<NotificationState>>,
     auto_yes_panes: &Arc<Mutex<HashSet<String>>>,
 ) {
-    let mut notified = state.lock();
-    let yes_panes = auto_yes_panes.lock();
+    let yes_panes = auto_yes_panes.lock().clone();
+    let fresh = {
+        let mut notified = state.lock();
+        let fresh: Vec<_> = questions
+            .iter()
+            .filter(|q| {
+                !yes_panes.contains(&q.pane_id)
+                    && notified.notified_question_ids.insert(q.question_id.clone())
+            })
+            .collect();
+        let current_ids: HashSet<_> = active_questions.iter().map(|q| &q.question_id).collect();
+        notified
+            .notified_question_ids
+            .retain(|id| current_ids.contains(id));
+        fresh
+    };
+    // Rendering reads Auto-yes again. Release shared locks before delivery.
+    for question in fresh {
+        notifier.notify_question(question);
+    }
+}
 
-    for q in questions {
-        if yes_panes.contains(&q.pane_id) {
-            continue;
-        }
-        if notified.notified_question_ids.contains(&q.question_id) {
-            continue;
-        }
-        notifier.notify_question(q);
-        notified.notified_question_ids.insert(q.question_id.clone());
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct ReentrantNotifier {
+        state: Arc<Mutex<NotificationState>>,
+        auto_yes: Arc<Mutex<HashSet<String>>>,
+        sent: Mutex<Vec<String>>,
     }
 
-    // Clean up IDs for questions that are no longer active
-    let current_ids: HashSet<String> = active_questions
-        .iter()
-        .map(|q| q.question_id.clone())
-        .collect();
-    notified
-        .notified_question_ids
-        .retain(|id| current_ids.contains(id));
+    impl Notifier for ReentrantNotifier {
+        fn notify_question(&self, question: &ClaudeQuestion) {
+            assert!(
+                self.state.try_lock().is_some(),
+                "delivery must release deduplication state"
+            );
+            assert!(
+                self.auto_yes.try_lock().is_some(),
+                "the notification card must be able to read Auto-yes"
+            );
+            self.sent.lock().push(question.question_id.clone());
+        }
+        fn notify_job(&self, _: &str, _: &str) {}
+    }
+
+    #[test]
+    fn question_delivery_releases_locks_and_preserves_filtering() {
+        let state = Arc::new(Mutex::new(NotificationState::new()));
+        let auto_yes = Arc::new(Mutex::new(HashSet::from(["%automatic".into()])));
+        let notifier = ReentrantNotifier {
+            state: state.clone(),
+            auto_yes: auto_yes.clone(),
+            sent: Mutex::new(vec![]),
+        };
+        let questions: Vec<ClaudeQuestion> = ["%manual", "%automatic"]
+            .into_iter()
+            .map(|pane| {
+                serde_json::from_value(serde_json::json!({
+                    "pane_id": pane, "question_id": pane, "cwd": "/tmp", "tmux_session": "test",
+                    "window_name": "test", "context_lines": "Continue?", "options": []
+                }))
+                .unwrap()
+            })
+            .collect();
+        notify_new_questions(&notifier, &questions, &questions, &state, &auto_yes);
+        notify_new_questions(&notifier, &questions, &questions, &state, &auto_yes);
+        assert_eq!(*notifier.sent.lock(), ["%manual"]);
+        auto_yes.lock().clear();
+        notify_new_questions(&notifier, &questions, &questions, &state, &auto_yes);
+        assert_eq!(*notifier.sent.lock(), ["%manual", "%automatic"]);
+        notify_new_questions(&notifier, &[], &[], &state, &auto_yes);
+        assert!(state.lock().notified_question_ids.is_empty());
+    }
 }

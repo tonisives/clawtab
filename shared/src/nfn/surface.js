@@ -266,7 +266,7 @@
   function showQueue() {
     if (busy) return;
     if (current) queueReturnId = current;
-    clearTimeout(completionTimer); pauseTimer(); stopContext(); expanded = true; details = false; queue = true; current = null; renderedId = null; menu = null; selectedNotifications.clear(); queueError = ""; render();
+    clearTimeout(completionTimer); pauseTimer(); stopContext(); expanded = true; details = false; queue = true; history = false; current = null; renderedId = null; menu = null; selectedNotifications.clear(); queueError = ""; render();
   }
   async function toggleQueue() {
     if (!queue) { showQueue(); return; }
@@ -287,18 +287,11 @@
   async function act(action_id, text) {
     if (busy || !current) return;
     const id = current; busy = true; if (card) card._clientError = ""; pauseTimer(); updateCard();
-    const items = pendingRecords(), index = items.findIndex(record => record.id === id);
-    const nextId = items.length > 1 ? items[(index + 1) % items.length].id : null;
     try {
       const value = await call({ op: "respond", id, action_id, text: text || null });
       if (value.id) records.set(value.id, value);
       if (!preview && value.status === "resolved") {
         drafts.delete(id); if (current === id && card?._reply) card._reply.value = "";
-        completionTimer = setTimeout(() => {
-          if (current !== id) return;
-          const next = (nextId && pending(records.get(nextId) || {})) ? nextId : pendingRecords()[0]?.id;
-          if (next) openRecord(next); else collapse();
-        }, 700);
       }
       updateCard();
     } catch (error) { showError(error); }
@@ -357,6 +350,7 @@
   }
   function createCard(record) {
     const node = el("article", "card");
+    node._wasPending = pending(record) && !record.dismissed_at;
     node._signature = JSON.stringify([record.request, template(record)]);
     const heading = el("div", "heading"); heading.append(el("h1", "", record.request.title));
     const status = el("span", "status"); heading.append(status); node._status = status;
@@ -439,6 +433,7 @@
   function updateCard() {
     if (!card || !current) return;
     const record = records.get(current); if (!record) return;
+    const wasPending = card._wasPending;
     if (card._signature !== JSON.stringify([record.request, template(record)])) {
       const scroll = card._content.scrollTop, active = document.activeElement === card._reply;
       const selection = card._reply ? [card._reply.selectionStart, card._reply.selectionEnd] : null;
@@ -448,7 +443,18 @@
       if (active && card._reply) { card._reply.focus({ preventScroll: true }); if (selection) card._reply.setSelectionRange(...selection); }
       startContext();
     }
-    const isPending = pending(record);
+    const isPending = pending(record) && !record.dismissed_at;
+    card._wasPending = isPending;
+    if (wasPending && !isPending && !preview) {
+      clearTimeout(completionTimer);
+      const id = current;
+      completionTimer = setTimeout(() => {
+        if (current !== id || queue) return;
+        const items = pendingRecords();
+        const next = items.find(item => item.created_at >= record.created_at) || items[0];
+        if (next) openRecord(next.id); else collapse();
+      }, 180);
+    }
     const update = record.request.template === "update";
     const alert = record.request.data?.event === "agent_alert";
     card._status.classList.toggle("alert", alert && isPending);
@@ -550,7 +556,7 @@
       const tab = button(label, () => {
         if (history === isHistory) return;
         history = isHistory; selectedNotifications.clear(); queueError = ""; render();
-        if (history && !historyItems.length) loadHistory();
+        if (history) { historyItems = []; historyOffset = 0; hasMoreHistory = false; loadHistory(); }
       });
       tab.setAttribute("role", "tab"); tab.setAttribute("aria-selected", String(history === isHistory)); segments.append(tab);
     }

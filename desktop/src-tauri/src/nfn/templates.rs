@@ -101,7 +101,7 @@ pub fn builtins() -> Vec<NfnTemplate> {
             "update",
             "Status update",
             "Progress or results that do not need a decision",
-            vec!["text", "media", "logs"],
+            vec!["text", "details", "media", "logs"],
             vec![("acknowledge", "Got it")],
         ),
         (
@@ -155,9 +155,10 @@ pub fn builtins() -> Vec<NfnTemplate> {
         layout: blocks
             .into_iter()
             .map(|kind| Block {
-                kind: kind.into(),
+                kind: if kind == "details" { "text" } else { kind }.into(),
                 field: match kind {
                     "text" => "body".into(),
+                    "details" => "data.details".into(),
                     "command" | "diff" | "plan" => format!("data.{kind}"),
                     _ => String::new(),
                 },

@@ -58,7 +58,8 @@ h1 { margin: 0; font-size: 15px; line-height: 1.35; font-weight: 600; overflow-w
 .message:empty { display: none; }
 .answer-row { display: flex; align-items: center; gap: 10px; margin-top: 12px; min-width: 0; }
 .answer-row:has(.actions:empty):not(:has(.auto-yes)) { display: none; }
-.actions { display: flex; flex: 1; min-width: 0; gap: 8px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; }
+.actions { display: flex; flex: 1; min-width: 0; gap: 8px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; }
+.actions::-webkit-scrollbar { display: none; }
 .actions:empty { display: none; }
 .actions button { flex: 0 0 auto; min-width: 80px; max-width: 280px; padding: 8px 12px; border-radius: 20px; color: #aeb8ed; border-color: #7986cb80; background: #7986cb1a; font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .actions button:hover { background: #7986cb30; }

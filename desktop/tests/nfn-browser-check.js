@@ -151,6 +151,7 @@
   assert([...document.querySelectorAll(".actions button")].every(control => getComputedStyle(control).borderRadius === "20px" && getComputedStyle(control).whiteSpace === "nowrap"), "answer buttons are rounded and single-line");
   const scroller = document.querySelector(".actions");
   assert(scroller.scrollWidth > scroller.clientWidth && getComputedStyle(scroller).overflowX === "auto", "answer options overflow horizontally instead of wrapping");
+  assert(getComputedStyle(scroller).scrollbarWidth === "none", "answer options hide the horizontal scrollbar");
   scroller.scrollLeft = scroller.scrollWidth;
   assert(scroller.scrollLeft > 0 && document.querySelector(".inline-auto-yes").getBoundingClientRect().left === autoBounds.left, "scrolling answer options leaves Auto-yes fixed on the right");
   const contextCount = window.fixture.contextCalls;
@@ -246,6 +247,17 @@
   document.querySelector(".top").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
   click("Notification settings..."); await sleep(30);
   assert(window.fixture.calls.some(command => command.op === "settings") && !document.querySelector(".menu-overlay"), "the bar context menu opens notification settings without another header button");
+  window.nfn.collapse(); window.fixture.records.clear();
+  const external = window.fixture.record("external"); external.request.title = "Answered elsewhere";
+  const following = window.fixture.record("following"); following.request.title = "Still waiting"; following.created_at = external.created_at + 1;
+  window.fixture.records.set(external.id, external); window.fixture.records.set(following.id, following);
+  window.nfn.receive(window.fixture.snapshot(external.id));
+  external.status = "resolved"; external.response = { action_id: "0" };
+  window.nfn.receive(window.fixture.snapshot()); await sleep(260);
+  assert(document.querySelector("h1").textContent === "Still waiting" && document.querySelector(".count").textContent === "1 / 1", "an answer from another client leaves the active stack within a quarter second");
+  document.querySelector('[aria-label="Notification list"]').click(); click("History"); await sleep(30);
+  [...document.querySelectorAll(".queue-item")].find(item => item.querySelector("strong").textContent === "Answered elsewhere").click(); await sleep(260);
+  assert(document.querySelector("h1").textContent === "Answered elsewhere", "resolved cards remain readable when opened explicitly from History");
   window.nfn.collapse(); window.fixture.records.clear();
   for (let i = 0; i < 67; i++) window.fixture.records.set(`bulk-${i}`, window.fixture.record(`bulk-${i}`));
   window.nfn.receive(window.fixture.snapshot()); window.nfn.receive({ type: "show" }); click("Pending");
