@@ -7,7 +7,7 @@ import { useAuthStore } from "../../store/auth"
 import * as api from "../../api/client"
 import { alertError, openUrl } from "../../lib/platform"
 import { colors } from "../../theme/colors"
-import { SettingsGroup, SettingsRow, styles } from "./SettingsPage"
+import { SettingsButton, SettingsGroup, SettingsRow, styles } from "./SettingsPage"
 import { useSettingsNavigation } from "./navigation"
 import { RelayWelcome } from "../RelayWelcome"
 
@@ -181,25 +181,23 @@ export let RelaySubscription = ({ onboarding = false }: { onboarding?: boolean }
     )}
     {!subLoading && !sub?.subscribed && <View style={styles.section}>
       {!onboarding && <Text style={styles.sectionTitle}>Relay subscription</Text>}
-      {Platform.OS === "android" ? <Text style={styles.usageDescription}>Relay access requires an existing ClawTab subscription.</Text> : <SettingsGroup>
-        <SettingsRow title={actionLoading || iap.purchasing ? "Please wait…" : Platform.OS === "ios" && iap.loading ? "Loading purchases…" : iap.price ? `Subscribe · ${iap.price} / month` : "Subscribe to Relay"} detail={Platform.OS === "ios" && iap.error ? iap.error : onboarding ? undefined : "2 hosted agents and connections for up to 100 on your own machines."} onPress={handleSubscribe} disabled={!sub || actionLoading || iap.purchasing || (Platform.OS === "ios" && !iap.available)} chevron={false} />
-      </SettingsGroup>}
+      {Platform.OS === "android" ? <Text style={styles.usageDescription}>Relay access requires an existing ClawTab subscription.</Text> : <>
+        <SettingsButton title={actionLoading || iap.purchasing ? "Please wait…" : Platform.OS === "ios" && iap.loading ? "Loading purchases…" : iap.price ? `Subscribe · ${iap.price} / month` : "Subscribe to Relay"} onPress={handleSubscribe} disabled={!sub || actionLoading || iap.purchasing || (Platform.OS === "ios" && !iap.available)} variant="primary" />
+        {Platform.OS === "ios" && iap.error ? <Text style={styles.usageDescription}>{iap.error}</Text> : !onboarding && <Text style={styles.usageDescription}>2 hosted agents and connections for up to 100 on your own machines.</Text>}
+      </>}
     </View>}
     {onboarding && sub?.hosted_workspace_eligible && <HostedWorkspacePanel key={userId} api={api.rentalApi} autoStart />}
-    {onboarding && sub?.hosted_workspace_eligible && <SettingsGroup><SettingsRow title="Manage Relay subscription" onPress={() => router.push("/account")} /></SettingsGroup>}
     {onboarding && sub?.subscribed && !sub.hosted_workspace_eligible && <SettingsGroup><SettingsRow title="Open your connected machines" detail="Your rented box includes relay access. Use its remote workspace or connect your own machine." onPress={() => router.push("/machines")} /></SettingsGroup>}
     {Platform.OS === "ios" && !sub?.subscribed && !!iap.error && <View style={styles.section}>
-      <SettingsGroup><SettingsRow title="Retry loading purchases" onPress={iap.retry} disabled={iap.loading || actionLoading || iap.purchasing} chevron={false} /></SettingsGroup>
+      <SettingsButton title="Retry loading purchases" onPress={iap.retry} disabled={iap.loading || actionLoading || iap.purchasing} />
     </View>}
-    {Platform.OS === "ios" && <SettingsGroup>
-      <SettingsRow title="Restore Purchases" onPress={handleRestore} disabled={subLoading || actionLoading || iap.purchasing} chevron={false} />
-    </SettingsGroup>}
+    {Platform.OS === "ios" && <SettingsButton title="Restore Purchases" onPress={handleRestore} disabled={subLoading || actionLoading || iap.purchasing} />}
     {Platform.OS === "ios" && !!iap.diagnostic && <View style={styles.section}>
-      <SettingsGroup><SettingsRow title={diagnosticsExpanded ? "Hide purchase diagnostics" : "View purchase diagnostics"} onPress={toggleDiagnostics} chevron={false} /></SettingsGroup>
+      <SettingsButton title={diagnosticsExpanded ? "Hide purchase diagnostics" : "View purchase diagnostics"} onPress={toggleDiagnostics} expanded={diagnosticsExpanded} />
       {diagnosticsExpanded && <Text selectable style={styles.usageDescription}>{iap.diagnostic}</Text>}
     </View>}
     {!!subscriptionError && <Text accessibilityRole="alert" style={styles.usageDescription}>{subscriptionError}</Text>}
-    {subscriptionCheckFailed && <SettingsGroup><SettingsRow title={actionLoading ? "Checking…" : "Retry subscription check"} onPress={handleRefreshSubscription} disabled={subLoading || actionLoading || iap.purchasing} chevron={false} /></SettingsGroup>}
+    {subscriptionCheckFailed && <SettingsButton title={actionLoading ? "Checking…" : "Retry subscription check"} onPress={handleRefreshSubscription} disabled={subLoading || actionLoading || iap.purchasing} />}
     {Platform.OS === "ios" && <View style={styles.section}>
       {!sub?.subscribed && <Text style={styles.usageDescription}>Relay access renews monthly until canceled. Manage or cancel your subscription in your Apple account settings.</Text>}
       <SettingsGroup>

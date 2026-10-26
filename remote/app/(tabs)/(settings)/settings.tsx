@@ -5,6 +5,7 @@ import { NavigationContainer, NavigationIndependentTree, DarkTheme, useIsFocused
 import { useMachines } from "@clawtab/shared"
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
+import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { useSetupProgress } from "../../../src/hooks/useSetupProgress"
 import { DemoOverview } from "../../../src/components/DemoOverview"
 import { useAuthStore } from "../../../src/store/auth"
@@ -16,7 +17,7 @@ import { AccountSettings } from "../../../src/components/settings/AccountSetting
 import { SharingSettings } from "../../../src/components/settings/SharingSettings"
 import { TerminalSettings } from "../../../src/components/settings/TerminalSettings"
 import { UsageSettings } from "../../../src/components/settings/UsageSettings"
-import { SettingsGroup, SettingsPage, SettingsRow, styles } from "../../../src/components/settings/SettingsPage"
+import { SettingsBottomInset, SettingsGroup, SettingsPage, SettingsRow, styles } from "../../../src/components/settings/SettingsPage"
 import { SettingsNavigation, SettingsVisibility, useSettingsNavigation, type SettingsRoute } from "../../../src/components/settings/navigation"
 import { colors } from "../../../src/theme/colors"
 
@@ -105,8 +106,10 @@ let SettingsScreen = ({ inModal = false, active = true, historyBack, restoreStat
   }, [navigation, restoreState])
   let focused = useIsFocused()
   let { isWide, isSplitView, isIosPadPortrait } = useResponsive()
+  let insets = useSafeAreaInsets()
+  let bottomInset = isIosPadPortrait && !inModal ? insets.bottom + 72 : 0
   let largeTitle = Platform.OS === "ios" && !inModal && !isWide && !isSplitView && !isIosPadPortrait
-  return <SettingsVisibility.Provider value={focused && active}><MachinePageHistoryProvider onBack={historyBack}><NavigationIndependentTree><NavigationContainer
+  return <SettingsBottomInset.Provider value={bottomInset}><SettingsVisibility.Provider value={focused && active}><MachinePageHistoryProvider onBack={historyBack}><NavigationIndependentTree><NavigationContainer
     ref={navigation}
     theme={DarkTheme}
     onReady={() => {
@@ -124,6 +127,6 @@ let SettingsScreen = ({ inModal = false, active = true, historyBack, restoreStat
       })}
       <Stack.Screen name="machine-page" component={MachinePageScreen} options={({ route }) => ({ title: route.params.title })} />
     </Stack.Navigator>
-  </NavigationContainer></NavigationIndependentTree></MachinePageHistoryProvider></SettingsVisibility.Provider>
+  </NavigationContainer></NavigationIndependentTree></MachinePageHistoryProvider></SettingsVisibility.Provider></SettingsBottomInset.Provider>
 }
 export default SettingsScreen
