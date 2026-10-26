@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useGoogleBrowserAuth } from "../src/lib/googleBrowserAuth";
+import { googleIosClientId } from "../src/lib/googleIosClientId";
 import * as WebBrowser from "expo-web-browser";
 import { useAuthStore } from "../src/store/auth";
 import * as api from "../src/api/client";
@@ -29,14 +30,12 @@ if (Platform.OS !== "web") {
     const mod = require("@react-native-google-signin/google-signin");
     GoogleSignin = mod.GoogleSignin;
     isSuccessResponse = mod.isSuccessResponse;
-    if (process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS || process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB) {
-      GoogleSignin.configure({
-        iosClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS,
-        ...(process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB
-          ? { webClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB, offlineAccess: true }
-          : {}),
-      });
-    }
+    GoogleSignin.configure({
+      iosClientId: googleIosClientId,
+      ...(process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB
+        ? { webClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB, offlineAccess: true }
+        : {}),
+    });
   } catch {
     GoogleSignin = null;
     isSuccessResponse = null;
@@ -71,7 +70,7 @@ export default function LoginScreen() {
   // Web: Google auth via expo-auth-session provider
   const [, googleAuthSessionResult, promptAsync] = useGoogleBrowserAuth({
     webClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB,
-    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS,
+    iosClientId: googleIosClientId,
   });
 
   const completeGoogleLogin = useCallback(async (idToken: string) => {
