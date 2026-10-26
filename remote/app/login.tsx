@@ -101,8 +101,6 @@ export default function LoginScreen() {
     };
   }, [completeGoogleLogin, googleAuthSessionResult, loading]);
 
-  let openDemo = () => router.push("/demo");
-
   const handlePasswordLogin = async () => {
     if (loading) return;
     if (!email.trim() || !password) {
@@ -312,10 +310,6 @@ export default function LoginScreen() {
               </Pressable>
             </View>
           )}
-
-          {Platform.OS !== "ios" && <Pressable accessibilityRole="button" onPress={openDemo} disabled={loading} style={[styles.googleBtn, loading && styles.btnDisabled]}>
-            <Text style={styles.googleBtnText}>Try demo</Text>
-          </Pressable>}
 
           <Pressable onPress={() => { setTempServerUrl(serverUrl); setShowServer(true); }}>
             <Text style={styles.serverText}>
