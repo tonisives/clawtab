@@ -15,7 +15,7 @@ static NfnCallback callback;
 @implementation NfnPanel
 - (BOOL)canBecomeKeyWindow { return self.textFocus; }
 - (BOOL)canBecomeMainWindow { return NO; }
-// The overlay overlaps the notch's lower corners, inside the menu bar area.
+// Keep the notch surface attached to the physical top edge of the screen.
 - (NSRect)constrainFrameRect:(NSRect)frame toScreen:(NSScreen *)screen { return frame; }
 @end
 
@@ -86,6 +86,7 @@ static void emit(NSDictionary *value) {
     self.web.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     self.web.navigationDelegate = self;
     [self.web setValue:@NO forKey:@"drawsBackground"];
+    if (@available(macOS 12.0, *)) self.web.underPageBackgroundColor = NSColor.clearColor;
     [self.panel.contentView addSubview:self.web];
     [self.web loadHTMLString:html baseURL:[NSURL URLWithString:@"clawtab-nfn://surface/"]];
     __weak NfnSurface *weakSelf = self;
@@ -103,7 +104,7 @@ static void emit(NSDictionary *value) {
         NfnSurface *self = weakSelf;
         if (self.panel.visible && !NSPointInRect(NSEvent.mouseLocation, self.panel.frame)) {
             [self releaseTextFocus];
-            [self.web evaluateJavaScript:@"window.nfn && window.nfn.collapse()" completionHandler:nil];
+            [self.web evaluateJavaScript:@"window.nfn && window.nfn.outsideClick()" completionHandler:nil];
         }
     }];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(screensChanged:) name:NSApplicationDidChangeScreenParametersNotification object:nil];
@@ -229,11 +230,11 @@ static void emit(NSDictionary *value) {
     CGFloat topInset = [camera[@"inset"] doubleValue], notchWidth = [camera[@"width"] doubleValue];
     BOOL notch = [self.settings[@"placement"] isEqual:@"notch"] && topInset > 0;
     NSRect available = screen.visibleFrame;
-    CGFloat overlap = notch ? MIN(topInset, 16) : 0;
+    CGFloat overlap = notch ? topInset : 0;
     CGFloat w = MIN(width, available.size.width - 32), h = MIN(height, available.size.height - 32);
     CGFloat x = notch ? [camera[@"center"] doubleValue] - w / 2 : NSMaxX(available) - w - MIN(384, available.size.width / 3);
     x = MAX(NSMinX(available) + 16, MIN(x, NSMaxX(available) - w - 16));
-    CGFloat y = notch ? NSMaxY(screen.frame) - topInset + overlap - h : NSMaxY(available) - h - 12;
+    CGFloat y = notch ? NSMaxY(screen.frame) - h : NSMaxY(available) - h - 12;
     NSRect frame = NSMakeRect(x, y, w, h);
     if (!NSEqualRects(frame, self.panel.frame)) [self.panel setFrame:frame display:YES];
     NSDictionary *geometry = @{@"placement":notch ? @"notch" : @"right", @"overlap":@(overlap),
@@ -251,7 +252,6 @@ static void emit(NSDictionary *value) {
     self.panel.textFocus = NO;
     [self.panel makeFirstResponder:nil];
     [self.panel resignKeyWindow];
-    if (self.panel.visible) { [self.panel orderOut:nil]; if ([self allowsOverlay]) [self.panel orderFrontRegardless]; }
 }
 
 - (void)push:(NSDictionary *)value {

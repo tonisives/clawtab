@@ -891,6 +891,27 @@ fn same_source(source: &NfnSource, current: &NfnSource) -> bool {
 mod tests {
     use super::*;
     #[test]
+    fn focus_finds_a_terminal_when_the_agent_session_is_detached() {
+        let clients = "10|/dev/ttys001|101|$1\n20|/dev/ttys002|202|$2";
+        let selected = select_terminal_client(clients, None, "$4").unwrap();
+        assert_eq!(selected.tty, "/dev/ttys002");
+        assert_eq!(selected.pid, 202);
+        assert_eq!(
+            select_terminal_client(clients, Some("/dev/closed"), "$1")
+                .unwrap()
+                .tty,
+            "/dev/ttys001"
+        );
+        assert_eq!(
+            select_terminal_client(clients, Some("/dev/ttys001"), "$2")
+                .unwrap()
+                .tty,
+            "/dev/ttys001"
+        );
+        assert!(select_terminal_client("", None, "$4").is_none());
+    }
+
+    #[test]
     fn source_binding_rejects_an_agent_restart_inside_the_same_shell() {
         let source = NfnSource {
             pane_pid: Some("10".into()),
@@ -923,7 +944,7 @@ async fn focus_source(source: &NfnSource) -> Result<(), String> {
         .pane_id
         .as_deref()
         .ok_or("This request has no agent pane")?;
-    if crate::managed::is_managed(pane) || source.origin_pid.is_none() {
+    if crate::managed::is_managed(pane) {
         return match ipc::send_desktop_command(ipc::DesktopIpcCommand::OpenPane {
             pane_id: pane.into(),
         })
@@ -936,16 +957,55 @@ async fn focus_source(source: &NfnSource) -> Result<(), String> {
             }
         };
     }
-    if let Some(tty) = &source.client_tty {
-        let session = tmux(&["display-message", "-t", pane, "-p", "#{session_name}"])?;
-        tmux(&["switch-client", "-c", tty, "-t", &session])?;
-    }
+    let session = tmux(&["display-message", "-t", pane, "-p", "#{session_id}"])?;
+    let clients = tmux(&[
+        "list-clients",
+        "-F",
+        "#{client_activity}|#{client_tty}|#{client_pid}|#{session_id}",
+    ])?;
+    let client = select_terminal_client(&clients, source.client_tty.as_deref(), &session)
+        .ok_or("No terminal is attached to tmux. Attach a terminal, then open the agent again.")?;
+    let origin = terminal_app_pid(client.pid);
+    tmux(&["switch-client", "-c", client.tty, "-t", &session])?;
     tmux(&["select-window", "-t", pane])?;
     tmux(&["select-pane", "-t", pane])?;
-    if let Some(pid) = source.origin_pid {
+    if let Some(pid) = origin {
         native::activate(pid);
     }
     Ok(())
+}
+
+struct TerminalClient<'a> {
+    tty: &'a str,
+    pid: u32,
+}
+
+fn select_terminal_client<'a>(
+    clients: &'a str,
+    preferred_tty: Option<&str>,
+    target_session: &str,
+) -> Option<TerminalClient<'a>> {
+    clients
+        .lines()
+        .filter_map(|line| {
+            let parts: Vec<_> = line.split('|').collect();
+            if parts.len() != 4 || parts[1].is_empty() {
+                return None;
+            }
+            Some((
+                (
+                    preferred_tty == Some(parts[1]),
+                    parts[3] == target_session,
+                    parts[0].parse::<u64>().ok()?,
+                ),
+                TerminalClient {
+                    tty: parts[1],
+                    pid: parts[2].parse().ok()?,
+                },
+            ))
+        })
+        .max_by_key(|(priority, _)| *priority)
+        .map(|(_, client)| client)
 }
 
 fn terminal_app_pid(mut pid: u32) -> Option<u32> {

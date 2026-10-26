@@ -88,7 +88,7 @@ int main(int argc, const char **argv) {
                     BOOL notchSeam = YES;
                     if (@available(macOS 12.0, *)) {
                         CGFloat inset = [[surface notchForScreen:screen][@"inset"] doubleValue];
-                        if (!rightColumn && inset > 0) notchSeam = fabs(NSMaxY(surface.panel.frame) - (NSMaxY(screen.frame) - inset + MIN(16, inset))) < 1;
+                        if (!rightColumn && inset > 0) notchSeam = fabs(NSMaxY(surface.panel.frame) - NSMaxY(screen.frame)) < 1;
                         printf("Native display: %s; measured notch: %.0f; current AppKit inset: %.0f\n", screen.localizedName.UTF8String, inset, screen.safeAreaInsets.top);
                     }
                     if (!platformReceived || !nonactivating || !foregroundPreserved || !geometry || !passive || !surface.panel.visible || !ignoresCycle || !notchSeam) {

@@ -8,6 +8,7 @@
   let hovering = false, focused = false, busy = false, contextBusy = false, serial = 0, placement = "right";
   let historyOffset = 0, historyItems = [], pendingOffset = 50, hasMoreHistory = false, loadingQueue = false;
   let completionTimer = null, navigating = false, unseenPending = 0;
+  let menu = null;
   let geometry = {}, layoutAnimation = null, animationBounds = null, lastSize = "";
   const autoYesBusy = new Set();
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -92,8 +93,8 @@
       // Shrinking the viewport on every frame can stall WebKit underneath the notch.
       animationBounds = { width: Math.max(before.width, after.width), height: Math.max(before.height, after.height) };
       const opening = !before.height;
-      const pillWidth = placement === "notch" ? Math.max(224, (geometry.notch_width || 192) + 40) : 224;
-      const pillHeight = placement === "notch" ? (geometry.overlap || 16) + 36 : 36;
+      const pillWidth = placement === "notch" ? (geometry.notch_width || 220) : 224;
+      const pillHeight = placement === "notch" ? (geometry.overlap || 38) + 32 : 36;
       layoutAnimation = host.animate([
         { width: `${Math.max(before.width, Math.min(after.width, pillWidth))}px`, height: `${Math.max(before.height, Math.min(after.height, pillHeight))}px`, opacity: opening ? 0 : 1 },
         { width: `${after.width}px`, height: `${after.height}px`, opacity: 1 }
@@ -127,13 +128,13 @@
     timerStarted = performance.now(); collapseTimer = setTimeout(collapse, Math.max(100, remaining));
   }
   function collapse() {
-    clearTimeout(completionTimer); pauseTimer(); stopContext(); expanded = false; details = false; allChoices = false; queue = false; current = null; focused = false;
+    clearTimeout(completionTimer); pauseTimer(); stopContext(); expanded = false; details = false; allChoices = false; queue = false; current = null; focused = false; menu = null;
     native({ native: "text_focus", active: false }); render();
   }
   function openRecord(id) {
     if (busy) return;
     const replyFocused = card?._reply && document.activeElement === card._reply;
-    clearTimeout(completionTimer); pauseTimer(); stopContext(); current = id; expanded = true; details = false; allChoices = false; queue = false; renderedId = null;
+    clearTimeout(completionTimer); pauseTimer(); stopContext(); current = id; expanded = true; details = false; allChoices = false; queue = false; renderedId = null; menu = null;
     call({ op: "read", id }).catch(showError); render();
     if (replyFocused && card?._reply) card._reply.focus({ preventScroll: true });
   }
@@ -157,11 +158,15 @@
     if (!logTimer) logTimer = setInterval(refreshContext, 1000);
   }
   function toggleDetails() {
-    pauseTimer(); stopContext(); expanded = true; details = !details; renderedId = null; render(); startContext();
+    pauseTimer(); stopContext(); expanded = true; details = !details; menu = null; renderedId = null; render(); startContext();
+  }
+  function toggleMenu(next) {
+    pauseTimer(); expanded = true; menu = menu === next ? null : next; render();
+    if (menu === "agent") refreshContext();
   }
   function showQueue() {
     if (busy) return;
-    clearTimeout(completionTimer); pauseTimer(); stopContext(); expanded = true; details = false; queue = true; current = null; renderedId = null; render();
+    clearTimeout(completionTimer); pauseTimer(); stopContext(); expanded = true; details = false; queue = true; current = null; renderedId = null; menu = null; render();
   }
   function showError(error) {
     const message = String(error.message || error);
@@ -208,9 +213,8 @@
     }
   }
   function hasBlock(layout, kind) { return (layout || []).some(b => b.type === kind || hasBlock(b.children, kind)); }
-  function permissionCard(record) { return Boolean(record.request.source?.pane_id && (record.question_id || ["permission", "agent-approval"].includes(record.request.template))); }
   function autoYesControl(record) {
-    const row = el("div", "auto-yes"); row.append(el("span", "", "Auto-yes for this agent"));
+    const row = el("div", "auto-yes"); row.append(el("span", "", "Auto-yes"));
     const control = button("", async () => {
       const pane = record.request.source.pane_id;
       if (autoYesBusy.has(pane)) return;
@@ -273,14 +277,13 @@
         pauseTimer(); expanded = true; allChoices = !allChoices; renderedId = null; render();
       }, "utility more-choices"));
     }
-    if (permissionCard(record)) node.append(autoYesControl(record));
     if (record.request.template !== "update" && (hasBlock(layout, "reply") || record.request.source?.pane_id)) {
       const toAgent = Boolean(record.question_id || record.request.response_destination === "agent_message");
       const reply = el("div", "reply");
       const label = el("label", "reply-label", toAgent ? "Reply to agent" : "Your reply"); label.htmlFor = "notification-reply"; reply.append(label);
       const row = el("div", "reply-row");
       const input = el("textarea"); input.id = "notification-reply"; input.rows = 2;
-      input.placeholder = toAgent ? "Tell the agent what to do..." : "Write feedback...";
+      input.placeholder = "Message...";
       input.value = drafts.get(record.id) || "";
       input.addEventListener("pointerdown", () => native({ native: "text_focus", active: true }));
       input.addEventListener("input", () => { drafts.set(record.id, input.value); updateCard(); });
@@ -293,23 +296,23 @@
     const utilities = el("div", "controls");
     const detailButton = button(details ? "Hide details" : (record.request.media?.length ? "View attachment" : "Details"), toggleDetails, "utility details-toggle");
     detailButton.setAttribute("aria-expanded", String(details)); utilities.append(detailButton);
-    if (record.request.source?.pane_id) utilities.append(button("Open agent", async () => { try { await call({ op: "focus", id: record.id }); } catch (error) { showError(error); } }, "utility"));
+    if (record.request.source?.pane_id) {
+      const agentButton = button("Agent controls", () => toggleMenu("agent"), "utility agent-toggle");
+      agentButton.setAttribute("aria-expanded", String(menu === "agent")); agentButton.setAttribute("aria-haspopup", "dialog");
+      utilities.append(agentButton);
+      const openAgent = button("Open agent", async () => {
+        openAgent.disabled = true;
+        try { await call({ op: "focus", id: record.id }); node._clientError = ""; updateCard(); }
+        catch (error) { showError(error); }
+        finally { openAgent.disabled = false; }
+      }, "utility");
+      openAgent.title = "Switch to this agent's terminal"; utilities.append(openAgent);
+    }
     node.append(utilities);
     if (details) {
       content.append(el("div", "meta", metaText(record.request.source || {})));
       if (hasBlock(layout, "logs")) { const section = el("div"); section.append(el("div", "block-label", "Recent output")); const logs = el("pre", "logs", "Loading recent output..."); node._logs = logs; section.append(logs); primitives.logs = section; }
       renderBlocks(layout, content, record, true, primitives);
-      if (record.request.source?.pane_id) {
-        const agent = el("div", "agent-controls"); agent.hidden = true; node._agent = agent;
-        const agentButton = button("Agent controls", () => {
-          agent.hidden = !agent.hidden; agentButton.setAttribute("aria-expanded", String(!agent.hidden));
-          if (!agent.hidden) refreshContext();
-        }, "utility");
-        agentButton.setAttribute("aria-expanded", "false"); content.append(agentButton, agent);
-      }
-      content.append(button("Dismiss notification", async () => {
-        try { await call({ op: "dismiss", id: record.id }); collapse(); } catch (error) { showError(error); }
-      }, "utility"));
       node.append(content);
     }
     return node;
@@ -339,7 +342,7 @@
     updateAutoYes();
   }
   async function refreshContext() {
-    if (!details || queue || !current || contextBusy) return;
+    if ((!details && menu !== "agent") || queue || !current || contextBusy) return;
     const id = current; contextBusy = true;
     try {
       const value = await call({ op: "context", id });
@@ -349,11 +352,10 @@
         logs.textContent = stripAnsi(value.log) || "No output yet"; if (atBottom) logs.scrollTop = logs.scrollHeight;
       }
       if (value.source) card._sub.textContent = sourceText(value.source);
-      const agent = card._agent;
-      if (agent && !agent.hidden && agent.dataset.built !== "yes") {
+      const agent = host.querySelector(".agent-controls");
+      if (agent && agent.dataset.built !== "yes") {
+        agent.replaceChildren();
         agent.dataset.built = "yes";
-        const record = records.get(id);
-        if (record && !permissionCard(record)) agent.append(autoYesControl(record));
         if (value.source?.provider === "codex" && value.models?.length) {
           const row = el("div", "model-controls"), models = el("select"), effort = el("select"); models.setAttribute("aria-label", "Model"); effort.setAttribute("aria-label", "Reasoning effort");
           for (const model of value.models) { const option = el("option", "", model); option.value = model; models.append(option); }
@@ -362,9 +364,9 @@
           row.append(models, effort, button("Set model", async () => { try { await call({ op: "model", id, model: models.value, effort: effort.value }); } catch (error) { showError(error); } })); agent.append(row);
         }
         buildPlugins(agent, value.plugins || [], value.models || [], id);
-        updateAutoYes();
+        if (!agent.childElementCount) agent.append(el("div", "meta", "No controls available"));
       }
-    } catch (error) { if (id === current && card?._logs) card._logs.textContent = String(error.message || error); }
+    } catch (error) { if (id === current) { if (card?._logs) card._logs.textContent = String(error.message || error); showError(error); } }
     finally { contextBusy = false; }
   }
   function buildPlugins(parent, plugins, models, id) {
@@ -394,18 +396,27 @@
   function renderQueue() {
     const list = el("div", "queue");
     const items = history ? historyItems : pendingRecords();
-    list.append(el("div", "section", history ? "History" : "Pending requests"));
+    const segments = el("div", "segments"); segments.setAttribute("role", "tablist"); segments.setAttribute("aria-label", "Notifications");
+    for (const [label, isHistory] of [["Pending", false], ["History", true]]) {
+      const tab = button(label, () => {
+        if (history === isHistory) return;
+        history = isHistory; render();
+        if (history && !historyItems.length) loadHistory();
+      });
+      tab.setAttribute("role", "tab"); tab.setAttribute("aria-selected", String(history === isHistory)); segments.append(tab);
+    }
+    list.append(segments);
     for (const record of items) {
       const item = button("", () => { records.set(record.id, record); openRecord(record.id); }, `queue-item ${record.read_at ? "" : "unread"}`);
       item.append(el("strong", "", record.request.title), el("div", "meta", sourceText(record.request.source))); list.append(item);
     }
-    if (!items.length) list.append(el("div", "empty-state", history ? "No notification history" : "No pending requests"));
+    if (!items.length) list.append(el("div", "empty-state", loadingQueue ? "Loading..." : history ? "No notification history" : "No pending requests"));
     if ((history && hasMoreHistory) || (!history && unseenPending > 0)) list.append(button(loadingQueue ? "Loading..." : "Load more", loadHistory, "utility"));
     return list;
   }
   async function loadHistory() {
     if (loadingQueue) return;
-    loadingQueue = true;
+    loadingQueue = true; render();
     try {
       const isHistory = history;
       const result = await call({ op: "list", offset: isHistory ? historyOffset : pendingOffset, pending_only: !isHistory });
@@ -413,6 +424,25 @@
       else addPendingPage(result);
     } catch (error) { showError(error); }
     finally { loadingQueue = false; render(); }
+  }
+  function renderMenu() {
+    const existing = host.querySelector(".menu-overlay");
+    if (!menu || !current) { existing?.remove(); return; }
+    if (existing?.dataset.menu === menu && existing.dataset.id === current) return;
+    existing?.remove();
+    const record = records.get(current), overlay = el("div", "menu-overlay");
+    overlay.dataset.menu = menu; overlay.dataset.id = current;
+    const panel = el("div", "menu-panel"); panel.setAttribute("role", "dialog"); panel.setAttribute("aria-label", menu === "agent" ? "Agent controls" : "Notification options");
+    const heading = el("div", "menu-heading"); heading.append(el("span", "", menu === "agent" ? "Agent controls" : "Options"));
+    const close = button("×", () => toggleMenu(menu), "utility close"); close.setAttribute("aria-label", "Close menu"); heading.append(close); panel.append(heading);
+    if (menu === "options") {
+      if (record.request.source?.pane_id) panel.append(autoYesControl(record));
+      const dismiss = button("Dismiss notification", async () => {
+        try { await call({ op: "dismiss", id: record.id }); collapse(); } catch (error) { showError(error); }
+      }, "utility dismiss"); dismiss.title = "Remove this card from Pending"; panel.append(dismiss);
+    } else panel.append(el("div", "agent-controls", "Loading..."));
+    overlay.append(panel); overlay.addEventListener("click", event => { if (event.target === overlay) toggleMenu(menu); }); host.append(overlay);
+    updateAutoYes();
   }
   function render() {
     const before = host.getBoundingClientRect();
@@ -423,7 +453,7 @@
     let top = host.querySelector(".top");
     if (!top) { top = el("div", "top"); host.prepend(top); }
     const items = pendingRecords(), index = items.findIndex(record => record.id === current);
-    const topSignature = JSON.stringify([count, index, queue, history, current, expanded]);
+    const topSignature = JSON.stringify([count, index, queue, current, expanded, menu]);
     if (top.dataset.signature !== topSignature) {
       top.dataset.signature = topSignature; top.replaceChildren();
       const openFirst = () => { const first = pendingRecords()[0]; if (first) openRecord(first.id); else showQueue(); };
@@ -441,7 +471,10 @@
         next.setAttribute("aria-label", "Next notification"); next.title = "Next notification (Command + Shift + ])";
         controls.append(next);
       }
-      if (queue) controls.append(button(history ? "Pending" : "History", async () => { history = !history; showQueue(); if (history) { historyItems = []; historyOffset = 0; await loadHistory(); } }, "utility"));
+      if (current) {
+        const options = button("…", () => toggleMenu("options"), "utility options-toggle");
+        options.title = "Options"; options.setAttribute("aria-label", "Notification options"); options.setAttribute("aria-haspopup", "dialog"); options.setAttribute("aria-expanded", String(menu === "options")); controls.append(options);
+      }
       if (current || queue) {
         const close = button("×", collapse, "utility close"); close.setAttribute("aria-label", "Close notifications"); close.title = "Close"; controls.append(close);
       }
@@ -456,7 +489,8 @@
       }
       updateCard();
     } else { host.querySelector(".card")?.remove(); host.querySelector(".queue")?.remove(); renderedId = null; card = null; }
-    animateLayout(before);
+    const agentButton = card?.querySelector(".agent-toggle"); agentButton?.setAttribute("aria-expanded", String(menu === "agent"));
+    renderMenu(); animateLayout(before);
   }
   function receive(value) {
     if (value.type === "response") {
@@ -491,14 +525,16 @@
     if (!focused) { native({ native: "text_focus", active: false }); resumeTimer(); }
   }));
   document.addEventListener("keydown", event => {
-    if (event.key === "Escape") { event.preventDefault(); collapse(); }
+    if (event.key === "Escape") { event.preventDefault(); if (menu) toggleMenu(menu); else collapse(); }
     if ((event.metaKey || event.ctrlKey) && event.shiftKey && ["[", "]", "{", "}"].includes(event.key)) {
       event.preventDefault(); navigate(event.key === "[" || event.key === "{" ? -1 : 1);
     }
   });
   window.addEventListener("message", event => { if (event.source === window.parent) receive(event.data || {}); });
   document.addEventListener("visibilitychange", () => { if (document.hidden) stopContext(); else startContext(); });
-  window.nfn = { receive, collapse, setPlacement(value) {
+  window.nfn = { receive, collapse, outsideClick() {
+    if (!expanded && records.get(current)?.request.template === "update") collapse();
+  }, setPlacement(value) {
     const next = typeof value === "string" ? { placement: value } : value;
     if (JSON.stringify(next) === JSON.stringify(geometry)) return;
     geometry = next; placement = next.placement;

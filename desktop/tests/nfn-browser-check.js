@@ -17,6 +17,11 @@
   assert(document.querySelectorAll(".actions button").length === 3, "first card exposes three quick choices");
   assert(document.querySelector(".reply-label").textContent === "Reply to agent" && document.querySelector(".send").textContent === "Send", "reply field and Send are visible on the first card");
   assert(!document.querySelector(".logs, .details-content, select") && window.fixture.contextCalls === 0, "first card has no logs, settings, or background log polling");
+  assert(buttons().some(button => button.textContent === "Agent controls"), "agent controls are reachable on the first card");
+  assert(getComputedStyle(document.querySelector(".send")).borderRadius === "20px" && document.querySelector(".send").offsetHeight < 38, "Send uses a small rounded action button");
+  click("Agent controls"); await sleep(60);
+  assert(document.querySelector('.menu-panel[role="dialog"] .model-controls select') && !document.querySelector(".details-content"), "agent controls open directly without expanding Details");
+  document.querySelector('[aria-label="Close menu"]').click();
   assert(document.querySelector("#surface").getBoundingClientRect().height < 430, "first card stays compact");
   assert(!window.unsafeMarkup && !document.querySelector(".message img"), "request text cannot inject markup");
   const input = draft("Keep this draft");
@@ -49,6 +54,7 @@
   assert(!document.querySelector("select"), "agent settings stay hidden even when viewing details");
   click("Agent controls"); await sleep(60);
   assert(document.querySelector(".model-controls select"), "advanced agent controls remain available behind a button");
+  document.querySelector('[aria-label="Close menu"]').click();
   click("Hide details"); await sleep(30);
   const contextCalls = window.fixture.contextCalls; await sleep(1150);
   assert(window.fixture.contextCalls === contextCalls && !document.querySelector(".logs, select"), "closing details stops polling and hides extra controls");
@@ -78,6 +84,12 @@
   assert(document.querySelector(".count").textContent === "51 / 67", "next loads the next page without opening the notification list");
   window.nfn.receive({ type: "show" });
   assert(document.querySelectorAll(".queue-item").length === 67, "loaded notifications stay available in the list");
+  click("History"); await sleep(60);
+  assert(document.querySelector('[role="tab"][aria-selected="true"]').textContent === "History", "History has a selected segment");
+  click("Pending"); await sleep(30);
+  assert(document.querySelector('[role="tab"][aria-selected="true"]').textContent === "Pending" && document.querySelectorAll(".queue-item").length === 67, "switching from History back to Pending restores the pending list");
+  click("History"); click("Pending"); window.nfn.receive(window.fixture.snapshot()); await sleep(60);
+  assert(document.querySelector('[role="tab"][aria-selected="true"]').textContent === "Pending", "queue refreshes keep the selected segment");
   window.nfn.receive({ ...window.fixture.snapshot(), preview: true });
   document.querySelector(".queue-item").click(); await sleep(30);
   const responseCount = window.fixture.calls.filter(command => command.op === "respond").length;
@@ -103,8 +115,10 @@
   window.fixture.records.set(approval.id, approval);
   window.nfn.receive(window.fixture.snapshot(approval.id));
   assert(document.querySelector(".message").textContent === "Would you like to run the checks?\n$ echo 'ready?'", "detected prompts lead with the current question instead of old terminal output");
+  assert(!document.querySelector('[role="switch"]'), "auto-yes stays out of the main card");
+  document.querySelector('[aria-label="Notification options"]').click();
   const autoYes = document.querySelector('[role="switch"]');
-  assert(autoYes && autoYes.getAttribute("aria-checked") === "false" && !document.querySelector(".details-content"), "permission cards expose agent-scoped auto-yes without opening details");
+  assert(autoYes && autoYes.getAttribute("aria-checked") === "false" && !document.querySelector(".details-content"), "the top-right options menu contains agent-scoped auto-yes");
   const contextCount = window.fixture.contextCalls;
   autoYes.click(); autoYes.click(); await sleep(60);
   assert(window.fixture.calls.filter(command => command.op === "auto_yes").length === 1 && autoYes.getAttribute("aria-checked") === "true", "auto-yes sends one command and reflects confirmed daemon state");
@@ -119,8 +133,9 @@
   const autoCalls = window.fixture.calls.filter(command => command.op === "auto_yes").length;
   autoYes.click(); await sleep(60);
   assert(window.fixture.calls.filter(command => command.op === "auto_yes").length === autoCalls && autoYes.getAttribute("aria-checked") === "false", "preview auto-yes is inert and never pretends to enable permissions");
+  document.querySelector('[aria-label="Close menu"]').click();
   window.nfn.receive(window.fixture.snapshot());
-  window.nfn.setPlacement({ placement: "notch", notch_width: 210, overlap: 16, max_width: 500, max_height: 600, reduce_motion: true });
+  window.nfn.setPlacement({ placement: "notch", notch_width: 210, overlap: 38, max_width: 500, max_height: 600, reduce_motion: true });
   click("Details");
   const smallSize = document.querySelector("#surface").getBoundingClientRect();
   assert(smallSize.width === 500 && smallSize.height <= 600 && document.querySelector(".details-content").clientHeight > 100, "expanded details fit a small display and retain a usable scroller");
@@ -128,11 +143,13 @@
   assert(!document.querySelector("#surface").getAnimations().length, "Reduce Motion uses immediate size changes");
   window.nfn.collapse();
   const notchStyle = getComputedStyle(document.querySelector("#surface"));
-  assert(notchStyle.backgroundColor === "rgb(0, 0, 0)" && notchStyle.borderTopWidth === "0px" && notchStyle.paddingTop === "16px" && parseFloat(notchStyle.width) >= 250, "collapsed notch overlaps the camera corners with a borderless black surface");
+  assert(notchStyle.backgroundColor === "rgb(0, 0, 0)" && notchStyle.borderTopWidth === "0px" && notchStyle.paddingTop === "38px" && parseFloat(notchStyle.width) === 210 && notchStyle.borderTopLeftRadius === "0px", "collapsed notch matches the cutout width and covers its full height without top corners or a border");
   document.querySelector("#surface").dispatchEvent(new MouseEvent("mouseleave"));
   const timedApproval = window.fixture.snapshot(approval.id); timedApproval.settings.preview_seconds = .05;
   window.nfn.receive(timedApproval); await sleep(180);
   assert(Boolean(document.querySelector(".card")), "actionable cards remain open beyond the preview timer");
+  window.nfn.outsideClick();
+  assert(Boolean(document.querySelector(".card")), "clicking another app keeps actionable cards available for review");
   window.nfn.collapse();
   window.fixture.records.clear();
   const update = window.fixture.record("update", 0); update.request.template = "update";
@@ -143,6 +160,8 @@
   assert(document.querySelector(".status").textContent === "Update" && !document.querySelector(".reply, .auto-yes") && document.querySelector(".actions button").textContent === "Got it", "status updates read as notices without asking for instructions");
   await sleep(180);
   assert(document.querySelector("#surface").classList.contains("pill"), "only status updates collapse on the preview timer");
+  click("Notifications"); window.nfn.outsideClick(); await sleep(180);
+  assert(Boolean(document.querySelector(".card")), "an explicitly opened update stays expanded while using another app");
   window.nfn.collapse();
   return { passed: checks.length, checks };
 })()
