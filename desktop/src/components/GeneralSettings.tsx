@@ -14,8 +14,8 @@ import { UsagePanel } from "./UsagePanel"
 import { DaemonPanel } from "./DaemonPanel"
 import { EnhancedNotifications } from "./EnhancedNotifications"
 
-export type SettingsSubTab = "general" | "remote" | "telegram" | "shortcuts" | "models" | "daemon" | "secrets" | "skills" | "usage"
-const settingsSubTabIds: SettingsSubTab[] = ["general", "remote", "telegram", "shortcuts", "models", "daemon", "secrets", "skills", "usage"]
+export type SettingsSubTab = "general" | "notifications" | "remote" | "telegram" | "shortcuts" | "models" | "daemon" | "secrets" | "skills" | "usage"
+const settingsSubTabIds: SettingsSubTab[] = ["general", "notifications", "remote", "telegram", "shortcuts", "models", "daemon", "secrets", "skills", "usage"]
 const SETTINGS_SUBTAB_KEY = "desktop_settings_subtab"
 const SETTINGS_SUBTAB_SCROLL_PREFIX = "desktop_settings_subtab_scroll"
 
@@ -31,6 +31,7 @@ type Props = {
 
 const subTabs: { id: SettingsSubTab; label: string }[] = [
   { id: "general", label: "General" },
+  { id: "notifications", label: "Notifications" },
   { id: "remote", label: "Remote" },
   { id: "telegram", label: "Telegram" },
   { id: "shortcuts", label: "Shortcuts" },
@@ -139,6 +140,7 @@ export function GeneralSettings({
       </div>
       <div ref={contentRef} className="settings-subtab-content" onScroll={handleContentScroll}>
         {activeSubTab === "general" && <GeneralSettingsContent onAddJob={onAddJob} />}
+        {activeSubTab === "notifications" && <NotificationSettingsContent />}
         {activeSubTab === "remote" && (
           <RelayPanel
             externalAccessToken={externalAccessToken}
@@ -156,6 +158,56 @@ export function GeneralSettings({
       </div>
     </div>
   )
+}
+
+function NotificationSettingsContent() {
+  const [settings, setSettings] = useState<AppSettings | null>(null)
+  const [error, setError] = useState("")
+  const [saving, setSaving] = useState(false)
+  useEffect(() => {
+    invoke<AppSettings>("get_settings").then(setSettings).catch(e => setError(String(e)))
+  }, [])
+  const update = async (patch: Partial<AppSettings>) => {
+    setSaving(true)
+    try {
+      const latest = await invoke<AppSettings>("get_settings")
+      const next = { ...latest, ...patch }
+      await invoke("set_settings", { newSettings: next })
+      setSettings(next); setError("")
+    } catch (e) { setError(String(e)) }
+    finally { setSaving(false) }
+  }
+  if (!settings) return <div className="loading">{error || "Loading notifications..."}</div>
+  return <div className="settings-section">
+    <h2>Notifications</h2>
+    <fieldset disabled={saving} style={{ border: 0, padding: 0, margin: 0 }}>
+      <div className="field-group">
+        <div className="form-group">
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={settings.notify_questions_local}
+              onChange={(e) => update({ notify_questions_local: e.target.checked })}
+            />
+            Desktop question notifications
+          </label>
+        </div>
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={settings.notify_questions_remote}
+              onChange={(e) => update({ notify_questions_remote: e.target.checked })}
+            />
+            Remote question notifications
+          </label>
+        </div>
+        <EnhancedNotifications settings={settings.enhanced_notifications} onChange={value => update({ enhanced_notifications: value })} />
+      </div>
+
+    </fieldset>
+    {error && <div role="status" className="nfn-error">{error}</div>}
+  </div>
 }
 
 let GeneralSettingsContent = ({ onAddJob }: { onAddJob: () => void }) => {
@@ -325,32 +377,6 @@ let GeneralSettingsContent = ({ onAddJob }: { onAddJob: () => void }) => {
         </div>
       </div>
 
-      <div className="field-group">
-        <span className="field-group-title">Notifications</span>
-        <div className="form-group">
-          <label className="checkbox-label">
-            <input
-              type="checkbox"
-              checked={settings.notify_questions_local}
-              onChange={(e) => update({ notify_questions_local: e.target.checked })}
-            />
-            Desktop question notifications
-          </label>
-          <span className="hint">Show local macOS notifications when an agent asks a question</span>
-        </div>
-        <div className="form-group" style={{ marginBottom: 0 }}>
-          <label className="checkbox-label">
-            <input
-              type="checkbox"
-              checked={settings.notify_questions_remote}
-              onChange={(e) => update({ notify_questions_remote: e.target.checked })}
-            />
-            Remote question notifications
-          </label>
-          <span className="hint">Send question notifications to connected remote clients</span>
-        </div>
-        <EnhancedNotifications settings={settings.enhanced_notifications} onChange={value => update({ enhanced_notifications: value })} />
-      </div>
 
       <div className="field-group">
         <span className="field-group-title">Agent integrations</span>

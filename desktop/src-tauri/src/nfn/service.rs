@@ -381,6 +381,21 @@ impl Service {
                 native::push(json!({"type":"show"}));
                 return Ok(json!({}));
             }
+            NfnCommand::Settings => {
+                open_notification_settings().await?;
+                return Ok(json!({"opened":true}));
+            }
+            NfnCommand::OpenJob { id } => {
+                let record = self.store.get(&id)?;
+                let job = record
+                    .request
+                    .source
+                    .job_id
+                    .as_deref()
+                    .ok_or("This notification has no job")?;
+                reveal_job(job).await?;
+                return Ok(json!({"opened":true}));
+            }
             NfnCommand::Focus { id } => {
                 let record = self.store.get(&id)?;
                 validate_source(&record.request.source)?;
@@ -454,6 +469,12 @@ impl Service {
         };
         let _guard = self.mutation.lock().await;
         let result = match command {
+            NfnCommand::DismissMany { ids } => {
+                if ids.len() > 10000 {
+                    return Err("Select up to 10000 notifications at a time".into());
+                }
+                json!({"records":self.store.dismiss_many(&ids)?})
+            }
             NfnCommand::Send { mut request } => {
                 request.validate()?;
                 if let Some(pane) = request.source.pane_id.clone() {
@@ -928,6 +949,13 @@ fn same_source(source: &NfnSource, current: &NfnSource) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn job_folder_rejects_paths_outside_the_job_directory() {
+        for job in ["", "/tmp", "../outside", "project/../../outside"] {
+            assert!(job_directory(job).is_err());
+        }
+    }
     #[test]
     fn focus_finds_a_terminal_when_the_agent_session_is_detached() {
         let clients = "10|/dev/ttys001|101|$1\n20|/dev/ttys002|202|$2";
@@ -975,6 +1003,63 @@ mod tests {
         current.session_id = Some("session-2".into());
         assert!(!same_source(&source, &current));
     }
+}
+
+fn job_directory(job: &str) -> Result<std::path::PathBuf, String> {
+    if job.is_empty()
+        || std::path::Path::new(job)
+            .components()
+            .any(|part| !matches!(part, std::path::Component::Normal(_)))
+    {
+        return Err("Invalid job identifier".into());
+    }
+    let directory = crate::config::jobs::JobsConfig::jobs_dir_public()
+        .ok_or("Could not determine job directory")?
+        .join(job);
+    if !directory.is_dir() {
+        return Err("This job folder no longer exists".into());
+    }
+    Ok(directory)
+}
+
+async fn reveal_job(job: &str) -> Result<(), String> {
+    let directory = job_directory(job)?;
+    #[cfg(target_os = "macos")]
+    let status = tokio::process::Command::new("open")
+        .arg("-R")
+        .arg(directory)
+        .status()
+        .await;
+    #[cfg(not(target_os = "macos"))]
+    let status = tokio::process::Command::new("xdg-open")
+        .arg(directory)
+        .status()
+        .await;
+    if !status.map_err(|e| e.to_string())?.success() {
+        return Err("Could not open the job folder".into());
+    }
+    Ok(())
+}
+
+async fn open_notification_settings() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    let mut command = {
+        let mut command = tokio::process::Command::new("open");
+        command.args(["-b", "cc.clawtab"]);
+        command
+    };
+    #[cfg(not(target_os = "macos"))]
+    let mut command = tokio::process::Command::new("xdg-open");
+    if !command
+        .arg("clawtab://settings/notifications")
+        .status()
+        .await
+        .map_err(|e| e.to_string())?
+        .success()
+    {
+        return Err("Could not open notification settings".into());
+    }
+    Ok(())
 }
 
 async fn focus_source(source: &NfnSource) -> Result<(), String> {

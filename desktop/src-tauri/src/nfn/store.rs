@@ -168,6 +168,30 @@ impl Store {
         Self::write(&self.conn.lock(), record)
     }
 
+    pub fn dismiss_many(&self, ids: &[String]) -> Result<Vec<NfnRecord>, String> {
+        let mut conn = self.conn.lock();
+        let transaction = conn.transaction().map_err(|e| e.to_string())?;
+        let timestamp = now();
+        let mut records = Vec::new();
+        for id in ids {
+            let raw: String = transaction
+                .query_row(
+                    "SELECT record FROM notifications WHERE id=?1",
+                    [id],
+                    |row| row.get(0),
+                )
+                .map_err(|e| e.to_string())?;
+            let mut record: NfnRecord = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+            record.dismissed_at = Some(timestamp);
+            record.read_at = Some(timestamp);
+            record.updated_at = timestamp;
+            Self::write(&transaction, &record)?;
+            records.push(record);
+        }
+        transaction.commit().map_err(|e| e.to_string())?;
+        Ok(records)
+    }
+
     pub fn claim(&self, id: &str) -> Result<NfnRecord, String> {
         let mut record = self.get(id)?;
         if record.status != "pending" {
@@ -293,5 +317,27 @@ mod tests {
         let second = store.send(second, None).unwrap();
         assert!(second.1);
         assert_ne!(first.id, second.0.id);
+    }
+
+    #[test]
+    fn bulk_dismiss_is_atomic_and_keeps_decisions_and_history() {
+        let store = Store::from_connection(Connection::open_in_memory().unwrap()).unwrap();
+        let first = store.send(request(), None).unwrap().0;
+        let mut second_request = request();
+        second_request.dedupe_key = Some("second".into());
+        let second = store.send(second_request, None).unwrap().0;
+        assert!(store
+            .dismiss_many(&[first.id.clone(), "missing".into()])
+            .is_err());
+        assert_eq!(store.pending_count().unwrap(), 2);
+        assert!(store.get(&first.id).unwrap().dismissed_at.is_none());
+        let dismissed = store
+            .dismiss_many(&[first.id.clone(), second.id.clone()])
+            .unwrap();
+        assert_eq!(store.pending_count().unwrap(), 0);
+        assert_eq!(store.list(0).unwrap().len(), 2);
+        assert!(dismissed.iter().all(|record| record.status == "pending"
+            && record.dismissed_at.is_some()
+            && record.response.is_none()));
     }
 }

@@ -2,9 +2,9 @@
 
 The daemon owns the notification queue and the macOS overlay. Cards remain available while the desktop app is closed. On macOS 12 or later, cards appear below the notch on the selected display, or in a right column on displays without a notch. Settings also allow the right column on every display.
 
-Configure delivery, display, sound, Focus behavior, and layouts in **Settings > General > Notifications**. Existing local notification preferences still apply. The first card shows the message, quick choices, and a reply field with a Send button. Its colors and action buttons follow the remote app. Review, question, and permission cards stay open until answered or closed. Status updates collapse to a pending count after eight seconds, pausing on hover.
+Configure delivery, display, sound, Focus behavior, and layouts in **Settings > Notifications**. Existing local notification preferences still apply. The first card shows the message, quick choices, and a reply field with a Send button. Its colors and action buttons follow the remote app. Review, question, and permission cards stay open until answered or collapsed. Status updates collapse to a pending count after eight seconds, pausing on hover.
 
-Use the previous/next arrows to move between notifications, or Command/Ctrl + Shift + [ / ]. Each card keeps its reply draft. New requests queue without replacing the card being read, and a successful reply advances to the next request. The position count opens the full list with Pending and History segments. Details widens the card and adds a larger scrollable area for the full message, attachments, and recent output. Details and Open agent are available on the first card. Open agent selects the originating conversation in an attached terminal, including when that terminal currently shows a different tmux session.
+Use the previous/next arrows to move between notifications, or Command/Ctrl + Shift + [ / ]. Each card keeps its reply draft. New requests queue without replacing the card being read, and a successful reply advances to the next request. Click the bar background to open or collapse it. The ClawTab icon opens the latest notification; the list icon opens Pending and History. Pending rows have selection checkboxes and a dismiss button. Select all includes unloaded pages, and Dismiss keeps the cards in History without sending a decision to an agent. Details widens the card and adds a larger scrollable area for the full message, attachments, and recent output. Details stays at the bottom left, including when expanded. Open agent is available on agent cards; Go to job reveals the originating job folder in Finder. Open agent selects the originating conversation in an attached terminal, including when that terminal currently shows a different tmux session.
 
 The black, borderless notch surface reaches the physical top edge of the screen and covers the camera cutout's lower corners. Its collapsed width matches the measured cutout. Width and height animate together while the top stays attached. Display space limits the expanded size. Reduce Motion disables size animations.
 
@@ -12,7 +12,7 @@ The native canvas stays fixed while the card animates inside it, and transparent
 
 Send sits below the full-width reply field. Command + Enter sends the reply; standard macOS editing shortcuts work in the field, including Command + A to select all.
 
-Clicking another app releases keyboard focus while keeping a review card visible. Use Close or Escape to fold it away without answering.
+Clicking another app releases keyboard focus while keeping a review card visible. Click the bar background or press Escape to fold it away without answering.
 
 Following macOS Focus requires notification and Focus access for **ClawTab Daemon**. When Focus status is unavailable or Focus is active, delivery goes through macOS notifications. macOS then applies its notification settings and Focus allowlist. Independent mode allows the overlay and its sound regardless of Focus. Selecting Both uses the native notification for sound.
 
@@ -43,6 +43,7 @@ cwtctl nfn get REQUEST_ID
 cwtctl nfn wait REQUEST_ID --timeout 60
 cwtctl nfn cancel REQUEST_ID
 cwtctl nfn show
+cwtctl nfn settings
 cwtctl nfn templates list
 cwtctl nfn templates validate ./my-review.yaml
 ```
@@ -66,7 +67,7 @@ An explicit request can supply up to 32 actions. The first card displays three; 
 }
 ```
 
-The top-right **…** menu contains **Auto-yes**, Agent controls, and Dismiss. Auto-yes uses the same pane-specific setting as the remote app and tmux: future prompts from that agent are automatically answered until it is turned off. Its state stays synchronized with other clients, and stale sessions cannot toggle a replacement agent.
+Agent cards have a **…** menu beside their title with **Auto-yes**, Agent controls, Dismiss, and notification settings. Job cards omit the agent menu. Right-clicking the bar also opens a settings menu; `cwtctl nfn settings` opens the Notifications tab directly. Auto-yes uses the same pane-specific setting as the remote app and tmux: future prompts from that agent are automatically answered until it is turned off. Its state stays synchronized with other clients, and stale sessions cannot toggle a replacement agent.
 
 Action kinds are `choice` (default), `focus`, `auto_yes`, `model`, and `plugin`. Model and plugin actions use `value` for the model or installed action ID and `parameters` for string values, such as reasoning `effort`. The **… > Agent controls** menu offers Codex model selection and available installed plugin actions without opening Details.
 

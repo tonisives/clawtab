@@ -24,6 +24,9 @@ window.webkit = { messageHandlers: { nfn: { postMessage(value) {
     if (fixture.autoYesPanes.has(pane)) fixture.autoYesPanes.delete(pane); else fixture.autoYesPanes.add(pane);
     response = { auto_yes: fixture.autoYesPanes.has(pane) };
   }
+  if (command.op === "dismiss_many") {
+    response = { records: command.ids.map(id => { const record = fixture.records.get(id); record.dismissed_at = Date.now(); record.read_at = Date.now(); return record; }) };
+  }
   if (command.op === "respond") {
     if (fixture.responseError) {
       setTimeout(() => window.nfn.receive({ type: "response", token, error: fixture.responseError }), 1);
@@ -36,7 +39,7 @@ window.webkit = { messageHandlers: { nfn: { postMessage(value) {
       record.response = { action_id: command.action_id, text: command.text };
     }
   }
-  if (command.op === "list") response = { records: [...fixture.records.values()].filter(r => !command.pending_only || r.status === "pending").slice(command.offset, command.offset + 50), next_offset: command.offset + 50 };
+  if (command.op === "list") response = { records: [...fixture.records.values()].filter(r => !command.pending_only || (r.status === "pending" && !r.dismissed_at)).slice(command.offset, command.offset + 50), next_offset: command.offset + 50 };
   setTimeout(() => window.nfn.receive({ type: "response", token, value: response }), 1);
 } } } };
 window.fixture.record = (id, actions = 4) => ({
@@ -45,7 +48,7 @@ window.fixture.record = (id, actions = 4) => ({
     data: { diff: "- Previous caption\n+ New launch caption", plan: "Review the caption\nApprove publication" },
     media: [], actions: ["Approve", "Request changes", "Reject", "Later"].slice(0, actions).map((label, i) => ({ id: String(i), label, kind: "choice" })) }
 });
-window.fixture.snapshot = (arrival = null) => ({ type: "snapshot", visible: true, preview: false, records: [...window.fixture.records.values()].slice(0,50), pending_count: [...window.fixture.records.values()].filter(r => r.status === "pending").length, arrival, auto_yes_panes: [...window.fixture.autoYesPanes],
+window.fixture.snapshot = (arrival = null) => ({ type: "snapshot", visible: true, preview: false, records: [...window.fixture.records.values()].filter(r => r.status === "pending" && !r.dismissed_at).slice(0,50), pending_count: [...window.fixture.records.values()].filter(r => r.status === "pending" && !r.dismissed_at).length, arrival, auto_yes_panes: [...window.fixture.autoYesPanes],
   settings: { preview_seconds: 8, hover_expand: false }, templates: { templates: [{ id: "review", layout: [{ type: "text", field: "body" }, { type: "row", children: [{ type: "diff", field: "data.diff" }, { type: "plan", field: "data.plan" }] }, { type: "reply" }, { type: "choices" }, { type: "logs" }] }] } });
 `;
 const ready = String.raw`

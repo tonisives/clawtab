@@ -27,17 +27,26 @@ button.utility:hover { color: #e4e4e4; background: #242424; }
 #surface.empty { display: none; }
 #surface.pill { width: 224px; border-color: #333; }
 #surface.notch.pill { width: var(--notch-width, 220px); border-radius: 0 0 12px 12px; }
-.top { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 8px; border-bottom: 1px solid var(--line); }
-.brand { font-size: 11px; font-weight: 500; }
-.count { font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.top-actions { display: flex; align-items: center; gap: 2px; }
-.nav-step, .close, .options-toggle { min-width: 30px; height: 30px; font-size: 22px; line-height: 20px; }
+.top { position: relative; flex: none; display: grid; grid-template-columns: 30px 1fr 30px; align-items: center; gap: 8px; padding: 5px 8px; border-bottom: 1px solid var(--line); }
+button.bar-toggle { position: absolute; inset: 0; width: 100%; border: 0; border-radius: 0; background: transparent; }
+button.bar-toggle:hover { background: #ffffff08; }
+.top > .icon-button, .top-actions { position: relative; }
+.brand img { width: 20px; height: 20px; border-radius: 5px; }
+.count { display: flex; align-items: center; height: 30px; font-size: 11px; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.top-actions { display: flex; align-items: center; justify-content: center; gap: 4px; pointer-events: none; }
+.top-actions button { pointer-events: auto; }
+button.icon-button { display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 5px; }
+.icon-button svg { display: block; width: 16px; height: 16px; }
+.close, .options-toggle { min-width: 26px; height: 26px; font-size: 22px; line-height: 20px; }
+.heading .options-toggle { margin: -4px -4px 0 0; flex: none; }
+.settings-menu-open { min-height: calc(var(--notch-overlap, 0px) + 152px); }
 .pill .top { border: 0; }
 .notch.pill .top { height: 32px; padding: 2px 8px; }
 .card { min-height: 0; padding: 12px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 .details-open .card { display: flex; flex-direction: column; overflow: hidden; }
 .details-open .card > * { flex: none; }
 .heading { display: flex; align-items: flex-start; gap: 8px; justify-content: space-between; }
+.heading h1 { flex: 1; }
 h1 { margin: 0; font-size: 15px; line-height: 1.35; font-weight: 600; overflow-wrap: anywhere; }
 .sub, .meta, .hint { font-size: 11px; line-height: 1.5; color: var(--muted); overflow-wrap: anywhere; }
 .sub { margin: 3px 0 10px; }
@@ -83,6 +92,13 @@ button.send { flex: none; align-self: flex-end; min-width: 54px; padding: 7px 12
 .segments button { flex: 1; padding: 5px 12px; border: 0; color: var(--muted); background: transparent; border-radius: 5px; font-size: 12px; }
 .segments button[aria-selected="true"] { background: #38383a; color: #e4e4e4; }
 .queue-item { display: block; text-align: left; width: 100%; background: transparent; border: 0; border-radius: 6px; padding: 10px 8px; margin: 2px 0; }
+.queue-row { display: flex; align-items: center; gap: 2px; padding: 0 4px; }
+.queue-row .queue-item { flex: 1; min-width: 0; }
+.queue-row input, .queue-selection input { flex: none; width: 14px; height: 14px; margin: 4px; accent-color: var(--accent); }
+.queue-selection { display: flex; align-items: center; justify-content: space-between; min-height: 34px; padding: 0 4px; color: var(--muted); font-size: 11px; }
+.queue-selection label { display: flex; align-items: center; gap: 6px; }
+.queue-selection button { font-size: 11px; }
+.dismiss-item { flex: none; }
 .queue-item strong { display: block; font-size: 13px; font-weight: 500; overflow-wrap: anywhere; }
 .queue-item .meta { margin-top: 3px; }
 .queue-item.unread strong::before { content: ""; display: inline-block; width: 5px; height: 5px; background: var(--accent); border-radius: 50%; margin-right: 7px; vertical-align: middle; }
@@ -96,8 +112,10 @@ select, input { min-width: 0; border: 1px solid #333; border-radius: 6px; backgr
 .plugin-fields label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--muted); }
 .menu-overlay { position: absolute; z-index: 2; inset: calc(var(--notch-overlap, 0px) + 40px) 0 0; background: #0006; padding: 4px 8px 8px; display: flex; justify-content: flex-end; align-items: flex-start; }
 .right .menu-overlay { inset-block-start: 40px; }
+.menu-overlay:not([data-menu="settings"]) { inset-block-start: calc(var(--notch-overlap, 0px) + 76px); }
+.right .menu-overlay:not([data-menu="settings"]) { inset-block-start: 76px; }
 .menu-panel { width: 100%; max-width: 370px; max-height: 100%; overflow-y: auto; padding: 10px 12px; border: 1px solid #333; border-radius: 12px; background: #1c1c1e; box-shadow: 0 8px 24px #0008; }
-.menu-overlay[data-menu="options"] .menu-panel { max-width: 250px; }
+.menu-overlay[data-menu="options"] .menu-panel, .menu-overlay[data-menu="settings"] .menu-panel { max-width: 250px; }
 .menu-heading { display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 500; }
 .menu-heading .close { height: 24px; padding: 0 4px; }
 .menu-panel .menu-link { width: 100%; text-align: left; padding: 10px 0 2px; font-size: 12px; }

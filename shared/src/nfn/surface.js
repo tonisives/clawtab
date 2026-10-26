@@ -11,6 +11,8 @@
   let menu = null;
   let geometry = {}, layoutAnimation = null, contentAnimations = [], lastSize = "", renderedLayout = "";
   const autoYesBusy = new Set();
+  const selectedNotifications = new Set();
+  let bulkBusy = false, queueError = "";
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
   function native(value) {
@@ -37,7 +39,16 @@
     const node = el("button", className, text); node.type = "button";
     node.addEventListener("click", action); return node;
   }
+  function iconButton(label, path, action, className = "") {
+    const control = button("", action, `utility icon-button ${className}`);
+    control.setAttribute("aria-label", label); control.title = label;
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("fill", "none"); svg.setAttribute("stroke", "currentColor"); svg.setAttribute("stroke-width", "2"); svg.setAttribute("stroke-linecap", "round"); svg.setAttribute("stroke-linejoin", "round"); svg.setAttribute("aria-hidden", "true");
+    const shape = document.createElementNS(svg.namespaceURI, "path"); shape.setAttribute("d", path); svg.append(shape); control.append(svg);
+    return control;
+  }
   function pending(record) { return record.status === "pending" || record.status === "delivering"; }
+  function hasAgent(record) { const source = record.request.source; return Boolean(source?.pane_id && (source.agent_pid || source.provider || record.question_id)); }
   function pendingRecords() { return [...records.values()].filter(r => pending(r) && !r.dismissed_at).sort((a, b) => a.created_at - b.created_at); }
   function pendingCount() { return pendingRecords().length + unseenPending; }
   function addPendingPage(result) {
@@ -217,6 +228,14 @@
     call({ op: "read", id }).catch(showError); render();
     if (replyFocused && card?._reply) card._reply.focus({ preventScroll: true });
   }
+  async function openLatest() {
+    let latest = pendingRecords().at(-1);
+    if (!latest) {
+      try { latest = (await call({ op: "list", offset: 0, pending_only: false })).records?.[0]; }
+      catch (error) { showError(error); return; }
+    }
+    if (latest) { records.set(latest.id, latest); openRecord(latest.id); } else showQueue();
+  }
   async function navigate(step) {
     if (busy || navigating) return;
     navigating = true;
@@ -245,7 +264,7 @@
   }
   function showQueue() {
     if (busy) return;
-    clearTimeout(completionTimer); pauseTimer(); stopContext(); expanded = true; details = false; queue = true; current = null; renderedId = null; menu = null; render();
+    clearTimeout(completionTimer); pauseTimer(); stopContext(); expanded = true; details = false; queue = true; current = null; renderedId = null; menu = null; selectedNotifications.clear(); queueError = ""; render();
   }
   function showError(error) {
     const message = String(error.message || error);
@@ -327,7 +346,12 @@
     const node = el("article", "card");
     node._signature = JSON.stringify([record.request, template(record)]);
     const heading = el("div", "heading"); heading.append(el("h1", "", record.request.title));
-    const status = el("span", "status"); heading.append(status); node._status = status; node.append(heading);
+    const status = el("span", "status"); heading.append(status); node._status = status;
+    if (hasAgent(record)) {
+      const options = button("…", () => toggleMenu("options"), "utility options-toggle");
+      options.title = "Agent options"; options.setAttribute("aria-label", "Notification options"); options.setAttribute("aria-haspopup", "dialog"); node._options = options; heading.append(options);
+    }
+    node.append(heading);
     const sub = el("div", "sub", sourceText(record.request.source)); node._sub = sub; node.append(sub);
     const message = el("div", "message", messageText(record)); node.append(message);
     const layout = template(record).layout, primitives = {};
@@ -385,14 +409,22 @@
         finally { openAgent.disabled = false; }
       }, "utility");
       openAgent.title = "Switch to this agent's terminal"; utilities.append(openAgent);
+    } else if (record.request.source?.job_id) {
+      const openJob = button("Go to job", async () => {
+        openJob.disabled = true;
+        try { await call({ op: "open_job", id: record.id }); }
+        catch (error) { showError(error); }
+        finally { openJob.disabled = false; }
+      }, "utility");
+      openJob.title = "Show job folder in Finder"; utilities.append(openJob);
     }
-    node.append(utilities);
     if (details) {
       content.append(el("div", "meta", metaText(record.request.source || {})));
       if (hasBlock(layout, "logs")) { const section = el("div"); section.append(el("div", "block-label", "Recent output")); const logs = el("pre", "logs", "Loading recent output..."); node._logs = logs; section.append(logs); primitives.logs = section; }
       renderBlocks(layout, content, record, true, primitives);
       node.append(content);
     }
+    node.append(utilities);
     return node;
   }
   function updateCard() {
@@ -411,7 +443,8 @@
     const update = record.request.template === "update";
     const alert = record.request.data?.event === "agent_alert";
     card._status.classList.toggle("alert", alert && isPending);
-    card._status.textContent = record.status === "delivering" || busy ? "Sending..." : isPending ? (alert ? "! Alert" : update ? "Update" : "") : record.status === "resolved" ? (alert ? "Recovered" : update ? "Seen" : "Sent") : record.status;
+    card._status.textContent = record.status === "delivering" || busy ? "Sending..." : isPending ? (alert ? "! Alert" : "") : record.status === "resolved" ? (alert ? "Recovered" : update ? "Seen" : "Sent") : record.status;
+    card._options?.setAttribute("aria-expanded", String(menu === "options" || menu === "agent"));
     for (const control of card._actions.querySelectorAll("button")) control.disabled = !isPending || busy || Boolean(record.question_id && drafts.get(record.id)?.trim());
     if (card._send) card._send.disabled = !isPending || busy || !card._reply.value.trim();
     if (card._reply) card._reply.readOnly = !isPending || busy;
@@ -480,6 +513,28 @@
       try { const value = await call({ op: "plugin", id, action_id: select.value, parameters }); if (card?._notice) card._notice.textContent = value.run?.progress || "Action started"; } catch (error) { showError(error); }
     })); parent.append(group);
   }
+  async function selectAllNotifications(checked) {
+    if (bulkBusy) return;
+    selectedNotifications.clear();
+    if (!checked) { render(); return; }
+    bulkBusy = true; queueError = ""; render();
+    try {
+      while (unseenPending > 0) addPendingPage(await call({ op: "list", offset: pendingOffset, pending_only: true }));
+      for (const record of pendingRecords()) selectedNotifications.add(record.id);
+    } catch (error) { queueError = String(error.message || error); }
+    finally { bulkBusy = false; render(); }
+  }
+  async function dismissNotifications(ids) {
+    if (bulkBusy || !ids.length) return;
+    bulkBusy = true; queueError = ""; render();
+    try {
+      const result = await call({ op: "dismiss_many", ids });
+      for (const record of result.records || []) { records.set(record.id, record); selectedNotifications.delete(record.id); }
+      pendingOffset = pendingRecords().length;
+      historyItems = []; historyOffset = 0;
+    } catch (error) { queueError = String(error.message || error); }
+    finally { bulkBusy = false; render(); }
+  }
   function renderQueue() {
     const list = el("div", "queue");
     const items = history ? historyItems : pendingRecords();
@@ -487,15 +542,40 @@
     for (const [label, isHistory] of [["Pending", false], ["History", true]]) {
       const tab = button(label, () => {
         if (history === isHistory) return;
-        history = isHistory; render();
+        history = isHistory; selectedNotifications.clear(); queueError = ""; render();
         if (history && !historyItems.length) loadHistory();
       });
       tab.setAttribute("role", "tab"); tab.setAttribute("aria-selected", String(history === isHistory)); segments.append(tab);
     }
     list.append(segments);
+    if (!history && items.length) {
+      const toolbar = el("div", "queue-selection");
+      const label = el("label"); const selectAll = el("input"); selectAll.type = "checkbox"; selectAll.setAttribute("aria-label", "Select all notifications");
+      selectAll.checked = unseenPending === 0 && items.every(record => selectedNotifications.has(record.id));
+      selectAll.indeterminate = selectedNotifications.size > 0 && !selectAll.checked; selectAll.disabled = bulkBusy;
+      selectAll.addEventListener("change", () => selectAllNotifications(selectAll.checked));
+      label.append(selectAll, el("span", "", bulkBusy ? "Updating..." : "Select all")); toolbar.append(label);
+      if (selectedNotifications.size) {
+        const dismiss = button(`Dismiss (${selectedNotifications.size})`, () => dismissNotifications([...selectedNotifications]), "utility dismiss-selected");
+        dismiss.disabled = bulkBusy; toolbar.append(dismiss);
+      }
+      list.append(toolbar);
+    }
+    if (queueError) { const notice = el("div", "notice", queueError); notice.setAttribute("role", "status"); list.append(notice); }
     for (const record of items) {
+      const row = el("div", "queue-row");
+      if (!history) {
+        const checkbox = el("input"); checkbox.type = "checkbox"; checkbox.checked = selectedNotifications.has(record.id); checkbox.disabled = bulkBusy;
+        checkbox.setAttribute("aria-label", `Select ${record.request.title}`);
+        checkbox.addEventListener("change", () => { if (checkbox.checked) selectedNotifications.add(record.id); else selectedNotifications.delete(record.id); render(); }); row.append(checkbox);
+      }
       const item = button("", () => { records.set(record.id, record); openRecord(record.id); }, `queue-item ${record.read_at ? "" : "unread"}`);
-      item.append(el("strong", "", record.request.title), el("div", "meta", sourceText(record.request.source))); list.append(item);
+      item.append(el("strong", "", record.request.title), el("div", "meta", sourceText(record.request.source))); row.append(item);
+      if (!history) {
+        const dismiss = iconButton(`Dismiss ${record.request.title}`, "M6 6l12 12M18 6L6 18", () => dismissNotifications([record.id]), "dismiss-item");
+        dismiss.disabled = bulkBusy; row.append(dismiss);
+      }
+      list.append(row);
     }
     if (!items.length) list.append(el("div", "empty-state", loadingQueue ? "Loading..." : history ? "No notification history" : "No pending requests"));
     if ((history && hasMoreHistory) || (!history && unseenPending > 0)) list.append(button(loadingQueue ? "Loading..." : "Load more", loadHistory, "utility"));
@@ -514,18 +594,18 @@
   }
   function renderMenu() {
     const existing = host.querySelector(".menu-overlay");
-    if (!menu || !current) { existing?.remove(); return; }
-    if (existing?.dataset.menu === menu && existing.dataset.id === current) return;
+    if (!menu || (!current && menu !== "settings")) { existing?.remove(); return; }
+    if (existing?.dataset.menu === menu && existing.dataset.id === (current || "")) return;
     existing?.remove();
     const record = records.get(current), overlay = el("div", "menu-overlay");
-    overlay.dataset.menu = menu; overlay.dataset.id = current;
-    const panel = el("div", "menu-panel"); panel.setAttribute("role", "dialog"); panel.setAttribute("aria-label", menu === "agent" ? "Agent controls" : "Notification options");
+    overlay.dataset.menu = menu; overlay.dataset.id = current || "";
+    const panel = el("div", "menu-panel"); panel.setAttribute("role", "dialog"); panel.setAttribute("aria-label", menu === "agent" ? "Agent controls" : menu === "settings" ? "Notification settings menu" : "Notification options");
     const heading = el("div", "menu-heading");
     if (menu === "agent") { const back = button("‹", () => toggleMenu("options"), "utility nav-step"); back.setAttribute("aria-label", "Back to options"); heading.append(back); }
-    heading.append(el("span", "", menu === "agent" ? "Agent controls" : "Options"));
+    heading.append(el("span", "", menu === "agent" ? "Agent controls" : menu === "settings" ? "Notifications" : "Options"));
     const close = button("×", () => toggleMenu(menu), "utility close"); close.setAttribute("aria-label", "Close menu"); heading.append(close); panel.append(heading);
     if (menu === "options") {
-      if (record.request.source?.pane_id) {
+      if (hasAgent(record)) {
         panel.append(autoYesControl(record));
         const controls = button("Agent controls", () => toggleMenu("agent"), "utility menu-link");
         controls.setAttribute("aria-haspopup", "dialog"); panel.append(controls);
@@ -533,7 +613,11 @@
       const dismiss = button("Dismiss notification", async () => {
         try { await call({ op: "dismiss", id: record.id }); collapse(); } catch (error) { showError(error); }
       }, "utility dismiss"); dismiss.title = "Remove this card from Pending"; panel.append(dismiss);
-    } else panel.append(el("div", "agent-controls", "Loading..."));
+    } else if (menu === "agent") panel.append(el("div", "agent-controls", "Loading..."));
+    if (menu !== "agent") panel.append(button("Notification settings...", async () => {
+      try { await call({ op: "settings" }); menu = null; native({ native: "text_focus", active: false }); render(); }
+      catch (error) { showError(error); }
+    }, "utility menu-link"));
     const notice = el("div", "notice menu-notice"); notice.setAttribute("role", "status"); panel.append(notice);
     overlay.append(panel); overlay.addEventListener("click", event => { if (event.target === overlay) toggleMenu(menu); }); host.append(overlay);
     updateAutoYes();
@@ -546,39 +630,34 @@
     renderedLayout = signature;
     const count = pendingCount();
     if (!preview && (!snapshot.visible || (!current && !queue && !count))) { host.className = "empty"; host.replaceChildren(); renderedId = null; card = null; stopContext(); size(); return; }
-    host.className = `${placement} ${expanded ? "expanded" : !current ? "pill" : ""} ${details ? "details-open" : ""}`;
+    host.className = `${placement} ${expanded ? "expanded" : !current ? "pill" : ""} ${details ? "details-open" : ""} ${menu === "settings" && !current && !queue ? "settings-menu-open" : ""}`;
     let top = host.querySelector(".top");
-    if (!top) { top = el("div", "top"); host.prepend(top); }
+    if (!top) {
+      top = el("div", "top"); host.prepend(top);
+      top.addEventListener("contextmenu", event => { event.preventDefault(); toggleMenu("settings"); });
+    }
     const items = pendingRecords(), index = items.findIndex(record => record.id === current);
     const topSignature = JSON.stringify([count, index, queue, current, expanded, menu]);
     if (top.dataset.signature !== topSignature) {
       top.dataset.signature = topSignature; top.replaceChildren();
-      const openFirst = () => { const first = pendingRecords()[0]; if (first) openRecord(first.id); else showQueue(); };
-      top.append(button("Notifications", current || queue ? showQueue : openFirst, "utility brand"));
+      const isOpen = Boolean(current || queue || expanded);
+      const toggle = button("", () => isOpen ? collapse() : openLatest(), "bar-toggle");
+      toggle.setAttribute("aria-label", isOpen ? "Collapse notifications" : "Expand notifications"); toggle.setAttribute("aria-expanded", String(isOpen));
+      toggle.title = `${isOpen ? "Collapse" : "Open"} notifications. Right-click for settings.`; top.append(toggle);
+      const latest = button("", openLatest, "utility brand icon-button"); latest.title = "Latest notification"; latest.setAttribute("aria-label", "Latest notification");
+      const logo = el("img"); logo.src = "https://cdn.clawtab.cc/assets/app-icon.png"; logo.alt = ""; latest.append(logo); top.append(latest);
       const controls = el("div", "top-actions");
-      if (current && count > 1) {
-        const previous = button("‹", () => navigate(-1), "utility nav-step");
-        previous.setAttribute("aria-label", "Previous notification"); previous.title = "Previous notification (Command + Shift + [)";
-        controls.append(previous);
-      }
-      const counter = button(current && index >= 0 ? `${index + 1} / ${count}` : `${count} pending`, current || queue ? showQueue : openFirst, "utility count");
-      counter.setAttribute("aria-label", "All notifications"); controls.append(counter);
-      if (current && count > 1) {
-        const next = button("›", () => navigate(1), "utility nav-step");
-        next.setAttribute("aria-label", "Next notification"); next.title = "Next notification (Command + Shift + ])";
-        controls.append(next);
-      }
-      if (current) {
-        const options = button("…", () => toggleMenu("options"), "utility options-toggle");
-        options.title = "Options"; options.setAttribute("aria-label", "Notification options"); options.setAttribute("aria-haspopup", "dialog"); options.setAttribute("aria-expanded", String(Boolean(menu))); controls.append(options);
-      }
-      if (current || queue) {
-        const close = button("×", collapse, "utility close"); close.setAttribute("aria-label", "Close notifications"); close.title = "Close"; controls.append(close);
-      }
+      if (current && count > 1) controls.append(iconButton("Previous notification", "M14 6l-6 6 6 6", () => navigate(-1), "nav-step"));
+      controls.append(el("span", "count", current && index >= 0 ? `${index + 1} / ${count}` : `${count} pending`));
+      if (current && count > 1) controls.append(iconButton("Next notification", "M10 6l6 6-6 6", () => navigate(1), "nav-step"));
       top.append(controls);
+      const list = iconButton("Notification list", "M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01", showQueue, "list-toggle");
+      list.setAttribute("aria-pressed", String(queue)); top.append(list);
     }
     if (queue) {
-      host.querySelector(".card")?.remove(); host.querySelector(".queue")?.remove(); host.append(renderQueue()); card = null; renderedId = null;
+      const scroll = host.querySelector(".queue")?.scrollTop || 0;
+      host.querySelector(".card")?.remove(); host.querySelector(".queue")?.remove();
+      const list = renderQueue(); host.append(list); list.scrollTop = scroll; card = null; renderedId = null;
     } else if (current && records.has(current)) {
       host.querySelector(".queue")?.remove();
       if (renderedId !== `${current}:${expanded}`) {
@@ -599,7 +678,7 @@
     snapshot = value; preview = Boolean(value.preview);
     const incoming = new Set();
     for (const record of value.records || []) { records.set(record.id, record); incoming.add(record.id); }
-    for (const id of records.keys()) if (id !== current && !incoming.has(id)) records.delete(id);
+    for (const id of records.keys()) if (id !== current && !incoming.has(id) && !selectedNotifications.has(id)) records.delete(id);
     unseenPending = Math.max(0, (value.pending_count || 0) - pendingRecords().length);
     pendingOffset = 50;
     if (current && !incoming.has(current) && !preview) {

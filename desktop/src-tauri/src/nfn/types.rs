@@ -231,6 +231,9 @@ pub enum NfnCommand {
     Dismiss {
         id: String,
     },
+    DismissMany {
+        ids: Vec<String>,
+    },
     Respond {
         id: String,
         action_id: String,
@@ -238,6 +241,9 @@ pub enum NfnCommand {
         text: Option<String>,
     },
     Focus {
+        id: String,
+    },
+    OpenJob {
         id: String,
     },
     Context {
@@ -266,6 +272,7 @@ pub enum NfnCommand {
         yaml: String,
     },
     Show,
+    Settings,
     ViewedPane {
         pane_id: Option<String>,
         window_id: String,

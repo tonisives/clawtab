@@ -30,7 +30,8 @@ pub async fn run(args: &[String]) -> Result<Value, String> {
             "cwtctl nfn get|wait|cancel ID [--timeout SECONDS]",
             "cwtctl nfn templates list",
             "cwtctl nfn templates validate [FILE | --stdin]",
-            "cwtctl nfn show"
+            "cwtctl nfn show",
+            "cwtctl nfn settings"
         ],"response_destination":["result","agent_message"],"template_directory":templates::directory()}));
     }
     let timeout = flag_value(args, "--timeout")?
@@ -98,6 +99,10 @@ pub async fn run(args: &[String]) -> Result<Value, String> {
         "show" => {
             validate_flags(&args[1..], &[], &[])?;
             call(NfnCommand::Show).await
+        }
+        "settings" => {
+            validate_flags(&args[1..], &[], &[])?;
+            call(NfnCommand::Settings).await
         }
         "templates" => match args.get(1).map(String::as_str) {
             Some("list") => Ok(templates::list()),

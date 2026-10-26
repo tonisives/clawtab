@@ -218,6 +218,12 @@ export function SettingsApp() {
       console.log("deep-link received:", url);
       invoke("show_settings_window");
 
+      if (url === "clawtab://settings/notifications") {
+        setActiveTab("settings");
+        setSettingsSubTab("notifications");
+        continue;
+      }
+
       const paneMatch = url.match(/^clawtab:\/\/pane\/(.+)/);
       if (paneMatch) {
         setActiveTab("jobs");
