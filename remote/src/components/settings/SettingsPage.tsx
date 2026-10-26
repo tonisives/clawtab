@@ -1,14 +1,15 @@
-import { Children, type ReactNode } from "react"
+import { Children, createContext, useContext, type ReactNode } from "react"
 import { View, Text, Pressable, ScrollView, StyleSheet } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
 import { ContentContainer } from "../ContentContainer"
-import { useResponsive } from "../../hooks/useResponsive"
 import { colors } from "../../theme/colors"
 import { radius, spacing } from "../../theme/spacing"
 
+export let SettingsBottomInset = createContext(0)
+
 export let SettingsPage = ({ children, wide = false }: { children: ReactNode; wide?: boolean }) => {
-  let { isIosPadPortrait } = useResponsive()
-  return <ScrollView style={styles.scrollContainer} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={[styles.pageContent, isIosPadPortrait && styles.pageContentPad]} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
+  let bottomInset = useContext(SettingsBottomInset)
+  return <ScrollView style={styles.scrollContainer} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={bottomInset ? { paddingBottom: bottomInset } : undefined} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
     <ContentContainer wide={wide}><View style={styles.container}>{children}</View></ContentContainer>
   </ScrollView>
 }
@@ -22,9 +23,21 @@ export let SettingsRow = ({ title, detail, onPress, disabled = false, chevron = 
   <View style={styles.rowText}><Text style={styles.rowTitle}>{title}</Text>{detail && <Text style={styles.rowDetail}>{detail}</Text>}</View>
   {chevron && <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />}
 </Pressable>
+export let SettingsButton = ({ title, onPress, disabled = false, variant = "secondary", expanded }: { title: string; onPress: () => void; disabled?: boolean; variant?: "primary" | "secondary" | "danger"; expanded?: boolean }) => <Pressable
+  accessibilityRole="button"
+  accessibilityState={{ disabled, ...(expanded === undefined ? {} : { expanded }) }}
+  aria-expanded={expanded}
+  disabled={disabled}
+  onPress={onPress}
+  style={({ pressed }) => [styles.actionButton, variant === "primary" && styles.primaryButton, variant === "danger" && styles.deleteBtn, pressed && styles.pressed, disabled && styles.btnDisabled]}
+>
+  <Text style={[styles.actionButtonText, variant === "primary" && styles.primaryButtonText, variant === "danger" && styles.deleteBtnText]}>{title}</Text>
+</Pressable>
 export let styles = StyleSheet.create({
-  pageContent: { paddingBottom: 32 },
-  pageContentPad: { paddingBottom: 110 },
+  actionButton: { minHeight: 48, paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderRadius: 999, backgroundColor: colors.groupedSurface, alignItems: "center", justifyContent: "center" },
+  actionButtonText: { color: colors.text, fontSize: 15, fontWeight: "600", textAlign: "center", flexShrink: 1 },
+  primaryButton: { backgroundColor: colors.accent },
+  primaryButtonText: { color: colors.bg },
   rowText: { flex: 1, gap: 4 },
   rowTitle: { color: colors.text, fontSize: 16 },
   rowDetail: { color: colors.textSecondary, fontSize: 13, lineHeight: 18 },
@@ -150,49 +163,10 @@ export let styles = StyleSheet.create({
   btnDisabled: {
     opacity: 0.5,
   },
-  btnConstrained: {
-    alignSelf: "flex-start",
-    width: 220,
-  },
-  dangerBtn: {
-    height: 44,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: colors.danger,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  dangerText: {
-    color: colors.danger,
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  dangerHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: spacing.md,
-  },
-  dangerToggleText: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    fontWeight: "500",
-  },
   deleteBtn: {
-    height: 44,
-    borderRadius: 999,
     backgroundColor: colors.danger,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  divider: {
-    height: 1,
-    backgroundColor: colors.border,
-    marginVertical: spacing.md,
   },
   deleteBtnText: {
     color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
   },
 })

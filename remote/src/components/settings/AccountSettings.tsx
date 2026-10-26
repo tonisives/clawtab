@@ -1,23 +1,19 @@
 import { useState } from "react"
-import { View, Text, Pressable } from "react-native"
+import { View, Text } from "react-native"
 import { useRouter } from "expo-router"
 import { useAuthStore } from "../../store/auth"
-import { useResponsive } from "../../hooks/useResponsive"
 import * as api from "../../api/client"
 import { confirm, alertError } from "../../lib/platform"
-import { SettingsGroup, SettingsPage, styles } from "./SettingsPage"
+import { SettingsButton, SettingsGroup, SettingsPage, styles } from "./SettingsPage"
 import { RelaySubscription } from "./RelaySubscription"
 
 export let AccountSettings = () => {
   let email = useAuthStore((s) => s.email)
   let logout = useAuthStore((s) => s.logout)
-  let { isWide } = useResponsive()
   let [deleteLoading, setDeleteLoading] = useState(false)
-  let [dangerExpanded, setDangerExpanded] = useState(false)
   let router = useRouter()
-  let toggleDanger = () => setDangerExpanded((value) => !value)
   let handleLogout = () => {
-    confirm("Log out", "Are you sure you want to log out?", async () => {
+    confirm("Sign out", "Are you sure you want to sign out?", async () => {
       await logout()
       router.replace("/login")
     })
@@ -59,41 +55,9 @@ export let AccountSettings = () => {
           </View>
         </SettingsGroup>
       )}
+      <SettingsButton title="Sign out" onPress={handleLogout} disabled={deleteLoading} />
+      <SettingsButton title={deleteLoading ? "Deleting..." : "Delete account"} onPress={handleDeleteAccount} disabled={deleteLoading} variant="danger" />
     </View>
     <RelaySubscription />
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>Session</Text>
-      <Pressable
-        style={[styles.dangerBtn, isWide && styles.btnConstrained]}
-        onPress={handleLogout}
-      >
-        <Text style={styles.dangerText}>Log Out</Text>
-      </Pressable>
-    </View>
-    <View style={styles.divider} />
-    <View style={styles.section}>
-      <Pressable
-        style={styles.dangerHeader}
-        onPress={toggleDanger}
-      >
-        <Text style={styles.sectionTitle}>Danger Zone</Text>
-        <Text style={styles.dangerToggleText}>{dangerExpanded ? "Hide" : "Show"}</Text>
-      </Pressable>
-      {dangerExpanded && (
-        <Pressable
-          style={[
-            styles.deleteBtn,
-            isWide && styles.btnConstrained,
-            deleteLoading && styles.btnDisabled,
-          ]}
-          onPress={handleDeleteAccount}
-          disabled={deleteLoading}
-        >
-          <Text style={styles.deleteBtnText}>
-            {deleteLoading ? "Deleting..." : "Delete Account"}
-          </Text>
-        </Pressable>
-      )}
-    </View>
   </SettingsPage>
 }
