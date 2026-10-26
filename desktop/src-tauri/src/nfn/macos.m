@@ -169,7 +169,7 @@ static void emit(NSDictionary *value) {
     NSTimeInterval idle = CGEventSourceSecondsSinceLastEventType(kCGEventSourceStateCombinedSessionState, kCGAnyInputEventType);
     NSDictionary *state = @{@"available":@YES, @"focused":[self focusStatus],
         @"authorized":self.authorizationKnown ? @(self.authorized) : NSNull.null, @"sound_allowed":@(self.soundAllowed),
-        @"frontmost_pid":@(NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier), @"user_active":@(idle < 60), @"displays":displays};
+        @"frontmost_pid":@(NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier), @"user_active":idle < 60 ? @YES : @NO, @"displays":displays};
     NSString *serialized = [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:state options:NSJSONWritingSortedKeys error:nil] encoding:NSUTF8StringEncoding];
     if (![serialized isEqual:self.lastPlatform]) {
         self.lastPlatform = serialized;

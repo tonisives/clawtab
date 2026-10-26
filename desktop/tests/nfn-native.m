@@ -6,13 +6,26 @@
 #import "../src-tauri/src/nfn/macos.m"
 
 static BOOL loaded;
+static BOOL platformReceived;
 static NSUInteger attempts;
 static pid_t previousApplication;
 
 static void bridge(const char *raw) {
     NSDictionary *value = [NSJSONSerialization JSONObjectWithData:[[NSString stringWithUTF8String:raw] dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
     NSString *operation = value[@"command"][@"op"];
-    if ([operation isEqual:@"platform"] || !value[@"token"]) return;
+    if ([operation isEqual:@"platform"]) {
+        NSDictionary *state = value[@"command"][@"state"];
+        for (NSString *key in @[@"available", @"sound_allowed", @"user_active", @"focused", @"authorized"]) {
+            id flag = state[key];
+            BOOL nullable = [key isEqual:@"focused"] || [key isEqual:@"authorized"];
+            if ((!flag || CFGetTypeID((__bridge CFTypeRef)flag) != CFBooleanGetTypeID()) && !(nullable && flag == NSNull.null)) {
+                fprintf(stderr,"Native platform flag is not a JSON boolean: %s\n", key.UTF8String); exit(1);
+            }
+        }
+        platformReceived = YES;
+        return;
+    }
+    if (!value[@"token"]) return;
     NSDictionary *result = @{};
     if ([operation isEqual:@"context"]) result = @{@"log":@"Review ready\nWaiting for a decision",@"models":@[],@"plugins":@[],@"source":@{}};
     clawtab_nfn_push([[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:@{@"type":@"response",@"token":value[@"token"],@"value":result} options:0 error:nil] encoding:NSUTF8StringEncoding].UTF8String);
@@ -39,7 +52,7 @@ int main(int argc, const char **argv) {
                     BOOL foregroundPreserved = NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier == previousApplication;
                     BOOL geometry = surface.panel.frame.size.width >= 390 && surface.panel.frame.size.height > 100 && surface.panel.frame.size.height < 700;
                     BOOL passive = !surface.panel.canBecomeKeyWindow;
-                    if (!nonactivating || !foregroundPreserved || !geometry || !passive || !surface.panel.visible) {
+                    if (!platformReceived || !nonactivating || !foregroundPreserved || !geometry || !passive || !surface.panel.visible) {
                         fprintf(stderr,"Native panel checks failed: mask=%d foreground=%d geometry=%d passive=%d visible=%d frame=%.0fx%.0f surface=%.0fx%.0f ready=%d\n",nonactivating,foregroundPreserved,geometry,passive,surface.panel.visible,surface.panel.frame.size.width,surface.panel.frame.size.height,surface.surfaceWidth,surface.surfaceHeight,surface.ready); exit(1);
                     }
                     [surface.web takeSnapshotWithConfiguration:nil completionHandler:^(NSImage *image, NSError *snapshotError) {
@@ -52,7 +65,7 @@ int main(int argc, const char **argv) {
                                 if (focusError || !surface.panel.textFocus || !surface.panel.isKeyWindow) { fprintf(stderr,"Reply focus lease failed\n"); exit(1); }
                                 [surface releaseTextFocus];
                                 if (surface.panel.canBecomeKeyWindow || surface.panel.textFocus) { fprintf(stderr,"Reply focus was not released\n"); exit(1); }
-                                printf("Native checks passed: nonactivating panel, foreground preserved, display geometry, reply focus and release. Snapshot: /tmp/clawtab-nfn-native.png\n");
+                                printf("Native checks passed: platform JSON booleans, nonactivating panel, foreground preserved, display geometry, reply focus and release. Snapshot: /tmp/clawtab-nfn-native.png\n");
                                 clawtab_nfn_stop();
                             });
                         }];

@@ -36,7 +36,10 @@ mod macos {
                 serde_json::from_value(value.get("command").cloned().unwrap_or(value.clone()));
             let result = match command {
                 Ok(command) => service.execute(command).await,
-                Err(e) => Err(e.to_string()),
+                Err(e) => {
+                    log::warn!("[nfn] Invalid macOS notification command: {e}");
+                    Err(e.to_string())
+                }
             };
             let response = match result {
                 Ok(value) => serde_json::json!({"type":"response","token":token,"value":value}),
