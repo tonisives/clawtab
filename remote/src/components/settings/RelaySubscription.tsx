@@ -8,10 +8,9 @@ import * as api from "../../api/client"
 import { alertError, openUrl } from "../../lib/platform"
 import { colors } from "../../theme/colors"
 import { SettingsButton, SettingsGroup, SettingsRow, styles } from "./SettingsPage"
-import { useSettingsNavigation } from "./navigation"
 import { RelayWelcome } from "../RelayWelcome"
 
-export let RelaySubscription = ({ onboarding = false }: { onboarding?: boolean }) => {
+export let RelaySubscription = () => {
   let userId = useAuthStore((s) => s.userId)
   let [sub, setSub] = useState<api.SubscriptionStatus | null>(null)
   let [subLoading, setSubLoading] = useState(true)
@@ -20,9 +19,7 @@ export let RelaySubscription = ({ onboarding = false }: { onboarding?: boolean }
   let [subscriptionCheckFailed, setSubscriptionCheckFailed] = useState(false)
   let iap = useIap()
   let router = useRouter()
-  let navigate = useSettingsNavigation()
-  let openMachines = () => navigate("machines")
-  let openWorkspace = () => router.push("/workspace")
+  let openMachines = () => router.push("/machines")
   let [diagnosticsExpanded, setDiagnosticsExpanded] = useState(false)
   let toggleDiagnostics = () => setDiagnosticsExpanded((value) => !value)
   let openPrivacy = () => openUrl("https://clawtab.cc/privacy")
@@ -122,10 +119,10 @@ export let RelaySubscription = ({ onboarding = false }: { onboarding?: boolean }
       }).finally(() => { checking = false; if (active) setSubLoading(false) })
     }
     void refresh()
-    let timer = onboarding ? setInterval(() => { void refresh() }, 5_000) : undefined
+    let timer = setInterval(() => { void refresh() }, 5_000)
     let listener = AppState.addEventListener("change", (state) => { if (state === "active") void refresh() })
     return () => { active = false; ++subscriptionRequest.current; listener.remove(); clearInterval(timer) }
-  }, [userId, iap.activation, onboarding])
+  }, [userId, iap.activation])
   let handleManageProvider = async (provider: string | null) => {
     if (Platform.OS === "android") return
     setActionLoading(true)
@@ -148,7 +145,8 @@ export let RelaySubscription = ({ onboarding = false }: { onboarding?: boolean }
   let manageStripe = () => handleManageProvider("stripe")
   let content = <View style={styles.section}>
     {subLoading && <ActivityIndicator color={colors.accent} />}
-    {!onboarding && !subLoading && sub?.subscribed && (
+    {sub?.hosted_workspace_eligible && <HostedWorkspacePanel key={userId} api={api.rentalApi} autoStart />}
+    {!subLoading && sub?.subscribed && (
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Subscription</Text>
         <SettingsGroup>
@@ -166,28 +164,23 @@ export let RelaySubscription = ({ onboarding = false }: { onboarding?: boolean }
           )}
         </SettingsGroup>
         {sub.relay_included && <Text style={styles.usageDescription}>Your box includes relay access. Any separate relay subscription continues on its normal billing schedule until you cancel it.</Text>}
-        {Platform.OS !== "android" && ((sub.providers?.length ?? 0) > 1 ? <SettingsGroup>
-          <SettingsRow title="Manage Apple subscription" onPress={manageApple} disabled={actionLoading} chevron={false} />
-          <SettingsRow title="Manage Stripe subscription" onPress={manageStripe} disabled={actionLoading} chevron={false} />
-        </SettingsGroup> : (!sub.relay_included || sub.provider) && <SettingsGroup><SettingsRow
+        {Platform.OS !== "android" && ((sub.providers?.length ?? 0) > 1 ? <View style={styles.section}>
+          <SettingsButton title="Manage Apple subscription" onPress={manageApple} disabled={actionLoading} />
+          <SettingsButton title="Manage Stripe subscription" onPress={manageStripe} disabled={actionLoading} />
+        </View> : (!sub.relay_included || sub.provider) && <SettingsButton
           title={actionLoading ? "Loading…" : sub.relay_included ? `Manage existing ${sub.provider === "apple" ? "Apple" : "Stripe"} subscription` : "Manage subscription"}
           onPress={handleManageBilling}
           disabled={actionLoading}
-          chevron={false}
-        /></SettingsGroup>)}
-        {!onboarding && sub.hosted_workspace_eligible && <SettingsGroup><SettingsRow title="Open Relay workspace" detail="Run two agents with your existing AI subscription" onPress={openWorkspace} /></SettingsGroup>}
-        {sub.relay_included && <SettingsGroup><SettingsRow title="Manage boxes" onPress={openMachines} /></SettingsGroup>}
+        />)}
       </View>
     )}
     {!subLoading && !sub?.subscribed && <View style={styles.section}>
-      {!onboarding && <Text style={styles.sectionTitle}>Relay subscription</Text>}
       {Platform.OS === "android" ? <Text style={styles.usageDescription}>Relay access requires an existing ClawTab subscription.</Text> : <>
         <SettingsButton title={actionLoading || iap.purchasing ? "Please wait…" : Platform.OS === "ios" && iap.loading ? "Loading purchases…" : iap.price ? `Subscribe · ${iap.price} / month` : "Subscribe to Relay"} onPress={handleSubscribe} disabled={!sub || actionLoading || iap.purchasing || (Platform.OS === "ios" && !iap.available)} variant="primary" />
-        {Platform.OS === "ios" && iap.error ? <Text style={styles.usageDescription}>{iap.error}</Text> : !onboarding && <Text style={styles.usageDescription}>2 hosted agents and connections for up to 100 on your own machines.</Text>}
+        {Platform.OS === "ios" && iap.error && <Text style={styles.usageDescription}>{iap.error}</Text>}
       </>}
     </View>}
-    {onboarding && sub?.hosted_workspace_eligible && <HostedWorkspacePanel key={userId} api={api.rentalApi} autoStart />}
-    {onboarding && sub?.subscribed && !sub.hosted_workspace_eligible && <SettingsGroup><SettingsRow title="Open your connected machines" detail="Your rented box includes relay access. Use its remote workspace or connect your own machine." onPress={() => router.push("/machines")} /></SettingsGroup>}
+    {sub?.subscribed && !sub.hosted_workspace_eligible && <SettingsGroup><SettingsRow title="Open your connected machines" detail="Your rented box includes relay access. Use its remote workspace or connect your own machine." onPress={openMachines} /></SettingsGroup>}
     {Platform.OS === "ios" && !sub?.subscribed && !!iap.error && <View style={styles.section}>
       <SettingsButton title="Retry loading purchases" onPress={iap.retry} disabled={iap.loading || actionLoading || iap.purchasing} />
     </View>}
@@ -206,5 +199,5 @@ export let RelaySubscription = ({ onboarding = false }: { onboarding?: boolean }
       </SettingsGroup>
     </View>}
   </View>
-  return onboarding && !sub?.hosted_workspace_eligible ? <RelayWelcome>{content}</RelayWelcome> : content
+  return !sub?.hosted_workspace_eligible ? <RelayWelcome>{content}</RelayWelcome> : content
 }

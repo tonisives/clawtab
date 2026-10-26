@@ -7,7 +7,7 @@ export let ConnectionLoadingView = ({ label, error, onAccount }: { label: string
   {error && <>
     <Text style={styles.detail}>{error}</Text>
     <Pressable accessibilityRole="button" onPress={reconnectMachines} style={styles.button}><Text style={styles.action}>Try again</Text></Pressable>
-    {onAccount && <Pressable accessibilityRole="button" onPress={onAccount} style={styles.button}><Text style={styles.action}>Account & subscription</Text></Pressable>}
+    {onAccount && <Pressable accessibilityRole="button" onPress={onAccount} style={styles.button}><Text style={styles.action}>Account settings</Text></Pressable>}
   </>}
 </View>
 

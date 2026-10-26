@@ -3,11 +3,8 @@ import { useRouter } from "expo-router"
 import { createNativeStackNavigator } from "expo-router/build/react-navigation/native-stack"
 import { NavigationContainer, NavigationIndependentTree, DarkTheme, useIsFocused, useNavigationContainerRef, type NavigationState } from "expo-router/react-navigation"
 import { useMachines } from "@clawtab/shared"
-import { Platform, Pressable, StyleSheet, Text, View } from "react-native"
-import { Ionicons } from "@expo/vector-icons"
+import { Platform, Text, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
-import { useSetupProgress } from "../../../src/hooks/useSetupProgress"
-import { DemoOverview } from "../../../src/components/DemoOverview"
 import { useAuthStore } from "../../../src/store/auth"
 import { useResponsive } from "../../../src/hooks/useResponsive"
 import { ApiTokensSection } from "../../../src/components/ApiTokensSection"
@@ -26,30 +23,22 @@ let Stack = createNativeStackNavigator<Routes>()
 export let SettingsHome = () => {
   let router = useRouter()
   let relay = useMachines()
-  let { complete } = useSetupProgress()
   let unavailable = !relay.connected
   let email = useAuthStore((state) => state.email)
   let navigate = useSettingsNavigation()
   let open = (page: SettingsRoute) => () => navigate(page)
   return <SettingsPage>
-    {!complete && <Pressable accessibilityRole="button" accessibilityLabel="About demo mode" onPress={open("setup")} style={homeStyles.demoButton}><Ionicons name="information-circle-outline" size={20} color={colors.warning} /><Text style={homeStyles.demoText}>Demo</Text></Pressable>}
-    <SettingsGroup><SettingsRow title="Relay workspace" detail="Run agents with your existing AI subscription" onPress={() => router.push("/workspace")} /></SettingsGroup>
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>Relay connection</Text>
+      <Text style={styles.sectionTitle}>Connections</Text>
       <SettingsGroup>
-        <View style={homeStyles.relayRow}>
-          <View style={homeStyles.relayConnection}>
-            <SettingsRow title={relay.connected ? "Connected to relay" : "Connect to relay"} detail={relay.error ?? (relay.connected ? "Online" : "Disconnected")} onPress={open("account")} />
-          </View>
-
-        </View>
+        <SettingsRow title="Relay" detail={relay.error ?? (relay.connected ? "Connected · Subscription and workspace" : "Subscription and workspace")} onPress={() => router.push("/workspace")} />
         <SettingsRow title="Manage machines" detail="Connections, models, and rented boxes" onPress={open("machines")} disabled={unavailable} />
       </SettingsGroup>
     </View>
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>Account</Text>
       <SettingsGroup>
-        <SettingsRow title="Account & subscription" detail={email ?? "Sign-in and billing"} onPress={open("account")} />
+        <SettingsRow title="Account" detail={email ?? "Sign-in and account details"} onPress={open("account")} />
         <SettingsRow title="Shared access" detail="People and group permissions" onPress={open("sharing")} disabled={unavailable} />
       </SettingsGroup>
     </View>
@@ -68,22 +57,11 @@ export let SettingsHome = () => {
     </View>
   </SettingsPage>
 }
-let homeStyles = StyleSheet.create({
-  relayRow: { flexDirection: "row", alignItems: "center" },
-  relayConnection: { flex: 1 },
-  demoButton: { minHeight: 44, paddingHorizontal: 16, flexDirection: "row", alignItems: "center", gap: 8 },
-  demoText: { color: colors.warning, fontSize: 14, fontWeight: "600" },
-})
-let SetupSettings = () => {
-  let router = useRouter()
-  return <DemoOverview onConnect={() => router.push("/workspace")} />
-}
 let MachineSettings = () => <SettingsPage><MachineSetup manage /></SettingsPage>
 let TokenSettings = () => <SettingsPage><ApiTokensSection /></SettingsPage>
 let pages = {
-  setup: { title: "Setup", component: SetupSettings },
   home: { title: "Settings", component: SettingsHome },
-  account: { title: "Account & subscription", component: AccountSettings },
+  account: { title: "Account", component: AccountSettings },
   usage: { title: "Model usage", component: UsageSettings },
   machines: { title: "Manage machines", component: MachineSettings },
   sharing: { title: "Shared access", component: SharingSettings },

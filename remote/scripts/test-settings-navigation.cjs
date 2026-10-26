@@ -14,22 +14,20 @@ const elements = (node) => {
 
 function settingsFixture(inModal = false) {
   let navigate = () => {}
+  let pushes = []
   let jsx = (type, props) => ({ type, props })
   let dependencies = {
     react: { useEffect: () => {}, useRef: (current) => ({ current }) },
     "react/jsx-runtime": { jsx, jsxs: jsx },
-    "expo-router": { useRouter: () => ({ push: () => {} }) },
+    "expo-router": { useRouter: () => ({ push: (route) => pushes.push(route) }) },
     "expo-router/build/react-navigation/native-stack": { createNativeStackNavigator: () => ({ Navigator: "Navigator", Screen: "Screen" }) },
     "expo-router/react-navigation": {
       NavigationContainer: "NavigationContainer", NavigationIndependentTree: "NavigationIndependentTree", DarkTheme: {},
       useIsFocused: () => true, useNavigationContainerRef: () => ({}),
     },
     "@clawtab/shared": { useMachines: () => ({ connected: false, error: null, machines: [] }) },
-    "react-native": { Platform: { OS: "ios" }, Pressable: "Pressable", Text: "Text", View: "View", StyleSheet: { create: (value) => value } },
-    "@expo/vector-icons": { Ionicons: "Ionicons" },
+    "react-native": { Platform: { OS: "ios" }, Text: "Text", View: "View" },
     "react-native-safe-area-context": { useSafeAreaInsets: () => ({ bottom: 34 }) },
-    "../../../src/hooks/useSetupProgress": { useSetupProgress: () => ({ complete: false }) },
-    "../../../src/components/DemoOverview": { DemoOverview: "DemoOverview" },
     "../../../src/store/auth": { useAuthStore: (select) => select({ email: "test@example.invalid" }) },
     "../../../src/hooks/useResponsive": { useResponsive: () => ({ isWide: false, isSplitView: false, isIosPadPortrait: false }) },
     "../../../src/components/ApiTokensSection": { ApiTokensSection: "ApiTokensSection" },
@@ -61,6 +59,7 @@ function settingsFixture(inModal = false) {
   let state = router.getInitialState(options)
   navigate = (name) => { state = router.getStateForAction(state, { type: "NAVIGATE", payload: { name } }, options) }
   return {
+    pushes,
     current: () => state.routes[state.index].name,
     render: () => {
       let screen = screens.find((screen) => screen.props.name === state.routes[state.index].name)
@@ -75,7 +74,7 @@ for (let inModal of [false, true]) {
   test(`${inModal ? "embedded settings" : "Settings tab"} opens account controls before Relay setup`, () => {
     let app = settingsFixture(inModal)
     assert.equal(app.current(), "home")
-    let account = elements(app.render()).find((element) => element.props.title === "Account & subscription")
+    let account = elements(app.render()).find((element) => element.props.title === "Account")
     assert.ok(account, "Settings Home exposes account settings")
     assert.ok(!account.props.disabled, "Account settings is available while disconnected")
     account.props.onPress()
@@ -84,9 +83,14 @@ for (let inModal of [false, true]) {
   })
 }
 
-test("setup stays available as an explicit choice from Settings Home", () => {
+test("Settings has one Relay entry separate from Account", () => {
   let app = settingsFixture()
-  let setup = elements(app.render()).find((element) => element.props.accessibilityLabel === "About demo mode")
-  setup.props.onPress()
-  assert.equal(app.current(), "setup")
+  let rows = elements(app.render()).filter((element) => element.type === "SettingsRow")
+  let relay = rows.filter((element) => element.props.title === "Relay")
+  assert.equal(relay.length, 1)
+  assert.ok(!relay[0].props.disabled, "Relay subscriptions are available while disconnected")
+  relay[0].props.onPress()
+  assert.deepEqual(app.pushes, ["/workspace"])
+  assert.ok(!rows.some((element) => /Account & subscription|Relay workspace|Connect to relay/.test(element.props.title)))
+  assert.ok(!elements(app.render()).some((element) => element.props.accessibilityLabel === "About demo mode"))
 })
