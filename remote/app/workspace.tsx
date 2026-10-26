@@ -13,7 +13,7 @@ export default function WorkspaceScreen() {
   let openAccount = () => router.push("/account")
   return <SettingsPage>
     {authenticated && <SettingsButton title="Account settings" onPress={openAccount} />}
-    {authenticated ? <RelaySubscription onboarding /> : <RelayWelcome><View style={styles.signIn}>
+    {authenticated ? <RelaySubscription /> : <RelayWelcome><View style={styles.signIn}>
       <Pressable accessibilityRole="button" onPress={signIn} style={styles.button}><Text style={styles.action}>Sign in</Text></Pressable>
     </View></RelayWelcome>}
     <AdvancedSetupOptions />
