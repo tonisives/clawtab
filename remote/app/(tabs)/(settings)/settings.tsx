@@ -118,7 +118,7 @@ let SettingsScreen = ({ inModal = false, active = true, historyBack, restoreStat
     }}
     onStateChange={(state) => { if (state) onNavigationStateChange?.(state) }}
   >
-    <Stack.Navigator screenOptions={{ headerTintColor: colors.text, headerStyle: { backgroundColor: colors.bg }, headerBackButtonDisplayMode: "minimal", ...(historyBack ? { headerLeft: () => null } : {}), headerShadowVisible: false, contentStyle: styles.scrollContainer }}>
+    <Stack.Navigator initialRouteName="home" screenOptions={{ headerTintColor: colors.text, headerStyle: { backgroundColor: colors.bg }, headerBackButtonDisplayMode: "minimal", ...(historyBack ? { headerLeft: () => null } : {}), headerShadowVisible: false, contentStyle: styles.scrollContainer }}>
       {(Object.keys(pages) as SettingsRoute[]).map((name) => {
         let Page = pages[name].component
         return <Stack.Screen key={name} name={name} options={{ title: pages[name].title, headerShown: name !== "home" || !inModal, headerLargeTitleEnabled: name === "home" && largeTitle, headerStyle: name === "home" && largeTitle ? undefined : { backgroundColor: colors.bg } }}>
