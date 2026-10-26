@@ -19,6 +19,8 @@
   assert(!document.querySelector(".logs, .details-content, select") && window.fixture.contextCalls === 0, "first card has no logs, settings, or background log polling");
   assert(!buttons().some(button => button.textContent === "Agent controls"), "agent controls stay out of the card footer");
   assert(getComputedStyle(document.querySelector(".send")).borderRadius === "20px" && document.querySelector(".send").offsetHeight < 38, "Send uses a small rounded action button");
+  const replyBounds = document.querySelector("textarea").getBoundingClientRect(), sendBounds = document.querySelector(".send").getBoundingClientRect();
+  assert(sendBounds.top >= replyBounds.bottom && sendBounds.right === replyBounds.right, "Send sits below the full-width reply field, aligned right");
   document.querySelector('[aria-label="Notification options"]').click();
   click("Agent controls"); await sleep(60);
   assert(document.querySelector('.menu-panel[role="dialog"] .model-controls select') && !document.querySelector(".details-content"), "agent controls open from the options menu without expanding Details");
@@ -42,7 +44,7 @@
   nav("Previous"); await sleep(30);
   window.nfn.setPlacement({ placement: "right", max_width: 1000, max_height: 860, reduce_motion: false });
   const compactSize = document.querySelector("#surface").getBoundingClientRect();
-  window.fixture.log = "Earlier output\n".repeat(60) + "\x1b[32mReady\x1b[0m \x1b[38;5;196mred\x1b[0m \x1b[38;2;12;34;56mRGB\x1b[0m\n<img src=x onerror=window.unsafeLog=true>";
+  window.fixture.log = "Earlier output\n".repeat(60) + "\x1b[32mReady\x1b[0m \x1b[38;5;196mred\x1b[0m \x1b[38;2;12;34;56mRGB\x1b[0m\n<img src=x onerror=window.unsafeLog=true>\n\n  Last output  \x1b[0m\r\n" + "\x1b[0m   \r\n".repeat(25);
   click("Details");
   const resize = document.querySelector("#surface").getAnimations()[0];
   assert(Boolean(resize), "Details starts an animated resize");
@@ -52,7 +54,7 @@
   assert(document.querySelector(".card").getBoundingClientRect().width === 618, "Details keeps text at its final width throughout the resize");
   window.nfn.receive(window.fixture.snapshot());
   assert(document.querySelector("#surface").getAnimations().includes(resize), "background snapshots do not restart a Details animation");
-  resize.finish(); await sleep(60);
+  resize.finish(); await sleep(430);
   const detailSize = document.querySelector("#surface").getBoundingClientRect();
   assert(detailSize.width === 620 && detailSize.height > compactSize.height + 200, "Details expands both width and reading space");
   window.nfn.setPlacement({ placement: "right", max_width: 1000, max_height: 860, reduce_motion: true });
@@ -62,8 +64,11 @@
   const colored = [...document.querySelectorAll(".logs span")];
   assert(colored.find(node => node.textContent === "Ready").style.color === "rgb(105, 219, 124)" && colored.find(node => node.textContent === "red").style.color === "rgb(255, 0, 0)" && colored.find(node => node.textContent === "RGB").style.color === "rgb(12, 34, 56)", "agent output preserves standard, 256-color, and RGB terminal colors");
   assert(!window.unsafeLog && !document.querySelector(".logs img"), "colored terminal output renders markup as text");
+  assert(document.querySelector(".logs").textContent.endsWith("\n\n  Last output  "), "agent output drops unused terminal rows while preserving internal blank lines and indentation");
   outputScroller.scrollTop = 0; window.fixture.log += "\nNew output"; await sleep(1100);
   assert(outputScroller.scrollTop === 0, "new output respects a user reading earlier lines");
+  window.fixture.log = "Short output\n" + "\x1b[0m   \n".repeat(25); await sleep(1100);
+  assert(outputScroller.clientHeight < 360 && outputScroller.getBoundingClientRect().bottom - document.querySelector(".logs").getBoundingClientRect().bottom <= 12, "short output fits its content without reserved blank space below it");
   assert(document.querySelector(".reply").getBoundingClientRect().bottom < document.querySelector(".details-content").getBoundingClientRect().top, "reply stays above the details scroller");
   assert(!document.querySelector("select"), "agent settings stay hidden even when viewing details");
   document.querySelector('[aria-label="Notification options"]').click();

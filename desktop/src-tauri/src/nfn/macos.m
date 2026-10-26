@@ -15,6 +15,16 @@ static NfnCallback callback;
 @implementation NfnPanel
 - (BOOL)canBecomeKeyWindow { return self.textFocus; }
 - (BOOL)canBecomeMainWindow { return NO; }
+- (BOOL)performKeyEquivalent:(NSEvent *)event {
+    // The daemon has no Edit menu to route these commands to WebKit.
+    NSEventModifierFlags modifiers = event.modifierFlags & (NSEventModifierFlagCommand | NSEventModifierFlagControl | NSEventModifierFlagOption | NSEventModifierFlagShift);
+    if (self.textFocus && event.type == NSEventTypeKeyDown && (modifiers == NSEventModifierFlagCommand || modifiers == (NSEventModifierFlagCommand | NSEventModifierFlagShift))) {
+        NSString *key = event.charactersIgnoringModifiers.lowercaseString;
+        NSString *action = modifiers & NSEventModifierFlagShift ? ([key isEqual:@"z"] ? @"redo:" : nil) : @{@"a":@"selectAll:", @"c":@"copy:", @"x":@"cut:", @"v":@"paste:", @"z":@"undo:"}[key];
+        if (action && [self.firstResponder tryToPerform:NSSelectorFromString(action) with:self]) return YES;
+    }
+    return [super performKeyEquivalent:event];
+}
 // Keep the notch surface attached to the physical top edge of the screen.
 - (NSRect)constrainFrameRect:(NSRect)frame toScreen:(NSScreen *)screen { return frame; }
 @end

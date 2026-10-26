@@ -8,7 +8,9 @@ Use the previous/next arrows to move between notifications, or Command/Ctrl + Sh
 
 The black, borderless notch surface reaches the physical top edge of the screen and covers the camera cutout's lower corners. Its collapsed width matches the measured cutout. Width and height animate together while the top stays attached. Display space limits the expanded size. Reduce Motion disables size animations.
 
-The native canvas stays fixed while the card animates inside it, and transparent space passes pointer events through to the app below. Text keeps its final reading width during the resize. Recent output preserves terminal colors and opens at the latest line. Scrolling up pauses following until the view returns to the bottom.
+The native canvas stays fixed while the card animates inside it, and transparent space passes pointer events through to the app below. Text keeps its final reading width during the resize. Recent output preserves terminal colors, omits unused trailing terminal rows, and opens at the latest line. Scrolling up pauses following until the view returns to the bottom.
+
+Send sits below the full-width reply field. Command + Enter sends the reply; standard macOS editing shortcuts work in the field, including Command + A to select all.
 
 Clicking another app releases keyboard focus while keeping a review card visible. Use Close or Escape to fold it away without answering.
 

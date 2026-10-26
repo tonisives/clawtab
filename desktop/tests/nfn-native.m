@@ -12,6 +12,21 @@ static BOOL platformReceived;
 static NSUInteger attempts;
 static pid_t previousApplication;
 
+static void verifyEditing(void (^finish)(void)) {
+    [surface.web evaluateJavaScript:@"const input = document.querySelector('textarea'); input.value = 'Reply shortcut check'; input.focus(); input.setSelectionRange(input.value.length, input.value.length)" completionHandler:^(id value, NSError *error) {
+        NSEvent *selectAll = [NSEvent keyEventWithType:NSEventTypeKeyDown location:NSZeroPoint modifierFlags:NSEventModifierFlagCommand timestamp:NSProcessInfo.processInfo.systemUptime windowNumber:surface.panel.windowNumber context:nil characters:@"a" charactersIgnoringModifiers:@"a" isARepeat:NO keyCode:0];
+        if (error || ![surface.panel performKeyEquivalent:selectAll]) { fprintf(stderr,"Command-A was not handled by the reply field\n"); exit(1); }
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 10), dispatch_get_main_queue(), ^{
+            [surface.web evaluateJavaScript:@"(() => { const input = document.querySelector('textarea'); return input.selectionStart === 0 && input.selectionEnd === input.value.length && input.value === 'Reply shortcut check'; })()" completionHandler:^(id selected, NSError *selectionError) {
+                if (selectionError || ![selected boolValue]) { fprintf(stderr,"Command-A did not select the complete reply\n"); exit(1); }
+                [surface releaseTextFocus];
+                if (surface.panel.canBecomeKeyWindow || surface.panel.textFocus || [surface.panel performKeyEquivalent:selectAll]) { fprintf(stderr,"Editing commands remain active after reply focus was released\n"); exit(1); }
+                finish();
+            }];
+        });
+    }];
+}
+
 static void verifyExpansion(void (^finish)(void)) {
     NSRect compact = [surface surfaceFrame], canvas = surface.panel.frame;
     [surface.web evaluateJavaScript:@"document.querySelector('.details-toggle').click()" completionHandler:^(id value, NSError *error) {
@@ -112,15 +127,18 @@ int main(int argc, const char **argv) {
                             });
                             return;
                         }
+                        // A scripted pointer event does not grant the native focus that a real click does.
+                        [NSApp activateIgnoringOtherApps:YES];
                         [surface.web evaluateJavaScript:@"document.querySelector('textarea').dispatchEvent(new PointerEvent('pointerdown',{bubbles:true})); document.querySelector('textarea').focus()" completionHandler:^(id result, NSError *focusError) {
                             (void)result;
                             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 4), dispatch_get_main_queue(), ^{
                                 if (focusError || !surface.panel.textFocus || !surface.panel.isKeyWindow) { fprintf(stderr,"Reply focus lease failed: error=%s lease=%d key=%d can-key=%d\n",focusError.localizedDescription.UTF8String,surface.panel.textFocus,surface.panel.isKeyWindow,surface.panel.canBecomeKeyWindow); exit(1); }
-                                [surface releaseTextFocus];
-                                if (surface.panel.canBecomeKeyWindow || surface.panel.textFocus) { fprintf(stderr,"Reply focus was not released\n"); exit(1); }
-                                verifyExpansion(^{
-                                    printf("Native checks passed: platform JSON booleans, passive panel, foreground preserved, notch overlap, window cycling excluded, reply focus, animated expansion and fixed top anchor. Screenshots: /tmp/clawtab-nfn-native.png, /tmp/clawtab-nfn-expanded.png\n");
-                                    clawtab_nfn_stop();
+                                verifyEditing(^{
+                                    clawtab_nfn_activate(previousApplication);
+                                    verifyExpansion(^{
+                                        printf("Native checks passed: platform JSON booleans, passive panel, foreground preserved, notch overlap, window cycling excluded, reply focus, Command-A selection, animated expansion and fixed top anchor. Screenshots: /tmp/clawtab-nfn-native.png, /tmp/clawtab-nfn-expanded.png\n");
+                                        clawtab_nfn_stop();
+                                    });
                                 });
                             });
                         }];

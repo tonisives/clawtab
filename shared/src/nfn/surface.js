@@ -58,7 +58,10 @@
       const cube = n - 16, channel = value => value ? 55 + value * 40 : 0;
       return `rgb(${channel(Math.floor(cube / 36))},${channel(Math.floor(cube % 36 / 6))},${channel(cube % 6)})`;
     };
-    const text = String(raw).replace(/\r\n?/g, "\n"), fragment = document.createDocumentFragment();
+    // A pane capture includes unused screen rows after its last output.
+    const lines = String(raw).replace(/\r\n?/g, "\n").split("\n");
+    while (lines.length && !stripAnsi(lines[lines.length - 1]).trim()) lines.pop();
+    const text = lines.join("\n"), fragment = document.createDocumentFragment();
     let last = 0, foreground, background, bold = false, dim = false, italic = false, underline = false, inverse = false;
     const append = value => {
       if (!value) return;
@@ -143,7 +146,7 @@
     contentAnimations.forEach(animation => animation.cancel()); contentAnimations = [];
     for (const node of host.children) node.style.width = "";
   }
-  function animateLayout(before) {
+  function animateLayout(before, fadeContent = true) {
     if (host.classList.contains("empty")) { size(); return; }
     const after = host.getBoundingClientRect();
     if (!reducedMotion.matches && !geometry.reduce_motion &&
@@ -152,8 +155,10 @@
       // Reflowing every animation frame makes the controls and output jump.
       for (const node of host.querySelectorAll(":scope > .top, :scope > .card, :scope > .queue")) {
         node.style.width = `${after.width - (placement === "notch" ? 0 : 2)}px`;
-        const fade = node.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 280, delay: 60, fill: "backwards" });
-        fade.pause(); contentAnimations.push(fade);
+        if (fadeContent) {
+          const fade = node.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 280, delay: 60, fill: "backwards" });
+          fade.pause(); contentAnimations.push(fade);
+        }
       }
       const opening = !before.height;
       const pillWidth = placement === "notch" ? (geometry.notch_width || 220) : 224;
@@ -422,7 +427,10 @@
     try {
       const value = await call({ op: "context", id });
       if (id !== current || !card) return;
-      if (card._logs && card._logs._raw !== value.log) {
+      const changedLogs = card._logs && card._logs._raw !== value.log;
+      const before = changedLogs ? host.getBoundingClientRect() : null;
+      if (changedLogs) {
+        stopAnimation();
         const logs = card._logs, scroller = card._content;
         const atBottom = logs._raw == null || scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 30;
         logs._raw = value.log; renderAnsi(logs, value.log || "No output yet");
@@ -444,6 +452,7 @@
         buildPlugins(agent, value.plugins || [], value.models || [], id);
         if (!agent.childElementCount) agent.append(el("div", "meta", "No controls available"));
       }
+      if (before) animateLayout(before, false);
     } catch (error) { if (id === current) { if (card?._logs) card._logs.textContent = String(error.message || error); showError(error); } }
     finally { contextBusy = false; }
   }
