@@ -100,6 +100,8 @@ select, input { min-width: 0; border: 1px solid #333; border-radius: 6px; backgr
 .menu-overlay[data-menu="options"] .menu-panel { max-width: 250px; }
 .menu-heading { display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 500; }
 .menu-heading .close { height: 24px; padding: 0 4px; }
+.menu-panel .menu-link { width: 100%; text-align: left; padding: 10px 0 2px; font-size: 12px; }
+.menu-link::after { content: "›"; float: right; }
 .menu-panel .dismiss { width: 100%; text-align: left; border-top: 1px solid var(--line); margin-top: 10px; padding: 10px 0 0; font-size: 12px; }
 .auto-yes { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 8px; font-size: 12px; }
 button.auto-yes-switch { display: flex; align-items: center; gap: 7px; padding: 4px 0 4px 7px; border: 0; background: transparent; color: var(--muted); font-size: 11px; }

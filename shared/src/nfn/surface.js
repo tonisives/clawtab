@@ -373,9 +373,6 @@
     const detailButton = button(details ? "Hide details" : (record.request.media?.length ? "View attachment" : "Details"), toggleDetails, "utility details-toggle");
     detailButton.setAttribute("aria-expanded", String(details)); utilities.append(detailButton);
     if (record.request.source?.pane_id) {
-      const agentButton = button("Agent controls", () => toggleMenu("agent"), "utility agent-toggle");
-      agentButton.setAttribute("aria-expanded", String(menu === "agent")); agentButton.setAttribute("aria-haspopup", "dialog");
-      utilities.append(agentButton);
       const openAgent = button("Open agent", async () => {
         openAgent.disabled = true;
         try { await call({ op: "focus", id: record.id }); node._clientError = ""; updateCard(); }
@@ -514,10 +511,16 @@
     const record = records.get(current), overlay = el("div", "menu-overlay");
     overlay.dataset.menu = menu; overlay.dataset.id = current;
     const panel = el("div", "menu-panel"); panel.setAttribute("role", "dialog"); panel.setAttribute("aria-label", menu === "agent" ? "Agent controls" : "Notification options");
-    const heading = el("div", "menu-heading"); heading.append(el("span", "", menu === "agent" ? "Agent controls" : "Options"));
+    const heading = el("div", "menu-heading");
+    if (menu === "agent") { const back = button("‹", () => toggleMenu("options"), "utility nav-step"); back.setAttribute("aria-label", "Back to options"); heading.append(back); }
+    heading.append(el("span", "", menu === "agent" ? "Agent controls" : "Options"));
     const close = button("×", () => toggleMenu(menu), "utility close"); close.setAttribute("aria-label", "Close menu"); heading.append(close); panel.append(heading);
     if (menu === "options") {
-      if (record.request.source?.pane_id) panel.append(autoYesControl(record));
+      if (record.request.source?.pane_id) {
+        panel.append(autoYesControl(record));
+        const controls = button("Agent controls", () => toggleMenu("agent"), "utility menu-link");
+        controls.setAttribute("aria-haspopup", "dialog"); panel.append(controls);
+      }
       const dismiss = button("Dismiss notification", async () => {
         try { await call({ op: "dismiss", id: record.id }); collapse(); } catch (error) { showError(error); }
       }, "utility dismiss"); dismiss.title = "Remove this card from Pending"; panel.append(dismiss);
@@ -558,7 +561,7 @@
       }
       if (current) {
         const options = button("…", () => toggleMenu("options"), "utility options-toggle");
-        options.title = "Options"; options.setAttribute("aria-label", "Notification options"); options.setAttribute("aria-haspopup", "dialog"); options.setAttribute("aria-expanded", String(menu === "options")); controls.append(options);
+        options.title = "Options"; options.setAttribute("aria-label", "Notification options"); options.setAttribute("aria-haspopup", "dialog"); options.setAttribute("aria-expanded", String(Boolean(menu))); controls.append(options);
       }
       if (current || queue) {
         const close = button("×", collapse, "utility close"); close.setAttribute("aria-label", "Close notifications"); close.title = "Close"; controls.append(close);
@@ -574,7 +577,6 @@
       }
       updateCard();
     } else { host.querySelector(".card")?.remove(); host.querySelector(".queue")?.remove(); renderedId = null; card = null; }
-    const agentButton = card?.querySelector(".agent-toggle"); agentButton?.setAttribute("aria-expanded", String(menu === "agent"));
     renderMenu(); if (!continuingAnimation) animateLayout(before);
   }
   function receive(value) {

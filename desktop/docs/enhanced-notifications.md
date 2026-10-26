@@ -4,7 +4,7 @@ The daemon owns the notification queue and the macOS overlay. Cards remain avail
 
 Configure delivery, display, sound, Focus behavior, and layouts in **Settings > General > Notifications**. Existing local notification preferences still apply. The first card shows the message, quick choices, and a reply field with a Send button. Its colors and action buttons follow the remote app. Review, question, and permission cards stay open until answered or closed. Status updates collapse to a pending count after eight seconds, pausing on hover.
 
-Use the previous/next arrows to move between notifications, or Command/Ctrl + Shift + [ / ]. Each card keeps its reply draft. New requests queue without replacing the card being read, and a successful reply advances to the next request. The position count opens the full list with Pending and History segments. Details widens the card and adds a larger scrollable area for the full message, attachments, and recent output. Details, Agent controls, and Open agent are available on the first card. Open agent selects the originating conversation in an attached terminal, including when that terminal currently shows a different tmux session.
+Use the previous/next arrows to move between notifications, or Command/Ctrl + Shift + [ / ]. Each card keeps its reply draft. New requests queue without replacing the card being read, and a successful reply advances to the next request. The position count opens the full list with Pending and History segments. Details widens the card and adds a larger scrollable area for the full message, attachments, and recent output. Details and Open agent are available on the first card. Open agent selects the originating conversation in an attached terminal, including when that terminal currently shows a different tmux session.
 
 The black, borderless notch surface reaches the physical top edge of the screen and covers the camera cutout's lower corners. Its collapsed width matches the measured cutout. Width and height animate together while the top stays attached. Display space limits the expanded size. Reduce Motion disables size animations.
 
@@ -64,9 +64,9 @@ An explicit request can supply up to 32 actions. The first card displays three; 
 }
 ```
 
-The top-right **…** menu contains **Auto-yes** and Dismiss. Auto-yes uses the same pane-specific setting as the remote app and tmux: future prompts from that agent are automatically answered until it is turned off. Its state stays synchronized with other clients, and stale sessions cannot toggle a replacement agent.
+The top-right **…** menu contains **Auto-yes**, Agent controls, and Dismiss. Auto-yes uses the same pane-specific setting as the remote app and tmux: future prompts from that agent are automatically answered until it is turned off. Its state stays synchronized with other clients, and stale sessions cannot toggle a replacement agent.
 
-Action kinds are `choice` (default), `focus`, `auto_yes`, `model`, and `plugin`. Model and plugin actions use `value` for the model or installed action ID and `parameters` for string values, such as reasoning `effort`. Agent controls offers Codex model selection and available installed plugin actions without opening Details.
+Action kinds are `choice` (default), `focus`, `auto_yes`, `model`, and `plugin`. Model and plugin actions use `value` for the model or installed action ID and `parameters` for string values, such as reasoning `effort`. The **… > Agent controls** menu offers Codex model selection and available installed plugin actions without opening Details.
 
 ## Custom layouts
 

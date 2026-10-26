@@ -17,10 +17,13 @@
   assert(document.querySelectorAll(".actions button").length === 3, "first card exposes three quick choices");
   assert(document.querySelector(".reply-label").textContent === "Reply to agent" && document.querySelector(".send").textContent === "Send", "reply field and Send are visible on the first card");
   assert(!document.querySelector(".logs, .details-content, select") && window.fixture.contextCalls === 0, "first card has no logs, settings, or background log polling");
-  assert(buttons().some(button => button.textContent === "Agent controls"), "agent controls are reachable on the first card");
+  assert(!buttons().some(button => button.textContent === "Agent controls"), "agent controls stay out of the card footer");
   assert(getComputedStyle(document.querySelector(".send")).borderRadius === "20px" && document.querySelector(".send").offsetHeight < 38, "Send uses a small rounded action button");
+  document.querySelector('[aria-label="Notification options"]').click();
   click("Agent controls"); await sleep(60);
-  assert(document.querySelector('.menu-panel[role="dialog"] .model-controls select') && !document.querySelector(".details-content"), "agent controls open directly without expanding Details");
+  assert(document.querySelector('.menu-panel[role="dialog"] .model-controls select') && !document.querySelector(".details-content"), "agent controls open from the options menu without expanding Details");
+  document.querySelector('[aria-label="Back to options"]').click();
+  assert(document.querySelector('[role="switch"]'), "agent controls return to Auto-yes and the other options");
   document.querySelector('[aria-label="Close menu"]').click();
   assert(document.querySelector("#surface").getBoundingClientRect().height < 430, "first card stays compact");
   assert(!window.unsafeMarkup && !document.querySelector(".message img"), "request text cannot inject markup");
@@ -63,6 +66,7 @@
   assert(outputScroller.scrollTop === 0, "new output respects a user reading earlier lines");
   assert(document.querySelector(".reply").getBoundingClientRect().bottom < document.querySelector(".details-content").getBoundingClientRect().top, "reply stays above the details scroller");
   assert(!document.querySelector("select"), "agent settings stay hidden even when viewing details");
+  document.querySelector('[aria-label="Notification options"]').click();
   click("Agent controls"); await sleep(60);
   assert(document.querySelector(".model-controls select"), "advanced agent controls remain available behind a button");
   document.querySelector('[aria-label="Close menu"]').click();
