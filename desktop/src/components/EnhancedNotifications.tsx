@@ -12,6 +12,7 @@ type TemplateList = { templates: Template[]; sources: Record<string, string>; di
 type Info = {
   records: unknown[]
   pending_count: number
+  auto_yes_panes: string[]
   settings: EnhancedNotificationSettings
   templates: TemplateList
   platform: { available: boolean; focused: boolean | null; authorized: boolean | null; displays: { id: string; name: string }[] }
@@ -118,7 +119,8 @@ export function EnhancedNotifications({ settings, onChange }: {
     request: {
       title: "Review the launch post", template: sampleTemplate?.id || "social-review",
       body: "The launch post and video are ready. Review the caption and choose how to continue.",
-      source: { task: "Review the launch post", provider: "codex", branch: "launch", cwd: "~/projects/clawtab" },
+      source: { pane_id: "%preview", task: "Review the launch post", provider: "codex", branch: "launch", cwd: "~/projects/clawtab" },
+      response_destination: "agent_message",
       data: { command: "launchctl bootstrap gui/501 ~/Library/LaunchAgents/example.plist", diff: "- Previous caption\n+ Updated launch caption", plan: "1. Review the draft\n2. Publish after approval" },
       actions: sampleTemplate?.actions?.length ? sampleTemplate.actions : [{ id: "approve", label: "Approve" }, { id: "revise", label: "Request changes" }, { id: "reject", label: "Reject" }], media: [],
     },
@@ -142,14 +144,14 @@ export function EnhancedNotifications({ settings, onChange }: {
         <option value="primary">System primary display</option><option value="built_in">Built-in display</option><option value="pointer">Display with pointer</option>
         {info?.platform.displays.map(display => <option key={display.id} value={display.id}>{display.name}</option>)}
       </select></label>
-      <label>Preview duration (seconds)<input type="number" min={2} max={120} value={settings.preview_seconds}
+      <label>Status update duration (seconds)<input type="number" min={2} max={120} value={settings.preview_seconds}
         onChange={e => { const seconds = Number(e.target.value); if (seconds >= 2 && seconds <= 120) change({ preview_seconds: seconds }) }} /></label>
       <div className="nfn-options">
         <label className="checkbox-label"><input type="checkbox" checked={settings.hover_expand} onChange={e => change({ hover_expand: e.target.checked })} />Expand on hover</label>
         <label className="checkbox-label"><input type="checkbox" checked={settings.sound} onChange={e => change({ sound: e.target.checked })} />Sound</label>
       </div>
     </div>
-    <span className="hint">Cards run in the daemon, including while the app is closed. Previews pause while you read or type.</span>
+    <span className="hint">Review and permission cards stay open until answered or closed. Status updates pause on hover.</span>
     {settings.focus === "follow" && info && (info.platform.focused === null || info.platform.authorized !== true) &&
       <span className="hint">macOS notifications handle delivery until ClawTab Daemon has notification and Focus access. Enable them in System Settings.</span>}
     <div className="btn-group nfn-toolbar">

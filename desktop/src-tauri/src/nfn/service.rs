@@ -77,12 +77,18 @@ impl Service {
             let _ = watcher.watch(&templates::directory(), notify::RecursiveMode::NonRecursive);
         }
         let mut ticks = 0_u32;
+        let mut auto_yes_panes = self.ctx.auto_yes_panes.lock().clone();
         loop {
             tokio::select! {
                 () = tokio::time::sleep(std::time::Duration::from_secs(1)) => {},
                 () = self.template_changes.notified() => { self.push(None, false); },
             }
             ticks = ticks.wrapping_add(1);
+            let current_auto_yes = self.ctx.auto_yes_panes.lock().clone();
+            if current_auto_yes != auto_yes_panes {
+                auto_yes_panes = current_auto_yes;
+                self.changed();
+            }
             let _guard = self.mutation.lock().await;
             let current: HashSet<String> = self.questions.lock().iter().map(question_key).collect();
             if let Ok(records) = self.store.pending() {
@@ -173,11 +179,11 @@ impl Service {
         let request = NfnRequest {
             title: format!("{slug} {event}"),
             body: format!("Job {slug} {event}"),
-            template: "quick-action".into(),
+            template: "update".into(),
             data: json!({"event":event}),
             actions: vec![NfnAction {
                 id: "acknowledge".into(),
-                label: "Acknowledge".into(),
+                label: "Got it".into(),
                 ..Default::default()
             }],
             source: NfnSource {
@@ -250,10 +256,11 @@ impl Service {
             && !records.is_empty()
             && (settings.enhanced_notifications.focus == "independent"
                 || (platform.focused == Some(false) && platform.authorized == Some(true)));
+        let auto_yes_panes: Vec<_> = self.ctx.auto_yes_panes.lock().iter().cloned().collect();
         native::push(
             json!({"type":"snapshot", "records":records, "pending_count":count, "arrival":arrival, "sound":sound,
             "settings": settings.enhanced_notifications, "templates":templates::list(), "visible":visible,
-            "platform":*platform}),
+            "platform":*platform, "auto_yes_panes":auto_yes_panes}),
         );
     }
 
@@ -303,9 +310,11 @@ impl Service {
             }
             NfnCommand::Templates => return Ok(templates::list()),
             NfnCommand::Info => {
+                let auto_yes_panes: Vec<_> =
+                    self.ctx.auto_yes_panes.lock().iter().cloned().collect();
                 return Ok(
-                    json!({"records":self.store.pending_page(0)?,"pending_count":self.store.pending_count()?,"settings":self.ctx.settings.lock().enhanced_notifications,"platform":*self.platform.lock(),"templates":templates::list()}),
-                )
+                    json!({"records":self.store.pending_page(0)?,"pending_count":self.store.pending_count()?,"settings":self.ctx.settings.lock().enhanced_notifications,"platform":*self.platform.lock(),"templates":templates::list(),"auto_yes_panes":auto_yes_panes}),
+                );
             }
             NfnCommand::Validate { yaml } => {
                 return Ok(json!({"template": templates::parse(&yaml)?}))
@@ -350,9 +359,17 @@ impl Service {
                     .source
                     .pane_id
                     .ok_or("This request has no agent")?;
-                match ipc::send_command(ipc::IpcCommand::ToggleAutoYes { pane_id: pane }).await? {
+                match ipc::send_command(ipc::IpcCommand::ToggleAutoYes {
+                    pane_id: pane.clone(),
+                })
+                .await?
+                {
                     ipc::IpcResponse::Error(error) => return Err(error),
-                    _ => return Ok(json!({"ok":true})),
+                    _ => {
+                        let auto_yes = self.ctx.auto_yes_panes.lock().contains(&pane);
+                        self.changed();
+                        return Ok(json!({"auto_yes":auto_yes}));
+                    }
                 }
             }
             NfnCommand::Model { id, model, effort } => {

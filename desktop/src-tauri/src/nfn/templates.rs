@@ -98,6 +98,13 @@ pub fn builtins() -> Vec<NfnTemplate> {
             vec![("continue", "Continue")],
         ),
         (
+            "update",
+            "Status update",
+            "Progress or results that do not need a decision",
+            vec!["text", "media", "logs"],
+            vec![("acknowledge", "Got it")],
+        ),
+        (
             "agent-approval",
             "Agent approval",
             "Inspect an agent's command, changes, or plan",

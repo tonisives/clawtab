@@ -15,6 +15,8 @@ static NfnCallback callback;
 @implementation NfnPanel
 - (BOOL)canBecomeKeyWindow { return self.textFocus; }
 - (BOOL)canBecomeMainWindow { return NO; }
+// The overlay overlaps the notch's lower corners, inside the menu bar area.
+- (NSRect)constrainFrameRect:(NSRect)frame toScreen:(NSScreen *)screen { return frame; }
 @end
 
 @interface NfnSurface : NSObject <WKScriptMessageHandler, WKNavigationDelegate, WKURLSchemeHandler>
@@ -34,6 +36,8 @@ static NfnCallback callback;
 @property NSUInteger ticks;
 @property CGFloat surfaceWidth;
 @property CGFloat surfaceHeight;
+@property NSString *lastGeometry;
+@property NSMutableDictionary<NSString *, NSDictionary *> *notchGeometry;
 @end
 
 static NfnSurface *surface;
@@ -56,13 +60,16 @@ static void emit(NSDictionary *value) {
 - (instancetype)initWithHTML:(NSString *)html {
     if (!(self = [super init])) return nil;
     self.settings = @{};
+    self.notchGeometry = [NSMutableDictionary dictionary];
+    for (NSScreen *screen in NSScreen.screens) [self notchForScreen:screen];
     self.media = [NSMutableDictionary dictionary];
     self.stoppedTasks = [NSHashTable weakObjectsHashTable];
     self.panel = [[NfnPanel alloc] initWithContentRect:NSMakeRect(0, 0, 220, 40)
         styleMask:NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel
         backing:NSBackingStoreBuffered defer:NO];
     self.panel.level = NSStatusWindowLevel;
-    self.panel.collectionBehavior = NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorFullScreenAuxiliary | NSWindowCollectionBehaviorStationary;
+    self.panel.collectionBehavior = NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorFullScreenAuxiliary | NSWindowCollectionBehaviorStationary | NSWindowCollectionBehaviorIgnoresCycle;
+    self.panel.animationBehavior = NSWindowAnimationBehaviorNone;
     self.panel.hidesOnDeactivate = NO;
     self.panel.becomesKeyOnlyIfNeeded = YES;
     self.panel.floatingPanel = YES;
@@ -114,6 +121,9 @@ static void emit(NSDictionary *value) {
 
 - (void)activationChanged:(NSNotification *)notification { [self publishPlatform]; }
 - (void)screensChanged:(NSNotification *)notification {
+    NSMutableSet *connected = [NSMutableSet set];
+    for (NSScreen *screen in NSScreen.screens) [connected addObject:[screen.deviceDescription[@"NSScreenNumber"] stringValue]];
+    for (NSString *identifier in self.notchGeometry.allKeys) if (![connected containsObject:identifier]) [self.notchGeometry removeObjectForKey:identifier];
     [self positionWidth:self.surfaceWidth height:self.surfaceHeight];
     [self publishPlatform];
 }
@@ -190,19 +200,50 @@ static void emit(NSDictionary *value) {
     return screens.firstObject;
 }
 
+- (NSDictionary *)notchForScreen:(NSScreen *)screen {
+    NSString *identifier = [screen.deviceDescription[@"NSScreenNumber"] stringValue];
+    CGFloat topInset = 0, notchWidth = 0;
+    CGFloat center = NSMidX(screen.frame);
+    if (@available(macOS 12.0, *)) {
+        topInset = screen.safeAreaInsets.top;
+        if (topInset > 0) {
+            notchWidth = NSMinX(screen.auxiliaryTopRightArea) - NSMaxX(screen.auxiliaryTopLeftArea);
+            center = NSMaxX(screen.auxiliaryTopLeftArea) + notchWidth / 2;
+        }
+    }
+    NSDictionary *previous = self.notchGeometry[identifier];
+    // AppKit can temporarily return empty camera areas after the overlay opens.
+    // Retain measured hardware geometry only while the display mode is unchanged.
+    if (topInset <= 0 && previous && NSEqualRects([previous[@"frame"] rectValue], screen.frame)
+        && [previous[@"scale"] doubleValue] == screen.backingScaleFactor) return previous;
+    NSDictionary *geometry = @{@"inset":@(topInset), @"width":@(MAX(0, notchWidth)), @"center":@(center),
+        @"frame":[NSValue valueWithRect:screen.frame], @"scale":@(screen.backingScaleFactor)};
+    self.notchGeometry[identifier] = geometry;
+    return geometry;
+}
+
 - (void)positionWidth:(CGFloat)width height:(CGFloat)height {
     NSScreen *screen = [self selectedScreen];
     if (!screen || width <= 0 || height <= 0) return;
-    CGFloat topInset = 0;
-    if (@available(macOS 12.0, *)) topInset = screen.safeAreaInsets.top;
+    NSDictionary *camera = [self notchForScreen:screen];
+    CGFloat topInset = [camera[@"inset"] doubleValue], notchWidth = [camera[@"width"] doubleValue];
     BOOL notch = [self.settings[@"placement"] isEqual:@"notch"] && topInset > 0;
     NSRect available = screen.visibleFrame;
+    CGFloat overlap = notch ? MIN(topInset, 16) : 0;
     CGFloat w = MIN(width, available.size.width - 32), h = MIN(height, available.size.height - 32);
-    CGFloat x = notch ? NSMidX(screen.frame) - w / 2 : NSMaxX(available) - w - MIN(384, available.size.width / 3);
+    CGFloat x = notch ? [camera[@"center"] doubleValue] - w / 2 : NSMaxX(available) - w - MIN(384, available.size.width / 3);
     x = MAX(NSMinX(available) + 16, MIN(x, NSMaxX(available) - w - 16));
-    CGFloat y = notch ? NSMaxY(screen.frame) - topInset - h : NSMaxY(available) - h - 12;
-    [self.panel setFrame:NSMakeRect(x, y, w, h) display:YES];
-    if (self.ready) [self.web evaluateJavaScript:[NSString stringWithFormat:@"window.nfn.setPlacement('%@')", notch ? @"notch" : @"right"] completionHandler:nil];
+    CGFloat y = notch ? NSMaxY(screen.frame) - topInset + overlap - h : NSMaxY(available) - h - 12;
+    NSRect frame = NSMakeRect(x, y, w, h);
+    if (!NSEqualRects(frame, self.panel.frame)) [self.panel setFrame:frame display:YES];
+    NSDictionary *geometry = @{@"placement":notch ? @"notch" : @"right", @"overlap":@(overlap),
+        @"notch_width":@(MAX(0, notchWidth)), @"max_width":@(available.size.width - 32),
+        @"max_height":@(available.size.height - 32), @"reduce_motion":@(NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion)};
+    NSString *json = [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:geometry options:NSJSONWritingSortedKeys error:nil] encoding:NSUTF8StringEncoding];
+    if (self.ready && ![json isEqual:self.lastGeometry]) {
+        self.lastGeometry = json;
+        [self.web evaluateJavaScript:[NSString stringWithFormat:@"window.nfn.setPlacement(%@)", json] completionHandler:nil];
+    }
 }
 
 - (void)releaseTextFocus {
@@ -217,6 +258,7 @@ static void emit(NSDictionary *value) {
     if ([value[@"type"] isEqual:@"snapshot"]) {
         self.snapshot = value;
         self.settings = value[@"settings"] ?: @{};
+        [self positionWidth:self.surfaceWidth height:self.surfaceHeight];
         [self.media removeAllObjects];
         for (NSDictionary *record in value[@"records"]) {
             NSArray *media = record[@"request"][@"media"];

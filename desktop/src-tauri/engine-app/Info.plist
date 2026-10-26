@@ -28,6 +28,8 @@
     <string>ClawTab uses your Focus status to keep agent notifications quiet while you are busy.</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSPrefersDisplaySafeAreaCompatibilityMode</key>
+    <false/>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
     <key>NSHumanReadableCopyright</key>

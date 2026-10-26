@@ -2,9 +2,11 @@
 
 The daemon owns the notification queue and the macOS overlay. Cards remain available while the desktop app is closed. On macOS 12 or later, cards appear below the notch on the selected display, or in a right column on displays without a notch. Settings also allow the right column on every display.
 
-Configure delivery, display, sound, Focus behavior, and layouts in **Settings > General > Notifications**. Existing local notification preferences still apply. The first card shows the message, quick choices, and a reply field with a Send button. Its colors and action buttons follow the remote app. The default preview lasts eight seconds, pauses on hover or text input, then collapses to a pending count.
+Configure delivery, display, sound, Focus behavior, and layouts in **Settings > General > Notifications**. Existing local notification preferences still apply. The first card shows the message, quick choices, and a reply field with a Send button. Its colors and action buttons follow the remote app. Review, question, and permission cards stay open until answered or closed. Status updates collapse to a pending count after eight seconds, pausing on hover.
 
-Use the previous/next arrows to move between notifications, or Command/Ctrl + Shift + [ / ]. Each card keeps its reply draft. New requests queue without replacing the card being read, and a successful reply advances to the next request. The position count opens the full list; History is available there. Details opens the full message, attachments, and recent output. Agent controls are behind a separate button inside Details. Open agent returns to the originating conversation.
+Use the previous/next arrows to move between notifications, or Command/Ctrl + Shift + [ / ]. Each card keeps its reply draft. New requests queue without replacing the card being read, and a successful reply advances to the next request. The position count opens the full list; History is available there. Details widens the card and adds a larger scrollable area for the full message, attachments, and recent output. Agent controls are behind a separate button inside Details. Open agent returns to the originating conversation.
+
+The notch surface overlaps the camera cutout's lower corners with a black, borderless shape. Its width and height animate together while the top stays attached. Display space limits the expanded size. Reduce Motion disables size animations.
 
 Following macOS Focus requires notification and Focus access for **ClawTab Daemon**. When Focus status is unavailable or Focus is active, delivery goes through macOS notifications. macOS then applies its notification settings and Focus allowlist. Independent mode allows the overlay and its sound regardless of Focus. Selecting Both uses the native notification for sound.
 
@@ -27,6 +29,8 @@ JSON
 ```
 
 `send` returns the persisted request, including its ID. `--wait` returns the final record and response. A wait timeout returns `wait_timed_out: true` and leaves the request pending. Set `expires_at` to a Unix timestamp in milliseconds to expire the request itself.
+
+For progress reports that need no decision, send `"template": "update"` without `--wait`. Update cards show **Update** and **Got it**, with no reply composer. Use question or permission templates when the workflow needs an answer. Sending a notification alone does not pause an agent; the workflow must wait for and consume its response.
 
 ```sh
 cwtctl nfn get REQUEST_ID
@@ -56,11 +60,13 @@ An explicit request can supply up to 32 actions. The first card displays three; 
 }
 ```
 
-Action kinds are `choice` (default), `focus`, `auto_yes`, `model`, and `plugin`. Model and plugin actions use `value` for the model or installed action ID and `parameters` for string values, such as reasoning `effort`. Details > Agent controls also offers auto-yes, Codex model selection, and available installed plugin actions.
+Permission cards and detected agent prompts expose **Auto-yes for this agent** beside the choices. It uses the same pane-specific setting as the remote app and tmux: future prompts from that agent are automatically answered until it is turned off. Its state stays synchronized with other clients, and stale sessions cannot toggle a replacement agent.
+
+Action kinds are `choice` (default), `focus`, `auto_yes`, `model`, and `plugin`. Model and plugin actions use `value` for the model or installed action ID and `parameters` for string values, such as reasoning `effort`. Details > Agent controls offers auto-yes on other card types, Codex model selection, and available installed plugin actions.
 
 ## Custom layouts
 
-Built-in layouts include questions, agent approvals, social reviews, permissions, YubiKey attention, and quick actions. Edit or create layouts in the settings editor, which previews the same renderer used by the daemon. Preview actions are inert. Save a layout to `~/.config/clawtab/notification-templates/ID.yaml`; external edits reload automatically. The filename must match the template ID. A user layout with a built-in ID overrides that layout.
+Built-in layouts include status updates, questions, agent approvals, social reviews, permissions, YubiKey attention, and quick actions. Edit or create layouts in the settings editor, which previews the same renderer used by the daemon. Preview actions are inert. Save a layout to `~/.config/clawtab/notification-templates/ID.yaml`; external edits reload automatically. The filename must match the template ID. A user layout with a built-in ID overrides that layout.
 
 ```yaml
 version: 1

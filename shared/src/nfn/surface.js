@@ -8,6 +8,9 @@
   let hovering = false, focused = false, busy = false, contextBusy = false, serial = 0, placement = "right";
   let historyOffset = 0, historyItems = [], pendingOffset = 50, hasMoreHistory = false, loadingQueue = false;
   let completionTimer = null, navigating = false, unseenPending = 0;
+  let geometry = {}, layoutAnimation = null, animationBounds = null, lastSize = "";
+  const autoYesBusy = new Set();
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
   function native(value) {
     if (window.webkit?.messageHandlers?.nfn) window.webkit.messageHandlers.nfn.postMessage(value);
@@ -73,8 +76,42 @@
     return snapshot.templates?.templates?.find(t => t.id === record.request.template) || { layout: [{ type: "text", field: "body" }, { type: "media" }, { type: "reply" }, { type: "logs" }] };
   }
   function size() {
-    if (host.classList.contains("empty")) { native({ native: "surface", width: 0, height: 0 }); return; }
-    native({ native: "surface", width: host.getBoundingClientRect().width, height: Math.ceil(host.getBoundingClientRect().height) });
+    const bounds = animationBounds || host.getBoundingClientRect(), hidden = host.classList.contains("empty");
+    const width = hidden ? 0 : bounds.width, height = hidden ? 0 : Math.ceil(bounds.height);
+    const signature = `${width}:${height}`;
+    if (signature === lastSize) return;
+    lastSize = signature; native({ native: "surface", width, height });
+  }
+  function animateLayout(before) {
+    layoutAnimation?.cancel(); layoutAnimation = null; animationBounds = null;
+    if (host.classList.contains("empty")) { size(); return; }
+    const after = host.getBoundingClientRect();
+    if (!reducedMotion.matches && !geometry.reduce_motion &&
+        (Math.abs(before.width - after.width) > 1 || Math.abs(before.height - after.height) > 1)) {
+      // Keep one transparent native viewport around both sizes while the shape animates.
+      // Shrinking the viewport on every frame can stall WebKit underneath the notch.
+      animationBounds = { width: Math.max(before.width, after.width), height: Math.max(before.height, after.height) };
+      const opening = !before.height;
+      const pillWidth = placement === "notch" ? Math.max(224, (geometry.notch_width || 192) + 40) : 224;
+      const pillHeight = placement === "notch" ? (geometry.overlap || 16) + 36 : 36;
+      layoutAnimation = host.animate([
+        { width: `${Math.max(before.width, Math.min(after.width, pillWidth))}px`, height: `${Math.max(before.height, Math.min(after.height, pillHeight))}px`, opacity: opening ? 0 : 1 },
+        { width: `${after.width}px`, height: `${after.height}px`, opacity: 1 }
+      ], { duration: 360, easing: "cubic-bezier(.22, 1, .36, 1)" });
+      const animation = layoutAnimation;
+      // WebKit may stop its animation timeline for a nonactivating notch panel.
+      // Advance this short transition from elapsed time so it always completes.
+      animation.pause();
+      const started = performance.now();
+      function advance() {
+        if (layoutAnimation !== animation || animation.playState === "finished") return;
+        animation.currentTime = Math.min(360, performance.now() - started);
+        if (animation.currentTime >= 360) animation.finish(); else setTimeout(advance, 16);
+      }
+      advance();
+      animation.finished.then(() => { if (layoutAnimation === animation) { layoutAnimation = null; animationBounds = null; size(); } }).catch(() => {});
+    }
+    size();
   }
   new ResizeObserver(size).observe(host);
   function stopMedia() {
@@ -86,6 +123,7 @@
   }
   function resumeTimer() {
     if (expanded || queue || hovering || focused || busy || !current || collapseTimer) return;
+    if (records.get(current)?.request.template !== "update") return;
     timerStarted = performance.now(); collapseTimer = setTimeout(collapse, Math.max(100, remaining));
   }
   function collapse() {
@@ -170,6 +208,37 @@
     }
   }
   function hasBlock(layout, kind) { return (layout || []).some(b => b.type === kind || hasBlock(b.children, kind)); }
+  function permissionCard(record) { return Boolean(record.request.source?.pane_id && (record.question_id || ["permission", "agent-approval"].includes(record.request.template))); }
+  function autoYesControl(record) {
+    const row = el("div", "auto-yes"); row.append(el("span", "", "Auto-yes for this agent"));
+    const control = button("", async () => {
+      const pane = record.request.source.pane_id;
+      if (autoYesBusy.has(pane)) return;
+      autoYesBusy.add(pane); updateAutoYes();
+      try {
+        const value = await call({ op: "auto_yes", id: record.id });
+        if (typeof value.auto_yes === "boolean") {
+          const panes = new Set(snapshot.auto_yes_panes || []);
+          if (value.auto_yes) panes.add(pane); else panes.delete(pane);
+          snapshot.auto_yes_panes = [...panes];
+        }
+      } catch (error) { if (record.id === current) showError(error); }
+      finally { autoYesBusy.delete(pane); updateAutoYes(); }
+    }, "auto-yes-switch");
+    control.setAttribute("role", "switch"); control.setAttribute("aria-label", "Auto-yes for this agent");
+    control.title = "Automatically answers this agent's prompts until you turn it off";
+    control.dataset.pane = record.request.source.pane_id;
+    control.append(el("span", "switch-state"), el("span", "switch-track")); row.append(control);
+    return row;
+  }
+  function updateAutoYes() {
+    for (const control of host.querySelectorAll(".auto-yes-switch")) {
+      const enabled = (snapshot.auto_yes_panes || []).includes(control.dataset.pane);
+      control.setAttribute("aria-checked", String(enabled));
+      control.querySelector(".switch-state").textContent = enabled ? "On" : "Off";
+      control.disabled = autoYesBusy.has(control.dataset.pane);
+    }
+  }
   function createCard(record) {
     const node = el("article", "card");
     node._signature = JSON.stringify([record.request, template(record)]);
@@ -204,7 +273,8 @@
         pauseTimer(); expanded = true; allChoices = !allChoices; renderedId = null; render();
       }, "utility more-choices"));
     }
-    if (hasBlock(layout, "reply") || record.request.source?.pane_id) {
+    if (permissionCard(record)) node.append(autoYesControl(record));
+    if (record.request.template !== "update" && (hasBlock(layout, "reply") || record.request.source?.pane_id)) {
       const toAgent = Boolean(record.question_id || record.request.response_destination === "agent_message");
       const reply = el("div", "reply");
       const label = el("label", "reply-label", toAgent ? "Reply to agent" : "Your reply"); label.htmlFor = "notification-reply"; reply.append(label);
@@ -257,14 +327,16 @@
       startContext();
     }
     const isPending = pending(record);
-    card._status.textContent = record.status === "delivering" || busy ? "Sending..." : isPending ? "" : record.status === "resolved" ? "Sent" : record.status;
+    const update = record.request.template === "update";
+    card._status.textContent = record.status === "delivering" || busy ? "Sending..." : isPending ? (update ? "Update" : "") : record.status === "resolved" ? (update ? "Seen" : "Sent") : record.status;
     for (const control of card._actions.querySelectorAll("button")) control.disabled = !isPending || busy || Boolean(record.question_id && drafts.get(record.id)?.trim());
     if (card._send) card._send.disabled = !isPending || busy || !card._reply.value.trim();
     if (card._reply) card._reply.readOnly = !isPending || busy;
     if (card._clientError) card._notice.textContent = card._clientError;
     else if (record.error) card._notice.textContent = record.error;
-    else if (!isPending) card._notice.textContent = record.response ? "Reply sent" : `Request ${record.status}`;
+    else if (!isPending) card._notice.textContent = record.response ? (update ? "Acknowledged" : "Reply sent") : `Request ${record.status}`;
     else card._notice.textContent = "";
+    updateAutoYes();
   }
   async function refreshContext() {
     if (!details || queue || !current || contextBusy) return;
@@ -280,7 +352,8 @@
       const agent = card._agent;
       if (agent && !agent.hidden && agent.dataset.built !== "yes") {
         agent.dataset.built = "yes";
-        const auto = button(value.auto_yes ? "Auto-yes on" : "Enable auto-yes", async () => { try { await call({ op: "auto_yes", id }); auto.textContent = auto.textContent === "Auto-yes on" ? "Enable auto-yes" : "Auto-yes on"; } catch (error) { showError(error); } }, "utility"); agent.append(auto);
+        const record = records.get(id);
+        if (record && !permissionCard(record)) agent.append(autoYesControl(record));
         if (value.source?.provider === "codex" && value.models?.length) {
           const row = el("div", "model-controls"), models = el("select"), effort = el("select"); models.setAttribute("aria-label", "Model"); effort.setAttribute("aria-label", "Reasoning effort");
           for (const model of value.models) { const option = el("option", "", model); option.value = model; models.append(option); }
@@ -289,6 +362,7 @@
           row.append(models, effort, button("Set model", async () => { try { await call({ op: "model", id, model: models.value, effort: effort.value }); } catch (error) { showError(error); } })); agent.append(row);
         }
         buildPlugins(agent, value.plugins || [], value.models || [], id);
+        updateAutoYes();
       }
     } catch (error) { if (id === current && card?._logs) card._logs.textContent = String(error.message || error); }
     finally { contextBusy = false; }
@@ -341,9 +415,11 @@
     finally { loadingQueue = false; render(); }
   }
   function render() {
+    const before = host.getBoundingClientRect();
+    layoutAnimation?.cancel(); layoutAnimation = null; animationBounds = null;
     const count = pendingCount();
     if (!preview && (!snapshot.visible || (!current && !queue && !count))) { host.className = "empty"; host.replaceChildren(); renderedId = null; card = null; stopContext(); size(); return; }
-    host.className = `${placement} ${expanded ? "expanded" : !current ? "pill" : ""}`;
+    host.className = `${placement} ${expanded ? "expanded" : !current ? "pill" : ""} ${details ? "details-open" : ""}`;
     let top = host.querySelector(".top");
     if (!top) { top = el("div", "top"); host.prepend(top); }
     const items = pendingRecords(), index = items.findIndex(record => record.id === current);
@@ -380,7 +456,7 @@
       }
       updateCard();
     } else { host.querySelector(".card")?.remove(); host.querySelector(".queue")?.remove(); renderedId = null; card = null; }
-    size();
+    animateLayout(before);
   }
   function receive(value) {
     if (value.type === "response") {
@@ -422,7 +498,16 @@
   });
   window.addEventListener("message", event => { if (event.source === window.parent) receive(event.data || {}); });
   document.addEventListener("visibilitychange", () => { if (document.hidden) stopContext(); else startContext(); });
-  window.nfn = { receive, collapse, setPlacement(value) { if (placement !== value) { placement = value; render(); } } };
+  window.nfn = { receive, collapse, setPlacement(value) {
+    const next = typeof value === "string" ? { placement: value } : value;
+    if (JSON.stringify(next) === JSON.stringify(geometry)) return;
+    geometry = next; placement = next.placement;
+    document.body.style.justifyContent = placement === "notch" ? "center" : "flex-end";
+    for (const [key, property] of [["overlap", "--notch-overlap"], ["notch_width", "--notch-width"], ["max_width", "--surface-max-width"], ["max_height", "--surface-max-height"]]) {
+      if (Number.isFinite(next[key])) host.style.setProperty(property, `${next[key]}px`);
+    }
+    render();
+  } };
   host.className = "empty";
   native({ preview_ready: true });
 })();
