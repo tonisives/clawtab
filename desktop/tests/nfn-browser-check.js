@@ -144,5 +144,25 @@
   await sleep(180);
   assert(document.querySelector("#surface").classList.contains("pill"), "only status updates collapse on the preview timer");
   window.nfn.collapse();
+  window.fixture.records.clear();
+  const alert = window.fixture.record("capacity-alert", 0);
+  alert.request.title = "ClawTab";
+  alert.request.body = "Selected model is at capacity. Please try a different model.";
+  alert.request.template = "update";
+  alert.request.data = { event: "agent_alert" };
+  alert.request.actions = [{ id: "focus", label: "Open session", kind: "focus" }];
+  window.fixture.records.set(alert.id, alert);
+  const alertSnapshot = window.fixture.snapshot(alert.id); alertSnapshot.settings.preview_seconds = .05;
+  window.nfn.receive(alertSnapshot);
+  assert(document.querySelector(".status.alert").textContent === "! Alert" && getComputedStyle(document.querySelector(".status.alert")).color === "rgb(255, 135, 0)", "agent failures display an orange alert marker");
+  assert(!document.querySelector(".reply, .auto-yes") && document.querySelector(".message").textContent === alert.request.body, "failure notices show the full error without approval controls");
+  await sleep(180);
+  assert(Boolean(document.querySelector(".card")), "agent alerts stay open until dismissed or recovered");
+  click("Open session"); await sleep(30);
+  assert(window.fixture.calls.some(command => command.op === "respond" && command.id === alert.id && command.action_id === "focus"), "the alert action opens its originating session");
+  alert.status = "resolved";
+  window.nfn.receive(window.fixture.snapshot());
+  assert(document.querySelector(".status").textContent === "Recovered" && !document.querySelector(".status.alert"), "recovered agents clear the active warning");
+  window.nfn.collapse();
   return { passed: checks.length, checks };
 })()

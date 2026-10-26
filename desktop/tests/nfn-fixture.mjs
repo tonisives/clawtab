@@ -29,8 +29,12 @@ window.webkit = { messageHandlers: { nfn: { postMessage(value) {
       setTimeout(() => window.nfn.receive({ type: "response", token, error: fixture.responseError }), 1);
       return;
     }
-    record.status = "resolved";
-    record.response = { action_id: command.action_id, text: command.text };
+    if (record.request.actions.find(action => action.id === command.action_id)?.kind === "focus") {
+      response = { focused: true };
+    } else {
+      record.status = "resolved";
+      record.response = { action_id: command.action_id, text: command.text };
+    }
   }
   if (command.op === "list") response = { records: [...fixture.records.values()].filter(r => !command.pending_only || r.status === "pending").slice(command.offset, command.offset + 50), next_offset: command.offset + 50 };
   setTimeout(() => window.nfn.receive({ type: "response", token, value: response }), 1);

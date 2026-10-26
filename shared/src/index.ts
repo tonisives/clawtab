@@ -46,6 +46,7 @@ export { spacing, radius } from "./theme/spacing";
 export { PANE_COLORS, assignPaneColors } from "./theme/paneColors";
 
 // Utils
+export { agentAlertProcesses } from "./util/alert";
 export { formatTime, formatDuration, timeAgo, shortenPath, compactPath, fitPath, compactCron, compactProcessQuery, processDisplayTitle } from "./util/format";
 export { agentSelectionLabel, compactAgentSelectionLabel, compactModelLabel, compactProcessModelLabel, labelForProvider, modelPickerLabel } from "./util/agent";
 export { nextCronDate, formatNextRun, describeCron, cronTooltip } from "./util/cron";
@@ -84,6 +85,7 @@ export {
 export type { AvailableAction } from "./util/status";
 
 // Components
+export { AgentAlertCards } from "./components/AgentAlertCards";
 export { StatusBadge } from "./components/StatusBadge";
 export { QueryLabel } from "./components/QueryLabel";
 export { PaneOverviewModal } from "./components/PaneOverviewModal";

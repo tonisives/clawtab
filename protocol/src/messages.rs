@@ -416,6 +416,12 @@ pub enum DesktopMessage {
         event: String,
         run_id: String,
     },
+    /// A newly detected agent failure for notification delivery.
+    AgentAlert {
+        pane_id: String,
+        title: String,
+        body: String,
+    },
     /// Desktop pushes which pane_ids have auto-yes enabled (synced to mobile)
     AutoYesPanes {
         pane_ids: Vec<String>,

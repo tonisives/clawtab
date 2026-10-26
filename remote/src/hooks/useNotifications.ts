@@ -76,6 +76,7 @@ async function handleNotificationResponse(
   const source = contentData?.clawtab ? contentData : trigger?.payload;
 
   const clawtab = (source as { clawtab?: {
+    event?: string;
     question_id?: string;
     pane_id?: string;
     matched_job?: string;
@@ -90,6 +91,14 @@ async function handleNotificationResponse(
     return;
   }
   console.log("[notif] clawtab q=" + clawtab.question_id + " pane=" + clawtab.pane_id + " job=" + clawtab.matched_job);
+
+  if (clawtab.event === "agent_alert" && clawtab.pane_id) {
+    if (navigate && !alreadyNavigated) {
+      navigatedResponses.add(key);
+      navigate(`/process/${clawtab.pane_id.replace(/%/g, "_pct_")}?source=notifications`);
+    }
+    return;
+  }
 
   // Job notification (no question_id means it's a job status push)
   if (clawtab.job_id && !clawtab.question_id) {

@@ -76,10 +76,7 @@ impl ApnsClient {
             .as_ref()
             .ok_or("APNS_KEY_PATH not set")?;
         let key_id = config.apns_key_id.as_ref().ok_or("APNS_KEY_ID not set")?;
-        let team_id = config
-            .apns_team_id
-            .as_ref()
-            .ok_or("APNS_TEAM_ID not set")?;
+        let team_id = config.apns_team_id.as_ref().ok_or("APNS_TEAM_ID not set")?;
 
         let topic = config
             .apns_topic
@@ -141,9 +138,36 @@ impl ApnsClient {
         let custom_json =
             serde_json::to_value(&custom_data).map_err(|e| format!("json error: {e}"))?;
 
+        self.send_status_notification(device_token, title, &body, &custom_json)
+            .await
+    }
+
+    pub async fn send_agent_alert_notification(
+        &self,
+        device_token: &str,
+        pane_id: &str,
+        title: &str,
+        body: &str,
+    ) -> Result<(), String> {
+        let custom = serde_json::json!({"event":"agent_alert", "pane_id":pane_id});
+        self.send_status_notification(device_token, title, body, &custom)
+            .await
+    }
+
+    async fn send_status_notification(
+        &self,
+        device_token: &str,
+        title: &str,
+        body: &str,
+        custom_json: &serde_json::Value,
+    ) -> Result<(), String> {
+        // APNs limits the whole payload to 4 KiB, including source metadata.
+        let title: String = title.chars().take(160).collect();
+        let body: String = body.chars().take(600).collect();
+
         let build_payload = || {
             let builder = DefaultNotificationBuilder::new()
-                .set_title(title)
+                .set_title(&title)
                 .set_body(&body)
                 .set_sound("default");
 
@@ -157,7 +181,7 @@ impl ApnsClient {
             };
 
             let mut payload = builder.build(device_token, options_obj);
-            payload.add_custom_data("clawtab", &custom_json).ok();
+            payload.add_custom_data("clawtab", custom_json).ok();
             payload
         };
 
@@ -165,7 +189,7 @@ impl ApnsClient {
         match classify_send_result(self.production.send(build_payload()).await) {
             SendResult::Ok => return Ok(()),
             SendResult::BadToken => {
-                tracing::debug!("production rejected token, trying sandbox: {device_token}");
+                tracing::debug!("production rejected token, trying sandbox");
             }
             SendResult::Fatal(e) => return Err(e),
         }
@@ -173,7 +197,7 @@ impl ApnsClient {
         // Retry on sandbox
         match classify_send_result(self.sandbox.send(build_payload()).await) {
             SendResult::Ok => {
-                tracing::debug!("push delivered via sandbox: {device_token}");
+                tracing::debug!("push delivered via sandbox");
                 Ok(())
             }
             SendResult::BadToken => Err("invalid_token:both".to_string()),

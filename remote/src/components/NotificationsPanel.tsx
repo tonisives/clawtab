@@ -8,6 +8,7 @@ import { colors, radius, spacing } from "@clawtab/shared";
 import { NextNotification } from "./NextNotification";
 import type { ClaudeQuestion } from "@clawtab/shared";
 import { useNotificationStore } from "../store/notifications";
+import { useJobsStore } from "../store/jobs";
 import { JobDetailPane } from "./JobDetailPane";
 import { ProcessDetailPane } from "./ProcessDetailPane";
 import { NotificationStack } from "./NotificationStack";
@@ -33,6 +34,7 @@ export function NotificationsPanel({
   const windowSize = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const questions = useNotificationStore((s) => s.questions);
+  const alertCount = useJobsStore((s) => s.detectedProcesses.filter(process => process._agent_alert?.trim()).length);
   const autoYesPaneIds = useNotificationStore((s) => s.autoYesPaneIds);
   const [localDetailTarget, setLocalDetailTarget] = useState<NotificationDetailTarget | null>(null);
   const [panelHeight, setPanelHeight] = useState(0);
@@ -73,7 +75,7 @@ export function NotificationsPanel({
 
   const activeQuestionCount = questions.length;
 
-  const hasContent = activeQuestionCount > 0 || autoYesPaneIds.size > 0;
+  const hasContent = activeQuestionCount > 0 || alertCount > 0 || autoYesPaneIds.size > 0;
   const nativeTop = insets.top + 58;
   const nativeBottom = insets.bottom + 58;
   const nativeAvailableHeight = Math.max(260, windowSize.height - nativeTop - nativeBottom - 24);
@@ -167,7 +169,7 @@ export function NotificationsPanel({
             maxAutoYesEntries={0}
           />
       ) : (
-        <Text style={styles.empty}>No pending questions.</Text>
+        <Text style={styles.empty}>No pending notifications.</Text>
       )}
     </ScrollView>
   );

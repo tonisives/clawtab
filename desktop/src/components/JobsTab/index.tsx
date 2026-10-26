@@ -288,7 +288,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   });
   const notificationButton = (
     <NotificationsMenuButton
-      activeQuestionCount={questions.length}
+      activeNotificationCount={questions.length + core.processes.filter(process => process._agent_alert?.trim()).length}
       hasAutoYesEntries={autoYes.autoYesEntries.length > 0}
     >
       {notificationMenuContent}

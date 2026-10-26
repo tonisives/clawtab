@@ -1,4 +1,5 @@
 //! Durable local requests and the daemon's notification surface.
+mod alerts;
 pub mod cli;
 pub mod native;
 mod service;
