@@ -163,6 +163,8 @@
   alert.status = "resolved";
   window.nfn.receive(window.fixture.snapshot());
   assert(document.querySelector(".status").textContent === "Recovered" && !document.querySelector(".status.alert"), "recovered agents clear the active warning");
+  await sleep(180);
+  assert(document.querySelector("#surface").classList.contains("pill"), "recovered alerts close after briefly showing their resolved state");
   window.nfn.collapse();
   return { passed: checks.length, checks };
 })()

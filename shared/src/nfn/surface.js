@@ -123,8 +123,9 @@
   }
   function resumeTimer() {
     if (expanded || queue || hovering || focused || busy || !current || collapseTimer) return;
-    if (records.get(current)?.request.template !== "update") return;
-    if (records.get(current)?.request.data?.event === "agent_alert") return;
+    const record = records.get(current);
+    if (record?.request.template !== "update") return;
+    if (record.request.data?.event === "agent_alert" && pending(record)) return;
     timerStarted = performance.now(); collapseTimer = setTimeout(collapse, Math.max(100, remaining));
   }
   function collapse() {
