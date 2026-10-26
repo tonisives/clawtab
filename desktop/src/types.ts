@@ -165,8 +165,19 @@ export interface AppSettings {
   shortcuts: ShortcutSettings;
   notify_questions_local: boolean;
   notify_questions_remote: boolean;
+  enhanced_notifications: EnhancedNotificationSettings;
   session_file_warning_mb?: number;
   auto_release_on_blur: boolean;
+}
+
+export interface EnhancedNotificationSettings {
+  delivery: "enhanced" | "native" | "both";
+  placement: "notch" | "right";
+  focus: "follow" | "independent";
+  display: string;
+  preview_seconds: number;
+  hover_expand: boolean;
+  sound: boolean;
 }
 
 export type InstalledPluginSummary = {

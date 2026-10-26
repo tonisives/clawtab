@@ -1,4 +1,5 @@
 import type { PaneInstance } from "./types";
+import { invoke } from "@tauri-apps/api/core";
 
 export const paneInstances = new Map<string, PaneInstance>();
 
@@ -28,7 +29,18 @@ export function clearPendingFocus(paneId: string) {
 
 export function setFocusedPane(paneId: string | null) {
   focusedPaneId = paneId;
+  reportViewedPane();
 }
+
+function reportViewedPane() {
+  const paneId = document.hasFocus() && !document.hidden ? focusedPaneId : null;
+  void invoke("nfn_viewed_pane", { paneId }).catch(() => {});
+}
+
+window.addEventListener("focus", reportViewedPane);
+window.addEventListener("blur", reportViewedPane);
+document.addEventListener("visibilitychange", reportViewedPane);
+window.setInterval(reportViewedPane, 10000);
 
 export function getFocusedPane(): string | null {
   return focusedPaneId;

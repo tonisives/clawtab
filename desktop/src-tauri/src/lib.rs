@@ -40,6 +40,7 @@ mod macos_window;
 pub mod managed;
 #[cfg(target_os = "macos")]
 pub mod native_notifications;
+pub mod nfn;
 pub mod notifications;
 pub mod process_snapshot;
 pub mod pty;
@@ -804,6 +805,8 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
+            commands::nfn::nfn_command,
+            commands::nfn::nfn_viewed_pane,
             commands::agent_hooks::get_agent_integrations,
             commands::agent_hooks::install_agent_integration,
             commands::agent_hooks::remove_agent_integration,

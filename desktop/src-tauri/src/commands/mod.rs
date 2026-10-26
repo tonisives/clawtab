@@ -7,6 +7,7 @@ pub mod daemon;
 pub mod debug;
 pub mod history;
 pub mod jobs;
+pub mod nfn;
 pub mod processes;
 pub mod pty;
 pub mod relay;

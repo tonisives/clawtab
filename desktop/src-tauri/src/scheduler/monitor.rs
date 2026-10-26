@@ -197,7 +197,7 @@ async fn notify_start(params: &MonitorParams, use_telegram: bool, use_app: bool)
     if use_app {
         crate::relay::push_job_notification(&params.relay, &params.slug, "started", &params.run_id);
         if let Some(ref n) = params.notifier {
-            n.notify_job(&params.job_id, "started");
+            n.notify_job(&params.slug, "started");
         }
     }
 }
@@ -605,7 +605,7 @@ async fn notify_finish(
         crate::relay::push_job_notification(&params.relay, &params.slug, status, &params.run_id);
         if succeeded {
             if let Some(ref n) = params.notifier {
-                n.notify_job(&params.job_id, status);
+                n.notify_job(&params.slug, status);
             }
         }
     }

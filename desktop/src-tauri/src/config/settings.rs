@@ -228,6 +228,8 @@ pub struct AppSettings {
     /// Auto-yes panes are silenced regardless of this flag.
     #[serde(default = "default_true")]
     pub notify_questions_local: bool,
+    #[serde(default)]
+    pub enhanced_notifications: crate::nfn::NfnSettings,
     /// Show local job failure alerts independently of Telegram and routine job notifications.
     #[serde(default = "default_true")]
     pub notify_job_failures_local: bool,
@@ -292,6 +294,7 @@ impl Default for AppSettings {
             pinned_pane_identities: HashMap::new(),
             shortcuts: ShortcutSettings::default(),
             notify_questions_local: true,
+            enhanced_notifications: Default::default(),
             notify_job_failures_local: true,
             notify_questions_remote: true,
             session_file_warning_mb: default_session_file_warning_mb(),

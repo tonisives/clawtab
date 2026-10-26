@@ -1,0 +1,992 @@
+use super::{native, store::Store, templates, types::*};
+use crate::{
+    ipc::{self, EventSubscribers, IpcEvent},
+    job_context::JobContext,
+};
+use clawtab_protocol::ClaudeQuestion;
+use parking_lot::Mutex;
+use serde_json::{json, Value};
+use std::collections::{HashMap, HashSet};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, OnceLock,
+};
+
+static SERVICE: OnceLock<Arc<Service>> = OnceLock::new();
+
+pub fn service() -> Option<&'static Arc<Service>> {
+    SERVICE.get()
+}
+
+pub struct Service {
+    store: Store,
+    ctx: JobContext,
+    questions: Arc<Mutex<Vec<ClaudeQuestion>>>,
+    subscribers: EventSubscribers,
+    platform: Mutex<PlatformState>,
+    viewed: Mutex<HashMap<String, (Option<String>, i64)>>,
+    mutation: tokio::sync::Mutex<()>,
+    template_changes: Arc<tokio::sync::Notify>,
+    seen_questions: Mutex<HashSet<String>>,
+    questions_ready: AtomicBool,
+}
+
+pub fn initialize(
+    ctx: JobContext,
+    questions: Arc<Mutex<Vec<ClaudeQuestion>>>,
+    subscribers: EventSubscribers,
+) -> Result<Arc<Service>, String> {
+    let path = crate::config::config_dir()
+        .ok_or("Could not determine ClawTab config directory")?
+        .join("notifications.sqlite");
+    let service = Arc::new(Service {
+        store: Store::open(&path)?,
+        ctx,
+        questions,
+        subscribers,
+        platform: Default::default(),
+        viewed: Default::default(),
+        mutation: Default::default(),
+        template_changes: Arc::new(tokio::sync::Notify::new()),
+        seen_questions: Default::default(),
+        questions_ready: AtomicBool::new(false),
+    });
+    SERVICE
+        .set(service.clone())
+        .map_err(|_| "Notifications already initialized")?;
+    Ok(service)
+}
+
+pub fn viewed_pane(pane_id: &str) -> bool {
+    service().is_some_and(|s| s.is_viewed(pane_id))
+}
+
+impl Service {
+    pub async fn run(self: Arc<Self>) {
+        use notify::Watcher;
+        let _ = std::fs::create_dir_all(templates::directory());
+        let changes = self.template_changes.clone();
+        let mut watcher =
+            notify::recommended_watcher(move |event: Result<notify::Event, notify::Error>| {
+                if event.is_ok() {
+                    changes.notify_one();
+                }
+            })
+            .ok();
+        if let Some(watcher) = watcher.as_mut() {
+            let _ = watcher.watch(&templates::directory(), notify::RecursiveMode::NonRecursive);
+        }
+        let mut ticks = 0_u32;
+        loop {
+            tokio::select! {
+                () = tokio::time::sleep(std::time::Duration::from_secs(1)) => {},
+                () = self.template_changes.notified() => { self.push(None, false); },
+            }
+            ticks = ticks.wrapping_add(1);
+            let _guard = self.mutation.lock().await;
+            let current: HashSet<String> = self.questions.lock().iter().map(question_key).collect();
+            if let Ok(records) = self.store.pending() {
+                let mut changed = false;
+                for mut record in records {
+                    if record.status != "pending" {
+                        continue;
+                    }
+                    if record
+                        .request
+                        .expires_at
+                        .is_some_and(|until| until <= now())
+                    {
+                        record.status = "expired".into();
+                    } else if self.questions_ready.load(Ordering::Relaxed)
+                        && record
+                            .question_id
+                            .as_ref()
+                            .is_some_and(|id| !current.contains(id))
+                    {
+                        record.status = "resolved".into();
+                    } else if ticks.is_multiple_of(10)
+                        && record.request.source.pane_id.is_some()
+                        && validate_source(&record.request.source).is_err()
+                    {
+                        record.status = "expired".into();
+                        record.error =
+                            Some("The originating agent session is no longer available".into());
+                    } else {
+                        continue;
+                    }
+                    if let Err(error) = self.store.save(&mut record) {
+                        log::warn!("[nfn] {error}");
+                    }
+                    changed = true;
+                }
+                if changed {
+                    self.changed();
+                }
+            }
+        }
+    }
+
+    pub fn sync_questions(&self, questions: &[ClaudeQuestion]) {
+        self.questions_ready.store(true, Ordering::Relaxed);
+        let mut seen = self.seen_questions.lock();
+        seen.retain(|id| questions.iter().any(|q| &question_key(q) == id));
+        let mut changed = false;
+        for question in questions {
+            let key = question_key(question);
+            if !seen.insert(key.clone()) {
+                continue;
+            }
+            let request = request_for_question(question, key.clone());
+            match self.store.send(request, Some(key.clone())) {
+                Ok((_, created)) => changed |= created,
+                Err(error) => {
+                    seen.remove(&key);
+                    log::warn!("[nfn] question registration failed: {error}");
+                }
+            }
+        }
+        drop(seen);
+        if changed {
+            self.changed();
+        }
+    }
+
+    pub fn announce_question(&self, question: &ClaudeQuestion) {
+        if let Ok(records) = self.store.pending() {
+            if let Some(record) = records
+                .iter()
+                .find(|r| r.question_id.as_ref() == Some(&question_key(question)))
+            {
+                self.announce(record);
+            }
+        }
+    }
+
+    pub fn job_notification(&self, slug: &str, event: &str) {
+        let run = self
+            .ctx
+            .history
+            .lock()
+            .get_by_job_id_summaries(slug, 1)
+            .ok()
+            .and_then(|runs| runs.into_iter().next());
+        let request = NfnRequest {
+            title: format!("{slug} {event}"),
+            body: format!("Job {slug} {event}"),
+            template: "quick-action".into(),
+            data: json!({"event":event}),
+            actions: vec![NfnAction {
+                id: "acknowledge".into(),
+                label: "Acknowledge".into(),
+                ..Default::default()
+            }],
+            source: NfnSource {
+                job_id: Some(slug.into()),
+                run_id: run.as_ref().map(|run| run.id.clone()),
+                ..Default::default()
+            },
+            dedupe_key: Some(format!(
+                "job:{}:{event}",
+                run.as_ref().map(|run| run.id.as_str()).unwrap_or("unknown")
+            )),
+            ..Default::default()
+        };
+        match self.store.send(request, None) {
+            Ok((record, true)) => self.announce(&record),
+            Ok(_) => {}
+            Err(error) => log::warn!("[nfn] {error}"),
+        }
+    }
+
+    fn announce(&self, record: &NfnRecord) {
+        if !record.pending() {
+            return;
+        }
+        let settings = self.ctx.settings.lock().clone();
+        let enabled = local_enabled(&settings, record);
+        let viewed = record
+            .request
+            .source
+            .pane_id
+            .as_deref()
+            .is_some_and(|pane| self.is_viewed(pane));
+        let route = delivery(
+            &settings.enhanced_notifications,
+            &self.platform.lock(),
+            enabled,
+            viewed,
+        );
+        if route.overlay {
+            self.push(Some(&record.id), route.sound);
+        }
+        if route.native {
+            crate::notifications::IpcNotifier::new(self.subscribers.clone()).dispatch_native(
+                record.request.title.clone(),
+                record.request.body.clone(),
+                settings.enhanced_notifications.sound,
+            );
+        }
+        self.broadcast();
+    }
+
+    pub fn push(&self, arrival: Option<&str>, sound: bool) {
+        let settings = self.ctx.settings.lock();
+        let platform = self.platform.lock();
+        let pending: Vec<_> = self
+            .store
+            .pending()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|record| local_enabled(&settings, record) && record.dismissed_at.is_none())
+            .collect();
+        let count = pending.len();
+        let mut records: Vec<_> = pending.into_iter().take(50).collect();
+        for record in self.store.list(0).unwrap_or_default() {
+            if local_enabled(&settings, &record) && !records.iter().any(|r| r.id == record.id) {
+                records.push(record);
+            }
+        }
+        let visible = settings.enhanced_notifications.delivery != "native"
+            && !records.is_empty()
+            && (settings.enhanced_notifications.focus == "independent"
+                || (platform.focused == Some(false) && platform.authorized == Some(true)));
+        native::push(
+            json!({"type":"snapshot", "records":records, "pending_count":count, "arrival":arrival, "sound":sound,
+            "settings": settings.enhanced_notifications, "templates":templates::list(), "visible":visible,
+            "platform":*platform}),
+        );
+    }
+
+    fn broadcast(&self) {
+        let subscribers = self.subscribers.clone();
+        tokio::spawn(async move {
+            ipc::broadcast_event(&subscribers, &IpcEvent::NfnChanged).await;
+        });
+    }
+
+    fn changed(&self) {
+        self.push(None, false);
+        self.broadcast();
+    }
+
+    pub fn is_viewed(&self, pane_id: &str) -> bool {
+        let platform = self.platform.lock().clone();
+        if !platform.user_active {
+            return false;
+        }
+        if self.viewed.lock().iter().any(|(window, (pane, at))| {
+            pane.as_deref() == Some(pane_id)
+                && now() - at < 35000
+                && window.split(':').next().and_then(|pid| pid.parse().ok())
+                    == platform.frontmost_pid
+        }) {
+            return true;
+        }
+        if let Some(pid) = platform.frontmost_pid {
+            return terminal_pane_viewed(pane_id, pid);
+        }
+        false
+    }
+
+    pub async fn execute(&self, command: NfnCommand) -> Result<Value, String> {
+        match command {
+            NfnCommand::Get { id } => {
+                return serde_json::to_value(self.store.get(&id)?).map_err(|e| e.to_string())
+            }
+            NfnCommand::List {
+                offset,
+                pending_only,
+            } => {
+                return Ok(
+                    json!({"records":if pending_only { self.store.pending_page(offset)? } else { self.store.list(offset)? },"offset":offset,"next_offset":offset+50}),
+                )
+            }
+            NfnCommand::Templates => return Ok(templates::list()),
+            NfnCommand::Info => {
+                return Ok(
+                    json!({"records":self.store.pending_page(0)?,"pending_count":self.store.pending_count()?,"settings":self.ctx.settings.lock().enhanced_notifications,"platform":*self.platform.lock(),"templates":templates::list()}),
+                )
+            }
+            NfnCommand::Validate { yaml } => {
+                return Ok(json!({"template": templates::parse(&yaml)?}))
+            }
+            NfnCommand::SaveTemplate { yaml } => {
+                let template = templates::save(&yaml)?;
+                self.changed();
+                return Ok(json!({"template": template}));
+            }
+            NfnCommand::Context { id } => return self.context(&id).await,
+            NfnCommand::Platform { state } => {
+                *self.platform.lock() = state;
+                self.push(None, false);
+                return Ok(json!({}));
+            }
+            NfnCommand::ViewedPane { pane_id, window_id } => {
+                let mut viewed = self.viewed.lock();
+                viewed.retain(|_, (_, at)| now() - *at < 35000);
+                if pane_id.is_some() {
+                    let pid = window_id.split(':').next().unwrap_or("");
+                    viewed.retain(|key, _| key.split(':').next() != Some(pid));
+                }
+                viewed.insert(window_id, (pane_id, now()));
+                return Ok(json!({}));
+            }
+            NfnCommand::Show => {
+                self.push(None, false);
+                native::push(json!({"type":"show"}));
+                return Ok(json!({}));
+            }
+            NfnCommand::Focus { id } => {
+                let record = self.store.get(&id)?;
+                validate_source(&record.request.source)?;
+                focus_source(&record.request.source).await?;
+                return Ok(json!({"focused":true}));
+            }
+            NfnCommand::AutoYes { id } => {
+                let record = self.store.get(&id)?;
+                validate_source(&record.request.source)?;
+                let pane = record
+                    .request
+                    .source
+                    .pane_id
+                    .ok_or("This request has no agent")?;
+                match ipc::send_command(ipc::IpcCommand::ToggleAutoYes { pane_id: pane }).await? {
+                    ipc::IpcResponse::Error(error) => return Err(error),
+                    _ => return Ok(json!({"ok":true})),
+                }
+            }
+            NfnCommand::Model { id, model, effort } => {
+                let record = self.store.get(&id)?;
+                validate_source(&record.request.source)?;
+                let pane = record
+                    .request
+                    .source
+                    .pane_id
+                    .ok_or("This request has no agent")?;
+                match ipc::send_command(ipc::IpcCommand::SetCodexModel {
+                    pane_id: pane,
+                    model,
+                    effort,
+                })
+                .await?
+                {
+                    ipc::IpcResponse::Error(error) => return Err(error),
+                    _ => {}
+                }
+                return Ok(json!({"ok":true}));
+            }
+            NfnCommand::Plugin {
+                id,
+                action_id,
+                parameters,
+            } => {
+                let record = self.store.get(&id)?;
+                validate_source(&record.request.source)?;
+                let pane = record
+                    .request
+                    .source
+                    .pane_id
+                    .ok_or("This request has no agent")?;
+                let settings = self.ctx.settings.lock().clone();
+                let run =
+                    crate::agent_plugins::runtime().start(pane, action_id, parameters, settings)?;
+                return Ok(json!({"run":run}));
+            }
+            _ => {}
+        }
+        let operation = match &command {
+            NfnCommand::Read { .. } => "read",
+            NfnCommand::Dismiss { .. } => "dismiss",
+            _ => "cancel",
+        };
+        let _guard = self.mutation.lock().await;
+        let result = match command {
+            NfnCommand::Send { mut request } => {
+                request.validate()?;
+                if let Some(pane) = request.source.pane_id.clone() {
+                    let source = resolve_source(&pane, request.source.client_tty.clone())?;
+                    if request
+                        .source
+                        .session_id
+                        .as_ref()
+                        .is_some_and(|id| source.session_id.as_ref() != Some(id))
+                    {
+                        return Err("Agent session changed before request submission".into());
+                    }
+                    let task = request.source.task.take();
+                    let job_id = request.source.job_id.take();
+                    let run_id = request.source.run_id.take();
+                    request.source = source;
+                    request.source.job_id = job_id;
+                    request.source.run_id = run_id;
+                    if task.is_some() {
+                        request.source.task = task;
+                    }
+                }
+                if request.response_destination == "agent_message"
+                    && request.source.agent_pid.is_none()
+                {
+                    return Err("agent_message requires a running supported agent".into());
+                }
+                let (record, created) = self.store.send(request, None)?;
+                if created {
+                    self.announce(&record);
+                }
+                serde_json::to_value(record).map_err(|e| e.to_string())?
+            }
+            NfnCommand::Read { id } | NfnCommand::Dismiss { id } | NfnCommand::Cancel { id } => {
+                let mut record = self.store.get(&id)?;
+                match operation {
+                    "read" => {
+                        record.read_at = Some(now());
+                    }
+                    "dismiss" => {
+                        record.dismissed_at = Some(now());
+                        record.read_at = Some(now());
+                    }
+                    _ => {
+                        if record.status == "delivering" {
+                            return Err("A response is being delivered".into());
+                        }
+                        if record.pending() {
+                            record.status = "cancelled".into();
+                        }
+                    }
+                }
+                self.store.save(&mut record)?;
+                serde_json::to_value(record).map_err(|e| e.to_string())?
+            }
+            NfnCommand::Respond {
+                id,
+                action_id,
+                text,
+            } => self.respond(&id, &action_id, text).await?,
+            _ => return Err("Unsupported notification operation".into()),
+        };
+        self.changed();
+        Ok(result)
+    }
+
+    async fn respond(
+        &self,
+        id: &str,
+        action_id: &str,
+        text: Option<String>,
+    ) -> Result<Value, String> {
+        if text.as_ref().is_some_and(|text| text.len() > 32768) {
+            return Err("Reply exceeds 32 KiB".into());
+        }
+        if action_id == "reply" && text.as_ref().is_none_or(|text| text.trim().is_empty()) {
+            return Err("Enter a reply before sending".into());
+        }
+        let mut record = self.store.get(id)?;
+        if record
+            .request
+            .expires_at
+            .is_some_and(|until| until <= now())
+        {
+            return Err("Request has expired".into());
+        }
+        let action = if action_id == "reply" {
+            NfnAction {
+                id: "reply".into(),
+                label: "Reply".into(),
+                ..Default::default()
+            }
+        } else {
+            record
+                .request
+                .actions
+                .iter()
+                .find(|a| a.id == action_id)
+                .cloned()
+                .ok_or("Unknown response action")?
+        };
+        if action.kind != "choice" {
+            validate_source(&record.request.source)?;
+            let pane = record
+                .request
+                .source
+                .pane_id
+                .as_deref()
+                .ok_or("Action requires an agent")?;
+            return match action.kind.as_str() {
+                "focus" => {
+                    focus_source(&record.request.source).await?;
+                    Ok(json!({"focused":true}))
+                }
+                "auto_yes" => {
+                    match ipc::send_command(ipc::IpcCommand::ToggleAutoYes {
+                        pane_id: pane.into(),
+                    })
+                    .await?
+                    {
+                        ipc::IpcResponse::Error(e) => Err(e),
+                        _ => Ok(json!({"ok":true})),
+                    }
+                }
+                "model" => {
+                    match ipc::send_command(ipc::IpcCommand::SetCodexModel {
+                        pane_id: pane.into(),
+                        model: action.value,
+                        effort: action
+                            .parameters
+                            .get("effort")
+                            .cloned()
+                            .unwrap_or_else(|| "high".into()),
+                    })
+                    .await?
+                    {
+                        ipc::IpcResponse::Error(error) => Err(error),
+                        _ => Ok(json!({"ok":true})),
+                    }
+                }
+                "plugin" => {
+                    let settings = self.ctx.settings.lock().clone();
+                    let run = crate::agent_plugins::runtime().start(
+                        pane.into(),
+                        action.value,
+                        action.parameters.into_iter().collect(),
+                        settings,
+                    )?;
+                    Ok(json!({"run":run}))
+                }
+                _ => Err("Unsupported action".into()),
+            };
+        }
+        if record.request.source.pane_id.is_some() {
+            validate_source(&record.request.source)?;
+        }
+        let question = if let Some(question_id) = &record.question_id {
+            let question = self
+                .questions
+                .lock()
+                .iter()
+                .find(|q| {
+                    &question_key(q) == question_id
+                        && Some(&q.pane_id) == record.request.source.pane_id.as_ref()
+                })
+                .cloned()
+                .ok_or("This agent prompt has already changed")?;
+            let question = crate::questions::validate_live_question(
+                &question,
+                record.request.source.provider.as_deref(),
+            )?;
+            if action_id != "reply" && text.as_ref().is_some_and(|text| !text.trim().is_empty()) {
+                return Err("Send the reply first, or clear it before choosing an option".into());
+            }
+            Some(question)
+        } else {
+            None
+        };
+        record = self.store.claim(id)?;
+        self.push(None, false);
+        let delivery_result = if let Some(question) = question {
+            let pane = &question.pane_id;
+            if action_id == "reply" {
+                match question.options.iter().find(|option| {
+                    let label = option.label.to_lowercase();
+                    label.contains("type something")
+                        || label.contains("other")
+                        || label.contains("custom")
+                }) {
+                    Some(option) => crate::terminal_backend::send_keys_to_tui_pane_freetext(
+                        pane,
+                        &option.number,
+                        text.as_deref().unwrap_or(""),
+                    ),
+                    None => Err(
+                        "This prompt has no text answer. Choose an option or focus the agent."
+                            .into(),
+                    ),
+                }
+            } else if question.input_mode == "select" {
+                match question
+                    .options
+                    .iter()
+                    .find(|option| option.number == action.value)
+                {
+                    Some(option) => crate::terminal_backend::send_mouse_click_to_pane(
+                        pane,
+                        option.col,
+                        question.button_row,
+                    ),
+                    None => Err("This prompt option has changed".into()),
+                }
+            } else {
+                crate::terminal_backend::send_keys_to_tui_pane(pane, &action.value)
+            }
+        } else if record.request.response_destination == "agent_message" {
+            let pane = record
+                .request
+                .source
+                .pane_id
+                .as_deref()
+                .ok_or("Agent is unavailable")?;
+            let message = format!(
+                "Notification {} ({})\nDecision: {}{}",
+                record.request.title,
+                record.id,
+                action.label,
+                text.as_ref()
+                    .filter(|text| !text.is_empty())
+                    .map(|text| format!("\n{text}"))
+                    .unwrap_or_default()
+            );
+            crate::agent_plugins::submit_notification_reply(pane, &message)
+        } else {
+            Ok(())
+        };
+        match delivery_result {
+            Ok(()) => {
+                record.status = "resolved".into();
+                record.error = None;
+                record.response = Some(NfnResponse {
+                    request_id: id.into(),
+                    action_id: action_id.into(),
+                    text,
+                    status: "resolved".into(),
+                    responded_at: now(),
+                });
+                self.store.save(&mut record)?;
+            }
+            Err(error) => {
+                record.status = "pending".into();
+                record.error = Some(error.clone());
+                self.store.save(&mut record)?;
+                self.changed();
+                return Err(error);
+            }
+        }
+        serde_json::to_value(record).map_err(|e| e.to_string())
+    }
+
+    async fn context(&self, id: &str) -> Result<Value, String> {
+        let record = self.store.get(id)?;
+        let source = &record.request.source;
+        let mut log = String::new();
+        let mut plugins = json!([]);
+        let mut source = source.clone();
+        let mut auto_yes = false;
+        if let Some(pane) = source.pane_id.as_deref() {
+            validate_source(&source)?;
+            log = crate::terminal_backend::capture_pane_history(pane, 200)?;
+            auto_yes = self.ctx.auto_yes_panes.lock().contains(pane);
+            let settings = self.ctx.settings.lock().clone();
+            let (actions, session) = crate::agent_plugins::runtime().list_actions(pane, &settings);
+            plugins = json!(actions);
+            if let Some(session) = session {
+                source.model = session.model;
+            }
+        } else if let Some(run) = &source.run_id {
+            if let Some(path) = self.ctx.history.lock().get_log_path(run)? {
+                log = tail(&path)?;
+            }
+        } else if let Some(job) = &source.job_id {
+            let run = self
+                .ctx
+                .history
+                .lock()
+                .get_by_job_id_summaries(job, 1)?
+                .into_iter()
+                .next();
+            if let Some(path) = run.and_then(|run| run.log_path) {
+                log = tail(&path)?;
+            }
+        }
+        let models = source
+            .provider
+            .as_ref()
+            .and_then(|provider| {
+                self.ctx
+                    .settings
+                    .lock()
+                    .enabled_models
+                    .get(provider)
+                    .cloned()
+            })
+            .unwrap_or_default();
+        Ok(
+            json!({"type":"context","id":id,"source":source,"log":log,"auto_yes":auto_yes,"models":models,"plugins":plugins}),
+        )
+    }
+}
+
+fn local_enabled(settings: &crate::config::settings::AppSettings, record: &NfnRecord) -> bool {
+    if record.request.source.job_id.is_some() && record.question_id.is_none() {
+        !record
+            .request
+            .data
+            .get("event")
+            .and_then(Value::as_str)
+            .is_some_and(|event| event.starts_with("failed"))
+            || settings.notify_job_failures_local
+    } else {
+        settings.notify_questions_local
+    }
+}
+
+fn question_key(question: &ClaudeQuestion) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    crate::questions::prompt_context_key(&question.context_lines).hash(&mut hasher);
+    format!("question:{}:{:x}", question.question_id, hasher.finish())
+}
+
+fn request_for_question(question: &ClaudeQuestion, dedupe_key: String) -> NfnRequest {
+    let source = resolve_source(&question.pane_id, None).unwrap_or_else(|_| NfnSource {
+        pane_id: Some(question.pane_id.clone()),
+        cwd: Some(question.cwd.clone()),
+        ..Default::default()
+    });
+    NfnRequest {
+        title: source
+            .task
+            .clone()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| {
+                question.matched_job.clone().unwrap_or_else(|| {
+                    std::path::Path::new(&question.cwd)
+                        .file_name()
+                        .map(|s| s.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| "Agent approval".into())
+                })
+            }),
+        body: question.context_lines.clone(),
+        template: "agent-approval".into(),
+        source,
+        dedupe_key: Some(dedupe_key),
+        actions: question
+            .options
+            .iter()
+            .map(|option| NfnAction {
+                id: format!("option-{}", option.number),
+                label: option.label.clone(),
+                value: option.number.clone(),
+                ..Default::default()
+            })
+            .collect(),
+        ..Default::default()
+    }
+}
+
+fn tmux(args: &[&str]) -> Result<String, String> {
+    let output = std::process::Command::new("tmux")
+        .args(args)
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().into());
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim_end().into())
+}
+
+pub fn resolve_source(pane: &str, client_tty: Option<String>) -> Result<NfnSource, String> {
+    let pid = crate::terminal_backend::pane_pid(pane)?;
+    let cwd = crate::terminal_backend::get_pane_path(pane)?;
+    let snapshot = crate::agent_session::ProcessSnapshot::capture();
+    let provider = crate::agent_session::detect_process_provider(&pid, Some(&snapshot));
+    let agent_pid = crate::agent_session::provider_process_pid(&pid, &snapshot);
+    let info = crate::agent_session::resolve_session_info_for_provider_with_cwd(
+        &pid,
+        provider,
+        Some(&snapshot),
+        Some(&cwd),
+    );
+    let meta = crate::config::settings::AppSettings::load()
+        .process_overrides
+        .get(pane)
+        .cloned();
+    let mut source = NfnSource {
+        pane_id: Some(pane.into()),
+        pane_pid: Some(pid.clone()),
+        process_started_at: snapshot.start_epoch_for_pid(&pid),
+        agent_started_at: agent_pid
+            .as_ref()
+            .and_then(|pid| snapshot.start_epoch_for_pid(pid)),
+        agent_pid,
+        provider: provider.map(|p| p.as_str().into()),
+        session_id: info.session_id,
+        model: info.model_id,
+        cwd: Some(cwd.clone()),
+        task: meta.and_then(|meta| meta.display_name),
+        client_tty,
+        ..Default::default()
+    };
+    if !crate::managed::is_managed(pane) {
+        if let Ok(clients) = tmux(&[
+            "list-clients",
+            "-t",
+            pane,
+            "-F",
+            "#{client_activity}|#{client_tty}|#{client_pid}",
+        ]) {
+            let selected = clients
+                .lines()
+                .filter_map(|line| {
+                    let values: Vec<_> = line.split('|').collect();
+                    (values.len() == 3).then_some(values)
+                })
+                .filter(|parts| source.client_tty.as_ref().is_none_or(|tty| tty == parts[1]))
+                .max_by_key(|parts| parts[0].parse::<u64>().unwrap_or(0));
+            if let Some(parts) = selected {
+                source.client_tty = Some(parts[1].into());
+                source.origin_pid = parts[2].parse().ok().and_then(terminal_app_pid);
+            }
+        }
+    }
+    if let Ok(output) = std::process::Command::new("git")
+        .args(["-C", &cwd, "rev-parse", "--abbrev-ref", "HEAD"])
+        .output()
+    {
+        if output.status.success() {
+            source.branch = Some(String::from_utf8_lossy(&output.stdout).trim().into());
+            source.worktree = Some(cwd);
+        }
+    }
+    Ok(source)
+}
+
+fn validate_source(source: &NfnSource) -> Result<(), String> {
+    let Some(pane) = &source.pane_id else {
+        return Ok(());
+    };
+    let current = resolve_source(pane, source.client_tty.clone())?;
+    if !same_source(source, &current) {
+        return Err("The originating agent session has changed".into());
+    }
+    Ok(())
+}
+
+fn same_source(source: &NfnSource, current: &NfnSource) -> bool {
+    source.pane_pid == current.pane_pid
+        && source.process_started_at == current.process_started_at
+        && source.agent_pid == current.agent_pid
+        && source.agent_started_at == current.agent_started_at
+        && source.provider == current.provider
+        && source
+            .session_id
+            .as_ref()
+            .is_none_or(|id| current.session_id.as_ref() == Some(id))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn source_binding_rejects_an_agent_restart_inside_the_same_shell() {
+        let source = NfnSource {
+            pane_pid: Some("10".into()),
+            process_started_at: Some(1),
+            agent_pid: Some("20".into()),
+            agent_started_at: Some(2),
+            provider: Some("codex".into()),
+            ..Default::default()
+        };
+        let mut current = source.clone();
+        assert!(same_source(&source, &current));
+        current.agent_pid = Some("21".into());
+        assert!(!same_source(&source, &current));
+        current = source.clone();
+        current.agent_started_at = Some(3);
+        assert!(!same_source(&source, &current));
+        current = source.clone();
+        current.provider = Some("claude".into());
+        assert!(!same_source(&source, &current));
+        let mut source = source;
+        source.session_id = Some("session-1".into());
+        current = source.clone();
+        current.session_id = Some("session-2".into());
+        assert!(!same_source(&source, &current));
+    }
+}
+
+async fn focus_source(source: &NfnSource) -> Result<(), String> {
+    let pane = source
+        .pane_id
+        .as_deref()
+        .ok_or("This request has no agent pane")?;
+    if crate::managed::is_managed(pane) || source.origin_pid.is_none() {
+        return match ipc::send_desktop_command(ipc::DesktopIpcCommand::OpenPane {
+            pane_id: pane.into(),
+        })
+        .await?
+        {
+            ipc::IpcResponse::Error(error) => Err(error),
+            _ => {
+                native::activate_clawtab();
+                Ok(())
+            }
+        };
+    }
+    if let Some(tty) = &source.client_tty {
+        let session = tmux(&["display-message", "-t", pane, "-p", "#{session_name}"])?;
+        tmux(&["switch-client", "-c", tty, "-t", &session])?;
+    }
+    tmux(&["select-window", "-t", pane])?;
+    tmux(&["select-pane", "-t", pane])?;
+    if let Some(pid) = source.origin_pid {
+        native::activate(pid);
+    }
+    Ok(())
+}
+
+fn terminal_app_pid(mut pid: u32) -> Option<u32> {
+    for _ in 0..20 {
+        let output = std::process::Command::new("ps")
+            .args(["-p", &pid.to_string(), "-o", "ppid=,comm="])
+            .output()
+            .ok()?;
+        let value = String::from_utf8_lossy(&output.stdout);
+        let (parent, command) = value.trim().split_once(char::is_whitespace)?;
+        if command.contains(".app/Contents/MacOS/") {
+            return Some(pid);
+        }
+        let parent = parent.parse::<u32>().ok()?;
+        if parent <= 1 || parent == pid {
+            return None;
+        }
+        pid = parent;
+    }
+    None
+}
+
+fn terminal_pane_viewed(pane: &str, frontmost: u32) -> bool {
+    if crate::managed::is_managed(pane) {
+        return false;
+    }
+    let Ok(clients) = tmux(&[
+        "list-clients",
+        "-F",
+        "#{client_activity}|#{client_pid}|#{pane_id}",
+    ]) else {
+        return false;
+    };
+    let candidates: Vec<_> = clients
+        .lines()
+        .filter_map(|line| {
+            let parts: Vec<_> = line.split('|').collect();
+            if parts.len() != 3 {
+                return None;
+            }
+            Some((parts[1].parse::<u32>().ok()?, parts[2]))
+        })
+        .filter(|(pid, _)| terminal_app_pid(*pid) == Some(frontmost))
+        .collect();
+    !candidates.is_empty() && candidates.iter().all(|(_, active)| *active == pane)
+}
+
+fn tail(path: &str) -> Result<String, String> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+    let length = file.metadata().map_err(|e| e.to_string())?.len();
+    file.seek(SeekFrom::Start(length.saturating_sub(64 * 1024)))
+        .map_err(|e| e.to_string())?;
+    let mut bytes = Vec::new();
+    file.take(64 * 1024)
+        .read_to_end(&mut bytes)
+        .map_err(|e| e.to_string())?;
+    let text = String::from_utf8_lossy(&bytes);
+    let lines: Vec<_> = text.lines().rev().take(200).collect();
+    Ok(lines.into_iter().rev().collect::<Vec<_>>().join("\n"))
+}

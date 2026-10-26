@@ -32,5 +32,6 @@ ClawTab is a macOS desktop app for scheduling and managing automated jobs -- she
 14. [File Reference](./file-reference.md) -- Config paths, schemas, log locations
 
 - [Sessions without tmux](managed-sessions.md) -- Start, detach, reconnect, and control a managed terminal
+- [Enhanced notifications](../desktop/docs/enhanced-notifications.md) -- Daemon cards, decisions, and custom layouts
 - [Platform installation](platform-builds.md) -- macOS, Linux, and Windows host packages
 - [0.6.0 release notes](release-notes.md) -- Managed sessions, Windows hosting, and other changes

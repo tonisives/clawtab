@@ -20,6 +20,7 @@ pub fn set_settings(
     state: State<AppState>,
     new_settings: AppSettings,
 ) -> Result<(), String> {
+    new_settings.enhanced_notifications.validate()?;
     let mut settings = state.settings.lock();
     // Re-read from disk so fields the frontend doesn't manage (telegram, relay)
     // aren't clobbered when they were written by another process (CLI, daemon,

@@ -1,0 +1,108 @@
+# Enhanced notifications
+
+The daemon owns the notification queue and the macOS overlay. Cards remain available while the desktop app is closed. On macOS 12 or later, cards appear below the notch on the selected display, or in a right column on displays without a notch. Settings also allow the right column on every display.
+
+Configure delivery, display, sound, Focus behavior, and layouts in **Settings > General > Notifications**. Existing local notification preferences still apply. The default preview lasts eight seconds, pauses on hover or text input, then collapses to a pending count. New requests queue while a card is open. Expand a card to see all choices, reply, inspect recent output, focus the originating agent, or run agent actions.
+
+Following macOS Focus requires notification and Focus access for **ClawTab Daemon**. When Focus status is unavailable or Focus is active, delivery goes through macOS notifications. macOS then applies its notification settings and Focus allowlist. Independent mode allows the overlay and its sound regardless of Focus. Selecting Both uses the native notification for sound.
+
+## Submit a request
+
+Agent prompts and job notifications enter the queue automatically. Agents and scripts can also submit JSON:
+
+```sh
+cwtctl nfn send --stdin --wait --timeout 300 <<'JSON'
+{
+  "title": "Review the launch post",
+  "body": "The caption and video are ready for review.",
+  "template": "social-review",
+  "data": { "platform": "YouTube Shorts" },
+  "media": [{ "kind": "video", "src": "/absolute/path/draft.mp4", "alt": "Launch video" }],
+  "dedupe_key": "launch-post-42",
+  "response_destination": "result"
+}
+JSON
+```
+
+`send` returns the persisted request, including its ID. `--wait` returns the final record and response. A wait timeout returns `wait_timed_out: true` and leaves the request pending. Set `expires_at` to a Unix timestamp in milliseconds to expire the request itself.
+
+```sh
+cwtctl nfn get REQUEST_ID
+cwtctl nfn wait REQUEST_ID --timeout 60
+cwtctl nfn cancel REQUEST_ID
+cwtctl nfn show
+cwtctl nfn templates list
+cwtctl nfn templates validate ./my-review.yaml
+```
+
+The CLI infers the originating pane from `CLAWTAB_SESSION_ID` or `TMUX_PANE`. An explicit `source.pane_id` takes precedence. Binary jobs should set `source.job_id` and `source.run_id`; they then use that run's log and do not inherit a terminal pane. Media supports HTTPS URLs and absolute local file paths. The native overlay streams local video in bounded chunks and releases it when the card closes. Local media is displayed by the daemon overlay; the in-app inbox supports HTTPS media.
+
+The default response destination, `result`, records a choice for the caller to consume. `agent_message` sends the decision and optional feedback to the originating live agent instead; it cannot be combined with `--wait`. Posting to a social network, touching a security key, granting permissions, and installing a background job remain the responsibility of the requesting workflow.
+
+An explicit request can supply up to 32 actions. The compact card displays three and expansion displays the rest:
+
+```json
+{
+  "title": "Approve a background job",
+  "template": "permission",
+  "data": { "command": "the proposed command", "diff": "the proposed changes" },
+  "actions": [
+    { "id": "approve", "label": "Approve" },
+    { "id": "revise", "label": "Request changes" },
+    { "id": "reject", "label": "Reject" }
+  ]
+}
+```
+
+Action kinds are `choice` (default), `focus`, `auto_yes`, `model`, and `plugin`. Model and plugin actions use `value` for the model or installed action ID and `parameters` for string values, such as reasoning `effort`. Expanded agent controls also offer auto-yes, Codex model selection, and available installed plugin actions.
+
+## Custom layouts
+
+Built-in layouts include questions, agent approvals, social reviews, permissions, YubiKey attention, and quick actions. Edit or create layouts in the settings editor, which previews the same renderer used by the daemon. Preview actions are inert. Save a layout to `~/.config/clawtab/notification-templates/ID.yaml`; external edits reload automatically. The filename must match the template ID. A user layout with a built-in ID overrides that layout.
+
+```yaml
+version: 1
+id: my-review
+name: My review
+layout:
+  - type: text
+    field: body
+  - type: media
+  - type: row
+    children:
+      - type: diff
+        field: data.changes
+      - type: plan
+        field: data.steps
+  - type: reply
+  - type: choices
+  - type: logs
+actions:
+  - id: approve
+    label: Approve
+  - id: revise
+    label: Request changes
+  - id: reject
+    label: Reject
+```
+
+Layout primitives are `row`, `column`, `text`, `metadata`, `media`, `command`, `diff`, `plan`, `choices`, `reply`, and `logs`. Text and code blocks bind to fields such as `body` or `data.caption`. Blocks can have a label. Layouts contain data and primitives; executable HTML and JavaScript are rejected.
+
+## Request lifecycle
+
+Requests and results are stored in `~/.config/clawtab/notifications.sqlite`. Reading or hiding a request preserves its decision state. A response, cancellation, or expiry ends it. The inbox includes history; resolved records are retained for 30 days.
+
+Deduplication keys apply to pending requests from the same source and session. Re-submission updates the existing request without clearing its read state. Responses are claimed atomically. Agent input validates the original process and session, and detected prompts are rechecked against the visible terminal before submission. A delivery interrupted by daemon restart is cancelled and never replayed. Ordinary pending requests survive restarts.
+
+Only an actively viewed pane suppresses an automatic alert. ClawTab reports the focused pane per window, and external terminal suppression requires the foreground terminal to identify that pane. Ambiguous terminal windows keep alerts enabled.
+
+## Verification
+
+Run Rust tests with the repository's build guard and four workers:
+
+```sh
+python3 /path/to/clawtab/scripts/build-guard.py --cwd "$PWD/desktop/src-tauri" -- cargo test --no-default-features --lib nfn:: -j4
+pnpm --dir desktop build
+```
+
+For renderer interaction checks, generate a standalone fixture with `node desktop/tests/nfn-fixture.mjs /tmp/clawtab-nfn-fixture.html`, open it in a browser, and evaluate `desktop/tests/nfn-browser-check.js`. It checks stable arrivals, drafts, custom layout order, duplicate clicks, log polling, and queue pagination.

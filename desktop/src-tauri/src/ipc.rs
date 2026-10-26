@@ -31,6 +31,9 @@ pub fn desktop_socket_path() -> PathBuf {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum IpcCommand {
+    Nfn {
+        command: crate::nfn::NfnCommand,
+    },
     HostRequest {
         request: clawtab_protocol::HostRequest,
     },
@@ -287,6 +290,7 @@ pub struct IpcRelayStatus {
 /// big response match regardless of which socket it talked to.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum IpcResponse {
+    Nfn(serde_json::Value),
     HostResult(serde_json::Value),
     Pong,
     Ok,
@@ -329,6 +333,7 @@ pub enum IpcResponse {
 /// Events pushed from the daemon to subscribed desktop clients.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum IpcEvent {
+    NfnChanged,
     JobsChanged,
     AutoYesChanged,
     PinnedItemsChanged(Vec<String>),
@@ -351,7 +356,13 @@ pub enum IpcEvent {
     Notification {
         title: String,
         body: String,
+        #[serde(default = "notification_sound_default")]
+        sound: bool,
     },
+}
+
+fn notification_sound_default() -> bool {
+    true
 }
 
 /// Registry of connected event subscribers. Each entry is a write half of a

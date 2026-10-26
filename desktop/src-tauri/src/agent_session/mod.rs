@@ -519,6 +519,24 @@ pub fn detect_version_from_command(command: &str) -> Option<String> {
     found.into_iter().find(|item| common::is_semver(item))
 }
 
+/// The provider process inside a terminal's shell, used to bind local actions.
+pub fn provider_process_pid(root: &str, snapshot: &ProcessSnapshot) -> Option<String> {
+    let provider = detect_process_provider(root, Some(snapshot))?;
+    if snapshot
+        .managed
+        .get(root)
+        .and_then(|launch| ProcessProvider::from_name(&launch.provider))
+        .is_some_and(|provider| provider != ProcessProvider::Shell)
+    {
+        return Some(root.into());
+    }
+    std::iter::once(root.to_string())
+        .chain(snapshot.child_pids(root).iter().flat_map(|pid| {
+            std::iter::once(pid.clone()).chain(snapshot.child_pids(pid).iter().cloned())
+        }))
+        .find(|pid| provider_for_pid(snapshot, pid) == Some(provider))
+}
+
 fn provider_for_pid(snapshot: &ProcessSnapshot, pid: &str) -> Option<ProcessProvider> {
     let command = snapshot.command_for_pid(pid)?;
     if let Some(interactive) = hermes::kind_for_pid(pid, command) {

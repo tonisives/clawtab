@@ -193,7 +193,18 @@ fn main() {
     };
 
     let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
-    rt.block_on(async {
+    let notifications = clawtab_lib::nfn::initialize(
+        ctx.clone(),
+        Arc::clone(&active_questions),
+        event_subscribers.clone(),
+    )
+    .map_err(|error| log::error!("Enhanced notifications unavailable: {error}"))
+    .ok();
+    let has_notifications = notifications.is_some();
+    let daemon_task = rt.spawn(async move {
+        if let Some(notifications) = notifications {
+            tokio::spawn(notifications.run());
+        }
         {
             let hook_runtime = hook_runtime.clone();
             let agent_activity = Arc::clone(&agent_activity);
@@ -462,11 +473,23 @@ fn main() {
 
         // Wait for SIGTERM/SIGINT
         clawtab_lib::host::movement::recover_pending(ctx.clone());
-        tokio::signal::ctrl_c()
-            .await
-            .expect("failed to listen for ctrl+c");
+        #[cfg(unix)]
+        {
+            let mut terminate =
+                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                    .expect("failed to listen for SIGTERM");
+            tokio::select! { _ = tokio::signal::ctrl_c() => {}, _ = terminate.recv() => {} }
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = tokio::signal::ctrl_c().await;
+        }
         log::info!("clawtab-daemon shutting down");
+        clawtab_lib::nfn::native::stop();
     });
+    if !has_notifications || !clawtab_lib::nfn::native::run(rt.handle().clone()) {
+        let _ = rt.block_on(daemon_task);
+    }
 }
 
 async fn handle_ipc_command(
@@ -487,6 +510,13 @@ async fn handle_ipc_command(
     let auto_yes_panes = &ctx.auto_yes_panes;
     let protected_panes = &ctx.protected_panes;
     match cmd {
+        IpcCommand::Nfn { command } => match clawtab_lib::nfn::service() {
+            Some(service) => match service.execute(command).await {
+                Ok(value) => IpcResponse::Nfn(value),
+                Err(error) => IpcResponse::Error(error),
+            },
+            None => IpcResponse::Error("Notifications are not initialized".into()),
+        },
         IpcCommand::HostRequest { request } => {
             match clawtab_lib::host::movement::execute(request, ctx).await {
                 Ok(value) => IpcResponse::HostResult(value),
@@ -972,6 +1002,9 @@ async fn handle_ipc_command(
         }
         IpcCommand::ReloadSettings => {
             *settings.lock() = AppSettings::load();
+            if let Some(service) = clawtab_lib::nfn::service() {
+                service.push(None, false);
+            }
             IpcResponse::Ok
         }
         IpcCommand::StopJob { name } => {

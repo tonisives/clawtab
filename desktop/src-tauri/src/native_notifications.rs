@@ -20,6 +20,10 @@ static AUTH_REQUEST: Once = Once::new();
 /// Send a notification through UNUserNotificationCenter. Returns Err if the
 /// framework wasn't available (e.g. running outside an .app bundle).
 pub fn send(title: &str, body: &str) -> Result<(), String> {
+    send_with_sound(title, body, true)
+}
+
+pub fn send_with_sound(title: &str, body: &str, sound: bool) -> Result<(), String> {
     if unsafe { NSBundle::mainBundle().bundleIdentifier() }.is_none() {
         return Err("Native notifications require an app bundle identifier".to_string());
     }
@@ -34,8 +38,9 @@ pub fn send(title: &str, body: &str) -> Result<(), String> {
     unsafe {
         content.setTitle(&ns_title);
         content.setBody(&ns_body);
-        let sound = UNNotificationSound::defaultSound();
-        content.setSound(Some(&sound));
+        if sound {
+            content.setSound(Some(&UNNotificationSound::defaultSound()));
+        }
     }
 
     // Unique identifier so consecutive notifications don't replace each other.

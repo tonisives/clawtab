@@ -12,6 +12,7 @@ import { SecretsPanel } from "./SecretsPanel"
 import { SkillsPanel } from "./SkillsPanel"
 import { UsagePanel } from "./UsagePanel"
 import { DaemonPanel } from "./DaemonPanel"
+import { EnhancedNotifications } from "./EnhancedNotifications"
 
 export type SettingsSubTab = "general" | "remote" | "telegram" | "shortcuts" | "models" | "daemon" | "secrets" | "skills" | "usage"
 const settingsSubTabIds: SettingsSubTab[] = ["general", "remote", "telegram", "shortcuts", "models", "daemon", "secrets", "skills", "usage"]
@@ -348,6 +349,7 @@ let GeneralSettingsContent = ({ onAddJob }: { onAddJob: () => void }) => {
           </label>
           <span className="hint">Send question notifications to connected remote clients</span>
         </div>
+        <EnhancedNotifications settings={settings.enhanced_notifications} onChange={value => update({ enhanced_notifications: value })} />
       </div>
 
       <div className="field-group">

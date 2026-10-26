@@ -63,7 +63,7 @@ codesign --force --sign - "$APP_PATH" >/dev/null 2>&1 || true
 # requests with "Notifications are not allowed for this application" and
 # the app never appears in System Settings -> Notifications.
 LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister
-if [[ -x "$LSREGISTER" ]]; then
+if [[ "${CLAWTAB_REGISTER_APP:-1}" == 1 && -x "$LSREGISTER" ]]; then
   "$LSREGISTER" -f "$APP_PATH" >/dev/null 2>&1 || true
 fi
 

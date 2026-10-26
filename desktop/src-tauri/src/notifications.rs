@@ -105,14 +105,14 @@ impl Notifier for TauriNotifier {
 pub struct OsascriptNotifier;
 
 impl OsascriptNotifier {
-    fn send_notification(title: &str, body: &str) -> Result<(), String> {
+    fn send_notification(title: &str, body: &str, sound: bool) -> Result<(), String> {
         // Preferred path: UNUserNotificationCenter via objc2-user-notifications.
         // Works whenever the daemon is launched from inside ClawTab Daemon.app
         // (the launchd plist points at the .app's binary). No subprocess, no
         // leak, native ClawTab icon from the bundle's Info.plist.
         #[cfg(target_os = "macos")]
         {
-            if crate::native_notifications::send(title, body).is_ok() {
+            if crate::native_notifications::send_with_sound(title, body, sound).is_ok() {
                 return Ok(());
             }
         }
@@ -146,7 +146,7 @@ impl Notifier for OsascriptNotifier {
     fn notify_question(&self, question: &ClaudeQuestion) {
         let title = compact_cwd(&question.cwd);
         let body = format_question_body(question);
-        match Self::send_notification(&title, &body) {
+        match Self::send_notification(&title, &body, true) {
             Ok(()) => log::info!(
                 "[notifications] question notification sent for {}",
                 question.question_id
@@ -157,7 +157,7 @@ impl Notifier for OsascriptNotifier {
 
     fn notify_job(&self, job_id: &str, event: &str) {
         let body = format!("Job {} {}", job_id, event);
-        match Self::send_notification("ClawTab", &body) {
+        match Self::send_notification("ClawTab", &body, true) {
             Ok(()) => log::info!(
                 "[notifications] job notification sent: {} {}",
                 job_id,
@@ -182,7 +182,7 @@ impl IpcNotifier {
         Self { subscribers }
     }
 
-    fn dispatch(&self, title: String, body: String) {
+    pub fn dispatch_native(&self, title: String, body: String, sound: bool) {
         let subs = self.subscribers.clone();
         let title_for_fallback = title.clone();
         let body_for_fallback = body.clone();
@@ -190,12 +190,15 @@ impl IpcNotifier {
             let event = IpcEvent::Notification {
                 title: title.clone(),
                 body: body.clone(),
+                sound,
             };
             let delivered = ipc::broadcast_event(&subs, &event).await;
             if delivered == 0 {
-                if let Err(error) =
-                    OsascriptNotifier::send_notification(&title_for_fallback, &body_for_fallback)
-                {
+                if let Err(error) = OsascriptNotifier::send_notification(
+                    &title_for_fallback,
+                    &body_for_fallback,
+                    sound,
+                ) {
                     log::warn!("[notifications] local notification failed: {}", error);
                 } else {
                     log::info!(
@@ -210,23 +213,31 @@ impl IpcNotifier {
 
 impl Notifier for IpcNotifier {
     fn notify_question(&self, question: &ClaudeQuestion) {
+        if let Some(service) = crate::nfn::service() {
+            service.announce_question(question);
+            return;
+        }
         let title = compact_cwd(&question.cwd);
         let body = format_question_body(question);
         log::info!(
             "[notifications] dispatching question {} via IPC",
             question.question_id
         );
-        self.dispatch(title, body);
+        self.dispatch_native(title, body, true);
     }
 
     fn notify_job(&self, job_id: &str, event: &str) {
+        if let Some(service) = crate::nfn::service() {
+            service.job_notification(job_id, event);
+            return;
+        }
         let body = format!("Job {} {}", job_id, event);
         log::info!(
             "[notifications] dispatching job notification: {} {} via IPC",
             job_id,
             event
         );
-        self.dispatch("ClawTab".to_string(), body);
+        self.dispatch_native("ClawTab".to_string(), body, true);
     }
 }
 
@@ -338,10 +349,12 @@ fn format_question_body(question: &ClaudeQuestion) -> String {
     let options_str: String = question
         .options
         .iter()
-        .map(|o| if question.input_mode == "command" {
-            o.label.clone()
-        } else {
-            format!("{}.{}", o.number, o.label)
+        .map(|o| {
+            if question.input_mode == "command" {
+                o.label.clone()
+            } else {
+                format!("{}.{}", o.number, o.label)
+            }
         })
         .collect::<Vec<_>>()
         .join(" ");
@@ -355,10 +368,12 @@ fn format_question_body(question: &ClaudeQuestion) -> String {
         let options_lines: String = question
             .options
             .iter()
-            .map(|o| if question.input_mode == "command" {
-                o.label.clone()
-            } else {
-                format!("{}. {}", o.number, o.label)
+            .map(|o| {
+                if question.input_mode == "command" {
+                    o.label.clone()
+                } else {
+                    format!("{}. {}", o.number, o.label)
+                }
             })
             .collect::<Vec<_>>()
             .join("\n");

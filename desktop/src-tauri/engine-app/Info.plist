@@ -24,6 +24,8 @@
     <string>10.15</string>
     <key>LSUIElement</key>
     <true/>
+    <key>NSFocusStatusUsageDescription</key>
+    <string>ClawTab uses your Focus status to keep agent notifications quiet while you are busy.</string>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSPrincipalClass</key>

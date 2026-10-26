@@ -1715,6 +1715,21 @@ fn submit_text(pane_id: &str, provider: ProcessProvider, text: &str) -> Result<(
     crate::terminal_backend::send_key_to_pane(pane_id, "Enter")
 }
 
+/// Submit a notification reply without overwriting a user's composer draft.
+pub fn submit_notification_reply(pane_id: &str, text: &str) -> Result<(), String> {
+    let (provider, _) =
+        pane_context(pane_id).ok_or("No supported agent is running in this pane")?;
+    if provider == ProcessProvider::Codex {
+        let screen = capture_plain(pane_id)?;
+        let draft = codex_composer_draft(&screen)
+            .ok_or("Agent composer is unavailable; focus the agent to continue")?;
+        if !draft.trim().is_empty() {
+            return Err("The agent composer contains a draft; focus the agent to continue".into());
+        }
+    }
+    submit_text(pane_id, provider, text)
+}
+
 async fn submit_codex_command(
     pane_id: &str,
     text: &str,

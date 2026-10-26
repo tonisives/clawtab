@@ -237,16 +237,22 @@ pub async fn run_daemon_event_subscription(
                         IpcEvent::RelayStatusChanged(status) => {
                             let _ = app_handle.emit("relay-status-changed", status);
                         }
-                        IpcEvent::Notification { title, body } => {
+                        IpcEvent::NfnChanged => {
+                            let _ = app_handle.emit("nfn-changed", ());
+                        }
+                        IpcEvent::Notification { title, body, sound } => {
                             use tauri_plugin_notification::NotificationExt;
-                            if let Err(e) = app_handle
+                            let builder = app_handle
                                 .notification()
                                 .builder()
                                 .title(&title)
-                                .body(&body)
-                                .sound("default")
-                                .show()
-                            {
+                                .body(&body);
+                            let builder = if sound {
+                                builder.sound("default")
+                            } else {
+                                builder
+                            };
+                            if let Err(e) = builder.show() {
                                 log::error!(
                                     "[notifications] failed to show forwarded notification: {}",
                                     e

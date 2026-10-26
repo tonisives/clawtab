@@ -491,6 +491,58 @@ fn make_question_id(pane_id: &str, options: &[QuestionOption]) -> String {
     format!("{}:{:x}", pane_id, hash)
 }
 
+pub(crate) fn prompt_context_key(text: &str) -> String {
+    strip_ansi(text)
+        .lines()
+        .map(|line| {
+            line.trim()
+                .trim_start_matches(['›', '❯', '▸', '▶', '>'])
+                .trim()
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn make_context_question_id(pane_id: &str, options: &[QuestionOption], screen: &str) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut hash = std::collections::hash_map::DefaultHasher::new();
+    prompt_context_key(&last_context_lines(screen)).hash(&mut hash);
+    format!("{}:{:x}", make_question_id(pane_id, options), hash.finish())
+}
+
+/// Recheck the visible prompt immediately before a notification sends input.
+pub(crate) fn validate_live_question(
+    question: &ClaudeQuestion,
+    provider: Option<&str>,
+) -> Result<ClaudeQuestion, String> {
+    let (screen, _) = crate::terminal_backend::capture_pane_visible(&question.pane_id)?;
+    let (options, row) = if provider == Some("hermes") {
+        (parse_hermes_options(&screen).unwrap_or_default(), 0)
+    } else if question.input_mode == "select" {
+        parse_opencode_buttons(&screen)
+    } else {
+        (parse_numbered_options(&screen), 0)
+    };
+    let same_options = options.len() == question.options.len()
+        && options
+            .iter()
+            .zip(&question.options)
+            .all(|(live, previous)| live.number == previous.number && live.label == previous.label);
+    if !same_options
+        || prompt_context_key(&last_context_lines(&screen))
+            != prompt_context_key(&question.context_lines)
+    {
+        return Err("The visible agent prompt has changed. Focus the agent to review it.".into());
+    }
+    let mut live = question.clone();
+    live.options = options;
+    live.button_row = row;
+    Ok(live)
+}
+
 /// Full cached question info for a pane, so we can re-send from cache on transient misses.
 struct CachedQuestion {
     question: ClaudeQuestion,
@@ -645,6 +697,9 @@ pub async fn question_detection_loop(
         );
         let next_question_signature = serde_json::to_string(&visible_questions).unwrap_or_default();
         *active_questions.lock() = visible_questions.clone();
+        if let Some(service) = crate::nfn::service() {
+            service.sync_questions(&visible_questions);
+        }
         if next_question_signature != question_signature {
             question_signature = next_question_signature;
             event_sink.emit_questions_changed();
@@ -748,6 +803,9 @@ fn filter_visible_questions(questions: &[ClaudeQuestion]) -> Vec<ClaudeQuestion>
 }
 
 fn should_suppress_question_notification(question: &ClaudeQuestion) -> bool {
+    if crate::nfn::service().is_some() {
+        return crate::nfn::viewed_pane(&question.pane_id);
+    }
     if !is_user_active() {
         return false;
     }
@@ -904,7 +962,7 @@ fn update_question_cache_with_hooks(
                     window_name: window_name.clone(),
                     question_id: format!(
                         "{}:{}",
-                        make_question_id(pane_id, &options),
+                        make_context_question_id(pane_id, &options, log_lines),
                         hooks
                             .pane_state(pane_id, *provider)
                             .map_or(0, |state| state.updated_at_ms)
@@ -1067,7 +1125,7 @@ fn try_numbered_question(
         options.len()
     );
     detected.insert(pane_id.to_string());
-    let question_id = make_question_id(pane_id, &options);
+    let question_id = make_context_question_id(pane_id, &options, log_lines);
     let q = ClaudeQuestion {
         pane_id: pane_id.to_string(),
         cwd: cwd.to_string(),
@@ -1126,7 +1184,7 @@ fn try_opencode_question(
         button_line_idx
     );
     detected.insert(pane_id.to_string());
-    let question_id = make_question_id(pane_id, &buttons);
+    let question_id = make_context_question_id(pane_id, &buttons, log_lines);
     let q = ClaudeQuestion {
         pane_id: pane_id.to_string(),
         cwd: cwd.to_string(),
@@ -2024,6 +2082,22 @@ fn record_pane_capture(process: &mut DetectedAgent, visible: &str, cursor_y: u16
 #[cfg(test)]
 mod tests {
     #[test]
+    fn notification_identity_tracks_the_command_and_ignores_selection_styling() {
+        let first = "Run cargo check?\n› 1. Yes\n  2. No\nEnter to select";
+        let restyled = "\x1b[32mRun cargo check?\x1b[0m\n  1. Yes\n› 2. No\nEnter to select";
+        let changed = "Run cargo build?\n› 1. Yes\n  2. No\nEnter to select";
+        let options = super::parse_numbered_options(first);
+        assert_eq!(
+            super::make_context_question_id("%1", &options, first),
+            super::make_context_question_id("%1", &options, restyled)
+        );
+        assert_ne!(
+            super::make_context_question_id("%1", &options, first),
+            super::make_context_question_id("%1", &options, changed)
+        );
+    }
+
+    #[test]
     fn notification_context_preserves_colors_and_return_line_breaks() {
         let preview = super::last_context_lines(
             "\x1b[32m$ cargo check\x1b[0m\r\n\x1b[38;2;1;2;3mFinished\x1b[0m\rWould you like to run this command?\r1. Yes\r2. No",
@@ -2514,7 +2588,8 @@ mod tests {
         let mut tracker = ActivityTracker::default();
         let no_questions = HashSet::new();
         let hooks = HookRuntime::default();
-        let first = tracker.update_with_hooks(&[process.clone()], &no_questions, now, &hooks, &sessions);
+        let first =
+            tracker.update_with_hooks(&[process.clone()], &no_questions, now, &hooks, &sessions);
         assert_eq!(first[0].last_action_at_ms, Some(1700000000000));
 
         process.7 = "old output after a TUI redraw".into();
@@ -2522,7 +2597,11 @@ mod tests {
             tracker.update_with_hooks(&[process.clone()], &no_questions, now, &hooks, &sessions);
         assert_eq!(redrawn[0].last_action_at_ms, first[0].last_action_at_ms);
         let restarted = ActivityTracker::default().update_with_hooks(
-            &[process.clone()], &no_questions, now, &hooks, &sessions,
+            &[process.clone()],
+            &no_questions,
+            now,
+            &hooks,
+            &sessions,
         );
         assert_eq!(restarted[0].last_action_at_ms, first[0].last_action_at_ms);
 
