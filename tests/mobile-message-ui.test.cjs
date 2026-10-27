@@ -165,3 +165,43 @@ test("remote task controls reject desktop source linking and disconnected mutati
   await assert.rejects(execute({ op: "todo_link", note: "/notes/today.md" }), /Unsupported/);
   await assert.rejects(execute({ op: "todo_update", id: "task", checked: true }), /Connect/);
 });
+
+for (const variant of ["MessageSurface.web.tsx", "MessageSurface.tsx"]) {
+  test(`${variant}: clearing and restoring a deep link cannot retain the previous message`, () => {
+    const refs = [], effects = [], sent = [];
+    let cursor = 0;
+    const react = {
+      useRef: value => refs[cursor++] ??= { current: value },
+      useCallback: callback => callback,
+      useEffect: effect => effects.push(effect),
+    };
+    const target = { postMessage: value => sent.push(value) };
+    const frame = { contentWindow: target, injectJavaScript: source => vm.runInNewContext(source, { window: { nfn: { receive: value => sent.push(value) } } }) };
+    const dependencies = {
+      react, "react/jsx-runtime": { jsx: (type, props) => ({ type, props }) },
+      "react-native-webview": { default: "WebView" },
+      "../lib/messageSurfaceDocument.generated": { default: "fixture document" },
+    };
+    const source = ts.transpileModule(fs.readFileSync(path.resolve(base, `../components/${variant}`), "utf8"), {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
+    }).outputText;
+    const exports = {};
+    vm.runInNewContext(source, { exports, require: name => dependencies[name], window: { addEventListener() {}, removeEventListener() {} } });
+    const render = selection => {
+      cursor = 0; effects.length = 0;
+      const node = exports.MessageSurface({ snapshot: { type: "snapshot" }, selection, onCommand: async () => ({}) });
+      node.props.ref.current = frame;
+      effects.forEach(effect => effect());
+      return node;
+    };
+    const initial = render("mac-a::review");
+    if (variant.includes(".web")) initial.props.onLoad();
+    else initial.props.onMessage({ nativeEvent: { data: JSON.stringify({ nfn: { preview_ready: true } }) } });
+    assert.equal(sent.at(-1).id, "mac-a::review");
+    render(null);
+    assert.equal(sent.at(-1).type, "show");
+    render("mac-a::review");
+    assert.equal(sent.at(-1).type, "open_record");
+    assert.equal(sent.at(-1).id, "mac-a::review");
+  });
+}

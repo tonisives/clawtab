@@ -21,7 +21,7 @@ export function MessageSurface(props: MessageSurfaceProps) {
     const selection = latest.current.selection ?? null;
     if (selection && selected.current !== selection) {
       send({ type: "open_record", id: selection, popup: latest.current.popup }); selected.current = selection;
-    } else if (!selection && selected.current === null) {
+    } else if (!selection && selected.current !== "") {
       send({ type: "show" }); selected.current = "";
     }
   }, [send]);
