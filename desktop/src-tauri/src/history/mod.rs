@@ -1,4 +1,5 @@
 mod failure_notifications;
+mod notification_sources;
 #[cfg(test)]
 pub(crate) use failure_notifications::test_store as test_failure_store;
 
@@ -85,6 +86,7 @@ impl HistoryStore {
 
         let store = Self { conn };
         store.initialize_failure_notifications()?;
+        store.initialize_notification_sources()?;
         crate::agent::migrate_legacy_agent_storage();
         store.backfill_orphan_logs();
         Ok(store)

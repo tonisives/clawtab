@@ -205,8 +205,8 @@ impl Service {
         }
     }
 
-    pub fn job_notification(&self, slug: &str, event: &str) {
-        self.job_message(slug, event, None, vec!["desktop".into()], None);
+    pub fn job_notification(&self, slug: &str, event: &str, run_id: Option<&str>) {
+        self.job_message(slug, event, run_id, vec!["desktop".into()], None);
     }
 
     pub fn job_message(
@@ -217,60 +217,29 @@ impl Service {
         channels: Vec<String>,
         chat: Option<i64>,
     ) {
-        // Failure senders may already hold the history lock.
-        let run = if run_id.is_none() {
-            self.ctx
-                .history
-                .lock()
-                .get_by_job_id_summaries(slug, 1)
-                .ok()
-                .and_then(|runs| runs.into_iter().next())
-        } else {
-            None
+        let request = {
+            let history = self.ctx.history.lock();
+            job_request_from_history(&history, slug, event, run_id)
         };
-        let run_id = run_id.or_else(|| run.as_ref().map(|run| run.id.as_str()));
-        let event_key = if event.starts_with("failed") {
-            "failed"
-        } else if matches!(event, "completed" | "finished") {
-            "completed"
-        } else {
-            event
-        };
-        let mut body = format!("Job {slug} {event}");
-        if let Some(run_id) = run_id {
-            body.push_str(&format!("\nRun: {run_id}"));
-        }
-        if event_key == "failed" {
-            body.push_str(&format!("\nRestart: cwtctl jobs restart {slug}"));
-        }
-        let request = NfnRequest {
-            channels,
-            telegram_chat_id: chat,
-            kind: if event.starts_with("failed") {
-                "failed"
-            } else if matches!(event, "finished" | "completed") {
-                "completed"
-            } else {
-                "update"
-            }
-            .into(),
-            title: format!("{slug} {event}"),
-            body,
-            template: "update".into(),
-            data: json!({"event":event}),
-            actions: vec![NfnAction {
-                id: "acknowledge".into(),
-                label: "Got it".into(),
-                ..Default::default()
-            }],
-            source: NfnSource {
-                job_id: Some(slug.into()),
-                run_id: run_id.map(str::to_owned),
-                ..Default::default()
-            },
-            dedupe_key: Some(format!("job:{}:{}", run_id.unwrap_or("unknown"), event_key)),
-            ..Default::default()
-        };
+        self.queue_job_message(request, channels, chat);
+    }
+
+    pub(crate) fn job_message_from_history(
+        &self,
+        history: &crate::history::HistoryStore,
+        slug: &str,
+        event: &str,
+        run_id: &str,
+        channels: Vec<String>,
+        chat: Option<i64>,
+    ) {
+        let request = job_request_from_history(history, slug, event, Some(run_id));
+        self.queue_job_message(request, channels, chat);
+    }
+
+    fn queue_job_message(&self, mut request: NfnRequest, channels: Vec<String>, chat: Option<i64>) {
+        request.channels = channels;
+        request.telegram_chat_id = chat;
         match self.store.send(request, None) {
             Ok((record, true)) => self.announce(&record),
             Ok(_) => {}
@@ -506,6 +475,7 @@ impl Service {
                 return Ok(json!({"opened":true}));
             }
             NfnCommand::Focus { id } => {
+                let _guard = self.mutation.lock().await;
                 let record = self.store.get(&id)?;
                 let result = self.focus_notification(&record).await?;
                 self.changed();
@@ -660,10 +630,94 @@ impl Service {
     }
 
     async fn focus_notification(&self, record: &NfnRecord) -> Result<Value, String> {
-        validate_source(&record.request.source)?;
-        focus_source(&record.request.source).await?;
+        if job_notice(record) {
+            self.focus_job_session(record).await?;
+        } else {
+            validate_source(&record.request.source)?;
+            focus_source(&record.request.source).await?;
+        }
         let dismissed = self.store.dismiss_many(std::slice::from_ref(&record.id))?;
         Ok(json!({"focused":true, "record":dismissed[0]}))
+    }
+
+    async fn focus_job_session(&self, record: &NfnRecord) -> Result<(), String> {
+        let mut source = record.request.source.clone();
+        if let Some(pane) = record.request.data["opened_session_pane"].as_str() {
+            if matches!(
+                crate::terminal_backend::pane_process_state(pane)?,
+                crate::tmux::PaneProcessState::Running
+            ) {
+                source.pane_id = Some(pane.into());
+                let current = resolve_source(pane, source.client_tty.clone())?;
+                if current.session_id.is_some() && current.session_id != source.session_id {
+                    return Err("The originating agent session has changed".into());
+                }
+                return focus_source(&source).await;
+            }
+        }
+        if let Some(pane) = source.pane_id.as_deref() {
+            if matches!(
+                crate::terminal_backend::pane_process_state(pane)?,
+                crate::tmux::PaneProcessState::Running
+            ) {
+                validate_source(&source)?;
+                return focus_source(&source).await;
+            }
+            if source.session_id.is_none() && crate::terminal_backend::pane_exists(pane) {
+                return focus_source(&source).await;
+            }
+        }
+        let command = session_resume_command(&source)?;
+        if source
+            .pane_id
+            .as_deref()
+            .is_some_and(crate::managed::is_managed)
+        {
+            let info = crate::managed::launch(
+                crate::managed::Launch {
+                    program: "/bin/zsh".into(),
+                    args: vec!["-lc".into(), command],
+                    cwd: source
+                        .cwd
+                        .clone()
+                        .ok_or("This job has no recorded working directory")?,
+                    size: Default::default(),
+                    close_with_terminal: false,
+                    provider: source.provider.clone().unwrap_or_default(),
+                    conversation_id: source.session_id.clone(),
+                    metadata: Default::default(),
+                },
+                &[],
+            )?;
+            let mut updated = record.clone();
+            updated.request.data["opened_session_pane"] = json!(info.id);
+            self.store.save(&mut updated)?;
+            source.pane_id = Some(info.id);
+            return focus_source(&source).await;
+        }
+        let session = source
+            .group
+            .clone()
+            .filter(|group| crate::tmux::session_exists(group))
+            .unwrap_or_else(|| self.ctx.settings.lock().default_tmux_session.clone());
+        if !crate::tmux::session_exists(&session) {
+            crate::tmux::create_session(&session)?;
+        }
+        let pane = crate::tmux::create_window_with_cwd(
+            &session,
+            &crate::tmux::next_ct_window_name(&session, "session"),
+            source.cwd.as_deref(),
+            &[],
+        )?;
+        if let Err(error) = crate::tmux::send_keys_to_pane(&session, &pane, &command) {
+            let _ = crate::tmux::kill_pane(&pane);
+            return Err(error);
+        }
+        let mut updated = record.clone();
+        updated.request.data["opened_session_pane"] = json!(pane);
+        self.store.save(&mut updated)?;
+        source.pane_id = Some(pane);
+        focus_source(&source).await
     }
 
     async fn respond(
@@ -869,8 +923,13 @@ impl Service {
         let mut plugins = json!([]);
         let mut source = source.clone();
         let mut auto_yes = false;
-        if let Some(pane) = source.pane_id.as_deref() {
+        let live_source = if job_notice(&record) {
+            validate_source(&source).is_ok()
+        } else {
             validate_source(&source)?;
+            true
+        };
+        if let Some(pane) = source.pane_id.as_deref().filter(|_| live_source) {
             log = crate::terminal_backend::capture_pane_recent_ansi(pane, 200)?;
             auto_yes = self.ctx.auto_yes_panes.lock().contains(pane);
             let settings = self.ctx.settings.lock().clone();
@@ -911,6 +970,12 @@ impl Service {
             json!({"type":"context","id":id,"source":source,"log":log,"auto_yes":auto_yes,"models":models,"plugins":plugins}),
         )
     }
+}
+
+fn job_notice(record: &NfnRecord) -> bool {
+    record.question_id.is_none()
+        && record.request.template == "update"
+        && record.request.source.job_id.is_some()
 }
 
 fn local_enabled(settings: &crate::config::settings::AppSettings, record: &NfnRecord) -> bool {
@@ -954,6 +1019,8 @@ fn refresh_pending_record(
             return false;
         }
         record.status = "resolved".into();
+    } else if job_notice(record) {
+        return false;
     } else if record.request.source.pane_id.is_some() && !source_valid(&record.request.source) {
         record.status = "expired".into();
         record.error = Some("The originating agent session is no longer available".into());
@@ -1058,6 +1125,117 @@ fn tmux(args: &[&str]) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&output.stdout).trim_end().into())
 }
 
+fn session_resume_command(source: &NfnSource) -> Result<String, String> {
+    let session = source
+        .session_id
+        .as_deref()
+        .ok_or("This job has no recorded agent session")?;
+    let quote = |value: &str| format!("'{}'", value.replace('\'', "'\\''"));
+    let session = quote(session);
+    Ok(match source.provider.as_deref() {
+        Some("claude") => format!("claude --resume {session}"),
+        Some("codex") => format!("codex resume {session}"),
+        Some("opencode") => format!("opencode --session {session}"),
+        Some("antigravity") => format!("agy --conversation {session}"),
+        Some("hermes") => {
+            let home = source
+                .provider_home
+                .as_deref()
+                .ok_or("This job has no recorded Hermes profile")?;
+            let profile = if std::path::Path::new(home)
+                .parent()
+                .and_then(std::path::Path::file_name)
+                .is_some_and(|name| name == "profiles")
+            {
+                ""
+            } else {
+                " --profile default"
+            };
+            format!(
+                "HERMES_HOME={} hermes{profile} chat --resume {session}",
+                quote(home)
+            )
+        }
+        _ => return Err("This provider does not support session resume".into()),
+    })
+}
+
+fn job_request_from_history(
+    history: &crate::history::HistoryStore,
+    slug: &str,
+    event: &str,
+    run_id: Option<&str>,
+) -> NfnRequest {
+    let run = match run_id {
+        Some(id) => history.get_by_id_bounded(id, 1).ok().flatten(),
+        None => history
+            .get_by_job_id_summaries(slug, 1)
+            .ok()
+            .and_then(|runs| runs.into_iter().next()),
+    };
+    let source = run
+        .as_ref()
+        .and_then(|run| history.notification_source(&run.id).ok().flatten())
+        .or_else(|| {
+            run.as_ref()?
+                .pane_id
+                .as_deref()
+                .and_then(|pane| resolve_source(pane, None).ok())
+        })
+        .unwrap_or_default();
+    job_request(
+        slug,
+        event,
+        run_id.or_else(|| run.as_ref().map(|run| run.id.as_str())),
+        source,
+    )
+}
+
+fn job_request(slug: &str, event: &str, run_id: Option<&str>, mut source: NfnSource) -> NfnRequest {
+    source.job_id = Some(slug.into());
+    source.run_id = run_id.map(str::to_owned);
+    let mut actions = Vec::new();
+    if source.pane_id.is_some() {
+        actions.push(NfnAction {
+            id: "focus".into(),
+            label: "Open session".into(),
+            kind: "focus".into(),
+            ..Default::default()
+        });
+    }
+    actions.push(NfnAction {
+        id: "acknowledge".into(),
+        label: "Got it".into(),
+        ..Default::default()
+    });
+    let kind = if event.starts_with("failed") {
+        "failed"
+    } else if matches!(event, "completed" | "finished") {
+        "completed"
+    } else {
+        "update"
+    };
+    let event_key = if kind == "update" { event } else { kind };
+    let mut body = format!("Job {slug} {event}");
+    if let Some(run_id) = run_id {
+        body.push_str(&format!("\nRun: {run_id}"));
+    }
+    if kind == "failed" {
+        body.push_str(&format!("\nRestart: cwtctl jobs restart {slug}"));
+    }
+    NfnRequest {
+        kind: kind.into(),
+        title: format!("{slug} {event}"),
+        body,
+        template: "update".into(),
+        data: json!({"event":event}),
+        actions,
+        source,
+        dedupe_key: Some(format!("job:{}:{event_key}", run_id.unwrap_or("unknown"))),
+        ..Default::default()
+    }
+}
+
 fn merge_reported_source(mut source: NfnSource, reported: NfnSource) -> NfnSource {
     source.task = reported.task.or(source.task);
     source.group = reported.group.or(source.group);
@@ -1073,6 +1251,10 @@ pub fn resolve_source(pane: &str, client_tty: Option<String>) -> Result<NfnSourc
     let snapshot = crate::agent_session::ProcessSnapshot::capture();
     let provider = crate::agent_session::detect_process_provider(&pid, Some(&snapshot));
     let agent_pid = crate::agent_session::provider_process_pid(&pid, &snapshot);
+    let provider_home = (provider == Some(crate::agent_session::ProcessProvider::Hermes))
+        .then(|| crate::agent_session::hermes::identity_for_pane(&pid, Some(&snapshot)))
+        .flatten()
+        .map(|identity| identity.home.to_string_lossy().into_owned());
     let info = crate::agent_session::resolve_session_info_for_provider_with_cwd(
         &pid,
         provider,
@@ -1092,6 +1274,7 @@ pub fn resolve_source(pane: &str, client_tty: Option<String>) -> Result<NfnSourc
             .and_then(|pid| snapshot.start_epoch_for_pid(pid)),
         agent_pid,
         provider: provider.map(|p| p.as_str().into()),
+        provider_home,
         session_id: info.session_id,
         model: info.model_id,
         cwd: Some(cwd.clone()),
@@ -1184,6 +1367,63 @@ fn same_source(source: &NfnSource, current: &NfnSource) -> bool {
 mod tests {
     use super::*;
 
+    #[test]
+    fn failed_jobs_keep_their_session_and_remain_openable_after_exit() {
+        let source = NfnSource {
+            pane_id: Some("%17".into()),
+            session_id: Some("conversation-17".into()),
+            provider: Some("codex".into()),
+            cwd: Some("/workspace/project".into()),
+            ..Default::default()
+        };
+        let request = job_request("project/job", "failed (exit 143)", Some("run-17"), source);
+        assert_eq!(request.kind, "failed");
+        assert_eq!(request.dedupe_key.as_deref(), Some("job:run-17:failed"));
+        assert!(request.body.contains("failed (exit 143)"));
+        assert_eq!(
+            request.source.session_id.as_deref(),
+            Some("conversation-17")
+        );
+        assert_eq!(request.source.run_id.as_deref(), Some("run-17"));
+        assert_eq!(request.actions[0].kind, "focus");
+        assert_eq!(
+            session_resume_command(&request.source).unwrap(),
+            "codex resume 'conversation-17'"
+        );
+        let mut record = pending_permission();
+        record.question_id = None;
+        record.request = request;
+        assert!(!refresh_pending_record(
+            &mut record,
+            None,
+            20_000,
+            |_| panic!("job sessions outlive their process")
+        ));
+        assert_eq!(record.status, "pending");
+    }
+
+    #[test]
+    fn jobs_without_agent_sessions_keep_the_job_action_and_resume_quotes_ids() {
+        let request = job_request(
+            "project/script",
+            "failed",
+            Some("run-script"),
+            NfnSource::default(),
+        );
+        assert_eq!(request.actions.len(), 1);
+        assert_eq!(request.actions[0].id, "acknowledge");
+        assert!(session_resume_command(&request.source).is_err());
+        let source = NfnSource {
+            provider: Some("claude".into()),
+            session_id: Some("session'; touch /tmp/incorrect".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            session_resume_command(&source).unwrap(),
+            "claude --resume 'session'\\''; touch /tmp/incorrect'"
+        );
+    }
+
     fn pending_permission() -> NfnRecord {
         serde_json::from_value(json!({
             "id": "permission", "status": "pending", "created_at": 0, "updated_at": 0,
@@ -1191,6 +1431,25 @@ mod tests {
             "request": {"title": "Run checks?", "source": {"pane_id": "%10"}}
         }))
         .unwrap()
+    }
+
+    #[test]
+    fn hermes_job_resume_keeps_its_profile() {
+        let mut source = NfnSource {
+            provider: Some("hermes".into()),
+            provider_home: Some("/home/me/.hermes/profiles/work".into()),
+            session_id: Some("conversation".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            session_resume_command(&source).unwrap(),
+            "HERMES_HOME='/home/me/.hermes/profiles/work' hermes chat --resume 'conversation'"
+        );
+        source.provider_home = Some("/home/me/.hermes".into());
+        assert_eq!(
+            session_resume_command(&source).unwrap(),
+            "HERMES_HOME='/home/me/.hermes' hermes --profile default chat --resume 'conversation'"
+        );
     }
 
     #[test]
@@ -1232,6 +1491,12 @@ mod tests {
         assert!(refresh_pending_record(&mut record, None, 20_000, |_| false));
         assert_eq!(record.status, "expired");
         assert!(record.error.is_some());
+
+        let mut record = pending_permission();
+        record.question_id = None;
+        record.request.source.job_id = Some("project/job".into());
+        assert!(refresh_pending_record(&mut record, None, 20_000, |_| false));
+        assert_eq!(record.status, "expired");
     }
 
     #[test]

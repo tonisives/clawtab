@@ -31,10 +31,11 @@ pub(crate) fn enqueue(
             .exit_code
             .map(|code| format!("failed (exit {code})"))
             .unwrap_or_else(|| "failed".into());
-        service.job_message(
+        service.job_message_from_history(
+            history,
             failure.slug,
             &event,
-            Some(failure.run_id),
+            failure.run_id,
             vec!["telegram".into()],
             failure.chat_id,
         );

@@ -461,7 +461,7 @@
     }
     const actions = el("div", "actions"); node._actions = actions;
     const choices = record.request.actions || [];
-    for (const [index, action] of choices.entries()) {
+    for (const [index, action] of choices.filter(action => action.kind !== "focus").entries()) {
       const control = button(action.label, () => act(record.id, action.id, drafts.get(record.id) || ""), index === 0 ? "primary" : "");
       control.title = action.label;
       actions.append(control);
@@ -503,8 +503,10 @@
     const detailButton = button(details ? "Hide details" : (record.request.media?.length ? "View attachment" : "Details"), toggleDetails, "utility details-toggle");
     detailButton.setAttribute("aria-expanded", String(details)); utilities.append(detailButton);
     if (record.request.source?.pane_id) {
-      const openAgent = button("Open agent", () => performAction(record.id, { op: "focus", id: record.id }), "utility");
-      openAgent.title = "Switch to this agent's terminal"; utilities.append(openAgent);
+      utilities.classList.add("session-controls");
+      const focus = choices.find(action => action.kind === "focus");
+      const openSession = button("Open session", () => focus ? act(record.id, focus.id, "") : performAction(record.id, { op: "focus", id: record.id }), "primary open-session");
+      openSession.title = "Open the originating session"; node._openSession = openSession; utilities.append(openSession);
     } else if (record.request.source?.job_id) {
       const openJob = button("Go to job", async () => {
         openJob.disabled = true;
@@ -553,6 +555,7 @@
     card._status.textContent = record.status === "delivering" || busy ? "Sending..." : isPending ? (alert ? "! Alert" : "") : record.status === "resolved" ? (alert ? "Recovered" : update ? "Seen" : "Sent") : record.status;
     card._options?.setAttribute("aria-expanded", String(menu === "options" || menu === "agent"));
     for (const control of card._actions.querySelectorAll("button")) control.disabled = !isPending || busy || Boolean(record.question_id && drafts.get(record.id)?.trim());
+    if (card._openSession) card._openSession.disabled = busy;
     if (card._send) card._send.disabled = !isPending || busy || !card._reply.value.trim();
     if (card._reply) card._reply.readOnly = !isPending || busy;
     if (actionErrors.has(current)) card._notice.textContent = actionErrors.get(current);
