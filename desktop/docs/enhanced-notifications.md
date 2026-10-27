@@ -126,7 +126,7 @@ The source and optional agent mapping can also be changed under **Source and age
 
 Agent mappings use the controller's `tasks` and `existing` arrays: `match` or `covers` associates task text, `session` identifies the group, `pane` and `window_id` identify the agent, and `status` points to its progress JSON. Subtasks share their parent's agent unless they have their own assignment.
 
-For unassigned tasks, enter a working directory under **Source and agent settings**, then choose **Start agent**. ClawTab opens a new window in that group's existing tmux session with Codex Sol 6.1 and high reasoning. Links and new-agent status files live under the ClawTab configuration directory; the note remains authoritative across restarts.
+For unassigned tasks, enter a working directory under **Source and agent settings**, then choose **Start agent**. ClawTab opens a new window in that group's existing tmux session with Codex Sol 6.1 and high reasoning. It registers the agent in the linked controller mapping. Links, prompts, and new-agent status files live under the ClawTab configuration directory; the note remains authoritative across restarts.
 
 ## Custom layouts
 

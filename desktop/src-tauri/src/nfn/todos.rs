@@ -319,6 +319,23 @@ pub fn agent(id: &str) -> Result<Value, String> {
         .ok_or("No agent linked to this task".into())
 }
 
+fn register_agent(path: &Path, agent: &Value) -> Result<(), String> {
+    let before = fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let mut mapping: Value = serde_json::from_str(&before).map_err(|e| e.to_string())?;
+    if mapping.get("tasks").is_none() {
+        mapping["tasks"] = json!([]);
+    }
+    let tasks = mapping["tasks"]
+        .as_array_mut()
+        .ok_or("Agent mapping tasks must be an array")?;
+    if tasks.iter().any(|task| task["pane"] == agent["pane"]) {
+        return Ok(());
+    }
+    tasks.push(agent.clone());
+    let after = serde_json::to_string_pretty(&mapping).map_err(|e| e.to_string())? + "\n";
+    write_note(path, &before, &after)
+}
+
 pub fn start(id: &str, cwd: &str) -> Result<Value, String> {
     let mut links = load()?;
     let (_, items) = read_items(&links)?;
@@ -350,6 +367,8 @@ pub fn start(id: &str, cwd: &str) -> Result<Value, String> {
             .map_err(|e| e.to_string())?,
     )?;
     let prompt = format!("Work on this task: {}\n\nSource note: {}\nFollow repository AGENTS.md instructions. Keep your status file {} updated as JSON with state (working, blocked, done), summary, and blocker. Report the result when complete. Keep the source checkbox for the controller to verify.", item.text, links.note.display(), status.display());
+    let prompt_path = status.with_file_name(format!("{id}.md"));
+    atomic_write(&prompt_path, prompt.as_bytes())?;
     let pane = super::service::tmux(&[
         "new-window",
         "-d",
@@ -370,11 +389,14 @@ pub fn start(id: &str, cwd: &str) -> Result<Value, String> {
         &prompt,
     ])?;
     let window = super::service::tmux(&["display-message", "-p", "-t", &pane, "#{window_id}"])?;
-    links.spawned.insert(
-        id.into(),
-        json!({"pane":pane,"window_id":window,"session":session,"cwd":cwd,"status":status,"state":"started"}),
-    );
+    let entry = json!({"id":id,"match":item.text,"pane":pane,"window_id":window,"window_name":"todo-agent","session":session,"cwd":cwd,"prompt":prompt_path,"status":status,"state":"started"});
+    links.spawned.insert(id.into(), entry.clone());
     save(&links)?;
+    if let Some(mapping) = &links.agents {
+        register_agent(mapping, &entry).map_err(|error| {
+            format!("Agent started; could not update controller mapping: {error}")
+        })?;
+    }
     snapshot_result()
 }
 
@@ -473,5 +495,19 @@ mod tests {
         assert_eq!(after["items"][1]["checked"], true);
         assert_eq!(after["items"][0]["checked"], false);
         assert_eq!(after["items"][1]["agent"]["state"], "done");
+    }
+    #[test]
+    fn new_agent_registration_preserves_controller_metadata_and_is_idempotent() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("agents.json");
+        fs::write(&path, r#"{"controller_thread":"controller","tasks":[{"id":"existing","pane":"%41","thread":"original"}],"existing":[{"pane":"%40"}]}"#).unwrap();
+        let agent = json!({"id":"new","match":"New task","pane":"%42","session":"clawtab","status":"new.status.json"});
+        register_agent(&path, &agent).unwrap();
+        register_agent(&path, &agent).unwrap();
+        let mapping: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(mapping["controller_thread"], "controller");
+        assert_eq!(mapping["tasks"].as_array().unwrap().len(), 2);
+        assert_eq!(mapping["tasks"][0]["thread"], "original");
+        assert_eq!(mapping["existing"][0]["pane"], "%40");
     }
 }
