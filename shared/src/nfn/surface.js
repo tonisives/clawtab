@@ -12,7 +12,7 @@
   let menu = null;
   let queueReturnId = null;
   let settingsOpen = false, settingsBusy = false, settingsReturnExpanded = false;
-  let explicitOpen = false, hiddenByUser = false;
+  let explicitOpen = false, presented = false, hiddenByUser = false;
   let geometry = {}, layoutAnimation = null, contentAnimations = [], lastSize = "", renderedLayout = "";
   const autoYesBusy = new Set();
   const selectedNotifications = new Set();
@@ -231,7 +231,7 @@
   function collapse(keepVisible) {
     if (typeof keepVisible !== "boolean") keepVisible = explicitOpen && !pendingCount();
     leaveSettings();
-    explicitOpen = keepVisible === true; native({ native: "presentation", active: explicitOpen });
+    presented = false; explicitOpen = keepVisible === true; native({ native: "presentation", active: explicitOpen });
     clearTimeout(completionTimer); pauseTimer(); stopContext(); expanded = false; details = false; queue = false; current = null; focused = false; menu = null;
     native({ native: "text_focus", active: false }); render();
   }
@@ -832,7 +832,10 @@
     if (!continuingAnimation) stopAnimation();
     renderedLayout = signature;
     const count = pendingCount();
-    if (!preview && !settingsOpen && (hiddenByUser || (!explicitOpen && (!snapshot.visible || (!current && !queue && !count))))) { host.className = "empty"; host.replaceChildren(); renderedId = null; card = null; stopContext(); size(); return; }
+    if (!presented && !hiddenByUser && current && records.has(current) && (snapshot.visible || explicitOpen) && !preview) {
+      presented = true; native({ native: "presentation", active: true });
+    }
+    if (!preview && !settingsOpen && (hiddenByUser || (!explicitOpen && !presented && (!snapshot.visible || (!current && !queue && !count))))) { host.className = "empty"; host.replaceChildren(); renderedId = null; card = null; stopContext(); size(); return; }
     host.className = `${placement} ${expanded ? "expanded" : !current ? "pill" : ""} ${details && !settingsOpen ? "details-open" : ""} ${settingsOpen ? "settings-open" : ""} ${queue && !settingsOpen ? "queue-open" : ""} ${menu ? "menu-open" : ""}`;
     let top = host.querySelector(".top");
     if (!top) {

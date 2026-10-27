@@ -252,6 +252,12 @@ fn read_pane_title_sessions() -> Option<HashMap<String, PaneTitleSession>> {
 
 fn session_for_title(conn: &Connection, title: &str, cwd: &str) -> Option<PaneTitleSession> {
     let (name, _) = title.rsplit_once(" | ")?;
+    // The TUI replaces its spinner with either phase of a blinking marker
+    // while a permission prompt is waiting for an answer.
+    let name = name
+        .strip_prefix("[ . ] Action Required | ")
+        .or_else(|| name.strip_prefix("[ ! ] Action Required | "))
+        .unwrap_or(name);
     // Codex prefixes an active task with a Braille spinner, but idle titles
     // start directly with the session name. Preserve non-ASCII user text.
     let name = match name.chars().next() {
@@ -1053,7 +1059,12 @@ mod tests {
                 ('new', 'Test title', '/project', 0);",
         )
         .expect("fixtures");
-        for title in ["Test title | project", "\u{2839} Test title | project"] {
+        for title in [
+            "Test title | project",
+            "\u{2839} Test title | project",
+            "[ . ] Action Required | Test title | project",
+            "[ ! ] Action Required | Test title | project",
+        ] {
             let session =
                 super::session_for_title(&conn, title, "/project").expect("visible session name");
             assert_eq!(session.name, "Test title");
@@ -1118,6 +1129,8 @@ mod tests {
         for title in [
             "Fix state | details | project",
             "\u{2839} Fix state | details | project",
+            "[ . ] Action Required | Fix state | details | project",
+            "[ ! ] Action Required | Fix state | details | project",
         ] {
             assert_eq!(
                 unique_thread_for_title(&conn, title, "/project").as_deref(),

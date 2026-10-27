@@ -13,6 +13,40 @@ static NSUInteger attempts;
 static pid_t previousApplication;
 static BOOL positionSaved;
 
+static void waitForSettledSurface(NSUInteger attempt, void (^finish)(void)) {
+    NSString *script = @"document.querySelector('h1')?.textContent === 'Notification layout test' && document.querySelector('#surface').getAnimations().length === 0";
+    [surface.web evaluateJavaScript:script completionHandler:^(id settled, NSError *error) {
+        if (!error && [settled boolValue]) { finish(); return; }
+        if (attempt >= 100) { fprintf(stderr, "Notification opening animation did not settle\n"); exit(1); }
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 20), dispatch_get_main_queue(), ^{ waitForSettledSurface(attempt + 1, finish); });
+    }];
+}
+
+static void verifyPresentationLifetime(void (^finish)(void)) {
+    NSMutableDictionary *snapshot = [surface.snapshot mutableCopy];
+    snapshot[@"visible"] = @NO;
+    snapshot[@"arrival"] = NSNull.null;
+    NSMutableDictionary *settings = [surface.settings mutableCopy];
+    settings[@"focus"] = @"follow";
+    snapshot[@"settings"] = settings;
+    surface.authorizationKnown = YES;
+    surface.authorized = NO;
+    [surface push:snapshot];
+    if (!surface.panel.visible || !surface.notificationsVisible) { fprintf(stderr, "A platform update immediately hid a displayed card\n"); exit(1); }
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 4), dispatch_get_main_queue(), ^{
+        [surface.web evaluateJavaScript:@"Boolean(document.querySelector('.card')) && !document.querySelector('#surface').classList.contains('empty')" completionHandler:^(id kept, NSError *error) {
+            if (error || ![kept boolValue] || !surface.panel.visible) { fprintf(stderr, "A displayed card disappeared after Focus delivery changed\n"); exit(1); }
+            [surface.web evaluateJavaScript:@"window.nfn.collapse()" completionHandler:^(id value, NSError *collapseError) {
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 4), dispatch_get_main_queue(), ^{
+                    if (collapseError || surface.panel.visible || surface.notificationsVisible) { fprintf(stderr, "Explicit collapse did not release the displayed card\n"); exit(1); }
+                    printf("Native card lifetime checks passed: displayed cards survive Focus delivery changes and close on explicit collapse.\n");
+                    finish();
+                });
+            }];
+        }];
+    });
+}
+
 static void verifyEmptyBarToggle(void (^finish)(void)) {
     NSString *script = @"document.querySelector('.bar-toggle').click(); const historyOpened = document.querySelector('[data-history=true]')?.getAttribute('aria-selected') === 'true'; document.querySelector('.bar-toggle').click(); historyOpened && document.querySelector('#surface').classList.contains('pill')";
     [surface.web evaluateJavaScript:script completionHandler:^(id kept, NSError *error) {
@@ -107,20 +141,29 @@ static void verifyEditing(void (^finish)(void)) {
     }];
 }
 
+static void sampleExpansion(NSMutableArray<NSNumber *> *widths, void (^finish)(void)) {
+    [surface.web evaluateJavaScript:@"document.querySelector('#surface').getBoundingClientRect().width" completionHandler:^(id width, NSError *error) {
+        if (error || ![width isKindOfClass:NSNumber.class]) { fprintf(stderr, "Could not measure the notification animation\n"); exit(1); }
+        [widths addObject:width];
+        if (widths.count >= 10) { finish(); return; }
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 20), dispatch_get_main_queue(), ^{ sampleExpansion(widths, finish); });
+    }];
+}
+
 static void verifyExpansion(void (^finish)(void)) {
     NSRect compact = [surface surfaceFrame], canvas = surface.panel.frame;
     [surface.web evaluateJavaScript:@"document.querySelector('.details-toggle').click()" completionHandler:^(id value, NSError *error) {
         if (error) { fprintf(stderr,"Details did not open\n"); exit(1); }
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 10), dispatch_get_main_queue(), ^{
-            [surface.web evaluateJavaScript:@"document.querySelector('#surface').getBoundingClientRect().width" completionHandler:^(id drawnWidth, NSError *measureError) {
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 2), dispatch_get_main_queue(), ^{
+        NSMutableArray<NSNumber *> *widths = [NSMutableArray array];
+        sampleExpansion(widths, ^{
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 5), dispatch_get_main_queue(), ^{
                 NSRect expanded = [surface surfaceFrame];
                 BOOL anchored = fabs(NSMaxY(expanded) - NSMaxY(compact)) < 1;
                 BOOL fixedCanvas = NSEqualRects(canvas, surface.panel.frame);
-                BOOL animation = NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion || (!measureError &&
-                    [drawnWidth doubleValue] > compact.size.width && [drawnWidth doubleValue] < expanded.size.width);
+                BOOL animation = NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion;
+                for (NSNumber *width in widths) if (width.doubleValue > compact.size.width && width.doubleValue < expanded.size.width) animation = YES;
                 if (expanded.size.width < 600 || expanded.size.height <= compact.size.height + 100 || !anchored || !animation || !fixedCanvas) {
-                    fprintf(stderr,"Expansion failed: compact=%.0fx%.0f drawn=%.0f expanded=%.0fx%.0f anchored=%d animated=%d\n",compact.size.width,compact.size.height,[drawnWidth doubleValue],expanded.size.width,expanded.size.height,anchored,animation); exit(1);
+                    fprintf(stderr,"Expansion failed: compact=%.0fx%.0f drawn=%s expanded=%.0fx%.0f anchored=%d animated=%d\n",compact.size.width,compact.size.height,widths.description.UTF8String,expanded.size.width,expanded.size.height,anchored,animation); exit(1);
                 }
                 [surface.web takeSnapshotWithConfiguration:nil completionHandler:^(NSImage *image, NSError *snapshotError) {
                     if (snapshotError || !image) { fprintf(stderr,"Expanded snapshot failed\n"); exit(1); }
@@ -129,7 +172,6 @@ static void verifyExpansion(void (^finish)(void)) {
                     finish();
                 }];
             });
-            }];
         });
     }];
 }
@@ -181,7 +223,7 @@ int main(int argc, const char **argv) {
                 }
                 [surface push:snapshot];
                 [surface.web evaluateJavaScript:@"document.querySelector('#surface').dispatchEvent(new MouseEvent('mouseenter'))" completionHandler:nil];
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+                waitForSettledSurface(0, ^{
                     BOOL nonactivating = (surface.panel.styleMask & NSWindowStyleMaskNonactivatingPanel) != 0;
                     BOOL foregroundPreserved = NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier == previousApplication;
                     BOOL geometry = surface.surfaceWidth >= 390 && surface.surfaceHeight > 100 && surface.surfaceHeight < 700;
@@ -204,7 +246,7 @@ int main(int argc, const char **argv) {
                         if (geometryOnly) {
                             verifyExpansion(^{
                                 printf("Native geometry checks passed: passive arrival, notch overlap, window cycling excluded, animated expansion and fixed top anchor.\n");
-                                verifyDragging(^{ verifyInlineSettings(^{ clawtab_nfn_stop(); }); });
+                                verifyDragging(^{ verifyPresentationLifetime(^{ verifyInlineSettings(^{ clawtab_nfn_stop(); }); }); });
                             });
                             return;
                         }
@@ -216,7 +258,7 @@ int main(int argc, const char **argv) {
                                     clawtab_nfn_activate(previousApplication);
                                     verifyExpansion(^{
                                         printf("Native checks passed: platform JSON booleans, passive panel, foreground preserved, notch overlap, window cycling excluded, reply focus, Command-A selection, animated expansion and fixed top anchor. Screenshots: /tmp/clawtab-nfn-native.png, /tmp/clawtab-nfn-expanded.png\n");
-                                        verifyDragging(^{ verifyInlineSettings(^{ clawtab_nfn_stop(); }); });
+                                        verifyDragging(^{ verifyPresentationLifetime(^{ verifyInlineSettings(^{ clawtab_nfn_stop(); }); }); });
                                     });
                                 });
                             });

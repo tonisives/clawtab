@@ -220,6 +220,18 @@
   assert(Boolean(document.querySelector(".card")), "actionable cards remain open beyond the preview timer");
   window.nfn.outsideClick();
   assert(Boolean(document.querySelector(".card")), "clicking another app keeps actionable cards available for review");
+  window.nfn.receive({ ...window.fixture.snapshot(), visible: false }); await sleep(180);
+  assert(Boolean(document.querySelector(".card")) && !document.querySelector("#surface").classList.contains("empty"), "a displayed permission stays visible when macOS Focus delivery changes");
+  assert(window.fixture.nativeEvents.filter(event => event.native === "presentation").at(-1)?.active, "a displayed card keeps its native window presented");
+  window.nfn.collapse();
+  assert(document.querySelector("#surface").classList.contains("empty") && !window.fixture.nativeEvents.filter(event => event.native === "presentation").at(-1)?.active, "manual collapse releases the card visibility hold");
+  window.nfn.receive({ ...window.fixture.snapshot(approval.id), visible: false });
+  assert(document.querySelector("#surface").classList.contains("empty"), "a new card still follows Focus before it is first shown");
+  window.nfn.receive(window.fixture.snapshot());
+  assert(Boolean(document.querySelector(".card")), "an unseen pending card appears when delivery becomes available");
+  window.nfn.receive({ ...window.fixture.snapshot(), visible: false });
+  approval.status = "resolved"; window.nfn.receive({ ...window.fixture.snapshot(), visible: false }); await sleep(240);
+  assert(document.querySelector("#surface").classList.contains("empty"), "a displayed permission still leaves the stack once answered elsewhere");
   window.nfn.collapse();
   window.fixture.records.clear();
   const update = window.fixture.record("update", 0); update.request.template = "update";

@@ -117,33 +117,16 @@ impl Service {
             }
             let _guard = self.mutation.lock().await;
             let current: HashSet<String> = self.questions.lock().iter().map(question_key).collect();
+            let current_questions = self
+                .questions_ready
+                .load(Ordering::Relaxed)
+                .then_some(&current);
             if let Ok(records) = self.store.pending() {
                 let mut changed = false;
                 for mut record in records {
-                    if record.status != "pending" {
-                        continue;
-                    }
-                    if record
-                        .request
-                        .expires_at
-                        .is_some_and(|until| until <= now())
-                    {
-                        record.status = "expired".into();
-                    } else if self.questions_ready.load(Ordering::Relaxed)
-                        && record
-                            .question_id
-                            .as_ref()
-                            .is_some_and(|id| !current.contains(id))
-                    {
-                        record.status = "resolved".into();
-                    } else if ticks.is_multiple_of(10)
-                        && record.request.source.pane_id.is_some()
-                        && validate_source(&record.request.source).is_err()
-                    {
-                        record.status = "expired".into();
-                        record.error =
-                            Some("The originating agent session is no longer available".into());
-                    } else {
+                    if !refresh_pending_record(&mut record, current_questions, now(), |source| {
+                        !ticks.is_multiple_of(10) || validate_source(source).is_ok()
+                    }) {
                         continue;
                     }
                     if let Err(error) = self.store.save(&mut record) {
@@ -848,6 +831,38 @@ fn local_enabled(settings: &crate::config::settings::AppSettings, record: &NfnRe
     }
 }
 
+fn refresh_pending_record(
+    record: &mut NfnRecord,
+    questions: Option<&HashSet<String>>,
+    timestamp: i64,
+    source_valid: impl FnOnce(&NfnSource) -> bool,
+) -> bool {
+    if record.status != "pending" {
+        return false;
+    }
+    if record
+        .request
+        .expires_at
+        .is_some_and(|until| until <= timestamp)
+    {
+        record.status = "expired".into();
+    } else if let Some(id) = &record.question_id {
+        // Prompt detection owns the lifetime of terminal permissions. Metadata
+        // lookups can temporarily miss a session while its title changes.
+        // Responding still validates the bound agent and the live prompt.
+        if !questions.is_some_and(|questions| !questions.contains(id)) {
+            return false;
+        }
+        record.status = "resolved".into();
+    } else if record.request.source.pane_id.is_some() && !source_valid(&record.request.source) {
+        record.status = "expired".into();
+        record.error = Some("The originating agent session is no longer available".into());
+    } else {
+        return false;
+    }
+    true
+}
+
 fn question_key(question: &ClaudeQuestion) -> String {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -1034,6 +1049,56 @@ fn same_source(source: &NfnSource, current: &NfnSource) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn pending_permission() -> NfnRecord {
+        serde_json::from_value(json!({
+            "id": "permission", "status": "pending", "created_at": 0, "updated_at": 0,
+            "question_id": "live-prompt",
+            "request": {"title": "Run checks?", "source": {"pane_id": "%10"}}
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn live_permissions_survive_metadata_lookup_failures_and_resolve_with_the_prompt() {
+        let mut record = pending_permission();
+        let questions = HashSet::from(["live-prompt".into()]);
+        for timestamp in [10_000, 20_000, 300_000] {
+            assert!(!refresh_pending_record(
+                &mut record,
+                Some(&questions),
+                timestamp,
+                |_| { panic!("live permission lifetime must not depend on session metadata") }
+            ));
+            assert_eq!(record.status, "pending");
+            assert!(record.error.is_none());
+        }
+        assert!(!refresh_pending_record(&mut record, None, 310_000, |_| {
+            false
+        }));
+        assert!(refresh_pending_record(
+            &mut record,
+            Some(&HashSet::new()),
+            320_000,
+            |_| false
+        ));
+        assert_eq!(record.status, "resolved");
+    }
+
+    #[test]
+    fn explicit_expiry_and_non_prompt_source_checks_still_apply() {
+        let mut record = pending_permission();
+        record.request.expires_at = Some(5_000);
+        assert!(refresh_pending_record(&mut record, None, 5_000, |_| true));
+        assert_eq!(record.status, "expired");
+
+        let mut record = pending_permission();
+        record.question_id = None;
+        assert!(!refresh_pending_record(&mut record, None, 10_000, |_| true));
+        assert!(refresh_pending_record(&mut record, None, 20_000, |_| false));
+        assert_eq!(record.status, "expired");
+        assert!(record.error.is_some());
+    }
 
     #[test]
     fn reported_labels_preserve_the_bound_agent_and_tmux_metadata() {

@@ -14,7 +14,7 @@ Send sits below the full-width reply field. Command + Enter sends the reply; sta
 
 Answer options scroll horizontally without a scrollbar, with Auto-yes fixed on the right for questions. Resolved or dismissed cards leave the active stack after 180 ms, including when answered from another client. They remain readable when opened from History. Status-update payloads can put supporting information in `data.details` to show it only after opening Details.
 
-Clicking another app releases keyboard focus while keeping a review card visible. Click the bar background or press Escape to fold it away without answering.
+Clicking another app releases keyboard focus while keeping a review card visible. Once a card has appeared, changes to macOS Focus do not hide it. Click the bar background or press Escape to fold it away without answering. Permission cards follow the live terminal prompt and remain pending through temporary session-metadata lookup failures. Replies still check the bound agent and current prompt before sending.
 
 Following macOS Focus requires notification and Focus access for **ClawTab Daemon**. When Focus status is unavailable or Focus is active, delivery goes through macOS notifications. macOS then applies its notification settings and Focus allowlist. Independent mode allows the overlay and its sound regardless of Focus. Selecting Both uses the native notification for sound.
 
