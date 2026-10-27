@@ -91,10 +91,10 @@
   window.fixture.records.get("first").request.body = "Updated caption for review";
   window.nfn.receive(window.fixture.snapshot()); await sleep(30);
   assert(document.querySelector(".message").textContent === "Updated caption for review" && document.querySelector("textarea").value === "Keep this draft", "deduplicated updates preserve the reply draft");
-  click("Send"); click("Send"); await sleep(60);
+  const firstSend = document.querySelector(".send"); firstSend.click(); firstSend.click(); await sleep(60);
   const replies = window.fixture.calls.filter(command => command.op === "respond");
   assert(replies.length === 1 && replies[0].id === "first" && replies[0].text === "Keep this draft", "Send delivers the draft once to the selected request");
-  assert(document.querySelector(".send").disabled, "sent cards disable repeat submission");
+  assert(!document.querySelector(".send").disabled, "sending a card leaves the next card ready to answer");
   await sleep(760);
   assert(document.querySelector("h1").textContent === "Second request" && document.querySelector("textarea").value === "Second draft", "successful replies advance to the next card and keep its draft");
   assert(document.querySelector(".count").textContent === "1 / 1", "the count excludes answered notifications");
@@ -102,7 +102,9 @@
   click("Send"); await sleep(60);
   assert(document.querySelector("textarea").value === "Second draft" && document.querySelector(".notice").textContent === "Agent is busy", "failed replies keep the draft and show the delivery error beside it");
   window.fixture.responseError = null;
+  second.status = "resolved"; window.nfn.receive(window.fixture.snapshot());
   window.nfn.collapse();
+  second.status = "pending";
   window.fixture.records.get("first").status = "pending";
   for (let i = 0; i < 65; i++) window.fixture.records.set(`burst-${i}`, window.fixture.record(`burst-${i}`));
   window.nfn.receive(window.fixture.snapshot()); window.nfn.receive({ type: "show" });
@@ -174,10 +176,10 @@
   assert(document.querySelector(".reply-row").hidden, "the reply composer can be collapsed again");
   assert(document.querySelector('.card > .answer-auto-yes [role="switch"]'), "questions show Auto-yes on a separate line below the answer options");
   document.querySelector('[aria-label="Notification options"]').click();
-  const autoYes = document.querySelector('.menu-panel [role="switch"]');
+  let autoYes = document.querySelector('.menu-panel [role="switch"]');
   assert(autoYes && autoYes.getAttribute("aria-checked") === "false" && !document.querySelector(".details-content"), "the top-right options menu contains agent-scoped auto-yes");
   const answerBounds = document.querySelector(".actions").getBoundingClientRect();
-  const autoButton = document.querySelector(".auto-yes-button"), autoBounds = autoButton.getBoundingClientRect();
+  let autoButton = document.querySelector(".auto-yes-button"); const autoBounds = autoButton.getBoundingClientRect();
   assert(autoBounds.top >= answerBounds.bottom && autoBounds.left === answerBounds.left && autoBounds.width === answerBounds.width, "Auto-yes has its own full-width row below the answers");
   assert(autoButton.textContent === "! Yes all" && getComputedStyle(autoButton).color === "rgb(255, 159, 10)" && getComputedStyle(autoButton).borderRadius === "20px", "Auto-yes matches Remote's yellow outlined button and label");
   assert([...document.querySelectorAll(".actions button")].every(control => getComputedStyle(control).borderRadius === "20px" && getComputedStyle(control).whiteSpace === "nowrap"), "answer buttons are rounded and single-line");
@@ -188,7 +190,11 @@
   assert(scroller.scrollLeft > 0 && autoButton.getBoundingClientRect().left === autoBounds.left, "scrolling answer options leaves the separate Auto-yes row fixed");
   const contextCount = window.fixture.contextCalls;
   autoYes.click(); autoYes.click(); await sleep(60);
-  assert(window.fixture.calls.filter(command => command.op === "auto_yes").length === 1 && autoYes.getAttribute("aria-checked") === "true", "auto-yes sends one command and reflects confirmed daemon state");
+  assert(window.fixture.calls.filter(command => command.op === "auto_yes").length === 1 && !document.querySelector(".card"), "auto-yes sends one command and advances past the last card");
+  window.nfn.receive({ type: "latest" });
+  document.querySelector('[aria-label="Notification options"]').click();
+  autoYes = document.querySelector('.menu-panel [role="switch"]'); autoButton = document.querySelector(".auto-yes-button");
+  assert(autoYes.getAttribute("aria-checked") === "true", "reopening an auto-yes card reflects confirmed daemon state");
   for (const animation of autoButton.getAnimations()) animation.finish();
   assert(autoButton.textContent === "! Auto ON" && getComputedStyle(autoButton).backgroundColor === "rgba(255, 159, 10, 0.15)", "enabled Auto-yes uses Remote's active label and yellow fill");
   assert([...document.querySelectorAll('[role="switch"]')].length === 2 && [...document.querySelectorAll('[role="switch"]')].every(control => control.getAttribute("aria-checked") === "true"), "inline and menu Auto-yes share confirmed state");
@@ -197,6 +203,8 @@
   assert(autoYes.getAttribute("aria-checked") === "false", "auto-yes stays in sync with changes from another client");
   window.fixture.autoYesError = "Agent session changed";
   autoYes.click(); await sleep(60);
+  document.querySelector('[aria-label="Notification options"]').click();
+  autoYes = document.querySelector('.menu-panel [role="switch"]');
   assert(autoYes.getAttribute("aria-checked") === "false" && !autoYes.disabled && document.querySelector(".notice").textContent === "Agent session changed", "failed auto-yes keeps its actual state and shows the error");
   window.fixture.autoYesError = null;
   window.nfn.receive({ ...window.fixture.snapshot(), preview: true });
@@ -296,6 +304,7 @@
   assert(Boolean(document.querySelector(".card")), "agent alerts stay open until dismissed or recovered");
   click("Open session"); await sleep(30);
   assert(window.fixture.calls.some(command => command.op === "respond" && command.id === alert.id && command.action_id === "focus") && alert.dismissed_at && !document.querySelector(".card"), "the alert action opens its originating session and dismisses its card");
+  window.nfn.receive(window.fixture.snapshot());
   alert.dismissed_at = null; window.nfn.receive(window.fixture.snapshot(alert.id));
   alert.status = "resolved";
   window.nfn.receive(window.fixture.snapshot());
@@ -500,5 +509,108 @@
   assert(document.querySelector("#surface").classList.contains("empty") && window.fixture.records.get(nextArrival.id).status === "pending", "Close bar hides pending notifications without dismissing or responding to them");
   window.nfn.receive({ type: "latest" });
   assert(document.querySelector("h1")?.textContent === nextArrival.request.title, "the menu icon reopens pending notifications after Close bar");
+
+  const resetFlow = () => {
+    window.nfn.collapse(); window.fixture.records.clear(); window.fixture.autoYesPanes.clear();
+    window.fixture.calls.length = 0; window.fixture.heldOps.clear();
+    window.nfn.receive(window.fixture.snapshot());
+  };
+  const flowRecord = (id, index, update = false) => {
+    const record = window.fixture.record(id, 1); record.created_at = 1000 + index;
+    record.request.title = id; record.request.source.pane_id = `%${id}`;
+    if (update) { record.request.template = "update"; record.request.actions = [{ id: "acknowledge", label: "Got it", kind: "choice" }]; }
+    window.fixture.records.set(id, record); return record;
+  };
+  const release = (id, error = null) => {
+    const index = window.fixture.deferred.findIndex(item => item.command.id === id);
+    if (index < 0) throw new Error(`No deferred action for ${id}`);
+    window.fixture.deferred.splice(index, 1)[0].complete(error);
+  };
+  const title = () => document.querySelector(".card h1")?.textContent;
+  resetFlow();
+  flowRecord("notice-a", 0, true); flowRecord("notice-b", 1, true); flowRecord("notice-c", 2, true);
+  window.fixture.heldOps.add("dismiss");
+  window.nfn.receive(window.fixture.snapshot("notice-c")); nav("Previous");
+  const gotIt = document.querySelector(".actions button"); gotIt.click(); gotIt.click();
+  assert(title() === "notice-c" && window.fixture.deferred.length === 1, "Got it immediately shows the next card and ignores a second click on the submitted card");
+  window.nfn.receive(window.fixture.snapshot());
+  assert(title() === "notice-c" && document.querySelector(".count").textContent === "2 / 2", "snapshots keep a pending dismissal out of the active stack and count");
+  release("notice-b"); await sleep(10);
+  click("Got it");
+  assert(title() === "notice-a" && document.querySelector("#surface").classList.contains("expanded"), "dismissing the last numbered card wraps to the remaining notification without collapsing");
+  document.querySelector("#surface").dispatchEvent(new MouseEvent("mouseleave")); window.nfn.outsideClick(); await sleep(180);
+  assert(title() === "notice-a", "working through updates keeps the next card open beyond the update timer and outside clicks");
+  release("notice-c"); await sleep(10); click("Got it");
+  assert(!title(), "the stack closes only after its final available card is handled");
+  release("notice-a"); await sleep(10);
+  assert([...window.fixture.records.values()].every(record => record.dismissed_at && !record.response), "a run of Got it actions only dismisses notifications");
+
+  resetFlow();
+  flowRecord("reply-a", 0); flowRecord("reply-b", 1); flowRecord("reply-c", 2);
+  window.fixture.heldOps.add("respond"); window.nfn.receive(window.fixture.snapshot("reply-a"));
+  draft("Draft A"); click("Send");
+  assert(title() === "reply-b" && !document.querySelector(".actions button").disabled, "a slow reply leaves the next card immediately usable");
+  draft("Draft B"); click("Send");
+  assert(title() === "reply-c" && window.fixture.deferred.length === 2, "different notifications can submit while earlier actions are still pending");
+  release("reply-b", "Reply B failed"); release("reply-a", "Reply A failed"); await sleep(10);
+  window.nfn.receive(window.fixture.snapshot());
+  assert(title() === "reply-c" && document.querySelector(".notice").textContent === "", "out-of-order failures preserve the card being read and keep its notice clear");
+  click("Approve");
+  assert(title() === "reply-a" && document.querySelector("textarea").value === "Draft A" && document.querySelector(".notice").textContent === "Reply A failed", "a failed action returns after the current card with its draft and error");
+  const retriedSend = document.querySelector(".send"); retriedSend.click(); retriedSend.click();
+  assert(title() === "reply-b" && document.querySelector("textarea").value === "Draft B" && document.querySelector(".notice").textContent === "Reply B failed", "multiple failed cards stay available with their own drafts and errors");
+  release("reply-c"); release("reply-a"); await sleep(10);
+  assert(title() === "reply-b" && !document.querySelector(".send").disabled, "late successes do not advance or disable a different card");
+  click("Send"); release("reply-b"); await sleep(10);
+  assert(!title() && window.fixture.calls.filter(command => command.op === "respond" && command.id === "reply-a").length === 2, "retrying sends once per attempt and completes the queue");
+
+  resetFlow();
+  const automatic = flowRecord("auto-a", 0); automatic.question_id = "auto-prompt";
+  flowRecord("auto-b", 1); flowRecord("auto-c", 2);
+  window.fixture.heldOps.add("auto_yes"); window.nfn.receive(window.fixture.snapshot(automatic.id));
+  document.querySelector(".auto-yes-button").click();
+  assert(title() === "auto-b", "Auto-yes immediately advances while its command is still pending");
+  window.nfn.receive(window.fixture.snapshot());
+  assert(title() === "auto-b" && document.querySelector(".count").textContent === "1 / 2", "a refresh does not return to an Auto-yes action in progress");
+  release("auto-a", "Auto-yes failed"); await sleep(10);
+  assert(title() === "auto-b", "a failed Auto-yes waits until the next card has been read");
+  click("Approve"); await sleep(10);
+  assert(title() === "auto-a" && document.querySelector(".notice").textContent === "Auto-yes failed", "the failed Auto-yes card returns before the remaining untouched card");
+  document.querySelector(".auto-yes-button").click(); release("auto-a"); await sleep(10);
+  window.nfn.receive(window.fixture.snapshot());
+  assert(title() === "auto-c" && window.fixture.autoYesPanes.has("%auto-a") && !automatic.response && !automatic.dismissed_at, "confirmed Auto-yes keeps the next card open without inventing a response or dismissal");
+  automatic.status = "resolved"; window.nfn.receive(window.fixture.snapshot()); click("Approve"); await sleep(10);
+  assert(!title(), "the queue finishes after Auto-yes resolves and the remaining card is answered");
+
+  resetFlow();
+  flowRecord("focus-a", 0); flowRecord("focus-b", 1); flowRecord("focus-c", 2);
+  window.fixture.heldOps.add("focus"); window.fixture.heldOps.add("dismiss");
+  window.nfn.receive(window.fixture.snapshot("focus-a")); click("Open agent");
+  assert(title() === "focus-b", "Open agent also advances before the terminal switch completes");
+  release("focus-a"); await sleep(10);
+  document.querySelector('[aria-label="Notification options"]').click(); click("Dismiss notification");
+  assert(title() === "focus-c" && !document.querySelector(".menu-overlay"), "menu dismissal closes the menu and opens the next notification");
+  window.nfn.collapse(); release("focus-b", "Dismiss failed"); await sleep(10);
+  assert(!title(), "a late failure respects an explicit collapse");
+  window.nfn.receive({ type: "latest" }); nav("Next");
+  assert(title() === "focus-b" && document.querySelector(".notice").textContent === "Dismiss failed", "a failed action remains available when notifications are reopened manually");
+
+  resetFlow();
+  window.fixture.serverOrder = true;
+  for (let i = 0; i < 63; i++) flowRecord(`page-${i}`, i, true);
+  window.nfn.receive(window.fixture.snapshot("page-62"));
+  window.fixture.heldOps.add("list"); nav("Next"); click("Got it");
+  const nextWhileLoading = title(); release(undefined); await sleep(10); window.fixture.heldOps.clear();
+  assert(title() === nextWhileLoading, "a late navigation page cannot skip the card opened by an optimistic action");
+  const handled = new Set(["page-62"]);
+  for (let i = 1; i < 63; i++) {
+    const id = title();
+    if (!id || handled.has(id)) throw new Error(`Queue stopped or repeated at ${i}: ${id}`);
+    handled.add(id); click("Got it"); await sleep(10);
+    if (i % 7 === 0) window.nfn.receive(window.fixture.snapshot());
+  }
+  assert(handled.size === 63 && !title() && [...window.fixture.records.values()].every(record => record.dismissed_at), "draining more than one server page handles every card despite shifted offsets and snapshots");
+  window.fixture.serverOrder = false;
+  assert(window.fixture.deferred.length === 0, "all delayed notification commands completed during the checks");
   return { passed: checks.length, checks };
 })()

@@ -5,13 +5,15 @@ import { fileURLToPath } from "node:url";
 const root = new URL("../../shared/src/nfn/", import.meta.url);
 const read = name => readFileSync(new URL(name, root), "utf8");
 const setup = String.raw`
-window.fixture = { calls: [], records: new Map(), contextCalls: 0, autoYesPanes: new Set(), surfaces: [], nativeEvents: [], settings: { delivery: "enhanced", placement: "notch", display: "primary", focus: "follow", preview_seconds: 8, hover_expand: false, sound: true, menu_bar_icon: true, position: null } };
+window.fixture = { calls: [], records: new Map(), contextCalls: 0, autoYesPanes: new Set(), heldOps: new Set(), deferred: [], surfaces: [], nativeEvents: [], settings: { delivery: "enhanced", placement: "notch", display: "primary", focus: "follow", preview_seconds: 8, hover_expand: false, sound: true, menu_bar_icon: true, position: null } };
 window.webkit = { messageHandlers: { nfn: { postMessage(value) {
   if (value.native) window.fixture.nativeEvents.push(value);
   if (value.native === "surface") window.fixture.surfaces.push({ ...value, at: performance.now() });
   if (!value.command) return;
   const { command, token } = value, fixture = window.fixture;
   fixture.calls.push(command);
+  const complete = (error = null) => {
+  if (error) { window.nfn.receive({ type: "response", token, error }); return; }
   const record = fixture.records.get(command.id);
   let response = record || {};
   if (command.op === "save_settings") {
@@ -57,8 +59,10 @@ window.webkit = { messageHandlers: { nfn: { postMessage(value) {
     record.dismissed_at = Date.now(); record.read_at = Date.now();
     response = { focused: true, record };
   }
-  if (command.op === "list") response = { records: [...fixture.records.values()].filter(r => !command.pending_only || (r.status === "pending" && !r.dismissed_at)).slice(command.offset, command.offset + 50), next_offset: command.offset + 50 };
+  if (command.op === "list") response = { records: fixture.listRecords(command.pending_only).slice(command.offset, command.offset + 50), next_offset: command.offset + 50 };
   setTimeout(() => window.nfn.receive({ type: "response", token, value: response }), 1);
+  };
+  if (fixture.heldOps.has(command.op)) fixture.deferred.push({ command, complete }); else complete();
 } } } };
 window.fixture.record = (id, actions = 4) => ({
   id, status: "pending", read_at: null, dismissed_at: null, created_at: Date.now(),
@@ -66,7 +70,11 @@ window.fixture.record = (id, actions = 4) => ({
     data: { diff: "- Previous caption\n+ New launch caption", plan: "Review the caption\nApprove publication" },
     media: [], actions: ["Approve", "Request changes", "Reject", "Later"].slice(0, actions).map((label, i) => ({ id: String(i), label, kind: "choice" })) }
 });
-window.fixture.snapshot = (arrival = null) => ({ type: "snapshot", visible: true, preview: false, records: [...window.fixture.records.values()].filter(r => r.status === "pending" && !r.dismissed_at).slice(0,50), pending_count: [...window.fixture.records.values()].filter(r => r.status === "pending" && !r.dismissed_at).length, arrival, auto_yes_panes: [...window.fixture.autoYesPanes],
+window.fixture.listRecords = pendingOnly => {
+  const items = [...window.fixture.records.values()].filter(r => !pendingOnly || (["pending", "delivering"].includes(r.status) && !r.dismissed_at));
+  return window.fixture.serverOrder ? items.sort((a, b) => b.created_at - a.created_at || a.id.localeCompare(b.id)) : items;
+};
+window.fixture.snapshot = (arrival = null) => ({ type: "snapshot", visible: true, preview: false, records: window.fixture.listRecords(true).slice(0,50), pending_count: window.fixture.listRecords(true).length, arrival, auto_yes_panes: [...window.fixture.autoYesPanes],
   settings: window.fixture.settings, platform: { displays: [{id:"test-display",name:"Test display"}] }, templates: { templates: [{ id: "review", layout: [{ type: "text", field: "body" }, { type: "row", children: [{ type: "diff", field: "data.diff" }, { type: "plan", field: "data.plan" }] }, { type: "reply" }, { type: "choices" }, { type: "logs" }] }] } });
 `;
 const ready = String.raw`

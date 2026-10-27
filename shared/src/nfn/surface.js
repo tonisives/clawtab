@@ -4,9 +4,12 @@
   const host = document.getElementById("surface");
   const records = new Map(), drafts = new Map(), promises = new Map();
   const replyStates = new Map();
+  // Submitted cards stay out of this pass until the daemon confirms their state.
+  const actionsInProgress = new Map(), actionErrors = new Map(), retryIds = new Set();
+  let reviewVersion = 0;
   let snapshot = {}, current = null, expanded = false, details = false, queue = false, history = false, preview = false;
   let renderedId = null, card = null, logTimer = null, collapseTimer = null, remaining = 8000, timerStarted = 0;
-  let hovering = false, focused = false, busy = false, contextBusy = false, serial = 0, placement = "right";
+  let hovering = false, focused = false, contextBusy = false, serial = 0, placement = "right";
   let historyOffset = 0, historyItems = [], pendingOffset = 50, hasMoreHistory = false, loadingQueue = false;
   let completionTimer = null, navigating = false, unseenPending = 0;
   let menu = null;
@@ -53,14 +56,14 @@
   }
   function pending(record) { return record.status === "pending" || record.status === "delivering"; }
   function hasAgent(record) { const source = record.request.source; return Boolean(source?.pane_id && (source.agent_pid || source.provider || record.question_id)); }
-  function pendingRecords() { return [...records.values()].filter(r => pending(r) && !r.dismissed_at).sort((a, b) => a.created_at - b.created_at); }
+  function pendingRecords(includeActions = false) { return [...records.values()].filter(r => pending(r) && !r.dismissed_at && (includeActions || !actionsInProgress.has(r.id))).sort((a, b) => a.created_at - b.created_at); }
   function pendingCount() { return pendingRecords().length + unseenPending; }
   function addPendingPage(result) {
-    const before = pendingRecords().length;
+    const before = pendingRecords(true).length;
     for (const record of result.records || []) records.set(record.id, record);
-    unseenPending = Math.max(0, unseenPending - (pendingRecords().length - before));
+    unseenPending = Math.max(0, unseenPending - (pendingRecords(true).length - before));
     pendingOffset = result.next_offset || pendingOffset + 50;
-    if (!result.records?.length) unseenPending = 0;
+    if ((result.records?.length || 0) < 50) unseenPending = 0;
   }
   function stripAnsi(text) { return String(text || "").replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "").replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, ""); }
   function renderAnsi(parent, raw) {
@@ -222,13 +225,14 @@
     if (collapseTimer) { clearTimeout(collapseTimer); collapseTimer = null; remaining = Math.max(0, remaining - (performance.now() - timerStarted)); }
   }
   function resumeTimer() {
-    if (expanded || queue || hovering || focused || busy || !current || collapseTimer) return;
+    if (expanded || queue || hovering || focused || actionsInProgress.has(current) || !current || collapseTimer) return;
     const record = records.get(current);
     if (record?.request.template !== "update") return;
     if (record.request.data?.event === "agent_alert" && pending(record)) return;
     timerStarted = performance.now(); collapseTimer = setTimeout(collapse, Math.max(100, remaining));
   }
-  function collapse(keepVisible) {
+  function collapse(keepVisible, finished = false) {
+    if (!finished) reviewVersion++;
     if (typeof keepVisible !== "boolean") keepVisible = explicitOpen && !pendingCount();
     leaveSettings();
     presented = false; explicitOpen = keepVisible === true; native({ native: "presentation", active: explicitOpen });
@@ -238,35 +242,44 @@
   function hideBar() {
     hiddenByUser = true; queueReturnId = null; collapse(false);
   }
+  function resetHandledActions() {
+    for (const [id, action] of actionsInProgress) if (!action.pending) actionsInProgress.delete(id);
+  }
   function toggleBar() {
     if (current || queue || expanded) collapse();
-    else if (pendingCount()) openLatest();
-    else showQueue(true);
+    else {
+      resetHandledActions();
+      if (pendingCount()) openLatest(); else showQueue(true);
+    }
   }
   function openRecord(id) {
-    if (busy) return;
+    if (actionsInProgress.has(id)) return;
     leaveSettings();
     const replyFocused = card?._reply && document.activeElement === card._reply;
     clearTimeout(completionTimer); pauseTimer(); stopContext(); current = id; queueReturnId = id; expanded = true; details = false; queue = false; renderedId = null; menu = null;
-    call({ op: "read", id }).catch(showError); render();
+    call({ op: "read", id }).catch(error => showError(error, id)); render();
     if (replyFocused && card?._reply) card._reply.focus({ preventScroll: true });
   }
   function openLatest() {
+    resetHandledActions();
     const latest = pendingRecords().at(-1);
     if (latest) openRecord(latest.id);
     else { queueReturnId = null; collapse(true); }
   }
   async function navigate(step) {
-    if (busy || navigating) return;
+    if (navigating) return;
+    const id = current, version = reviewVersion;
     navigating = true;
     try {
       let items = pendingRecords(), index = items.findIndex(record => record.id === current);
       while (unseenPending > 0 && (index + step >= items.length || index + step < 0)) {
         const result = await call({ op: "list", offset: pendingOffset, pending_only: true });
         addPendingPage(result);
+        if (current !== id || version !== reviewVersion || queue || settingsOpen) return;
         items = pendingRecords(); index = items.findIndex(record => record.id === current);
       }
-      if (items.length) openRecord(items[(Math.max(index, 0) + step + items.length) % items.length].id);
+      const retry = step > 0 && items.find(record => record.id !== current && retryIds.has(record.id));
+      if (items.length) openRecord((retry || items[(Math.max(index, 0) + step + items.length) % items.length]).id);
     } catch (error) { showError(error); }
     finally { navigating = false; }
   }
@@ -283,7 +296,7 @@
     if (menu === "agent") refreshContext();
   }
   function showQueue(showHistory = false) {
-    if (busy) return;
+    resetHandledActions();
     leaveSettings();
     if (current) queueReturnId = current;
     clearTimeout(completionTimer); pauseTimer(); stopContext(); expanded = true; details = false; queue = true; history = showHistory === true; current = null; renderedId = null; menu = null; selectedNotifications.clear(); queueError = ""; render();
@@ -300,32 +313,67 @@
     }
     if (pendingCount()) await openLatest(); else collapse();
   }
-  function showError(error) {
+  function showError(error, id = current) {
     const message = String(error.message || error);
-    if (card) card._clientError = message;
+    if (id) actionErrors.set(id, message);
+    if (id !== current) return;
     const notice = host.querySelector(".notice"); if (notice) notice.textContent = message;
     const menuNotice = host.querySelector(".menu-notice"); if (menuNotice) menuNotice.textContent = message;
   }
-  async function act(action_id, text) {
-    if (busy || !current) return;
-    const id = current; busy = true; if (card) card._clientError = ""; pauseTimer(); updateCard();
-    const dismissOnly = records.get(id)?.request.template === "update" && action_id === "acknowledge";
-    try {
-      const value = await call(dismissOnly ? { op: "dismiss", id } : { op: "respond", id, action_id, text: text || null });
-      if (value.id) records.set(value.id, value);
-      if (dismissOnly && !preview) { if (current === id) collapse(false); return; }
-      acceptFocus(id, value);
-      if (!preview && value.status === "resolved") {
-        drafts.delete(id); if (current === id && card?._reply) card._reply.value = "";
-      }
-      updateCard();
-    } catch (error) { showError(error); }
-    finally { busy = false; updateCard(); resumeTimer(); }
+  async function advanceAfter(record) {
+    const version = reviewVersion;
+    const next = () => {
+      const items = pendingRecords();
+      return items.find(item => retryIds.has(item.id)) || items.find(item => item.created_at >= record.created_at) || items[0];
+    };
+    // Reload from the front when draining a page: completed actions shift server offsets.
+    let offset = 0;
+    while (current === record.id && version === reviewVersion && !queue && !settingsOpen) {
+      const item = next();
+      if (item) { openRecord(item.id); return; }
+      if (!unseenPending) { collapse(false, true); return; }
+      try {
+        const result = await call({ op: "list", offset, pending_only: true });
+        addPendingPage(result); offset = result.next_offset ?? offset + 50;
+      } catch (error) { showError(error, record.id); return; }
+    }
   }
-  function acceptFocus(id, value) {
-    if (preview || !value.focused) return;
-    if (value.record?.id) records.set(value.record.id, value.record);
-    if (current === id) collapse(false);
+  async function performAction(id, command, accept = () => {}) {
+    if (actionsInProgress.has(id)) return;
+    if (preview) {
+      try { accept(await call(command)); } catch (error) { showError(error, id); }
+      return;
+    }
+    const record = records.get(id);
+    if (!record) return;
+    const version = reviewVersion, state = { pending: true };
+    actionsInProgress.set(id, state); actionErrors.delete(id); retryIds.delete(id);
+    pauseTimer();
+    const response = call(command);
+    if (current === id && !queue && !settingsOpen) advanceAfter(record);
+    try {
+      const value = await response;
+      const updated = value.record || (value.id ? value : null);
+      if (updated) records.set(id, updated);
+      if (value.status === "resolved") drafts.delete(id);
+      accept(value);
+    } catch (error) {
+      actionsInProgress.delete(id);
+      if (!records.has(id)) records.set(id, record);
+      showError(error, id);
+      const latest = records.get(id);
+      if (pending(latest) && !latest.dismissed_at) {
+        retryIds.add(id);
+        if (version === reviewVersion && !current && !queue && !settingsOpen && !hiddenByUser) openRecord(id);
+      }
+    } finally {
+      state.pending = false;
+      render(); resumeTimer();
+    }
+  }
+  async function act(id, action_id, text) {
+    const dismissOnly = records.get(id)?.request.template === "update" && action_id === "acknowledge";
+    await performAction(id, dismissOnly ? { op: "dismiss", id } : { op: "respond", id, action_id, text: text || null });
   }
   function renderBlocks(blocks, parent, record, detail, controls = {}) {
     for (const block of blocks || []) {
@@ -355,14 +403,14 @@
       if (autoYesBusy.has(pane)) return;
       autoYesBusy.add(pane); updateAutoYes();
       try {
-        const value = await call({ op: "auto_yes", id: record.id });
-        if (typeof value.auto_yes === "boolean") {
-          const panes = new Set(snapshot.auto_yes_panes || []);
-          if (value.auto_yes) panes.add(pane); else panes.delete(pane);
-          snapshot.auto_yes_panes = [...panes];
-        }
-      } catch (error) { if (record.id === current) showError(error); }
-      finally { autoYesBusy.delete(pane); updateAutoYes(); }
+        await performAction(record.id, { op: "auto_yes", id: record.id }, value => {
+          if (typeof value.auto_yes === "boolean") {
+            const panes = new Set(snapshot.auto_yes_panes || []);
+            if (value.auto_yes) panes.add(pane); else panes.delete(pane);
+            snapshot.auto_yes_panes = [...panes];
+          }
+        });
+      } finally { autoYesBusy.delete(pane); updateAutoYes(); }
     }, `auto-yes-switch${inCard ? " auto-yes-button" : ""}`);
     control.setAttribute("role", "switch"); control.setAttribute("aria-label", "Auto-yes for this agent");
     control.title = "Automatically answers this agent's prompts until you turn it off";
@@ -414,7 +462,7 @@
     const actions = el("div", "actions"); node._actions = actions;
     const choices = record.request.actions || [];
     for (const [index, action] of choices.entries()) {
-      const control = button(action.label, () => act(action.id, drafts.get(record.id) || ""), index === 0 ? "primary" : "");
+      const control = button(action.label, () => act(record.id, action.id, drafts.get(record.id) || ""), index === 0 ? "primary" : "");
       control.title = action.label;
       actions.append(control);
     }
@@ -445,9 +493,9 @@
       input.placeholder = "Message...";
       input.value = drafts.get(record.id) || "";
       input.addEventListener("input", () => { drafts.set(record.id, input.value); updateCard(); });
-      input.addEventListener("keydown", event => { if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) { event.preventDefault(); act("reply", input.value); } });
+      input.addEventListener("keydown", event => { if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) { event.preventDefault(); act(record.id, "reply", input.value); } });
       node._reply = input; row.append(input);
-      const send = button("Send", () => act("reply", input.value), "primary send");
+      const send = button("Send", () => act(record.id, "reply", input.value), "primary send");
       send.title = "Send reply (Command + Enter)"; node._send = send; row.append(send); reply.append(row); node.append(reply);
     }
     const notice = el("div", "notice"); notice.setAttribute("role", "status"); node._notice = notice; node.append(notice);
@@ -455,12 +503,7 @@
     const detailButton = button(details ? "Hide details" : (record.request.media?.length ? "View attachment" : "Details"), toggleDetails, "utility details-toggle");
     detailButton.setAttribute("aria-expanded", String(details)); utilities.append(detailButton);
     if (record.request.source?.pane_id) {
-      const openAgent = button("Open agent", async () => {
-        openAgent.disabled = true;
-        try { acceptFocus(record.id, await call({ op: "focus", id: record.id })); node._clientError = ""; updateCard(); }
-        catch (error) { showError(error); }
-        finally { openAgent.disabled = false; }
-      }, "utility");
+      const openAgent = button("Open agent", () => performAction(record.id, { op: "focus", id: record.id }), "utility");
       openAgent.title = "Switch to this agent's terminal"; utilities.append(openAgent);
     } else if (record.request.source?.job_id) {
       const openJob = button("Go to job", async () => {
@@ -500,20 +543,19 @@
       const id = current;
       completionTimer = setTimeout(() => {
         if (current !== id || queue) return;
-        const items = pendingRecords();
-        const next = items.find(item => item.created_at >= record.created_at) || items[0];
-        if (next) openRecord(next.id); else collapse();
+        advanceAfter(record);
       }, 180);
     }
     const update = record.request.template === "update";
     const alert = record.request.data?.event === "agent_alert";
+    const busy = actionsInProgress.has(current);
     card._status.classList.toggle("alert", alert && isPending);
     card._status.textContent = record.status === "delivering" || busy ? "Sending..." : isPending ? (alert ? "! Alert" : "") : record.status === "resolved" ? (alert ? "Recovered" : update ? "Seen" : "Sent") : record.status;
     card._options?.setAttribute("aria-expanded", String(menu === "options" || menu === "agent"));
     for (const control of card._actions.querySelectorAll("button")) control.disabled = !isPending || busy || Boolean(record.question_id && drafts.get(record.id)?.trim());
     if (card._send) card._send.disabled = !isPending || busy || !card._reply.value.trim();
     if (card._reply) card._reply.readOnly = !isPending || busy;
-    if (card._clientError) card._notice.textContent = card._clientError;
+    if (actionErrors.has(current)) card._notice.textContent = actionErrors.get(current);
     else if (record.error) card._notice.textContent = record.error;
     else if (!isPending) card._notice.textContent = record.response ? (update ? "Acknowledged" : "Reply sent") : `Request ${record.status}`;
     else card._notice.textContent = "";
@@ -691,9 +733,7 @@
         controls.setAttribute("aria-haspopup", "dialog"); panel.append(controls);
       }
       panel.append(button("Notification settings", openSettings, "utility menu-link"));
-      const dismiss = button("Dismiss notification", async () => {
-        try { await call({ op: "dismiss", id: record.id }); collapse(); } catch (error) { showError(error); }
-      }, "utility dismiss"); dismiss.title = "Remove this card from Pending"; panel.append(dismiss);
+      const dismiss = button("Dismiss notification", () => performAction(record.id, { op: "dismiss", id: record.id }), "utility dismiss"); dismiss.title = "Remove this card from Pending"; panel.append(dismiss);
     } else if (menu === "agent") panel.append(el("div", "agent-controls", "Loading..."));
     const notice = el("div", "notice menu-notice"); notice.setAttribute("role", "status"); panel.append(notice);
     overlay.append(panel); overlay.addEventListener("click", event => { if (event.target === overlay) toggleMenu(menu); }); host.append(overlay);
@@ -892,6 +932,7 @@
       if (value.error) promise.reject(new Error(value.error)); else promise.resolve(value.value); return;
     }
     if (value.type === "show" || value.type === "latest") {
+      resetHandledActions();
       if (value.type === "latest" && !pendingCount() && !host.classList.contains("empty")) { hideBar(); return; }
       hiddenByUser = false;
       explicitOpen = true; native({ native: "presentation", active: true });
@@ -903,15 +944,25 @@
     snapshot = value; preview = Boolean(value.preview);
     const incoming = new Set();
     for (const record of value.records || []) { records.set(record.id, record); incoming.add(record.id); }
-    for (const id of records.keys()) if (id !== current && !incoming.has(id) && !selectedNotifications.has(id)) records.delete(id);
-    unseenPending = Math.max(0, (value.pending_count || 0) - pendingRecords().length);
+    for (const [id, action] of actionsInProgress) {
+      const record = records.get(id);
+      if (!action.pending && (!incoming.has(id) || !pending(record) || record.dismissed_at)) actionsInProgress.delete(id);
+    }
+    for (const id of retryIds) {
+      const record = records.get(id);
+      const noLongerPending = !incoming.has(id) && (value.pending_count || 0) <= incoming.size;
+      if (noLongerPending || (record && (!pending(record) || record.dismissed_at))) { retryIds.delete(id); actionErrors.delete(id); }
+    }
+    for (const id of records.keys()) if (id !== current && !incoming.has(id) && !selectedNotifications.has(id) && !actionsInProgress.has(id) && !retryIds.has(id)) records.delete(id);
+    const knownPending = pendingRecords(true).filter(record => incoming.has(record.id) || !actionsInProgress.has(record.id));
+    unseenPending = Math.max(0, (value.pending_count || 0) - knownPending.length);
     pendingOffset = 50;
     if (current && !incoming.has(current) && !preview) {
       const id = current;
-      call({ op: "get", id }).then(record => { records.set(id, record); if (id === current) updateCard(); }).catch(showError);
+      call({ op: "get", id }).then(record => { records.set(id, record); if (id === current) updateCard(); }).catch(error => showError(error, id));
     }
     if (value.arrival && records.has(value.arrival)) hiddenByUser = false;
-    if (value.arrival && records.has(value.arrival) && !current && !settingsOpen && !busy && !bulkBusy && (!queue || !selectedNotifications.size)) {
+    if (value.arrival && records.has(value.arrival) && !actionsInProgress.has(value.arrival) && !current && !settingsOpen && !bulkBusy && (!queue || !selectedNotifications.size)) {
       clearTimeout(completionTimer); pauseTimer(); stopContext();
       current = value.arrival; queueReturnId = current; queue = false; history = false; details = false; menu = null;
       remaining = (value.settings?.preview_seconds || 8) * 1000; renderedId = null;
