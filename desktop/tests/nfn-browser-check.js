@@ -612,5 +612,30 @@
   assert(handled.size === 63 && !title() && [...window.fixture.records.values()].every(record => record.dismissed_at), "draining more than one server page handles every card despite shifted offsets and snapshots");
   window.fixture.serverOrder = false;
   assert(window.fixture.deferred.length === 0, "all delayed notification commands completed during the checks");
+
+  resetFlow();
+  window.nfn.setPlacement({ placement: "right", reduce_motion: false });
+  flowRecord("slash-a", 0); window.nfn.receive(window.fixture.snapshot("slash-a"));
+  const slashes = () => [...document.querySelectorAll(".claw-slash path")].flatMap(path => path.getAnimations());
+  assert(slashes().length === 3 && slashes().every(animation => animation.effect.getTiming().duration === 200), "a new message draws three claws over the icon in 200 ms");
+  const firstSlash = slashes()[0], slashInput = document.querySelector("textarea");
+  window.nfn.receive(window.fixture.snapshot());
+  assert(slashes()[0] === firstSlash, "a background refresh preserves the arrival animation");
+  await sleep(250);
+  assert(!slashes().length && [...document.querySelectorAll(".claw-slash path")].every(path => getComputedStyle(path).opacity === "0"), "the claw marks clear when the short animation finishes");
+  window.nfn.receive(window.fixture.snapshot("slash-a"));
+  assert(!slashes().length, "repeated delivery of the same arrival does not replay the slash");
+  flowRecord("slash-b", 1); window.nfn.receive(window.fixture.snapshot("slash-b"));
+  assert(slashes().length === 3 && document.querySelector("textarea") === slashInput && title() === "slash-a", "another arriving message animates without replacing the current reply");
+  flowRecord("slash-c", 2); window.nfn.receive(window.fixture.snapshot("slash-c"));
+  assert(slashes().length === 3, "rapid arrivals replace the previous slash instead of stacking animations");
+  window.nfn.setPlacement({ placement: "notch", reduce_motion: true });
+  assert(!slashes().length, "enabling native reduced motion cancels an active slash");
+  flowRecord("slash-reduced", 3); window.nfn.receive(window.fixture.snapshot("slash-reduced"));
+  assert(!slashes().length && document.querySelector(".count").textContent === "1 / 4", "reduced motion still updates the available message count without a slash");
+  window.nfn.setPlacement({ placement: "notch", reduce_motion: false });
+  flowRecord("slash-notch", 4); window.nfn.receive(window.fixture.snapshot("slash-notch"));
+  assert(slashes().length === 3, "the notch placement uses the same arrival slash");
+  await sleep(250);
   return { passed: checks.length, checks };
 })()

@@ -21,6 +21,35 @@
   const selectedNotifications = new Set();
   let bulkBusy = false, queueError = "";
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+  let arrivalAnimations = [], arrivalTimer = null, lastArrivalId = null;
+
+  function stopArrivalAnimation() {
+    clearTimeout(arrivalTimer); arrivalTimer = null;
+    arrivalAnimations.forEach(animation => animation.cancel()); arrivalAnimations = [];
+  }
+  function animateArrival() {
+    stopArrivalAnimation();
+    if (reducedMotion.matches || geometry.reduce_motion || host.classList.contains("empty")) return;
+    for (const path of host.querySelectorAll(".brand .claw-slash path")) {
+      const animation = path.animate([
+        { strokeDashoffset: 1, opacity: 0, offset: 0 },
+        { strokeDashoffset: 1, opacity: 1, offset: .08 },
+        { strokeDashoffset: 0, opacity: 1, offset: .65 },
+        { strokeDashoffset: 0, opacity: 0, offset: 1 }
+      ], { duration: 200, easing: "ease-out" });
+      animation.pause(); arrivalAnimations.push(animation);
+    }
+    // The passive WKWebView can suspend its animation timeline; drive the slash
+    // from elapsed time just like the surface resize.
+    const started = performance.now();
+    function advance() {
+      const elapsed = Math.min(200, performance.now() - started);
+      arrivalAnimations.forEach(animation => { animation.currentTime = elapsed; });
+      if (elapsed >= 200) stopArrivalAnimation(); else arrivalTimer = setTimeout(advance, 16);
+    }
+    advance();
+  }
+  reducedMotion.addEventListener("change", () => { if (reducedMotion.matches) stopArrivalAnimation(); });
 
   function native(value) {
     if (window.webkit?.messageHandlers?.nfn) window.webkit.messageHandlers.nfn.postMessage(value);
@@ -868,6 +897,7 @@
     }, true);
   }
   function render() {
+    if (reducedMotion.matches || geometry.reduce_motion) stopArrivalAnimation();
     const before = host.getBoundingClientRect();
     const signature = JSON.stringify([current, expanded, details, queue, settingsOpen, menu, replyStates.get(current), geometry, snapshot.visible, records.get(current)?.request]);
     const continuingAnimation = layoutAnimation && signature === renderedLayout;
@@ -877,7 +907,7 @@
     if (!presented && !hiddenByUser && current && records.has(current) && (snapshot.visible || explicitOpen) && !preview) {
       presented = true; native({ native: "presentation", active: true });
     }
-    if (!preview && !settingsOpen && (hiddenByUser || (!explicitOpen && !presented && (!snapshot.visible || (!current && !queue && !count))))) { host.className = "empty"; host.replaceChildren(); renderedId = null; card = null; stopContext(); size(); return; }
+    if (!preview && !settingsOpen && (hiddenByUser || (!explicitOpen && !presented && (!snapshot.visible || (!current && !queue && !count))))) { stopArrivalAnimation(); host.className = "empty"; host.replaceChildren(); renderedId = null; card = null; stopContext(); size(); return; }
     host.className = `${placement} ${expanded ? "expanded" : !current ? "pill" : ""} ${details && !settingsOpen ? "details-open" : ""} ${settingsOpen ? "settings-open" : ""} ${queue && !settingsOpen ? "queue-open" : ""} ${menu ? "menu-open" : ""}`;
     let top = host.querySelector(".top");
     if (!top) {
@@ -887,6 +917,13 @@
       draggableBar(toggle); top.append(toggle);
       const latest = button("", openSettings, "utility brand icon-button"); latest.title = "Notification settings"; latest.setAttribute("aria-label", "Notification settings");
       const logo = el("img"); logo.src = "https://cdn.clawtab.cc/assets/app-icon.png"; logo.alt = ""; latest.append(logo); top.append(latest);
+      const slash = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      slash.setAttribute("viewBox", "0 0 28 28"); slash.setAttribute("class", "claw-slash"); slash.setAttribute("aria-hidden", "true");
+      for (const d of ["M17 3Q10 10 3 20", "M22 4Q14 13 6 24", "M26 8Q19 17 12 26"]) {
+        const path = document.createElementNS(slash.namespaceURI, "path");
+        path.setAttribute("d", d); path.setAttribute("pathLength", "1"); slash.append(path);
+      }
+      latest.append(slash);
       const controls = el("div", "top-actions");
       controls.append(iconButton("Previous notification", "M14 6l-6 6 6 6", () => navigate(-1), "nav-step previous"));
       controls.append(el("span", "count"));
@@ -968,6 +1005,9 @@
       remaining = (value.settings?.preview_seconds || 8) * 1000; renderedId = null;
     }
     render(); resumeTimer();
+    if (value.arrival && records.has(value.arrival) && value.arrival !== lastArrivalId) {
+      lastArrivalId = value.arrival; animateArrival();
+    }
     if (value.visible) startContext();
   }
   host.addEventListener("mouseenter", () => { hovering = true; pauseTimer(); if (snapshot.settings?.hover_expand && current && !expanded) openRecord(current); });
