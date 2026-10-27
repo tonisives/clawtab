@@ -33,6 +33,11 @@ button.bar-toggle:active { cursor: grabbing; }
 button.bar-toggle:hover { background: #ffffff08; }
 .top > .icon-button, .top-actions { position: relative; }
 .brand img { width: 20px; height: 20px; border-radius: 5px; }
+.brand .claw-slash { position: absolute; inset: 1px; width: 28px; height: 28px; pointer-events: none; overflow: visible; fill: none; stroke: #ff9f0a; stroke-width: 2; stroke-linecap: round; filter: drop-shadow(0 1px 1px #000); }
+.claw-slash path { stroke-dasharray: 1; stroke-dashoffset: 1; opacity: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .brand .claw-slash { display: none; }
+}
 .count { display: flex; align-items: center; height: 30px; padding: 0 6px; color: inherit; font-size: 11px; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .top-actions { display: flex; align-items: center; justify-content: center; gap: 4px; pointer-events: none; }
 .top-actions button { pointer-events: auto; }
