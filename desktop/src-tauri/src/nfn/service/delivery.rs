@@ -116,7 +116,11 @@ impl Service {
                             ..Default::default()
                         },
                     );
-                    let _ = self.store.save(&mut record);
+                    let _ = self.store.save_delivery(
+                        &record.id,
+                        "mobile",
+                        &record.deliveries["mobile"],
+                    );
                 }
             }
             if record
@@ -150,7 +154,11 @@ impl Service {
                             ..Default::default()
                         },
                     );
-                    if self.store.save(&mut record).is_err() {
+                    if self
+                        .store
+                        .save_delivery(&record.id, &key, &record.deliveries[&key])
+                        .is_err()
+                    {
                         continue;
                     }
                     let Some(service) = service().cloned() else {
@@ -163,7 +171,7 @@ impl Service {
                             crate::telegram::send_clawtab_message(&token, target, &record).await;
                         let _guard = service.mutation.lock().await;
                         if let Ok(mut current) = service.store.get(&record.id) {
-                            let delivery = current.deliveries.entry(key).or_default();
+                            let delivery = current.deliveries.entry(key.clone()).or_default();
                             delivery.updated_at = now();
                             match result {
                                 Ok(ids) => {
@@ -177,7 +185,7 @@ impl Service {
                                     delivery.error = Some(error);
                                 }
                             }
-                            let _ = service.store.save(&mut current);
+                            let _ = service.store.save_delivery(&current.id, &key, delivery);
                             service.changed();
                         }
                     });
@@ -209,7 +217,11 @@ impl Service {
                 let ids = delivery.external_ids.clone();
                 delivery.status = "closing".into();
                 delivery.updated_at = now();
-                if self.store.save(&mut record).is_err() {
+                if self
+                    .store
+                    .save_delivery(&record.id, &key, delivery)
+                    .is_err()
+                {
                     continue;
                 }
                 let Some(service) = service().cloned() else {
@@ -237,8 +249,8 @@ impl Service {
                             .into();
                             delivery.error = result.err();
                             delivery.updated_at = now();
+                            let _ = service.store.save_delivery(&current.id, &key, delivery);
                         }
-                        let _ = service.store.save(&mut current);
                     }
                 });
             }
@@ -255,7 +267,7 @@ impl Service {
                 delivery.status = status.into();
                 delivery.updated_at = now();
                 delivery.error = error;
-                let _ = self.store.save(&mut record);
+                let _ = self.store.save_delivery(&record.id, "mobile", delivery);
                 self.broadcast();
             }
         }

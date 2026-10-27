@@ -199,6 +199,21 @@ impl Store {
         Self::write(&self.conn.lock(), record)
     }
 
+    pub fn save_delivery(
+        &self,
+        id: &str,
+        channel: &str,
+        delivery: &MessageDelivery,
+    ) -> Result<(), String> {
+        let path = format!("$.deliveries.\"{channel}\"");
+        let value = serde_json::to_string(delivery).map_err(|error| error.to_string())?;
+        self.conn.lock().execute(
+            "UPDATE notifications SET record=json_set(record,?2,json(?3),'$.updated_at',?4),updated_at=?4 WHERE id=?1",
+            params![id, path, value, now()],
+        ).map_err(|error| error.to_string())?;
+        Ok(())
+    }
+
     pub fn dismiss_many(&self, ids: &[String]) -> Result<Vec<NfnRecord>, String> {
         let mut conn = self.conn.lock();
         let transaction = conn.transaction().map_err(|e| e.to_string())?;
@@ -293,6 +308,28 @@ mod tests {
         assert_eq!(merged.deliveries, first.deliveries);
         assert_eq!(merged.dismissed_at, first.dismissed_at);
         assert_eq!(merged.request.telegram_chat_id, Some(123));
+    }
+
+    #[test]
+    fn delivery_receipts_preserve_concurrent_channel_updates_and_dismissal() {
+        let store = Store::from_connection(Connection::open_in_memory().unwrap()).unwrap();
+        let (original, _) = store.send(request(), None).unwrap();
+        let mut telegram = request();
+        telegram.channels = vec!["telegram".into()];
+        store.send(telegram, None).unwrap();
+        store.dismiss_many(&[original.id.clone()]).unwrap();
+        let delivery = MessageDelivery {
+            status: "sent".into(),
+            updated_at: now(),
+            ..Default::default()
+        };
+        store
+            .save_delivery(&original.id, "mobile", &delivery)
+            .unwrap();
+        let current = store.get(&original.id).unwrap();
+        assert_eq!(current.request.channels, vec!["desktop", "telegram"]);
+        assert!(current.dismissed_at.is_some());
+        assert_eq!(current.deliveries["mobile"], delivery);
     }
 
     #[test]
