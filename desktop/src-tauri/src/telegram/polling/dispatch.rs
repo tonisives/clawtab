@@ -12,6 +12,9 @@ use crate::telegram::{
 use super::{agent, lock_or_log, AgentState};
 
 pub(super) async fn handle_update(update: &Update, config: &TelegramConfig, state: &AgentState) {
+    if handle_stored_message(update, config).await {
+        return;
+    }
     if let Some(ref message) = update.message {
         if !config.chat_ids.contains(&message.chat.id) {
             log::debug!(
@@ -19,26 +22,6 @@ pub(super) async fn handle_update(update: &Update, config: &TelegramConfig, stat
                 message.chat.id
             );
         } else if let Some(ref text) = message.text {
-            if let (Some(service), Some(parent)) =
-                (crate::nfn::service(), message.reply_to_message.as_ref())
-            {
-                if let Some(result) = service
-                    .telegram_reply(
-                        message.chat.id,
-                        None,
-                        Some(parent.message_id),
-                        None,
-                        Some(text.clone()),
-                    )
-                    .await
-                {
-                    if let Err(error) = result {
-                        let _ = telegram::send_message(&config.bot_token, message.chat.id, &error)
-                            .await;
-                    }
-                    return;
-                }
-            }
             log::info!(
                 "Telegram message from {}: {}",
                 message.chat.id,
@@ -67,21 +50,6 @@ pub(super) async fn handle_update(update: &Update, config: &TelegramConfig, stat
         if !config.chat_ids.contains(&chat_id) {
             return;
         }
-        if let Some(value) = data.strip_prefix("msg:") {
-            if let (Some(service), Some((id, index))) =
-                (crate::nfn::service(), value.rsplit_once(':'))
-            {
-                if let Ok(index) = index.parse::<usize>() {
-                    if let Some(Err(error)) = service
-                        .telegram_reply(chat_id, Some(id), None, Some(index), None)
-                        .await
-                    {
-                        let _ = telegram::send_message(&config.bot_token, chat_id, &error).await;
-                    }
-                }
-            }
-            return;
-        }
         if !config.agent_enabled {
             return;
         }
@@ -92,6 +60,62 @@ pub(super) async fn handle_update(update: &Update, config: &TelegramConfig, stat
             }
         }
     }
+}
+
+pub(super) async fn handle_stored_message(update: &Update, config: &TelegramConfig) -> bool {
+    let Some(service) = crate::nfn::service() else {
+        return false;
+    };
+    let (chat, result) = if let Some(message) = update.message.as_ref() {
+        let (Some(parent), Some(text)) = (message.reply_to_message.as_ref(), message.text.as_ref())
+        else {
+            return false;
+        };
+        (
+            message.chat.id,
+            service
+                .telegram_reply(
+                    message.chat.id,
+                    None,
+                    Some(parent.message_id),
+                    None,
+                    Some(text.clone()),
+                )
+                .await,
+        )
+    } else if let Some(callback) = update.callback_query.as_ref() {
+        let Some(value) = callback
+            .data
+            .as_deref()
+            .and_then(|data| data.strip_prefix("msg:"))
+        else {
+            return false;
+        };
+        let _ = telegram::answer_callback_query(&config.bot_token, &callback.id).await;
+        let (Some(message), Some((id, index))) =
+            (callback.message.as_ref(), value.rsplit_once(':'))
+        else {
+            return true;
+        };
+        let Ok(index) = index.parse() else {
+            return true;
+        };
+        (
+            message.chat.id,
+            service
+                .telegram_reply(message.chat.id, Some(id), None, Some(index), None)
+                .await,
+        )
+    } else {
+        return false;
+    };
+    let Some(result) = result else {
+        return update.callback_query.is_some();
+    };
+    if let Err(error) = result {
+        let _ = telegram::send_message(&config.bot_token, chat, &error).await;
+    }
+    true
 }
 
 pub(super) async fn handle_message(

@@ -177,13 +177,15 @@ Only an actively viewed pane suppresses an automatic alert. ClawTab reports the 
 
 ## Verification
 
-Run Rust tests with the repository's build guard and four workers:
+Run the message checks through the shared macOS build worker from the public checkout:
 
 ```sh
-python3 /path/to/clawtab/scripts/build-guard.py --cwd "$PWD/desktop/src-tauri" -- cargo test --no-default-features --lib nfn:: -j4
-pnpm --dir desktop build
+~/.agents/scripts/buildctl status
+~/.agents/scripts/buildctl run --cwd "$PWD" --prepare-node \
+  --output dist/message-checks=/tmp/clawtab-message-checks -- \
+  python3 tests/check-messages.py
 ```
 
-Run local GUI checks in Tart from the parent checkout with `python3 scripts/test-notifications-tart.py`. The runner uses the shared bmux VM queue, copies only test sources into the guest, runs renderer checks in WebKit and native keyboard, geometry, settings, and menu bar checks, then saves logs and screenshots under `artifacts/tart/`. Set `CLAWTAB_TART_RUNNER` if the shared runner is elsewhere. Unit tests and type checks can run on the host.
+The suite checks the Rust lifecycle, CLI and relay, builds the desktop frontend, checks mobile types, tests offline replies, and runs renderer and native geometry checks in the worker's Tart VM. Logs, screenshots, and measured check durations return to `/tmp/clawtab-message-checks`. Compiler parallelism stays at four workers.
 
 On a disposable macOS CI desktop, generate a fixture with `node desktop/tests/nfn-fixture.mjs /tmp/clawtab-nfn-fixture.html` and run `nfn-webkit.m` with that HTML and `nfn-browser-check.js`. The renderer checks cover stable arrivals, drafts, custom layout order, duplicate clicks, log polling, and queue pagination. Use `--native` when generating the fixture for `nfn-native.m`.

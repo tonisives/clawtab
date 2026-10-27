@@ -40,17 +40,17 @@ impl fmt::Display for GetUpdatesError {
     }
 }
 
-/// Eat any pending updates from a previous instance so we don't replay them,
-/// and capture the offset to use for the first real long-poll. Returns `None`
+/// Recover replies to stored messages, skip old bot commands, and capture the
+/// offset to use for the first real long-poll. Returns `None`
 /// if telegram is unconfigured or the priming call kept failing.
 pub(super) async fn prime_offset(state: &AgentState) -> Option<i64> {
     let config = lock_or_log(&state.settings, "settings").and_then(|s| s.telegram.clone())?;
-    if !config.is_configured() {
+    if config.bot_token.is_empty() {
         return None;
     }
 
     match get_updates(&config.bot_token, None, 0).await {
-        Ok(updates) => return updates.last().map(|u| u.update_id + 1),
+        Ok(updates) => return recover_replies(updates, &config).await,
         Err(_) => {
             // Retry once after a short delay (clears 409 conflict from a
             // sibling long-poll still draining).
@@ -58,10 +58,20 @@ pub(super) async fn prime_offset(state: &AgentState) -> Option<i64> {
         }
     }
 
-    get_updates(&config.bot_token, None, 0)
-        .await
-        .ok()
-        .and_then(|updates| updates.last().map(|u| u.update_id + 1))
+    match get_updates(&config.bot_token, None, 0).await {
+        Ok(updates) => recover_replies(updates, &config).await,
+        Err(_) => None,
+    }
+}
+
+async fn recover_replies(
+    updates: Vec<Update>,
+    config: &crate::telegram::TelegramConfig,
+) -> Option<i64> {
+    for update in &updates {
+        super::dispatch::handle_stored_message(update, config).await;
+    }
+    updates.last().map(|update| update.update_id + 1)
 }
 
 pub(super) async fn get_updates(
