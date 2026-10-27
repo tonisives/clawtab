@@ -80,7 +80,7 @@ window.fixture.listRecords = pendingOnly => {
   return window.fixture.serverOrder ? items.sort((a, b) => b.created_at - a.created_at || a.id.localeCompare(b.id)) : items;
 };
 window.fixture.snapshot = (arrival = null) => ({ todos: window.fixture.todos, type: "snapshot", visible: true, preview: false, records: window.fixture.listRecords(true).slice(0,50), pending_count: window.fixture.listRecords(true).length, arrival, auto_yes_panes: [...window.fixture.autoYesPanes],
-  settings: window.fixture.settings, platform: { displays: [{id:"test-display",name:"Test display"}] }, templates: { templates: [{ id: "review", layout: [{ type: "text", field: "body" }, { type: "row", children: [{ type: "diff", field: "data.diff" }, { type: "plan", field: "data.plan" }] }, { type: "reply" }, { type: "choices" }, { type: "logs" }] }] } });
+  settings: { ...window.fixture.settings }, platform: { displays: [{id:"test-display",name:"Test display"}] }, templates: { templates: [{ id: "review", layout: [{ type: "text", field: "body" }, { type: "row", children: [{ type: "diff", field: "data.diff" }, { type: "plan", field: "data.plan" }] }, { type: "reply" }, { type: "choices" }, { type: "logs" }] }] } });
 `;
 const ready = String.raw`
 window.fixture.records.set("first", window.fixture.record("first"));
