@@ -118,11 +118,11 @@ export function MessageInbox({ selection, popup = false, onSelectDetail, onNavig
     return isMessageTodoCommand(command) ? todoCommand(command) : controller.execute(command);
   }, [controller, todoCommand]);
   const snapshot = useMemo(() => ({
-    type: "snapshot", remote: true, visible: true, preview: false,
+    type: "snapshot", remote: true, visible: true, preview: false, arrival: popup ? selection : undefined,
     records: records.map(surfaceRecord), pending_count: records.filter(messagePending).length,
     auto_yes_panes: [...autoYes], templates_by_machine: templates, todos,
     settings: { preview_seconds: 8, hover_expand: false, placement: "right" },
-  }), [records, autoYes, templates, todos]);
+  }), [records, autoYes, templates, todos, popup, selection]);
 
   const selectionReady = !selection || records.some(record => surfaceId(record) === selection)
     || machines.some(machine => machine.online && selection.startsWith(`${machine.id}::`));
