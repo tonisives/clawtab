@@ -270,15 +270,6 @@ let GeneralSettingsContent = ({ onAddJob }: { onAddJob: () => void }) => {
     }
   }
 
-  const toggleMenuBarIcon = async (hidden: boolean) => {
-    await update({ show_tray_icon: !hidden })
-    try {
-      await invoke("set_tray_icon_visibility", { visible: !hidden })
-    } catch (e) {
-      console.error("Failed to set menu bar icon visibility:", e)
-    }
-  }
-
   const checkForUpdate = async () => {
     setUpdateStatus("checking")
     try {
@@ -346,17 +337,6 @@ let GeneralSettingsContent = ({ onAddJob }: { onAddJob: () => void }) => {
             Hide Title Bar
           </label>
           <span className="hint">Uses overlay style with native traffic light buttons</span>
-        </div>
-        <div className="form-group" style={{ marginBottom: 0 }}>
-          <label className="checkbox-label">
-            <input
-              type="checkbox"
-              checked={!settings.show_tray_icon}
-              onChange={(e) => toggleMenuBarIcon(e.target.checked)}
-            />
-            Hide ClawTab menu bar icon
-          </label>
-          <span className="hint">ClawTab remains available from the Dock when hidden</span>
         </div>
       </div>
 

@@ -26,8 +26,7 @@ static BLUR_GEN: AtomicU64 = AtomicU64::new(0);
 static APP_ACTIVE: Mutex<bool> = Mutex::new(true);
 
 /// Wire a focus listener onto every existing webview window. Call once during
-/// `setup_app`; covers `settings`, `debug`, `pty_debug`, `tmux_debug` since
-/// the desktop app is tray-driven with no main window.
+/// `setup_app`; covers the main `settings` window and debug windows.
 pub fn register(app: &tauri::App) {
     let labels: Vec<String> = app.webview_windows().keys().cloned().collect();
     for label in labels {

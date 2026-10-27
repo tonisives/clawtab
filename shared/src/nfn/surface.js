@@ -11,6 +11,7 @@
   let menu = null;
   let queueReturnId = null;
   let settingsOpen = false, settingsBusy = false, settingsReturnExpanded = false;
+  let explicitOpen = false;
   let geometry = {}, layoutAnimation = null, contentAnimations = [], lastSize = "", renderedLayout = "";
   const autoYesBusy = new Set();
   const selectedNotifications = new Set();
@@ -221,6 +222,7 @@
   }
   function collapse() {
     leaveSettings();
+    explicitOpen = false; native({ native: "presentation", active: false });
     clearTimeout(completionTimer); pauseTimer(); stopContext(); expanded = false; details = false; queue = false; current = null; focused = false; menu = null;
     native({ native: "text_focus", active: false }); render();
   }
@@ -701,6 +703,7 @@
         ["preview_seconds", "Update duration", null],
         ["hover_expand", "Expand on hover", "checkbox"],
         ["sound", "Sound", "checkbox"],
+        ["menu_bar_icon", "Menu bar icon", "checkbox"],
       ];
       for (const [key, title, options] of fields) {
         const row = el("label", "setting-row"), input = el(Array.isArray(options) ? "select" : "input");
@@ -732,7 +735,7 @@
       }
       view._notice = el("div", "notice settings-notice"); view._notice.setAttribute("role", "status"); view.append(view._notice);
     }
-    const values = { delivery: "enhanced", placement: "notch", display: "primary", focus: "follow", preview_seconds: 8, hover_expand: false, sound: true, ...snapshot.settings };
+    const values = { delivery: "enhanced", placement: "notch", display: "primary", focus: "follow", preview_seconds: 8, hover_expand: false, sound: true, menu_bar_icon: true, ...snapshot.settings };
     const display = view.querySelector('[data-setting="display"]');
     const displays = [["primary", "Primary display"], ["built_in", "Built-in display"], ["pointer", "Follow pointer"], ...(snapshot.platform?.displays || []).map(item => [item.id, item.name])];
     if (!displays.some(([id]) => id === values.display)) displays.push([values.display, "Saved display"]);
@@ -793,7 +796,7 @@
     if (!continuingAnimation) stopAnimation();
     renderedLayout = signature;
     const count = pendingCount();
-    if (!preview && !settingsOpen && (!snapshot.visible || (!current && !queue && !count))) { host.className = "empty"; host.replaceChildren(); renderedId = null; card = null; stopContext(); size(); return; }
+    if (!preview && !settingsOpen && ((!snapshot.visible && !explicitOpen) || (!current && !queue && !count))) { host.className = "empty"; host.replaceChildren(); renderedId = null; card = null; stopContext(); size(); return; }
     host.className = `${placement} ${expanded ? "expanded" : !current ? "pill" : ""} ${details && !settingsOpen ? "details-open" : ""} ${settingsOpen ? "settings-open" : ""} ${queue && !settingsOpen ? "queue-open" : ""} ${menu ? "menu-open" : ""}`;
     let top = host.querySelector(".top");
     if (!top) {
@@ -843,7 +846,11 @@
       clearTimeout(promise.timer); promises.delete(String(value.token));
       if (value.error) promise.reject(new Error(value.error)); else promise.resolve(value.value); return;
     }
-    if (value.type === "show") { showQueue(); return; }
+    if (value.type === "show" || value.type === "latest") {
+      explicitOpen = true; native({ native: "presentation", active: true });
+      if (value.type === "latest") openLatest(); else showQueue();
+      return;
+    }
     if (value.type === "settings") { openSettings(); return; }
     if (value.type !== "snapshot") return;
     snapshot = value; preview = Boolean(value.preview);
@@ -856,8 +863,10 @@
       const id = current;
       call({ op: "get", id }).then(record => { records.set(id, record); if (id === current) updateCard(); }).catch(showError);
     }
-    if (value.arrival && records.has(value.arrival) && !current && !queue && !expanded && !hovering && !focused && !busy) {
-      pauseTimer(); current = value.arrival; remaining = (value.settings?.preview_seconds || 8) * 1000; renderedId = null;
+    if (value.arrival && records.has(value.arrival) && !current && !settingsOpen && !busy && !bulkBusy && (!queue || !selectedNotifications.size)) {
+      clearTimeout(completionTimer); pauseTimer(); stopContext();
+      current = value.arrival; queueReturnId = current; queue = false; history = false; details = false; menu = null;
+      remaining = (value.settings?.preview_seconds || 8) * 1000; renderedId = null;
     }
     render(); resumeTimer();
     if (value.visible) startContext();

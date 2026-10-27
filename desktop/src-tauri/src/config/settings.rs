@@ -207,9 +207,6 @@ pub struct AppSettings {
     pub hidden_groups: Vec<String>,
     /// Remote relay server settings
     pub relay: Option<RelaySettings>,
-    /// Whether to show the app icon in the system tray/menu bar
-    #[serde(default = "default_true")]
-    pub show_tray_icon: bool,
     /// Whether to hide the native title bar (uses overlay style)
     pub hide_titlebar: bool,
     /// Per-pane detected process metadata overrides.
@@ -287,7 +284,6 @@ impl Default for AppSettings {
             job_order: HashMap::new(),
             hidden_groups: Vec::new(),
             relay: None,
-            show_tray_icon: true,
             hide_titlebar: true,
             process_overrides: HashMap::new(),
             pinned_items: Vec::new(),

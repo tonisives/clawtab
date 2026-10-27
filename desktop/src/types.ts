@@ -157,7 +157,6 @@ export interface AppSettings {
   job_order: Record<string, string[]>;
   hidden_groups: string[];
   relay: RelaySettings | null;
-  show_tray_icon: boolean;
   hide_titlebar: boolean;
   process_overrides: Record<string, DetectedProcessOverride>;
   pinned_items: string[];
@@ -179,6 +178,7 @@ export interface EnhancedNotificationSettings {
   preview_seconds: number;
   hover_expand: boolean;
   sound: boolean;
+  menu_bar_icon: boolean;
 }
 
 export type InstalledPluginSummary = {

@@ -40,10 +40,15 @@ display: primary         # primary, built_in, pointer, or a display ID
 preview_seconds: 8       # 2–120; status updates only
 hover_expand: false
 sound: true
+menu_bar_icon: true      # ClawTab Daemon's menu bar icon
 position: null
 ```
 
 Dragging sets `placement: custom`, records the display ID, and saves `position: {right: 100, top: 40}` in points from the display's usable top-right corner. Cards grow left and down from this anchor and stay within the display. Choose Notch or Right column to restore an automatic position.
+
+The daemon owns the optional macOS menu bar icon. Its menu opens the latest notification, Pending and History, or notification settings. The desktop app has a Dock icon and does not create a second menu bar icon. Change `menu_bar_icon` in this file or use the **Menu bar icon** checkbox in notification settings; no desktop app or restart is needed.
+
+New notifications open their card when Pending or History is visible. A card being reviewed, an active bulk selection, and the settings form keep their current view.
 
 ## Submit a request
 

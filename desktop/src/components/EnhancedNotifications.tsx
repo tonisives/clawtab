@@ -150,6 +150,7 @@ export function EnhancedNotifications({ settings, onChange }: {
       <div className="nfn-options">
         <label className="checkbox-label"><input type="checkbox" checked={settings.hover_expand} onChange={e => change({ hover_expand: e.target.checked })} />Expand on hover</label>
         <label className="checkbox-label"><input type="checkbox" checked={settings.sound} onChange={e => change({ sound: e.target.checked })} />Sound</label>
+        <label className="checkbox-label"><input type="checkbox" checked={settings.menu_bar_icon} onChange={e => change({ menu_bar_icon: e.target.checked })} />Menu bar icon</label>
       </div>
     </div>
     <span className="hint">Review and permission cards stay open until answered or closed. Status updates pause on hover.</span>

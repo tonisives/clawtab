@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 const root = new URL("../../shared/src/nfn/", import.meta.url);
 const read = name => readFileSync(new URL(name, root), "utf8");
 const setup = String.raw`
-window.fixture = { calls: [], records: new Map(), contextCalls: 0, autoYesPanes: new Set(), surfaces: [], nativeEvents: [], settings: { delivery: "enhanced", placement: "notch", display: "primary", focus: "follow", preview_seconds: 8, hover_expand: false, sound: true, position: null } };
+window.fixture = { calls: [], records: new Map(), contextCalls: 0, autoYesPanes: new Set(), surfaces: [], nativeEvents: [], settings: { delivery: "enhanced", placement: "notch", display: "primary", focus: "follow", preview_seconds: 8, hover_expand: false, sound: true, menu_bar_icon: true, position: null } };
 window.webkit = { messageHandlers: { nfn: { postMessage(value) {
   if (value.native) window.fixture.nativeEvents.push(value);
   if (value.native === "surface") window.fixture.surfaces.push({ ...value, at: performance.now() });

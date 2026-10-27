@@ -12,6 +12,7 @@ pub struct NfnSettings {
     pub preview_seconds: u32,
     pub hover_expand: bool,
     pub sound: bool,
+    pub menu_bar_icon: bool,
 }
 
 impl Default for NfnSettings {
@@ -25,6 +26,7 @@ impl Default for NfnSettings {
             preview_seconds: 8,
             hover_expand: false,
             sound: true,
+            menu_bar_icon: true,
         }
     }
 }

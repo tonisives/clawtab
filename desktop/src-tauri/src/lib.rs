@@ -260,65 +260,6 @@ fn find_menu_item(submenu: &Submenu<tauri::Wry>, label: &str) -> Option<MenuItem
 }
 
 #[cfg(feature = "desktop")]
-pub(crate) fn refresh_tray_usage_menu(
-    app: &tauri::AppHandle,
-    snapshot: Option<&usage::UsageSnapshot>,
-) -> tauri::Result<()> {
-    let Some(tray) = app.tray_by_id("main") else {
-        return Ok(());
-    };
-
-    let show_tray_icon = app
-        .try_state::<AppState>()
-        .map(|state| state.settings.lock().show_tray_icon)
-        .unwrap_or(true);
-    tray.set_visible(show_tray_icon)?;
-
-    let settings_item = MenuItem::with_id(app, "settings", "Settings...", true, None::<&str>)?;
-    let sep1 = PredefinedMenuItem::separator(app)?;
-    let (claude, codex, antigravity, zai) = tray_usage_labels(snapshot);
-    let claude_item = MenuItem::with_id(app, "usage_claude", claude, false, None::<&str>)?;
-    let codex_item = MenuItem::with_id(app, "usage_codex", codex, false, None::<&str>)?;
-    let antigravity_item =
-        MenuItem::with_id(app, "usage_antigravity", antigravity, false, None::<&str>)?;
-    let zai_item = MenuItem::with_id(app, "usage_zai", zai, false, None::<&str>)?;
-    let sep2 = PredefinedMenuItem::separator(app)?;
-    let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-    let tray_menu = Menu::with_items(
-        app,
-        &[
-            &settings_item,
-            &sep1,
-            &claude_item,
-            &codex_item,
-            &antigravity_item,
-            &zai_item,
-            &sep2,
-            &quit_item,
-        ],
-    )?;
-    tray.set_menu(Some(tray_menu))
-}
-
-#[cfg(feature = "desktop")]
-fn tray_usage_labels(snapshot: Option<&usage::UsageSnapshot>) -> (String, String, String, String) {
-    match snapshot {
-        Some(snapshot) => (
-            format!("Claude: {}", snapshot.claude.summary),
-            format!("Codex: {}", snapshot.codex.summary),
-            format!("Antigravity: {}", snapshot.antigravity.summary),
-            format!("z.ai: {}", snapshot.zai.summary),
-        ),
-        None => (
-            "Claude: loading...".to_string(),
-            "Codex: loading...".to_string(),
-            "Antigravity: loading...".to_string(),
-            "z.ai: loading...".to_string(),
-        ),
-    }
-}
-
-#[cfg(feature = "desktop")]
 fn ensure_shortcut_menu_item(
     app: &tauri::AppHandle,
     submenu: &Submenu<tauri::Wry>,
@@ -490,7 +431,6 @@ fn setup_app(
     setup_macos_window(app);
     *ipc_app_handle.lock() = Some(app.handle().clone());
     spawn_desktop_ipc(app);
-    register_tray(app)?;
     let app_menu = build_app_menu(app)?;
     app.set_menu(app_menu)?;
     {
@@ -499,7 +439,6 @@ fn setup_app(
         let _ = refresh_shortcut_menu(&app.handle().clone(), &shortcuts);
     }
     register_menu_events(app);
-    start_usage_loop(app);
     register_settings_close_hide(app);
     focus::register(app);
     spawn_daemon_event_subscription(app, jobs_config);
@@ -578,26 +517,6 @@ fn dispatch_desktop_ipc(
             }
         }
     }
-}
-
-#[cfg(feature = "desktop")]
-fn register_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
-    let Some(tray) = app.tray_by_id("main") else {
-        return Ok(());
-    };
-    refresh_tray_usage_menu(app.handle(), None)?;
-    tray.on_menu_event(|app, event| match event.id.as_ref() {
-        "settings" => {
-            show_settings_window(app);
-        }
-        "quit" => {
-            focus::suspend_if_enabled(app, "app quit");
-            app.state::<AppState>().pty_manager.lock().destroy_all();
-            app.exit(0);
-        }
-        _ => {}
-    });
-    Ok(())
 }
 
 #[cfg(feature = "desktop")]
@@ -714,27 +633,6 @@ fn register_menu_events(app: &tauri::App) {
             let _ = app.emit("shortcut-action", "zoom_active_pane");
         } else if id == MENU_SHORTCUT_TOGGLE_AUTO_YES {
             let _ = app.emit("shortcut-action", "toggle_auto_yes");
-        }
-    });
-}
-
-#[cfg(feature = "desktop")]
-fn start_usage_loop(app: &tauri::App) {
-    let secrets_for_usage = app.state::<AppState>().secrets.clone();
-    let app_for_usage = app.handle().clone();
-    tauri::async_runtime::spawn(async move {
-        loop {
-            let zai_token = {
-                let secrets = secrets_for_usage.lock();
-                let explicit = usage::ZAI_TOKEN_KEYS
-                    .iter()
-                    .map(|key| secrets.get(key).cloned())
-                    .collect();
-                usage::resolve_zai_token_from_sources(explicit)
-            };
-            let usage = usage::fetch_usage_snapshot(zai_token).await;
-            let _ = refresh_tray_usage_menu(&app_for_usage, Some(&usage));
-            tokio::time::sleep(std::time::Duration::from_secs(5 * 60)).await;
         }
     });
 }
@@ -904,7 +802,6 @@ pub fn run() {
             commands::browser::clear_browser_session,
             commands::browser::check_playwright_installed,
             commands::settings::set_titlebar_visibility,
-            commands::settings::set_tray_icon_visibility,
             commands::updater::get_version,
             commands::updater::check_for_update,
             commands::updater::restart_app,

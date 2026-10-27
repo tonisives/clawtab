@@ -82,16 +82,27 @@ mod tests {
             preview_seconds: 30,
             ..Default::default()
         };
-        let parsed = parse("placement: right\ndisplay: built_in\n", &current).unwrap();
+        let parsed = parse(
+            "placement: right\ndisplay: built_in\nmenu_bar_icon: false\n",
+            &current,
+        )
+        .unwrap();
         assert_eq!(parsed.placement, "right");
         assert_eq!(parsed.display, "built_in");
         assert!(!parsed.sound);
         assert_eq!(parsed.preview_seconds, 30);
+        assert!(!parsed.menu_bar_icon);
+        assert!(
+            parse("sound: false", &NfnSettings::default())
+                .unwrap()
+                .menu_bar_icon
+        );
         for yaml in [
             "postion: right",
             "placement: bottom",
             "preview_seconds: 0",
             "sound: perhaps",
+            "menu_bar_icon: perhaps",
             "- right",
         ] {
             assert!(parse(yaml, &current).is_err(), "{yaml}");

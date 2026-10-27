@@ -9,7 +9,12 @@ mod macos {
     };
     static RUNTIME: OnceLock<tokio::runtime::Handle> = OnceLock::new();
     extern "C" {
-        fn clawtab_nfn_run(html: *const c_char, callback: extern "C" fn(*const c_char)) -> i32;
+        fn clawtab_nfn_run(
+            html: *const c_char,
+            icon: *const u8,
+            icon_len: usize,
+            callback: extern "C" fn(*const c_char),
+        ) -> i32;
         fn clawtab_nfn_push(value: *const c_char);
         fn clawtab_nfn_stop();
         fn clawtab_nfn_activate(pid: u32);
@@ -54,7 +59,8 @@ mod macos {
         let Ok(html) = CString::new(html) else {
             return false;
         };
-        unsafe { clawtab_nfn_run(html.as_ptr(), receive) == 0 }
+        let icon = include_bytes!("../../icons/tray-icon.png");
+        unsafe { clawtab_nfn_run(html.as_ptr(), icon.as_ptr(), icon.len(), receive) == 0 }
     }
     pub fn push(value: Value) {
         if let Ok(json) = CString::new(value.to_string()) {

@@ -61,6 +61,9 @@ static NfnCallback callback;
 @property BOOL dragging;
 @property NSPoint dragAnchor;
 @property BOOL settingsVisible;
+@property BOOL notificationsVisible;
+@property NSStatusItem *statusItem;
+@property NSImage *statusIcon;
 @property BOOL pointerDown;
 @property NSDictionary *pendingPresentation;
 @end
@@ -82,9 +85,10 @@ static void emit(NSDictionary *value) {
 }
 
 @implementation NfnSurface
-- (instancetype)initWithHTML:(NSString *)html {
+- (instancetype)initWithHTML:(NSString *)html statusIcon:(NSImage *)icon {
     if (!(self = [super init])) return nil;
     self.settings = @{};
+    self.statusIcon = icon;
     self.notchGeometry = [NSMutableDictionary dictionary];
     for (NSScreen *screen in NSScreen.screens) [self notchForScreen:screen];
     self.media = [NSMutableDictionary dictionary];
@@ -155,6 +159,29 @@ static void emit(NSDictionary *value) {
 }
 
 - (void)activationChanged:(NSNotification *)notification { [self publishPlatform]; }
+- (void)updateStatusItem {
+    BOOL enabled = !self.settings[@"menu_bar_icon"] || [self.settings[@"menu_bar_icon"] boolValue];
+    if (!enabled) {
+        if (self.statusItem) [NSStatusBar.systemStatusBar removeStatusItem:self.statusItem];
+        self.statusItem = nil;
+        return;
+    }
+    if (self.statusItem) return;
+    self.statusItem = [NSStatusBar.systemStatusBar statusItemWithLength:NSSquareStatusItemLength];
+    self.statusItem.button.image = self.statusIcon;
+    self.statusItem.button.toolTip = @"ClawTab Daemon";
+    self.statusItem.button.accessibilityLabel = @"ClawTab Daemon";
+    NSMenu *menu = [NSMenu new];
+    NSArray *titles = @[@"Notifications", @"Pending and History", @"Notification Settings..."];
+    NSArray *actions = @[@"latest", @"show", @"settings"];
+    for (NSUInteger i = 0; i < titles.count; i++) {
+        NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:titles[i] action:@selector(openFromStatusItem:) keyEquivalent:@""];
+        item.target = self; item.representedObject = actions[i];
+        [menu addItem:item];
+    }
+    self.statusItem.menu = menu;
+}
+- (void)openFromStatusItem:(NSMenuItem *)item { [self push:@{@"type":item.representedObject}]; }
 - (void)screensChanged:(NSNotification *)notification {
     NSMutableSet *connected = [NSMutableSet set];
     for (NSScreen *screen in NSScreen.screens) [connected addObject:[screen.deviceDescription[@"NSScreenNumber"] stringValue]];
@@ -183,7 +210,7 @@ static void emit(NSDictionary *value) {
 }
 
 - (BOOL)allowsOverlay {
-    if (self.settingsVisible) return YES;
+    if (self.settingsVisible || self.notificationsVisible) return YES;
     if ([self.settings[@"delivery"] isEqual:@"native"]) return NO;
     if ([self.settings[@"focus"] isEqual:@"independent"]) return YES;
     id focused = [self focusStatus];
@@ -349,9 +376,14 @@ static void emit(NSDictionary *value) {
         self.settingsVisible = YES;
         if (!self.ready) self.pendingPresentation = value;
     }
+    if ([value[@"type"] isEqual:@"show"] || [value[@"type"] isEqual:@"latest"]) {
+        self.notificationsVisible = YES;
+        if (!self.ready) self.pendingPresentation = value;
+    }
     if ([value[@"type"] isEqual:@"snapshot"]) {
         self.snapshot = value;
         self.settings = value[@"settings"] ?: @{};
+        [self updateStatusItem];
         [self positionWidth:self.surfaceWidth height:self.surfaceHeight];
         [self.media removeAllObjects];
         for (NSDictionary *record in value[@"records"]) {
@@ -362,7 +394,7 @@ static void emit(NSDictionary *value) {
             }
         }
         [self requestFocusIfNeeded];
-        if (!self.settingsVisible && (![value[@"visible"] boolValue] || ![self allowsOverlay])) { [self.panel orderOut:nil]; [self releaseTextFocus]; }
+        if (!self.settingsVisible && !self.notificationsVisible && (![value[@"visible"] boolValue] || ![self allowsOverlay])) { [self.panel orderOut:nil]; [self releaseTextFocus]; }
         if ([value[@"sound"] boolValue] && [value[@"visible"] boolValue] && [self allowsOverlay]) {
             if ([self.settings[@"focus"] isEqual:@"independent"] || self.soundAllowed) [[NSSound soundNamed:@"Glass"] play];
         }
@@ -388,10 +420,11 @@ static void emit(NSDictionary *value) {
         self.surfaceWidth = [value[@"width"] doubleValue]; self.surfaceHeight = [value[@"height"] doubleValue];
         if (self.surfaceWidth < 1 || self.surfaceHeight < 1) { [self.panel orderOut:nil]; [self releaseTextFocus]; return; }
         [self positionWidth:self.surfaceWidth height:self.surfaceHeight];
-        if (!self.panel.visible && (self.settingsVisible || [self.snapshot[@"visible"] boolValue]) && [self allowsOverlay]) [self.panel orderFrontRegardless];
-    } else if ([operation isEqual:@"settings"]) {
-        self.settingsVisible = [value[@"active"] boolValue];
-        if (self.settingsVisible) [self.panel orderFrontRegardless];
+        if (!self.panel.visible && (self.settingsVisible || self.notificationsVisible || [self.snapshot[@"visible"] boolValue]) && [self allowsOverlay]) [self.panel orderFrontRegardless];
+    } else if ([operation isEqual:@"settings"] || [operation isEqual:@"presentation"]) {
+        if ([operation isEqual:@"settings"]) self.settingsVisible = [value[@"active"] boolValue];
+        else self.notificationsVisible = [value[@"active"] boolValue];
+        if (self.settingsVisible || self.notificationsVisible) [self.panel orderFrontRegardless];
         else if (![self.snapshot[@"visible"] boolValue] || ![self allowsOverlay]) { [self.panel orderOut:nil]; [self releaseTextFocus]; }
     } else if ([operation isEqual:@"drag"]) {
         [self drag:value];
@@ -471,14 +504,16 @@ static void emit(NSDictionary *value) {
 - (void)webView:(WKWebView *)webView stopURLSchemeTask:(id<WKURLSchemeTask>)task { [self.stoppedTasks addObject:task]; }
 @end
 
-int clawtab_nfn_run(const char *html, NfnCallback handler) {
+int clawtab_nfn_run(const char *html, const unsigned char *iconBytes, size_t iconLength, NfnCallback handler) {
     @autoreleasepool {
         if (@available(macOS 12.0, *)) {} else { return 1; }
         if (!NSThread.isMainThread || !NSScreen.screens.count) return 1;
         callback = handler;
         [NSApplication sharedApplication];
         [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
-        surface = [[NfnSurface alloc] initWithHTML:[NSString stringWithUTF8String:html]];
+        NSImage *icon = [[NSImage alloc] initWithData:[NSData dataWithBytes:iconBytes length:iconLength]];
+        icon.size = NSMakeSize(18, 18); icon.template = YES;
+        surface = [[NfnSurface alloc] initWithHTML:[NSString stringWithUTF8String:html] statusIcon:icon];
         [NSApp run];
         return 0;
     }
