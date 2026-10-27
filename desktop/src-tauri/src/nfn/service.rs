@@ -473,9 +473,9 @@ impl Service {
             }
             NfnCommand::Focus { id } => {
                 let record = self.store.get(&id)?;
-                validate_source(&record.request.source)?;
-                focus_source(&record.request.source).await?;
-                return Ok(json!({"focused":true}));
+                let result = self.focus_notification(&record).await?;
+                self.changed();
+                return Ok(result);
             }
             NfnCommand::AutoYes { id } => {
                 let record = self.store.get(&id)?;
@@ -609,6 +609,13 @@ impl Service {
         Ok(result)
     }
 
+    async fn focus_notification(&self, record: &NfnRecord) -> Result<Value, String> {
+        validate_source(&record.request.source)?;
+        focus_source(&record.request.source).await?;
+        let dismissed = self.store.dismiss_many(std::slice::from_ref(&record.id))?;
+        Ok(json!({"focused":true, "record":dismissed[0]}))
+    }
+
     async fn respond(
         &self,
         id: &str,
@@ -644,6 +651,9 @@ impl Service {
                 .cloned()
                 .ok_or("Unknown response action")?
         };
+        if action.kind == "focus" {
+            return self.focus_notification(&record).await;
+        }
         if action.kind != "choice" {
             validate_source(&record.request.source)?;
             let pane = record
@@ -653,10 +663,6 @@ impl Service {
                 .as_deref()
                 .ok_or("Action requires an agent")?;
             return match action.kind.as_str() {
-                "focus" => {
-                    focus_source(&record.request.source).await?;
-                    Ok(json!({"focused":true}))
-                }
                 "auto_yes" => {
                     match ipc::send_command(ipc::IpcCommand::ToggleAutoYes {
                         pane_id: pane.into(),

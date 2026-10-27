@@ -175,7 +175,7 @@
         (Math.abs(before.width - after.width) > 1 || Math.abs(before.height - after.height) > 1)) {
       // Keep text at its final reading width while the surrounding shape grows.
       // Reflowing every animation frame makes the controls and output jump.
-      for (const node of host.querySelectorAll(":scope > .top, :scope > .card, :scope > .queue, :scope > .notification-settings")) {
+      for (const node of host.querySelectorAll(":scope > .top, :scope > .card, :scope > .queue, :scope > .notification-settings, :scope > .menu-overlay")) {
         node.style.width = `${after.width - (placement === "notch" ? 0 : 2)}px`;
         if (fadeContent && !node.classList.contains("top")) {
           const fade = node.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 280, delay: 60, fill: "backwards" });
@@ -312,12 +312,18 @@
     try {
       const value = await call({ op: "respond", id, action_id, text: text || null });
       if (value.id) records.set(value.id, value);
+      acceptFocus(id, value);
       if (!preview && value.status === "resolved") {
         drafts.delete(id); if (current === id && card?._reply) card._reply.value = "";
       }
       updateCard();
     } catch (error) { showError(error); }
     finally { busy = false; updateCard(); resumeTimer(); }
+  }
+  function acceptFocus(id, value) {
+    if (preview || !value.focused) return;
+    if (value.record?.id) records.set(value.record.id, value.record);
+    if (current === id) collapse(false);
   }
   function renderBlocks(blocks, parent, record, detail, controls = {}) {
     for (const block of blocks || []) {
@@ -449,7 +455,7 @@
     if (record.request.source?.pane_id) {
       const openAgent = button("Open agent", async () => {
         openAgent.disabled = true;
-        try { await call({ op: "focus", id: record.id }); node._clientError = ""; updateCard(); }
+        try { acceptFocus(record.id, await call({ op: "focus", id: record.id })); node._clientError = ""; updateCard(); }
         catch (error) { showError(error); }
         finally { openAgent.disabled = false; }
       }, "utility");
@@ -541,7 +547,7 @@
         }
         buildPlugins(agent, value.plugins || [], value.models || [], id);
         if (!agent.childElementCount) agent.append(el("div", "meta", "No controls available"));
-        fitMenu(); animateLayout(beforeMenu, false);
+        animateLayout(beforeMenu, false);
       }
       if (before) animateLayout(before, false);
     } catch (error) { if (id === current) { if (card?._logs) card._logs.textContent = String(error.message || error); showError(error); } }
@@ -564,7 +570,7 @@
         inputs.set(parameter.name, input); label.append(input); fields.append(label);
       }
     }
-    select.addEventListener("change", () => { const before = host.getBoundingClientRect(); renderFields(); fitMenu(); animateLayout(before, false); }); renderFields();
+    select.addEventListener("change", () => { const before = host.getBoundingClientRect(); renderFields(); animateLayout(before, false); }); renderFields();
     group.append(select, fields, button("Run action", async () => {
       const parameters = Object.fromEntries([...inputs].map(([key, input]) => [key, input.value]));
       try { const value = await call({ op: "plugin", id, action_id: select.value, parameters }); if (card?._notice) card._notice.textContent = value.run?.progress || "Action started"; } catch (error) { showError(error); }
@@ -666,7 +672,7 @@
   }
   function renderMenu() {
     const existing = host.querySelector(".menu-overlay");
-    if (!menu || !current || settingsOpen) { existing?.remove(); host.style.removeProperty("--menu-min-height"); return; }
+    if (!menu || !current || settingsOpen) { existing?.remove(); return; }
     if (existing?.dataset.menu === menu && existing.dataset.id === (current || "")) return;
     existing?.remove();
     const record = records.get(current), overlay = el("div", "menu-overlay");
@@ -682,20 +688,14 @@
         const controls = button("Agent controls", () => toggleMenu("agent"), "utility menu-link");
         controls.setAttribute("aria-haspopup", "dialog"); panel.append(controls);
       }
+      panel.append(button("Notification settings", openSettings, "utility menu-link"));
       const dismiss = button("Dismiss notification", async () => {
         try { await call({ op: "dismiss", id: record.id }); collapse(); } catch (error) { showError(error); }
       }, "utility dismiss"); dismiss.title = "Remove this card from Pending"; panel.append(dismiss);
     } else if (menu === "agent") panel.append(el("div", "agent-controls", "Loading..."));
-    if (menu !== "agent") panel.append(button("Notification settings", openSettings, "utility menu-link"));
     const notice = el("div", "notice menu-notice"); notice.setAttribute("role", "status"); panel.append(notice);
     overlay.append(panel); overlay.addEventListener("click", event => { if (event.target === overlay) toggleMenu(menu); }); host.append(overlay);
-    updateAutoYes(); fitMenu();
-  }
-  function fitMenu() {
-    const panel = host.querySelector(".menu-panel");
-    if (!panel) return;
-    const top = placement === "notch" ? (geometry.overlap || 38) + 76 : 76;
-    host.style.setProperty("--menu-min-height", `${Math.max(menu === "agent" ? 340 : 0, top + panel.scrollHeight + 18)}px`);
+    updateAutoYes();
   }
   function leaveSettings() {
     if (!settingsOpen) return;

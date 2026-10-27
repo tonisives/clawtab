@@ -42,11 +42,19 @@ window.webkit = { messageHandlers: { nfn: { postMessage(value) {
       return;
     }
     if (record.request.actions.find(action => action.id === command.action_id)?.kind === "focus") {
-      response = { focused: true };
+      response = { focused: true, record };
     } else {
       record.status = "resolved";
       record.response = { action_id: command.action_id, text: command.text };
     }
+  }
+  if (command.op === "focus" || response.focused) {
+    if (fixture.focusError) {
+      setTimeout(() => window.nfn.receive({ type: "response", token, error: fixture.focusError }), 1);
+      return;
+    }
+    record.dismissed_at = Date.now(); record.read_at = Date.now();
+    response = { focused: true, record };
   }
   if (command.op === "list") response = { records: [...fixture.records.values()].filter(r => !command.pending_only || (r.status === "pending" && !r.dismissed_at)).slice(command.offset, command.offset + 50), next_offset: command.offset + 50 };
   setTimeout(() => window.nfn.receive({ type: "response", token, value: response }), 1);

@@ -22,6 +22,57 @@ static void waitForSettledSurface(NSUInteger attempt, void (^finish)(void)) {
     }];
 }
 
+static void saveSurfaceSnapshot(NSString *path, void (^finish)(void)) {
+    [surface.web evaluateJavaScript:@"(() => { const r = document.querySelector('#surface').getBoundingClientRect(); return [r.x, r.y, r.width, r.height]; })()" completionHandler:^(id bounds, NSError *error) {
+        if (error || ![bounds isKindOfClass:NSArray.class]) { fprintf(stderr, "Could not measure notification screenshot\n"); exit(1); }
+        WKSnapshotConfiguration *configuration = [WKSnapshotConfiguration new];
+        configuration.rect = NSMakeRect([bounds[0] doubleValue], [bounds[1] doubleValue], [bounds[2] doubleValue], [bounds[3] doubleValue]);
+        [surface.web takeSnapshotWithConfiguration:configuration completionHandler:^(NSImage *image, NSError *snapshotError) {
+            if (snapshotError || !image) { fprintf(stderr, "Could not capture notification screenshot\n"); exit(1); }
+            NSBitmapImageRep *bitmap = [NSBitmapImageRep imageRepWithData:image.TIFFRepresentation];
+            [[bitmap representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:path atomically:YES];
+            finish();
+        }];
+    }];
+}
+
+static void verifyMenuLayout(void (^finish)(void)) {
+    NSDictionary *original = surface.snapshot;
+    NSMutableDictionary *snapshot = [NSJSONSerialization JSONObjectWithData:[NSJSONSerialization dataWithJSONObject:original options:0 error:nil] options:NSJSONReadingMutableContainers error:nil];
+    NSMutableDictionary *request = snapshot[@"records"][0][@"request"];
+    request[@"template"] = @"update";
+    request[@"body"] = @"The agent finished its turn and is ready for your next message.";
+    request[@"actions"] = @[@{@"id":@"focus", @"label":@"Open session", @"kind":@"focus"}, @{@"id":@"acknowledge", @"label":@"Got it", @"kind":@"choice"}];
+    snapshot[@"arrival"] = snapshot[@"records"][0][@"id"];
+    NSString *position = surface.notchPlacement ? @"notch" : @"right";
+    [surface.web evaluateJavaScript:@"window.nfn.collapse()" completionHandler:^(id value, NSError *error) {
+        [surface push:snapshot];
+        waitForSettledSurface(0, ^{
+            CGFloat compactHeight = surface.surfaceHeight;
+            if (surface.surfaceWidth < 520 || compactHeight < 280) { fprintf(stderr, "Short notification is smaller than its minimum size\n"); exit(1); }
+            saveSurfaceSnapshot([NSString stringWithFormat:@"/tmp/clawtab-nfn-short-%@.png", position], ^{
+                [surface.web evaluateJavaScript:@"document.querySelector('[aria-label=\"Notification options\"]').click()" completionHandler:^(id result, NSError *menuError) {
+                    if (menuError) { fprintf(stderr, "Could not open notification options\n"); exit(1); }
+                    waitForSettledSurface(0, ^{
+                        [surface.web evaluateJavaScript:@"(() => { const host = document.querySelector('#surface').getBoundingClientRect(), menu = document.querySelector('.menu-panel'), bounds = menu.getBoundingClientRect(); return bounds.bottom <= host.bottom - 8 && bounds.right <= host.right && menu.scrollHeight <= menu.clientHeight + 1; })()" completionHandler:^(id fits, NSError *fitError) {
+                            if (fitError || ![fits boolValue] || surface.surfaceHeight <= compactHeight) { fprintf(stderr, "Options do not fit inside the expanded native notification\n"); exit(1); }
+                            saveSurfaceSnapshot([NSString stringWithFormat:@"/tmp/clawtab-nfn-options-%@.png", position], ^{
+                                [surface.web evaluateJavaScript:@"window.nfn.collapse()" completionHandler:^(id closed, NSError *closeError) {
+                                    [surface push:original];
+                                    waitForSettledSurface(0, ^{
+                                        printf("Native menu checks passed: larger short cards, all option rows visible, window expands to fit.\n");
+                                        finish();
+                                    });
+                                }];
+                            });
+                        }];
+                    });
+                }];
+            });
+        });
+    }];
+}
+
 static void verifyPresentationLifetime(void (^finish)(void)) {
     NSMutableDictionary *snapshot = [surface.snapshot mutableCopy];
     snapshot[@"visible"] = @NO;
@@ -246,7 +297,7 @@ int main(int argc, const char **argv) {
                         if (geometryOnly) {
                             verifyExpansion(^{
                                 printf("Native geometry checks passed: passive arrival, notch overlap, window cycling excluded, animated expansion and fixed top anchor.\n");
-                                verifyDragging(^{ verifyPresentationLifetime(^{ verifyInlineSettings(^{ clawtab_nfn_stop(); }); }); });
+                                verifyMenuLayout(^{ verifyDragging(^{ verifyPresentationLifetime(^{ verifyInlineSettings(^{ clawtab_nfn_stop(); }); }); }); });
                             });
                             return;
                         }
@@ -258,7 +309,7 @@ int main(int argc, const char **argv) {
                                     clawtab_nfn_activate(previousApplication);
                                     verifyExpansion(^{
                                         printf("Native checks passed: platform JSON booleans, passive panel, foreground preserved, notch overlap, window cycling excluded, reply focus, Command-A selection, animated expansion and fixed top anchor. Screenshots: /tmp/clawtab-nfn-native.png, /tmp/clawtab-nfn-expanded.png\n");
-                                        verifyDragging(^{ verifyPresentationLifetime(^{ verifyInlineSettings(^{ clawtab_nfn_stop(); }); }); });
+                                        verifyMenuLayout(^{ verifyDragging(^{ verifyPresentationLifetime(^{ verifyInlineSettings(^{ clawtab_nfn_stop(); }); }); }); });
                                     });
                                 });
                             });
