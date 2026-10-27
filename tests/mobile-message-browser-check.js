@@ -45,5 +45,7 @@ async () => {
   assert(Boolean(document.querySelector(".card textarea")), "social approvals remain open for a decision");
   await wait(() => document.querySelector(".media img")?.naturalWidth > 0);
   if (video) await wait(() => document.querySelector(".media video")?.readyState >= 1);
+  const footer = document.querySelector(".controls").getBoundingClientRect();
+  assert(footer.bottom <= innerHeight + 1 && footer.top >= 0, "media stays in its scroller with the card footer visible");
   return checks;
 }
