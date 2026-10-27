@@ -1,16 +1,19 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { useMachines } from "@clawtab/shared";
 import { useGlobalSearchParams, usePathname, useRouter } from "expo-router";
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useMessageStore } from "../store/messages";
-import { newMessageArrival, surfaceId } from "../lib/messagePresentation";
+import { messageArrivalTracker, surfaceId } from "../lib/messagePresentation";
 import { messagePath, type MessageTarget } from "../lib/messageRoutes";
 import { MessageInbox } from "./MessageInbox";
 
 export function MessageArrival() {
   const records = useMessageStore(state => state.records);
-  const previous = useRef<Set<string> | null>(null);
-  const [target, setTarget] = useState<MessageTarget | null>(null);
+  const { snapshots } = useMachines();
+  const [arrivals] = useState(messageArrivalTracker);
+  const [popup, setPopup] = useState<{ target: MessageTarget; arrival: string } | null>(null);
+  const target = popup?.target;
   const pathname = usePathname();
   const params = useGlobalSearchParams();
   const router = useRouter();
@@ -18,23 +21,24 @@ export function MessageArrival() {
   const { width, height } = useWindowDimensions();
   const viewingMessages = pathname.startsWith("/notifications") || params.section === "notifications";
   useEffect(() => {
-    const arrival = previous.current && newMessageArrival(previous.current, records);
-    previous.current = new Set(records.map(surfaceId));
-    if (arrival && !viewingMessages) setTarget(current => current ?? { machine: arrival.machine_id, id: arrival.id });
-  }, [records, viewingMessages]);
-  useEffect(() => { if (viewingMessages) setTarget(null); }, [viewingMessages]);
+    const arrival = arrivals.observe(records, snapshots);
+    if (arrival && !viewingMessages) setPopup(current => ({
+      target: current?.target ?? { machine: arrival.machine_id, id: arrival.id }, arrival: surfaceId(arrival),
+    }));
+  }, [records, snapshots, arrivals, viewingMessages]);
+  useEffect(() => { if (viewingMessages) setPopup(null); }, [viewingMessages]);
   if (!target || viewingMessages) return null;
   return <View style={[styles.popup, { top: insets.top + 52, right: Math.max(12, insets.right),
     width: Math.min(520, width - Math.max(12, insets.left) - Math.max(12, insets.right)),
     height: Math.min(430, height - insets.top - insets.bottom - 120) }]}>
     <View style={styles.toolbar}>
       <Pressable accessibilityRole="button" accessibilityLabel="Open this message" style={styles.open}
-        onPress={() => { router.push(messagePath(target) as never); setTarget(null); }}><Text style={styles.label}>Open message</Text></Pressable>
+        onPress={() => { router.push(messagePath(target) as never); setPopup(null); }}><Text style={styles.label}>Open message</Text></Pressable>
       <Pressable accessibilityRole="button" accessibilityLabel="Close message popup" style={styles.close}
-        onPress={() => setTarget(null)}><Text style={styles.label}>Close</Text></Pressable>
+        onPress={() => setPopup(null)}><Text style={styles.label}>Close</Text></Pressable>
     </View>
-    <MessageInbox popup selection={`${target.machine}::${target.id}`} onNavigateAway={() => setTarget(null)}
-      onNative={value => { if (value.native === "presentation" && value.active === false) setTarget(null); }} />
+    <MessageInbox popup selection={`${target.machine}::${target.id}`} arrival={popup?.arrival} onNavigateAway={() => setPopup(null)}
+      onNative={value => { if (value.native === "presentation" && value.active === false) setPopup(null); }} />
   </View>;
 }
 

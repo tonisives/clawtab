@@ -28,3 +28,21 @@ export function newMessageArrival(previous: Set<string>, records: MessageRecord[
   return records.filter(record => messagePending(record) && !previous.has(surfaceId(record)))
     .sort((a, b) => b.created_at - a.created_at)[0] ?? null;
 }
+
+export function messageArrivalTracker() {
+  const seen = new Set<string>();
+  const initialized = new Set<string>();
+  return {
+    observe(records: MessageRecord[], snapshots: Record<string, { messages_changed?: { records?: { id: string }[] } }>) {
+      for (const [machine, snapshot] of Object.entries(snapshots)) {
+        if (!snapshot.messages_changed || initialized.has(machine)) continue;
+        for (const record of snapshot.messages_changed.records ?? []) seen.add(surfaceId({ machine_id: machine, id: record.id }));
+        for (const record of records.filter(record => record.machine_id === machine)) seen.add(surfaceId(record));
+        initialized.add(machine);
+      }
+      const arrival = newMessageArrival(seen, records.filter(record => initialized.has(record.machine_id)));
+      for (const record of records) seen.add(surfaceId(record));
+      return arrival;
+    },
+  };
+}

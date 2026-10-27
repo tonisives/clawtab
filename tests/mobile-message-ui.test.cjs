@@ -56,6 +56,99 @@ test("surface record identity and arrivals distinguish hosts with identical IDs"
   assert.equal(presentation.newMessageArrival(new Set(), [record("mac-a", "resolved", { status: "resolved" })]), null);
 });
 
+test("arrival tracking seeds cached and initial host history before showing new messages", () => {
+  const tracker = presentation.messageArrivalTracker();
+  const cached = record("mac-a", "cached"), old = record("mac-a", "old");
+  assert.equal(tracker.observe([], {}), null);
+  assert.equal(tracker.observe([cached], {}), null);
+  const snapshots = { "mac-a": { messages_changed: { records: [old] } } };
+  assert.equal(tracker.observe([cached, old], snapshots), null);
+  const fresh = record("mac-a", "fresh", { created_at: 20 });
+  assert.equal(tracker.observe([cached, old, fresh], snapshots), fresh);
+  assert.equal(tracker.observe([cached, old, fresh], snapshots), null);
+});
+
+test("the first host snapshot cannot animate when its store hydration arrives later", () => {
+  const tracker = presentation.messageArrivalTracker();
+  const old = record("mac-a", "old");
+  const snapshots = { "mac-a": { messages_changed: { records: [old] } } };
+  assert.equal(tracker.observe([], snapshots), null);
+  assert.equal(tracker.observe([old], snapshots), null);
+  const fresh = record("mac-a", "fresh");
+  assert.equal(tracker.observe([old, fresh], snapshots), fresh);
+});
+
+test("arrival tracking initializes hosts independently and ignores replayed history", () => {
+  const tracker = presentation.messageArrivalTracker();
+  const a = record("mac-a"), b = record("mac-b");
+  const snapshots = { "mac-a": { messages_changed: { records: [a] } } };
+  assert.equal(tracker.observe([a], snapshots), null);
+  snapshots["mac-b"] = { messages_changed: { records: [b] } };
+  assert.equal(tracker.observe([a, b], snapshots), null);
+  assert.equal(tracker.observe([], snapshots), null);
+  assert.equal(tracker.observe([a, b], snapshots), null);
+  const fresh = record("mac-b", "fresh");
+  assert.equal(tracker.observe([a, b, fresh], snapshots), fresh);
+});
+
+test("the popup animates new records while preserving its current message", () => {
+  const states = [], effects = [];
+  let cursor = 0, changed = false, records = [], snapshots = {}, pathname = "/";
+  const inbox = Symbol("MessageInbox");
+  const exports = {};
+  const dependencies = {
+    react: {
+      useEffect: effect => effects.push(effect),
+      useState: initial => {
+        const index = cursor++;
+        if (!(index in states)) states[index] = typeof initial === "function" ? initial() : initial;
+        return [states[index], value => {
+          const next = typeof value === "function" ? value(states[index]) : value;
+          if (!Object.is(next, states[index])) { states[index] = next; changed = true; }
+        }];
+      },
+    },
+    "react/jsx-runtime": { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
+    "@clawtab/shared": { useMachines: () => ({ snapshots }) },
+    "expo-router": { useGlobalSearchParams: () => ({}), usePathname: () => pathname, useRouter: () => ({ push() {} }) },
+    "react-native": { View: "View", Text: "Text", Pressable: "Pressable", StyleSheet: { create: value => value }, useWindowDimensions: () => ({ width: 390, height: 844 }) },
+    "react-native-safe-area-context": { useSafeAreaInsets: () => ({ top: 0, left: 0, right: 0, bottom: 0 }) },
+    "../store/messages": { useMessageStore: select => select({ records }) },
+    "../lib/messagePresentation": presentation,
+    "../lib/messageRoutes": routes,
+    "./MessageInbox": { MessageInbox: inbox },
+  };
+  const source = ts.transpileModule(fs.readFileSync(path.resolve(base, "../components/MessageArrival.tsx"), "utf8"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
+  }).outputText;
+  vm.runInNewContext(source, { exports, require: name => {
+    assert.ok(name in dependencies, `Unexpected popup dependency ${name}`); return dependencies[name];
+  } });
+  const render = () => {
+    let tree;
+    do {
+      changed = false; cursor = 0; effects.length = 0;
+      tree = exports.MessageArrival();
+      for (const effect of effects) effect();
+    } while (changed);
+    return tree?.props.children.find(child => child.type === inbox)?.props ?? null;
+  };
+  assert.equal(render(), null);
+  const old = record("mac-a", "old");
+  records = [old]; snapshots = { "mac-a": { messages_changed: { records } } };
+  assert.equal(render(), null);
+  const first = record("mac-a", "first"); records = [old, first];
+  assert.equal(render().arrival, "mac-a::first");
+  const second = record("mac-a", "second"); records = [old, first, second];
+  const popup = render();
+  assert.equal(popup.selection, "mac-a::first");
+  assert.equal(popup.arrival, "mac-a::second");
+  pathname = "/notifications/message/first";
+  assert.equal(render(), null);
+  pathname = "/";
+  assert.equal(render(), null);
+});
+
 function harness(records = [record("mac-a"), record("mac-b")]) {
   const calls = [], opened = [];
   const options = {

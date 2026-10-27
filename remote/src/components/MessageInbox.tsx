@@ -14,9 +14,10 @@ import { MessageSurface } from "./MessageSurface";
 import type { SurfaceMessage } from "./messageSurfaceTypes";
 import { nextId } from "../lib/wsRuntime";
 
-export function MessageInbox({ selection, popup = false, onSelectDetail, onNavigateAway, onNative }: {
+export function MessageInbox({ selection, popup = false, arrival, onSelectDetail, onNavigateAway, onNative }: {
   selection?: string | null;
   popup?: boolean;
+  arrival?: string;
   onSelectDetail?: (target: NotificationDetailTarget) => void;
   onNavigateAway?: () => void;
   onNative?: (message: SurfaceMessage) => void;
@@ -116,11 +117,11 @@ export function MessageInbox({ selection, popup = false, onSelectDetail, onNavig
     return isMessageTodoCommand(command) ? todoCommand(command) : controller.execute(command);
   }, [controller, todoCommand]);
   const snapshot = useMemo(() => ({
-    type: "snapshot", remote: true, visible: true, preview: false, arrival: popup ? selection : undefined,
+    type: "snapshot", remote: true, visible: true, preview: false, arrival: popup ? arrival : undefined,
     records: records.map(surfaceRecord), pending_count: records.filter(messagePending).length,
     auto_yes_panes: [...autoYes], templates_by_machine: templates, todos,
     settings: { preview_seconds: 8, hover_expand: false, placement: "right" },
-  }), [records, autoYes, templates, todos, popup, selection]);
+  }), [records, autoYes, templates, todos, popup, arrival]);
 
   const selectionReady = !selection || records.some(record => surfaceId(record) === selection)
     || machines.some(machine => machine.online && selection.startsWith(`${machine.id}::`));
