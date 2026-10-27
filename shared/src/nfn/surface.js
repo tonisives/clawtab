@@ -22,6 +22,117 @@
   let bulkBusy = false, queueError = "";
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
+  let todosOpen = false, todoData = { items: [] }, todoError = "", todoBusy = false, todoOptionsOpen = false;
+  const todoDraft = { text: "", group: "", cwd: "", note: null, agents: null };
+  function todoItems() { return todoData.items || []; }
+  function toggleTodos() {
+    if (todosOpen) { todosOpen = false; collapse(true); return; }
+    leaveSettings(); pauseTimer(); stopContext();
+    todosOpen = true; hiddenByUser = false; explicitOpen = true; expanded = true;
+    queue = false; current = null; details = false; menu = null;
+    native({ native: "presentation", active: true }); render();
+    if (!preview) call({ op: "todos" }).then(value => { todoData = value; render(); }).catch(error => { todoError = error.message; render(); });
+  }
+  async function todoAction(command) {
+    if (todoBusy) return;
+    todoBusy = true; todoError = ""; render();
+    try {
+      const result = await call(command);
+      if (result.items) todoData = result;
+      if (command.op === "todo_add") todoDraft.text = "";
+    } catch (error) { todoError = String(error.message || error); }
+    finally { todoBusy = false; render(); }
+  }
+  function todoInput(label, key, placeholder) {
+    if (todoDraft[key] == null) todoDraft[key] = todoData[key] || "";
+    const input = el("input"); input.value = todoDraft[key]; input.placeholder = placeholder;
+    input.setAttribute("aria-label", label);
+    input.addEventListener("input", () => { todoDraft[key] = input.value; });
+    return input;
+  }
+  function renderTodos() {
+    let view = host.querySelector(".todo-view");
+    const signature = JSON.stringify([todoData, todoBusy, todoError]);
+    if (view?._signature === signature) return view;
+    const scroll = view?.querySelector(".todo-items")?.scrollTop || 0;
+    const focusedKey = document.activeElement?.getAttribute("aria-label"), selection = document.activeElement?.selectionStart;
+    view?.remove(); view = el("section", "todo-view"); view._signature = signature;
+    view.setAttribute("aria-label", "Tasks");
+    const items = todoItems(), done = items.filter(item => item.checked).length;
+    const heading = el("div", "todo-heading");
+    heading.append(el("h1", "", "Tasks"), el("span", "hint", `${done} / ${items.length} complete`)); view.append(heading);
+    if (todoData.linked) {
+      const source = el("div", "hint todo-source", `Synced with ${todoData.note}`); source.title = todoData.note; view.append(source);
+    }
+    const notice = el("div", "notice", todoError || todoData.error); notice.setAttribute("role", "status"); view.append(notice);
+    const list = el("div", "todo-items");
+    let group = null;
+    const stateNames = { working: "Working", started: "Agent started", done: "Agent finished · awaiting review", blocked: "Blocked" };
+    for (const item of items) {
+      if (item.group !== group) {
+        group = item.group;
+        const groupItems = items.filter(task => task.group === group);
+        list.append(el("h2", "todo-group", `${group} · ${groupItems.filter(task => task.checked).length}/${groupItems.length}`));
+      }
+      const row = el("div", `todo-row ${item.checked ? "complete" : ""}`);
+      row.style.paddingLeft = `${12 + Math.min(item.depth, 4) * 14}px`;
+      const checkbox = el("input"); checkbox.type = "checkbox"; checkbox.checked = item.checked;
+      checkbox.disabled = todoBusy; checkbox.setAttribute("aria-label", `Complete ${item.text}`);
+      checkbox.addEventListener("change", () => todoAction({ op: "todo_update", id: item.id, checked: checkbox.checked }));
+      const body = el("div", "todo-body"); body.append(el("div", "todo-title", item.text));
+      const agent = item.agent;
+      if (agent) {
+        body.append(el("div", `todo-state ${agent.state || ""}`, item.checked ? "Complete" : stateNames[agent.state] || "Agent linked"));
+        if (agent.summary || agent.blocker) body.append(el("div", "hint todo-summary", agent.blocker || agent.summary));
+      }
+      row.append(checkbox, body);
+      if (agent?.pane) {
+        const open = button("Open agent", () => todoAction({ op: "todo_focus", id: item.id }), "utility todo-agent"); open.disabled = todoBusy; row.append(open);
+      } else if (!item.checked) {
+        const start = button("Start agent", () => {
+          if (!todoDraft.cwd.trim()) { todoOptionsOpen = true; todoError = "Enter the agent working directory below first"; render(); return; }
+          todoAction({ op: "todo_start", id: item.id, cwd: todoDraft.cwd });
+        }, "utility todo-agent"); start.disabled = todoBusy; row.append(start);
+      }
+      list.append(row);
+    }
+    if (!items.length) list.append(el("p", "hint", "Add a task or link a Markdown checklist below."));
+    view.append(list);
+    const form = el("form", "todo-add");
+    const text = todoInput("New task", "text", "Add a task"); text.required = true;
+    const groupInput = todoInput("Task group", "group", "ClawTab group / tmux session"); groupInput.required = true; groupInput.setAttribute("list", "todo-groups");
+    const groups = el("datalist"); groups.id = "todo-groups";
+    for (const name of new Set(items.map(item => item.group))) { const option = el("option"); option.value = name; groups.append(option); }
+    const add = button(todoBusy ? "Saving..." : "Add task", () => {}, "primary"); add.type = "submit"; add.disabled = todoBusy;
+    form.append(text, groupInput, groups, add);
+    form.addEventListener("submit", event => { event.preventDefault(); todoAction({ op: "todo_add", text: todoDraft.text, group: todoDraft.group }); });
+    view.append(form);
+    const options = el("details", "todo-options"); options.open = todoOptionsOpen; options.addEventListener("toggle", () => { todoOptionsOpen = options.open; }); options.append(el("summary", "hint", "Source and agent settings"));
+    options.append(el("label", "hint", "Working directory for new Codex agents"), todoInput("Agent working directory", "cwd", "/path/to/project"));
+    options.append(el("p", "hint", "Start agent opens a tmux window in the task's group using Codex Sol 6.1 with high reasoning."));
+    options.append(todoInput("Markdown source path", "note", todoData.note || "/path/to/tasks.md"), todoInput("Agent mapping path", "agents", "Optional /path/to/agents.json"));
+    const link = button("Link Markdown checklist", () => todoAction({ op: "todo_link", note: todoDraft.note || "", agents: todoDraft.agents || null })); link.disabled = todoBusy; options.append(link);
+    view.append(options);
+    view._restoreFocus = () => {
+      list.scrollTop = scroll;
+      if (focusedKey) {
+        const input = [...view.querySelectorAll("input")].find(input => input.getAttribute("aria-label") === focusedKey);
+        if (input && !input.disabled) { input.focus({ preventScroll: true }); if (input.type !== "checkbox" && selection != null) input.setSelectionRange(selection, selection); }
+      }
+    };
+    return view;
+  }
+  function updateTodoRing(top) {
+    let control = top.querySelector(".todo-toggle");
+    if (!control) { control = button("", toggleTodos, "utility todo-toggle"); top.append(control); }
+    const items = todoItems(), done = items.filter(item => item.checked).length;
+    control.setAttribute("aria-label", `Tasks: ${done} of ${items.length} complete`);
+    control.setAttribute("aria-pressed", String(todosOpen)); control.title = "Tasks";
+    control.replaceChildren();
+    const ring = el("span", "todo-ring"); ring.style.setProperty("--todo-progress", `${items.length ? done / items.length * 360 : 0}deg`);
+    ring.append(el("span", "", String(items.length - done))); control.append(ring);
+  }
+
   function native(value) {
     if (window.webkit?.messageHandlers?.nfn) window.webkit.messageHandlers.nfn.postMessage(value);
     else if (window.parent !== window) window.parent.postMessage({ nfn: value }, "*");
@@ -178,7 +289,7 @@
         (Math.abs(before.width - after.width) > 1 || Math.abs(before.height - after.height) > 1)) {
       // Keep text at its final reading width while the surrounding shape grows.
       // Reflowing every animation frame makes the controls and output jump.
-      for (const node of host.querySelectorAll(":scope > .top, :scope > .card, :scope > .queue, :scope > .notification-settings, :scope > .menu-overlay")) {
+      for (const node of host.querySelectorAll(":scope > .top, :scope > .card, :scope > .queue, :scope > .notification-settings, :scope > .todo-view, :scope > .menu-overlay")) {
         node.style.width = `${after.width - (placement === "notch" ? 0 : 2)}px`;
         if (fadeContent && !node.classList.contains("top")) {
           const fade = node.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 280, delay: 60, fill: "backwards" });
@@ -234,7 +345,7 @@
   function collapse(keepVisible, finished = false) {
     if (!finished) reviewVersion++;
     if (typeof keepVisible !== "boolean") keepVisible = explicitOpen && !pendingCount();
-    leaveSettings();
+    leaveSettings(); todosOpen = false;
     presented = false; explicitOpen = keepVisible === true; native({ native: "presentation", active: explicitOpen });
     clearTimeout(completionTimer); pauseTimer(); stopContext(); expanded = false; details = false; queue = false; current = null; focused = false; menu = null;
     native({ native: "text_focus", active: false }); render();
@@ -246,13 +357,14 @@
     for (const [id, action] of actionsInProgress) if (!action.pending) actionsInProgress.delete(id);
   }
   function toggleBar() {
-    if (current || queue || expanded) collapse();
+    if (current || queue || expanded || todosOpen) collapse();
     else {
       resetHandledActions();
       if (pendingCount()) openLatest(); else showQueue(true);
     }
   }
   function openRecord(id) {
+    todosOpen = false;
     if (actionsInProgress.has(id)) return;
     leaveSettings();
     const replyFocused = card?._reply && document.activeElement === card._reply;
@@ -296,6 +408,7 @@
     if (menu === "agent") refreshContext();
   }
   function showQueue(showHistory = false) {
+    todosOpen = false;
     resetHandledActions();
     leaveSettings();
     if (current) queueReturnId = current;
@@ -750,6 +863,7 @@
     leaveSettings(); expanded = settingsReturnExpanded; render(); startContext(); resumeTimer();
   }
   function openSettings() {
+    todosOpen = false;
     if (settingsOpen) return;
     hiddenByUser = false;
     settingsReturnExpanded = expanded;
@@ -869,7 +983,7 @@
   }
   function render() {
     const before = host.getBoundingClientRect();
-    const signature = JSON.stringify([current, expanded, details, queue, settingsOpen, menu, replyStates.get(current), geometry, snapshot.visible, records.get(current)?.request]);
+    const signature = JSON.stringify([current, expanded, details, queue, settingsOpen, todosOpen, menu, replyStates.get(current), geometry, snapshot.visible, records.get(current)?.request]);
     const continuingAnimation = layoutAnimation && signature === renderedLayout;
     if (!continuingAnimation) stopAnimation();
     renderedLayout = signature;
@@ -877,8 +991,8 @@
     if (!presented && !hiddenByUser && current && records.has(current) && (snapshot.visible || explicitOpen) && !preview) {
       presented = true; native({ native: "presentation", active: true });
     }
-    if (!preview && !settingsOpen && (hiddenByUser || (!explicitOpen && !presented && (!snapshot.visible || (!current && !queue && !count))))) { host.className = "empty"; host.replaceChildren(); renderedId = null; card = null; stopContext(); size(); return; }
-    host.className = `${placement} ${expanded ? "expanded" : !current ? "pill" : ""} ${details && !settingsOpen ? "details-open" : ""} ${settingsOpen ? "settings-open" : ""} ${queue && !settingsOpen ? "queue-open" : ""} ${menu ? "menu-open" : ""}`;
+    if (!preview && !settingsOpen && !todosOpen && (hiddenByUser || (!explicitOpen && !presented && (!snapshot.visible || (!current && !queue && !count && !todoItems().length))))) { host.className = "empty"; host.replaceChildren(); renderedId = null; card = null; stopContext(); size(); return; }
+    host.className = `${placement} ${expanded ? "expanded" : !current ? "pill" : ""} ${details && !settingsOpen ? "details-open" : ""} ${settingsOpen ? "settings-open" : ""} ${queue && !settingsOpen ? "queue-open" : ""} ${menu ? "menu-open" : ""} ${todosOpen ? "todos-open" : ""}`;
     let top = host.querySelector(".top");
     if (!top) {
       top = el("div", "top"); host.prepend(top);
@@ -895,6 +1009,7 @@
       const list = iconButton("Notification list", "M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01", toggleQueue, "list-toggle");
       top.append(list);
     }
+    updateTodoRing(top);
     const items = pendingRecords(), index = items.findIndex(record => record.id === current);
     const isOpen = Boolean(current || queue || expanded), toggle = top.querySelector(".bar-toggle");
     toggle.setAttribute("aria-label", isOpen ? "Collapse notifications" : "Expand notifications"); toggle.setAttribute("aria-expanded", String(isOpen));
@@ -910,7 +1025,11 @@
     for (const step of top.querySelectorAll(".nav-step")) step.hidden = !current || count < 2 || settingsOpen;
     top.querySelector(".list-toggle").setAttribute("aria-pressed", String(queue && !settingsOpen));
     if (!settingsOpen) host.querySelector(".notification-settings")?.remove();
-    if (settingsOpen) {
+    if (!todosOpen) host.querySelector(".todo-view")?.remove();
+    if (todosOpen) {
+      host.querySelector(".card")?.remove(); host.querySelector(".queue")?.remove(); host.querySelector(".notification-settings")?.remove();
+      card = null; renderedId = null; const view = renderTodos(); if (!view.isConnected) host.append(view); view._restoreFocus?.(); view._restoreFocus = null;
+    } else if (settingsOpen) {
       host.querySelector(".card")?.remove(); host.querySelector(".queue")?.remove(); card = null; renderedId = null;
       const view = renderSettings(); if (!view.isConnected) host.append(view);
     } else if (queue) {
@@ -926,6 +1045,7 @@
     renderMenu(); if (!continuingAnimation) animateLayout(before, !queue && !menu && !settingsOpen);
   }
   function receive(value) {
+    if (value.type === "todos") { todoData = value.todos; render(); return; }
     if (value.type === "response") {
       const promise = promises.get(String(value.token)); if (!promise) return;
       clearTimeout(promise.timer); promises.delete(String(value.token));
@@ -942,6 +1062,7 @@
     if (value.type === "settings") { openSettings(); return; }
     if (value.type !== "snapshot") return;
     snapshot = value; preview = Boolean(value.preview);
+    if (value.todos) todoData = value.todos;
     const incoming = new Set();
     for (const record of value.records || []) { records.set(record.id, record); incoming.add(record.id); }
     for (const [id, action] of actionsInProgress) {
@@ -962,7 +1083,7 @@
       call({ op: "get", id }).then(record => { records.set(id, record); if (id === current) updateCard(); }).catch(error => showError(error, id));
     }
     if (value.arrival && records.has(value.arrival)) hiddenByUser = false;
-    if (value.arrival && records.has(value.arrival) && !actionsInProgress.has(value.arrival) && !current && !settingsOpen && !bulkBusy && (!queue || !selectedNotifications.size)) {
+    if (value.arrival && records.has(value.arrival) && !actionsInProgress.has(value.arrival) && !current && !settingsOpen && !todosOpen && !bulkBusy && (!queue || !selectedNotifications.size)) {
       clearTimeout(completionTimer); pauseTimer(); stopContext();
       current = value.arrival; queueReturnId = current; queue = false; history = false; details = false; menu = null;
       remaining = (value.settings?.preview_seconds || 8) * 1000; renderedId = null;

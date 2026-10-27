@@ -229,6 +229,26 @@ impl NfnRecord {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum NfnCommand {
+    Todos,
+    TodoLink {
+        note: String,
+        agents: Option<String>,
+    },
+    TodoAdd {
+        text: String,
+        group: String,
+    },
+    TodoUpdate {
+        id: String,
+        checked: bool,
+    },
+    TodoFocus {
+        id: String,
+    },
+    TodoStart {
+        id: String,
+        cwd: String,
+    },
     Send {
         request: NfnRequest,
     },

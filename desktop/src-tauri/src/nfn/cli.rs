@@ -32,6 +32,8 @@ pub async fn run(args: &[String]) -> Result<Value, String> {
             "cwtctl nfn templates list",
             "cwtctl nfn templates validate [FILE | --stdin]",
             "cwtctl nfn show",
+            "cwtctl nfn todos list",
+            "cwtctl nfn todos link NOTE.md [agents.json]",
             "cwtctl nfn settings [FILE.yaml | --stdin | --json | --ui]"
         ],"response_destination":["result","agent_message"],"template_directory":templates::directory()}));
     }
@@ -43,6 +45,17 @@ pub async fn run(args: &[String]) -> Result<Value, String> {
         })
         .transpose()?;
     match args[0].as_str() {
+        "todos" => match args.get(1).map(String::as_str) {
+            None | Some("list") => call(NfnCommand::Todos).await,
+            Some("link") if (3..=4).contains(&args.len()) => {
+                call(NfnCommand::TodoLink {
+                    note: args[2].clone(),
+                    agents: args.get(3).cloned(),
+                })
+                .await
+            }
+            _ => Err("Use nfn todos list or nfn todos link NOTE.md [agents.json]".into()),
+        },
         "send" => {
             if !args.iter().any(|a| a == "--stdin") {
                 return Err("Use nfn send --stdin with a JSON request".into());

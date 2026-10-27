@@ -111,6 +111,23 @@ Agent cards have a **…** menu beside their title with **Auto-yes**, Agent cont
 
 Action kinds are `choice` (default), `focus`, `auto_yes`, `model`, and `plugin`. Model and plugin actions use `value` for the model or installed action ID and `parameters` for string values, such as reasoning `effort`. The **… > Agent controls** menu offers Codex model selection and available installed plugin actions without opening Details.
 
+## Tasks in the message bar
+
+The circular indicator opens a checklist grouped by ClawTab group. Its number shows remaining tasks; the ring shows completion. Add a task with its group, check completed items, or open the linked agent. Agent progress appears below each task. An agent's `done` status stays separate from the source checkbox so the controller can review the result.
+
+Link an existing Markdown checklist instead of importing a copy:
+
+```sh
+cwtctl nfn todos link /path/to/todo-today.md /path/to/agents.json
+cwtctl nfn todos list
+```
+
+The source and optional agent mapping can also be changed under **Source and agent settings**. Level-two Markdown headings define groups; indented checkboxes remain subtasks. The daemon rereads the source, mapping, and agent status files every three seconds. Adding or checking a task writes back to the same note, preserving surrounding content. Repeated additions of the same text in the same group leave one task.
+
+Agent mappings use the controller's `tasks` and `existing` arrays: `match` or `covers` associates task text, `session` identifies the group, `pane` and `window_id` identify the agent, and `status` points to its progress JSON. Subtasks share their parent's agent unless they have their own assignment.
+
+For unassigned tasks, enter a working directory under **Source and agent settings**, then choose **Start agent**. ClawTab opens a new window in that group's existing tmux session with Codex Sol 6.1 and high reasoning. Links and new-agent status files live under the ClawTab configuration directory; the note remains authoritative across restarts.
+
 ## Custom layouts
 
 Built-in layouts include status updates, questions, agent approvals, social reviews, permissions, YubiKey attention, and quick actions. Edit or create layouts in the settings editor, which previews the same renderer used by the daemon. Preview actions are inert. Save a layout to `~/.config/clawtab/notification-templates/ID.yaml`; external edits reload automatically. The filename must match the template ID. A user layout with a built-in ID overrides that layout.
@@ -153,13 +170,14 @@ Only an actively viewed pane suppresses an automatic alert. ClawTab reports the 
 
 ## Verification
 
-Run Rust tests with the repository's build guard and four workers:
+Run Rust tests and frontend builds through the shared macOS worker:
 
 ```sh
-python3 /path/to/clawtab/scripts/build-guard.py --cwd "$PWD/desktop/src-tauri" -- cargo test --no-default-features --lib nfn:: -j4
-pnpm --dir desktop build
+~/.agents/scripts/buildctl status
+~/.agents/scripts/buildctl cargo -- test --no-default-features --lib nfn:: -j4
+~/.agents/scripts/buildctl run --prepare-node -- pnpm --dir desktop build
 ```
 
-Run local GUI checks in Tart from the parent checkout with `python3 scripts/test-notifications-tart.py`. The runner uses the shared bmux VM queue, copies only test sources into the guest, runs renderer checks in WebKit and native keyboard, geometry, settings, and menu bar checks, then saves logs and screenshots under `artifacts/tart/`. Set `CLAWTAB_TART_RUNNER` if the shared runner is elsewhere. Unit tests and type checks can run on the host.
+Run local GUI checks in Tart from the parent checkout with `python3 scripts/test-notifications-tart.py`. The runner uses the shared bmux VM queue, copies only test sources into the guest, runs message and todo renderer checks in WebKit and native keyboard, geometry, settings, and menu bar checks, then saves logs and screenshots under `artifacts/tart/`. Set `CLAWTAB_TART_RUNNER` if the shared runner is elsewhere. Use `--public-root` to test a separate public worktree.
 
 On a disposable macOS CI desktop, generate a fixture with `node desktop/tests/nfn-fixture.mjs /tmp/clawtab-nfn-fixture.html` and run `nfn-webkit.m` with that HTML and `nfn-browser-check.js`. The renderer checks cover stable arrivals, drafts, custom layout order, duplicate clicks, log polling, and queue pagination. Use `--native` when generating the fixture for `nfn-native.m`.
