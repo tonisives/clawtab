@@ -3,7 +3,10 @@ mod claude;
 mod codex;
 mod common;
 pub(crate) mod hermes;
+mod identities;
 mod opencode;
+
+pub use identities::{agent_identities, AgentIdentity};
 
 pub(crate) use codex::completed_turn_after as codex_completed_turn_after;
 pub(crate) use codex::session_activity_for_pane as codex_session_activity_for_pane;

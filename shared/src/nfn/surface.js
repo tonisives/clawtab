@@ -228,9 +228,9 @@
     if (record.request.data?.event === "agent_alert" && pending(record)) return;
     timerStarted = performance.now(); collapseTimer = setTimeout(collapse, Math.max(100, remaining));
   }
-  function collapse() {
+  function collapse(keepVisible = false) {
     leaveSettings();
-    explicitOpen = false; native({ native: "presentation", active: false });
+    explicitOpen = keepVisible === true; native({ native: "presentation", active: explicitOpen });
     clearTimeout(completionTimer); pauseTimer(); stopContext(); expanded = false; details = false; queue = false; current = null; focused = false; menu = null;
     native({ native: "text_focus", active: false }); render();
   }
@@ -242,13 +242,10 @@
     call({ op: "read", id }).catch(showError); render();
     if (replyFocused && card?._reply) card._reply.focus({ preventScroll: true });
   }
-  async function openLatest() {
-    let latest = pendingRecords().at(-1);
-    if (!latest) {
-      try { latest = (await call({ op: "list", offset: 0, pending_only: false })).records?.[0]; }
-      catch (error) { showError(error); return; }
-    }
-    if (latest) { records.set(latest.id, latest); openRecord(latest.id); } else showQueue();
+  function openLatest() {
+    const latest = pendingRecords().at(-1);
+    if (latest) openRecord(latest.id);
+    else { queueReturnId = null; collapse(true); }
   }
   async function navigate(step) {
     if (busy || navigating) return;
@@ -824,7 +821,7 @@
     if (!continuingAnimation) stopAnimation();
     renderedLayout = signature;
     const count = pendingCount();
-    if (!preview && !settingsOpen && ((!snapshot.visible && !explicitOpen) || (!current && !queue && !count))) { host.className = "empty"; host.replaceChildren(); renderedId = null; card = null; stopContext(); size(); return; }
+    if (!preview && !settingsOpen && !explicitOpen && (!snapshot.visible || (!current && !queue && !count))) { host.className = "empty"; host.replaceChildren(); renderedId = null; card = null; stopContext(); size(); return; }
     host.className = `${placement} ${expanded ? "expanded" : !current ? "pill" : ""} ${details && !settingsOpen ? "details-open" : ""} ${settingsOpen ? "settings-open" : ""} ${queue && !settingsOpen ? "queue-open" : ""} ${menu ? "menu-open" : ""}`;
     let top = host.querySelector(".top");
     if (!top) {

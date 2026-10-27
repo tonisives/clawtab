@@ -35,8 +35,8 @@ static void verifyInlineSettings(void (^finish)(void)) {
         if (!surface.statusItem) { fprintf(stderr, "Menu bar icon did not return after being enabled\n"); exit(1); }
         [surface.statusItem.button performClick:nil];
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 5), dispatch_get_main_queue(), ^{
-            [surface.web evaluateJavaScript:@"Boolean(document.querySelector('.queue')) && !document.querySelector('#surface').classList.contains('empty')" completionHandler:^(id opened, NSError *openError) {
-                if (openError || ![opened boolValue] || !surface.panel.visible || !surface.notificationsVisible) { fprintf(stderr, "Menu bar notifications did not open with native delivery\n"); exit(1); }
+            [surface.web evaluateJavaScript:@"document.querySelector('#surface').classList.contains('pill') && !document.querySelector('.card, .queue')" completionHandler:^(id opened, NSError *openError) {
+                if (openError || ![opened boolValue] || !surface.panel.visible || !surface.notificationsVisible || surface.surfaceWidth > 225 || surface.surfaceHeight > 44) { fprintf(stderr, "Empty menu bar notifications did not open as a collapsed bar with native delivery\n"); exit(1); }
                 [surface.web evaluateJavaScript:@"window.nfn.collapse()" completionHandler:^(id closed, NSError *closeError) {
                     if (closeError) { fprintf(stderr, "Could not close menu bar notifications\n"); exit(1); }
                     [surface push:@{@"type":@"settings"}];

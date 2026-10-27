@@ -46,7 +46,7 @@ position: null
 
 Dragging sets `placement: custom`, records the display ID, and saves `position: {right: 100, top: 40}` in points from the display's usable top-right corner. Cards grow left and down from this anchor and stay within the display. Choose Notch or Right column to restore an automatic position.
 
-The daemon owns the optional macOS menu bar icon. Clicking it opens the notification window directly. Use the list icon for Pending and History, and the ClawTab icon inside the window for notification settings. The desktop app has a Dock icon and does not create a second menu bar icon. Change `menu_bar_icon` in this file or use the **Menu bar icon** checkbox in notification settings; no desktop app or restart is needed.
+The daemon owns the optional macOS menu bar icon. Clicking it opens the latest pending notification, or the collapsed bar when there are none. Use the list icon for Pending and History, and the ClawTab icon inside the window for notification settings. The desktop app has a Dock icon and does not create a second menu bar icon. Change `menu_bar_icon` in this file or use the **Menu bar icon** checkbox in notification settings; no desktop app or restart is needed.
 
 New notifications open their card when Pending or History is visible. A card being reviewed, an active bulk selection, and the settings form keep their current view.
 
@@ -82,7 +82,7 @@ cwtctl nfn templates list
 cwtctl nfn templates validate ./my-review.yaml
 ```
 
-The CLI infers the originating pane from `CLAWTAB_SESSION_ID` or `TMUX_PANE`. An explicit `source.pane_id` takes precedence. Binary jobs should set `source.job_id` and `source.run_id`; they then use that run's log and do not inherit a terminal pane. Media supports HTTPS URLs and absolute local file paths. The native overlay streams local video in bounded chunks and releases it when the card closes. Local media is displayed by the daemon overlay; the in-app inbox supports HTTPS media.
+The CLI uses `CODEX_THREAD_ID` to find the sending Codex conversation, since shared command runners can carry another pane's `TMUX_PANE`. Managed agents use `CLAWTAB_SESSION_ID`, with the conversation checked by the daemon. Without a Codex thread, the CLI infers the pane from `CLAWTAB_SESSION_ID` or `TMUX_PANE`. An explicit `source.pane_id` takes precedence. Binary jobs should set `source.job_id` and `source.run_id`; they then use that run's log and do not inherit a terminal pane. Media supports HTTPS URLs and absolute local file paths. The native overlay streams local video in bounded chunks and releases it when the card closes. Local media is displayed by the daemon overlay; the in-app inbox supports HTTPS media.
 
 Agent card headings show the group on the left and the tmux window title in the center. The pane title, agent title, and notification title are fallbacks when the window has no name. Senders can set `source.group` and `source.agent_title` to override the displayed labels. Questions use their matched ClawTab group; other tmux notifications use the owning session. Full labels are available on hover.
 

@@ -1,4 +1,5 @@
-use super::{settings, templates, NfnCommand, NfnRequest};
+use super::{settings, templates, NfnCommand, NfnRequest, NfnSource};
+use crate::agent_session::{self, AgentIdentity, ProcessProvider};
 use crate::ipc::{self, IpcCommand, IpcResponse};
 use serde_json::{json, Value};
 use std::io::Read;
@@ -56,11 +57,13 @@ pub async fn run(args: &[String]) -> Result<Value, String> {
             if let Some(template) = flag_value(args, "--template")? {
                 request.template = template.into();
             }
-            if request.source.pane_id.is_none() && request.source.job_id.is_none() {
-                request.source.pane_id = std::env::var("CLAWTAB_SESSION_ID")
-                    .or_else(|_| std::env::var("TMUX_PANE"))
-                    .ok();
-            }
+            infer_source(
+                &mut request.source,
+                std::env::var("CODEX_THREAD_ID").ok().as_deref(),
+                std::env::var("CLAWTAB_SESSION_ID").ok().as_deref(),
+                std::env::var("TMUX_PANE").ok().as_deref(),
+                agent_session::agent_identities,
+            )?;
             let waits = args.iter().any(|a| a == "--wait");
             if waits && request.response_destination != "result" {
                 return Err("--wait requires response_destination: result".into());
@@ -145,6 +148,49 @@ pub async fn run(args: &[String]) -> Result<Value, String> {
     }
 }
 
+fn infer_source(
+    source: &mut NfnSource,
+    codex_thread: Option<&str>,
+    managed_pane: Option<&str>,
+    tmux_pane: Option<&str>,
+    identities: impl FnOnce() -> Result<Vec<AgentIdentity>, String>,
+) -> Result<(), String> {
+    if source.pane_id.is_some() || source.job_id.is_some() {
+        return Ok(());
+    }
+    let managed_pane = managed_pane.filter(|value| !value.is_empty());
+    let Some(thread) = codex_thread.filter(|value| !value.is_empty()) else {
+        source.pane_id = managed_pane.or(tmux_pane).map(str::to_owned);
+        return Ok(());
+    };
+    if source.session_id.as_deref().is_some_and(|id| id != thread) {
+        return Err("Pass source.pane_id to send from a different agent session".into());
+    }
+    let pane = if let Some(pane) = managed_pane.filter(|pane| crate::managed::is_managed(pane)) {
+        pane.to_owned()
+    } else {
+        // Shared command runners can inherit TMUX_PANE from another conversation.
+        let matches: std::collections::HashSet<_> = identities()?
+            .into_iter()
+            .filter(|identity| {
+                identity.provider == ProcessProvider::Codex
+                    && identity.session_id.as_deref() == Some(thread)
+            })
+            .map(|identity| identity.pane_id)
+            .collect();
+        if matches.len() != 1 {
+            return Err(format!(
+                "Could not identify one pane for Codex session {thread}; pass source.pane_id explicitly"
+            ));
+        }
+        matches.into_iter().next().unwrap()
+    };
+    source.pane_id = Some(pane);
+    // The daemon checks this again before binding the notification to the agent.
+    source.session_id = Some(thread.to_owned());
+    Ok(())
+}
+
 fn flag_value<'a>(args: &'a [String], flag: &str) -> Result<Option<&'a str>, String> {
     let Some(i) = args.iter().position(|a| a == flag) else {
         return Ok(None);
@@ -189,6 +235,114 @@ async fn wait(id: &str, timeout: Option<u64>) -> Result<Value, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn identity(pane: &str, session: &str) -> AgentIdentity {
+        AgentIdentity {
+            pane_id: pane.into(),
+            window_id: "@1".into(),
+            pane_pid: "123".into(),
+            provider: ProcessProvider::Codex,
+            session_id: Some(session.into()),
+        }
+    }
+
+    #[test]
+    fn caller_thread_wins_over_a_stale_shared_tmux_pane() {
+        let mut source = NfnSource::default();
+        infer_source(&mut source, Some("sender"), None, Some("%2"), || {
+            Ok(vec![
+                identity("%2", "other-agent"),
+                identity("%58", "sender"),
+                identity("%58", "sender"),
+            ])
+        })
+        .unwrap();
+        assert_eq!(source.pane_id.as_deref(), Some("%58"));
+        assert_eq!(source.session_id.as_deref(), Some("sender"));
+    }
+
+    #[test]
+    fn missing_or_ambiguous_threads_never_fall_back_to_another_pane() {
+        let mut other_provider = identity("%2", "sender");
+        other_provider.provider = ProcessProvider::Claude;
+        for identities in [
+            vec![],
+            vec![identity("%2", "other-agent")],
+            vec![other_provider],
+            vec![identity("%1", "sender"), identity("%2", "sender")],
+        ] {
+            let mut source = NfnSource::default();
+            assert!(
+                infer_source(&mut source, Some("sender"), None, Some("%2"), || {
+                    Ok(identities)
+                })
+                .is_err()
+            );
+            assert_eq!(source, NfnSource::default());
+        }
+    }
+
+    #[test]
+    fn explicit_panes_and_jobs_keep_their_source() {
+        for mut source in [
+            NfnSource {
+                pane_id: Some("%9".into()),
+                session_id: Some("explicit-session".into()),
+                ..Default::default()
+            },
+            NfnSource {
+                job_id: Some("binary-job".into()),
+                ..Default::default()
+            },
+        ] {
+            let expected = source.clone();
+            infer_source(&mut source, Some("sender"), None, Some("%2"), || {
+                panic!("Explicit sources do not need caller discovery")
+            })
+            .unwrap();
+            assert_eq!(source, expected);
+        }
+    }
+
+    #[test]
+    fn managed_and_plain_terminal_senders_keep_their_pane() {
+        let managed = "managed:11111111-1111-4111-8111-111111111111";
+        for (thread, managed_pane, tmux_pane, expected) in [
+            (Some("sender"), Some(managed), Some("%2"), Some(managed)),
+            (None, Some(managed), Some("%2"), Some(managed)),
+            (None, None, Some("%2"), Some("%2")),
+            (Some(""), Some(""), Some("%2"), Some("%2")),
+            (None, None, None, None),
+        ] {
+            let mut source = NfnSource::default();
+            infer_source(&mut source, thread, managed_pane, tmux_pane, || {
+                panic!("This sender does not need tmux identity discovery")
+            })
+            .unwrap();
+            assert_eq!(source.pane_id.as_deref(), expected);
+            assert_eq!(
+                source.session_id.as_deref(),
+                thread.filter(|id| !id.is_empty())
+            );
+        }
+    }
+
+    #[test]
+    fn explicit_session_cannot_be_silently_replaced() {
+        let mut source = NfnSource {
+            session_id: Some("another-session".into()),
+            ..Default::default()
+        };
+        assert!(
+            infer_source(&mut source, Some("sender"), None, Some("%2"), || {
+                panic!("Conflicting session should be rejected before discovery")
+            })
+            .is_err()
+        );
+        assert_eq!(source.session_id.as_deref(), Some("another-session"));
+        assert!(source.pane_id.is_none());
+    }
+
     #[test]
     fn missing_and_unknown_options_are_errors() {
         assert!(flag_value(&["--timeout".into()], "--timeout").is_err());
