@@ -89,12 +89,20 @@ impl Service {
         let mut ticks = 0_u32;
         let mut auto_yes_panes = self.ctx.auto_yes_panes.lock().clone();
         let mut settings_error = None;
+        let mut last_todos = Value::Null;
         loop {
             tokio::select! {
                 () = tokio::time::sleep(std::time::Duration::from_secs(1)) => {},
                 () = self.template_changes.notified() => { self.push(None, false); },
             }
             ticks = ticks.wrapping_add(1);
+            if ticks.is_multiple_of(3) {
+                let todos = super::todos::snapshot();
+                if todos != last_todos {
+                    last_todos = todos.clone();
+                    native::push(json!({"type":"todos", "todos":todos}));
+                }
+            }
             let current_settings = self.ctx.settings.lock().enhanced_notifications.clone();
             match super::settings::load(&current_settings) {
                 Ok(value) => {
@@ -364,15 +372,17 @@ impl Service {
                 records.push(record);
             }
         }
+        let todos = super::todos::snapshot();
+        let has_todos = todos["items"].as_array().is_some_and(|items| !items.is_empty());
         let visible = settings.enhanced_notifications.delivery != "native"
-            && !records.is_empty()
+            && (!records.is_empty() || has_todos)
             && (settings.enhanced_notifications.focus == "independent"
                 || (platform.focused == Some(false) && platform.authorized == Some(true)));
         let auto_yes_panes: Vec<_> = self.ctx.auto_yes_panes.lock().iter().cloned().collect();
         native::push(
             json!({"type":"snapshot", "records":records, "pending_count":count, "arrival":arrival, "sound":sound,
             "settings": settings.enhanced_notifications, "templates":templates::list(), "visible":visible,
-            "platform":*platform, "auto_yes_panes":auto_yes_panes}),
+            "platform":*platform, "auto_yes_panes":auto_yes_panes, "todos":todos}),
         );
     }
 
@@ -412,6 +422,45 @@ impl Service {
 
     pub async fn execute(&self, command: NfnCommand) -> Result<Value, String> {
         match command {
+            NfnCommand::Todos => return Ok(super::todos::snapshot()),
+            NfnCommand::TodoLink { note, agents } => {
+                let _guard = self.mutation.lock().await;
+                let value = super::todos::link(note, agents)?;
+                self.changed();
+                return Ok(value);
+            }
+            NfnCommand::TodoAdd { text, group } => {
+                let _guard = self.mutation.lock().await;
+                let value = super::todos::add(&text, &group)?;
+                self.changed();
+                return Ok(value);
+            }
+            NfnCommand::TodoUpdate { id, checked } => {
+                let _guard = self.mutation.lock().await;
+                let value = super::todos::update(&id, checked)?;
+                self.changed();
+                return Ok(value);
+            }
+            NfnCommand::TodoStart { id, cwd } => {
+                let _guard = self.mutation.lock().await;
+                let value = super::todos::start(&id, &cwd)?;
+                self.changed();
+                return Ok(value);
+            }
+            NfnCommand::TodoFocus { id } => {
+                let agent = super::todos::agent(&id)?;
+                let pane = agent["pane"].as_str().ok_or("Agent has no tmux pane")?;
+                let window = tmux(&["display-message", "-p", "-t", pane, "#{window_id}"])?;
+                if agent["window_id"]
+                    .as_str()
+                    .is_some_and(|expected| expected != window)
+                {
+                    return Err("The linked agent window has closed".into());
+                }
+                let source = resolve_source(pane, None)?;
+                focus_source(&source).await?;
+                return Ok(json!({"focused":true}));
+            }
             NfnCommand::Get { id } => {
                 return serde_json::to_value(self.store.get(&id)?).map_err(|e| e.to_string())
             }
@@ -1047,7 +1096,7 @@ fn request_for_question(question: &ClaudeQuestion, dedupe_key: String) -> NfnReq
     }
 }
 
-fn tmux(args: &[&str]) -> Result<String, String> {
+pub(super) fn tmux(args: &[&str]) -> Result<String, String> {
     let output = std::process::Command::new("tmux")
         .args(args)
         .output()

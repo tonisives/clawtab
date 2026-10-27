@@ -6,6 +6,7 @@ pub mod remote;
 mod service;
 pub mod settings;
 mod store;
+mod todos;
 pub mod templates;
 pub mod types;
 

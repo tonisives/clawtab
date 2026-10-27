@@ -157,3 +157,31 @@ button.auto-yes-button[aria-checked="true"] { background: rgba(255, 159, 10, .15
   .switch-track::after { transition: transform .18s ease; }
 }
 [hidden] { display: none !important; }
+
+.top { grid-template-columns: 30px minmax(0, 1fr) 30px 30px; gap: 4px; }
+.todo-toggle { position: relative; width: 30px; height: 30px; padding: 3px !important; }
+.todo-ring { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: conic-gradient(#aeb8ed var(--todo-progress), #3b3b3f 0); }
+.todo-ring > span { display: grid; place-items: center; width: 19px; height: 19px; border-radius: 50%; background: #161616; color: #e4e4e4; font-size: 10px; font-variant-numeric: tabular-nums; }
+.todo-toggle[aria-pressed="true"] { color: #aeb8ed; }
+#surface.todos-open { width: 620px; min-height: 280px; }
+.todo-view { display: flex; flex-direction: column; width: 100%; min-height: 0; padding: 12px; overflow-y: auto; }
+.todo-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.todo-source { margin-top: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.todo-items { min-height: 80px; max-height: 440px; overflow-y: auto; overscroll-behavior: contain; margin: 10px -12px; flex-shrink: 0; }
+.todo-group { position: sticky; top: 0; z-index: 1; background: #202022; font-size: 11px; font-weight: 600; padding: 8px 12px; margin: 0; }
+.todo-row { display: flex; align-items: flex-start; gap: 9px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.todo-row > input { margin: 3px 0 0; flex: none; accent-color: #aeb8ed; }
+.todo-body { flex: 1; min-width: 0; }
+.todo-title { overflow-wrap: anywhere; line-height: 1.45; }
+.todo-row.complete .todo-title { text-decoration: line-through; color: var(--muted); }
+.todo-state { font-size: 11px; color: #aeb8ed; margin-top: 4px; }
+.todo-state.blocked { color: #ff9f0a; }
+.todo-summary { margin-top: 3px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.todo-agent { flex: none; font-size: 11px; margin-top: -2px; }
+.todo-add { display: grid; grid-template-columns: minmax(0, 1fr) 100px; gap: 7px; }
+.todo-add > input:first-child { grid-column: 1 / -1; }
+.todo-view input:not([type="checkbox"]) { width: 100%; min-width: 0; background: #0a0a0a; color: inherit; border: 1px solid #333; border-radius: 6px; padding: 8px; }
+.todo-options { margin-top: 12px; }
+.todo-options summary { cursor: pointer; }
+.todo-options > input, .todo-options > button, .todo-options > label { display: block; margin-top: 8px; }
+.notch .todo-ring > span { background: #000; }
