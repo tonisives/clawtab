@@ -181,9 +181,9 @@ Run the message checks through the shared macOS build worker from the public che
 
 ```sh
 ~/.agents/scripts/buildctl status
-~/.agents/scripts/buildctl run --cwd "$PWD" --prepare-node \
+~/.agents/scripts/buildctl run --cwd "$PWD/desktop" --prepare-node \
   --output dist/message-checks=/tmp/clawtab-message-checks -- \
-  python3 tests/check-messages.py
+  python3 ../tests/check-messages.py
 ```
 
 The suite checks the Rust lifecycle, CLI and relay, builds the desktop frontend, checks mobile types, tests offline replies, and runs renderer and native geometry checks in the worker's Tart VM. Logs, screenshots, and measured check durations return to `/tmp/clawtab-message-checks`. Compiler parallelism stays at four workers.
