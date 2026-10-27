@@ -8,6 +8,7 @@ import { getWsSend, nextId } from "../lib/wsRuntime";
 import { enqueueAnswer } from "../lib/pendingAnswers";
 import { postAnswer, refreshToken } from "../api/client";
 import { messageAction } from "../lib/messageActions";
+import { messageNotificationRoute } from "../lib/messageNotificationRoute";
 
 // Track which responses we've already sent answers for / navigated for,
 // to avoid double-processing between cold-start and the listener.
@@ -16,9 +17,12 @@ const navigatedResponses = new Set<string>();
 
 // Pending navigation target from cold start (set before router is ready)
 let pendingNavigation: string | null = null;
+let pendingResponseKey: string | null = null;
 export function consumePendingNavigation(): string | null {
   const target = pendingNavigation;
+  if (target && pendingResponseKey) navigatedResponses.add(pendingResponseKey);
   pendingNavigation = null;
+  pendingResponseKey = null;
   return target;
 }
 
@@ -107,7 +111,10 @@ async function handleNotificationResponse(
         } catch (error) { console.log("[messages] reply queued or awaiting connection", String(error)); }
       }
     }
-    if (navigate && !alreadyNavigated) { navigatedResponses.add(key); navigate("/notifications"); }
+    if (navigate && !alreadyNavigated && action === Notifications.DEFAULT_ACTION_IDENTIFIER) {
+      navigatedResponses.add(key);
+      navigate(messageNotificationRoute(response) ?? "/notifications");
+    }
     return;
   }
   console.log("[notif] clawtab q=" + clawtab.question_id + " pane=" + clawtab.pane_id + " job=" + clawtab.matched_job);
@@ -193,7 +200,10 @@ export function handleColdStartAnswer() {
         // Only set pending navigation for body taps, not action button taps
         const isBodyTap = response.actionIdentifier === Notifications.DEFAULT_ACTION_IDENTIFIER;
         if (isBodyTap) {
-          if (ct.job_id && !ct.question_id) {
+          const messageRoute = messageNotificationRoute(response);
+          if (messageRoute) {
+            pendingNavigation = messageRoute;
+          } else if (ct.job_id && !ct.question_id) {
             const params = ct.run_id ? `?run_id=${ct.run_id}` : "";
             pendingNavigation = `/job/${ct.job_id}${params}`;
           } else if (ct.matched_job) {
@@ -201,6 +211,7 @@ export function handleColdStartAnswer() {
           } else if (ct.pane_id) {
             pendingNavigation = `/process/${ct.pane_id.replace(/%/g, "_pct_")}?source=notifications`;
           }
+          if (pendingNavigation) pendingResponseKey = responseKey(response);
         }
         console.log("[notif] cold-start pending: " + pendingNavigation + " (bodyTap=" + isBodyTap + ")");
       } else {

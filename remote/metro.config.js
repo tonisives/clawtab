@@ -1,5 +1,6 @@
 const { getDefaultConfig } = require("expo/metro-config");
 const path = require("path");
+require("./scripts/message-surface.cjs").generate();
 
 const projectRoot = __dirname;
 const workspaceRoot = path.resolve(__dirname, "..");

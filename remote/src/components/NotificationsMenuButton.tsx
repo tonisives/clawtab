@@ -30,8 +30,8 @@ export function NotificationsMenuButton({
   const records = useMessageStore(state => state.records);
   const processes = useJobsStore(state => state.detectedProcesses);
   const alertCount = uncoveredAlerts(records, processes).filter(process => process._agent_alert?.trim()).length;
-  const represented = new Set(questions.map(question => questionMessage(records, question)?.id));
-  const messageCount = records.filter(record => messagePending(record) && !represented.has(record.id)).length;
+  const represented = new Set(questions.map(question => questionMessage(records, question)));
+  const messageCount = records.filter(record => messagePending(record) && !represented.has(record)).length;
   const activeNotificationCount = questions.length + alertCount + messageCount;
 
   const openMenu = () => {

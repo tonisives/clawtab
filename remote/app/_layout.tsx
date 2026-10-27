@@ -14,6 +14,7 @@ import { useNotificationStore } from "../src/store/notifications";
 import { loadCache } from "../src/lib/jobCache";
 import { loadPendingAnswers } from "../src/lib/pendingAnswers";
 import { handleColdStartAnswer, useNotifications } from "../src/hooks/useNotifications";
+import { MessageArrival } from "../src/components/MessageArrival";
 import { colors } from "../src/theme/colors";
 import { NotificationsMenuButton } from "../src/components/NotificationsMenuButton";
 import { useResponsive } from "../src/hooks/useResponsive";
@@ -130,7 +131,7 @@ function WebSocketProvider({ children }: { children: React.ReactNode }) {
 
   useWebSocket();
   useNotifications();
-  return <>{children}</>;
+  return <>{children}<MessageArrival /></>;
 }
 
 export default function RootLayout() {

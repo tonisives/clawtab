@@ -18,12 +18,14 @@
   let explicitOpen = false, presented = false, hiddenByUser = false;
   let geometry = {}, layoutAnimation = null, contentAnimations = [], lastSize = "", renderedLayout = "";
   const autoYesBusy = new Set();
+  const remoteMedia = new Map();
   const selectedNotifications = new Set();
   let bulkBusy = false, queueError = "";
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
   function native(value) {
     if (window.webkit?.messageHandlers?.nfn) window.webkit.messageHandlers.nfn.postMessage(value);
+    else if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify({ nfn: value }));
     else if (window.parent !== window) window.parent.postMessage({ nfn: value }, "*");
   }
   function call(command) {
@@ -157,7 +159,8 @@
       .filter(line => !/^[>❯]?\s*\d+[.)]\s/.test(line)).join("\n");
   }
   function template(record) {
-    return snapshot.templates?.templates?.find(t => t.id === record.request.template) || { layout: [{ type: "text", field: "body" }, { type: "media" }, { type: "reply" }, { type: "logs" }] };
+    const templates = snapshot.templates_by_machine?.[record.machine_id] || snapshot.templates;
+    return templates?.templates?.find(t => t.id === record.request.template) || { layout: [{ type: "text", field: "body" }, { type: "media" }, { type: "reply" }, { type: "logs" }] };
   }
   function size() {
     const bounds = host.getBoundingClientRect(), hidden = host.classList.contains("empty");
@@ -218,7 +221,38 @@
   }
   new ResizeObserver(size).observe(host);
   function stopMedia() {
-    host.querySelectorAll("video").forEach(video => { video.pause(); video.removeAttribute("src"); video.load(); });
+    host.querySelectorAll("video").forEach(video => { video.pause(); if (!snapshot.remote) { video.removeAttribute("src"); video.load(); } });
+    setTimeout(cleanupRemoteMedia, 0);
+  }
+  function cleanupRemoteMedia() {
+    for (const [element, state] of remoteMedia) {
+      if (element.isConnected) continue;
+      state.cancelled = true;
+      if (state.url) URL.revokeObjectURL(state.url);
+      remoteMedia.delete(element);
+    }
+  }
+  async function loadRemoteMedia(element, status, record, index) {
+    const state = { cancelled: false, url: null }; remoteMedia.set(element, state);
+    try {
+      const metadata = await call({ op: "media", id: record.id, index, offset: 0, length: 0 });
+      if (!Number.isSafeInteger(metadata.size) || metadata.size <= 0 || metadata.size > 128 * 1024 * 1024) throw new Error("Attachment is empty or exceeds 128 MiB");
+      const parts = []; let offset = 0;
+      while (offset < metadata.size) {
+        if (state.cancelled || !element.isConnected) return;
+        const chunk = await call({ op: "media", id: record.id, index, offset, length: Math.min(256 * 1024, metadata.size - offset) });
+        if (chunk.offset !== offset || chunk.size !== metadata.size) throw new Error("Attachment changed during transfer. Open it again.");
+        const bytes = Uint8Array.from(atob(chunk.data), character => character.charCodeAt(0));
+        if (!bytes.length || bytes.length > 256 * 1024 || offset + bytes.length > metadata.size) throw new Error("Invalid attachment range");
+        parts.push(bytes); offset += bytes.length;
+        status.textContent = `Loading attachment ${Math.round(offset / metadata.size * 100)}%`;
+      }
+      if (state.cancelled || !element.isConnected) return;
+      state.url = URL.createObjectURL(new Blob(parts, { type: metadata.mime }));
+      element.src = state.url; element.hidden = false; status.remove();
+    } catch (error) {
+      if (!state.cancelled && element.isConnected) status.textContent = String(error.message || error);
+    }
   }
   function stopContext() { clearInterval(logTimer); logTimer = null; stopMedia(); }
   function pauseTimer() {
@@ -452,9 +486,13 @@
       const media = el("div", "media");
       record.request.media.forEach((item, index) => {
         const element = el(item.kind === "video" ? "video" : "img");
-        element.src = item.src.startsWith("/") ? `clawtab-nfn://media/${record.id}/${index}` : item.src;
-        if (item.kind === "video") { element.controls = true; element.preload = "metadata"; }
-        else { element.alt = item.alt || record.request.title; element.loading = "lazy"; }
+        if (snapshot.remote && item.src.startsWith("/")) {
+          element.hidden = true;
+          const status = el("div", "hint", "Loading attachment..."); status.setAttribute("role", "status"); media.append(status);
+          loadRemoteMedia(element, status, record, index);
+        } else element.src = item.src.startsWith("/") ? `clawtab-nfn://media/${record.id}/${index}` : item.src;
+        if (item.kind === "video") { element.controls = true; element.playsInline = true; element.preload = "metadata"; }
+        else { element.alt = item.alt || record.request.title; element.loading = snapshot.remote ? "eager" : "lazy"; }
         element.addEventListener("error", () => { element.replaceWith(el("div", "hint", `${item.kind === "video" ? "Video" : "Image"} unavailable`)); });
         media.append(element);
       }); primitives.media = media;
@@ -572,7 +610,8 @@
       if (changedLogs) {
         stopAnimation();
         const logs = card._logs, scroller = card._content;
-        const atBottom = logs._raw == null || scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 30;
+        const mediaFirst = snapshot.remote && records.get(id)?.request.media?.length;
+        const atBottom = (!mediaFirst && logs._raw == null) || (logs._raw != null && scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 30);
         logs._raw = value.log; renderAnsi(logs, value.log || "No output yet");
         card._followLogs = atBottom;
         if (atBottom) scroller.scrollTop = scroller.scrollHeight;
@@ -750,6 +789,7 @@
     leaveSettings(); expanded = settingsReturnExpanded; render(); startContext(); resumeTimer();
   }
   function openSettings() {
+    if (snapshot.remote) return;
     if (settingsOpen) return;
     hiddenByUser = false;
     settingsReturnExpanded = expanded;
@@ -840,7 +880,7 @@
   function draggableBar(control) {
     let origin = null, dragged = false;
     control.addEventListener("pointerdown", event => {
-      if (event.button !== 0 || preview) return;
+      if (event.button !== 0 || preview || snapshot.remote) return;
       origin = { x: event.screenX, y: event.screenY, pointerId: event.pointerId }; dragged = false;
       document.addEventListener("pointermove", move);
       document.addEventListener("pointerup", finish);
@@ -925,13 +965,28 @@
       }
       updateCard();
     } else { host.querySelector(".card")?.remove(); host.querySelector(".queue")?.remove(); renderedId = null; card = null; }
-    renderMenu(); if (!continuingAnimation) animateLayout(before, !queue && !menu && !settingsOpen);
+    renderMenu(); cleanupRemoteMedia(); if (!continuingAnimation) animateLayout(before, !queue && !menu && !settingsOpen);
   }
   function receive(value) {
     if (value.type === "response") {
       const promise = promises.get(String(value.token)); if (!promise) return;
       clearTimeout(promise.timer); promises.delete(String(value.token));
       if (value.error) promise.reject(new Error(value.error)); else promise.resolve(value.value); return;
+    }
+    if (value.type === "open_record" && typeof value.id === "string") {
+      const version = ++reviewVersion;
+      hiddenByUser = false; explicitOpen = true;
+      const open = record => {
+        if (reviewVersion !== version) return;
+        records.set(record.id, record); openRecord(record.id);
+        if (record.request.media?.length) toggleDetails();
+      };
+      if (records.has(value.id)) open(records.get(value.id));
+      else call({ op: "get", id: value.id }).then(open).catch(error => {
+        if (reviewVersion !== version) return;
+        showQueue(); queueError = String(error.message || error); render();
+      });
+      return;
     }
     if (value.type === "show" || value.type === "latest") {
       resetHandledActions();

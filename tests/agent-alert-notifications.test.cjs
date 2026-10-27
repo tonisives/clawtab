@@ -82,6 +82,9 @@ function pushHarness() {
     'expo-router': { useRouter: () => ({ push: value => routes.push(value) }) },
     '../store/notifications': { useNotificationStore: store },
     '../lib/wsRuntime': {}, '../lib/pendingAnswers': {}, '../api/client': {}, '../lib/messageActions': {},
+    '../lib/messageNotificationRoute': load('remote/src/lib/messageNotificationRoute.ts', {
+      './messageRoutes': load('remote/src/lib/messageRoutes.ts'),
+    }),
   });
   return { hook, routes, answers, injected, respond: response => listener(response), setLast: response => { lastResponse = response; } };
 }
@@ -110,4 +113,24 @@ test('cold-start alert pushes retain the session target until the router is read
   assert.equal(harness.hook.consumePendingNavigation(), '/process/machine-b::_pct_2?source=notifications');
   assert.deepEqual(harness.answers, []);
   assert.deepEqual(harness.injected, []);
+});
+
+test('message body taps open the exact review and do not duplicate warm navigation', async () => {
+  const harness = pushHarness();
+  harness.hook.useNotifications();
+  const response = push('message-warm', { event: 'message', machine_id: 'mac-b', message_id: 'review#8' });
+  await harness.respond(response);
+  await harness.respond(response);
+  assert.deepEqual(harness.routes, ['/notifications/message/review%238?machine=mac-b']);
+  assert.deepEqual(harness.answers, []);
+});
+
+test('cold-start message selection survives router initialization and getLast replay', async () => {
+  const harness = pushHarness();
+  harness.setLast(push('message-cold', { event: 'message', machine_id: 'mac-a', message_id: 'review-1' }));
+  harness.hook.handleColdStartAnswer();
+  await Promise.resolve();
+  harness.hook.useNotifications();
+  await Promise.resolve();
+  assert.deepEqual(harness.routes, ['/notifications/message/review-1?machine=mac-a']);
 });
