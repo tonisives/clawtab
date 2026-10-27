@@ -224,3 +224,18 @@ Run Rust tests and frontend builds through the shared macOS worker:
 Run local GUI checks in Tart from the parent checkout with `python3 scripts/test-notifications-tart.py`. The runner uses the shared bmux VM queue, copies only test sources into the guest, runs message and todo renderer checks in WebKit and native keyboard, geometry, settings, and menu bar checks, then saves logs and screenshots under `artifacts/tart/`. Set `CLAWTAB_TART_RUNNER` if the shared runner is elsewhere. Use `--public-root` to test a separate public worktree.
 
 On a disposable macOS CI desktop, generate a fixture with `node desktop/tests/nfn-fixture.mjs /tmp/clawtab-nfn-fixture.html` and run `nfn-webkit.m` with that HTML and `nfn-browser-check.js`. The renderer checks cover stable arrivals, drafts, custom layout order, duplicate clicks, log polling, and queue pagination. Use `--native` when generating the fixture for `nfn-native.m`.
+
+For the remote shared surface, submit its combined checks from the public checkout:
+
+```sh
+~/.agents/scripts/buildctl status
+~/.agents/scripts/buildctl run --cwd remote --prepare-node \
+  --output dist/mobile-message-checks=/tmp/clawtab-mobile-message-checks \
+  --output dist/mobile-message-web=/tmp/clawtab-mobile-message-web \
+  --output dist/mobile-message-ios=/tmp/clawtab-mobile-message-ios -- \
+  python3 ../tests/check-mobile-message-ui.py
+```
+
+Dependency setup starts in `remote`, which contains its package manifest and lockfile. Artifact paths start at the public repository root. The suite regenerates the shared document, checks mobile types and notification routes, runs all `nfn::` Rust tests through the desktop manifest, and exports the web and iOS bundles.
+
+`tests/serve-mobile-message-app.py` serves the returned web export with two synthetic machines and local image/video fixtures. Open its printed exact-message URL to check the production router and iframe bridge. Its decision actions remain pending. The parent `scripts/test-mobile-messages-tart.py` runner checks the same renderer and bounded media bridge in a phone-sized native WKWebView.

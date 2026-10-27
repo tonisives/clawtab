@@ -7,7 +7,7 @@ import subprocess
 import time
 
 if os.environ.get("BUILD_SERVICE_WORKER") != "1":
-    raise SystemExit("Run with buildctl run --prepare-node -- python3 tests/check-mobile-message-ui.py")
+    raise SystemExit("Run with buildctl run --cwd remote --prepare-node -- python3 ../tests/check-mobile-message-ui.py")
 
 root = Path(__file__).resolve().parent.parent
 results = root / "dist/mobile-message-checks"
