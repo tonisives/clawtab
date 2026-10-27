@@ -1679,12 +1679,12 @@ fn update_job(
     if let Some(telegram_chat_id) = &update.telegram_chat_id {
         job.telegram_chat_id = *telegram_chat_id;
     }
-    if let Some(telegram_notify) = &update.telegram_notify {
-        job.telegram_notify = crate::config::jobs::TelegramNotify {
-            start: telegram_notify.start,
-            working: telegram_notify.working,
-            logs: telegram_notify.logs,
-            finish: telegram_notify.finish,
+    if let Some(notify) = &update.notify {
+        job.notify = crate::config::jobs::JobNotify {
+            start: notify.start,
+            working: notify.working,
+            logs: notify.logs,
+            finish: notify.finish,
         };
     }
     if let Some(kill_on_end) = update.kill_on_end {

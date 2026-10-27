@@ -4,7 +4,7 @@ export type JobType = "binary" | "claude" | "job";
 export type TelegramLogMode = "off" | "on_prompt" | "always";
 export type NotifyTarget = "none" | "telegram" | "app";
 
-export interface TelegramNotify {
+export interface JobNotify {
   start: boolean;
   working: boolean;
   logs: boolean;
@@ -37,7 +37,7 @@ export interface Job {
   job_id: string | null;
   telegram_chat_id: number | null;
   telegram_log_mode: TelegramLogMode;
-  telegram_notify: TelegramNotify;
+  notify: JobNotify;
   notify_target: NotifyTarget;
   group: string;
   slug: string;

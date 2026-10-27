@@ -46,7 +46,9 @@ position: null
 
 Dragging sets `placement: custom`, records the display ID, and saves `position: {right: 100, top: 40}` in points from the display's usable top-right corner. Cards grow left and down from this anchor and stay within the display. Choose Notch or Right column to restore an automatic position.
 
-The daemon owns the optional macOS menu bar icon. Clicking it opens the latest pending notification, or the collapsed bar when there are none. Use the list icon for Pending and History, and the ClawTab icon inside the window for notification settings. The desktop app has a Dock icon and does not create a second menu bar icon. Change `menu_bar_icon` in this file or use the **Menu bar icon** checkbox in notification settings; no desktop app or restart is needed.
+The daemon owns the optional macOS menu bar icon. Clicking it opens the latest pending notification, or the collapsed bar when there are none. With no pending notifications, clicking the title opens History; collapsing History keeps the bar visible. Click the menu bar icon again to hide it. The collapsed count is plain text within the clickable, draggable title bar.
+
+Use the list icon for Pending and History, and the ClawTab icon inside the window for notification settings. **Close bar** hides the window without dismissing notifications. A new notification or another menu bar click can open it again. The desktop app has a Dock icon and does not create a second menu bar icon. Change `menu_bar_icon` in this file or use the **Menu bar icon** checkbox in notification settings; no desktop app or restart is needed.
 
 New notifications open their card when Pending or History is visible. A card being reviewed, an active bulk selection, and the settings form keep their current view.
 
@@ -156,4 +158,6 @@ python3 /path/to/clawtab/scripts/build-guard.py --cwd "$PWD/desktop/src-tauri" -
 pnpm --dir desktop build
 ```
 
-For renderer interaction checks, generate a standalone fixture with `node desktop/tests/nfn-fixture.mjs /tmp/clawtab-nfn-fixture.html`, open it in a browser, and evaluate `desktop/tests/nfn-browser-check.js`. It checks stable arrivals, drafts, custom layout order, duplicate clicks, log polling, and queue pagination.
+Run local GUI checks in Tart from the parent checkout with `python3 scripts/test-notifications-tart.py`. The runner uses the shared bmux VM queue, copies only test sources into the guest, runs renderer checks in WebKit and native keyboard, geometry, settings, and menu bar checks, then saves logs and screenshots under `artifacts/tart/`. Set `CLAWTAB_TART_RUNNER` if the shared runner is elsewhere. Unit tests and type checks can run on the host.
+
+On a disposable macOS CI desktop, generate a fixture with `node desktop/tests/nfn-fixture.mjs /tmp/clawtab-nfn-fixture.html` and run `nfn-webkit.m` with that HTML and `nfn-browser-check.js`. The renderer checks cover stable arrivals, drafts, custom layout order, duplicate clicks, log polling, and queue pagination. Use `--native` when generating the fixture for `nfn-native.m`.

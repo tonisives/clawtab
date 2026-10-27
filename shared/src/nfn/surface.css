@@ -33,8 +33,7 @@ button.bar-toggle:active { cursor: grabbing; }
 button.bar-toggle:hover { background: #ffffff08; }
 .top > .icon-button, .top-actions { position: relative; }
 .brand img { width: 20px; height: 20px; border-radius: 5px; }
-.count { display: flex; align-items: center; height: 30px; font-size: 11px; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
-button.count { padding: 0 6px; color: inherit; }
+.count { display: flex; align-items: center; height: 30px; padding: 0 6px; color: inherit; font-size: 11px; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .top-actions { display: flex; align-items: center; justify-content: center; gap: 4px; pointer-events: none; }
 .top-actions button { pointer-events: auto; }
 button.icon-button { display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 5px; }

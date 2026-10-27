@@ -8,7 +8,7 @@ import type {
   RemoteJob,
   JobStatus,
   ProcessProvider,
-  TelegramNotify,
+  JobNotify,
 } from "@clawtab/shared";
 import {
   AgentSelector,
@@ -314,7 +314,7 @@ const InlineToggleField = ({
   );
 };
 
-type InlineNotificationKey = keyof TelegramNotify;
+type InlineNotificationKey = keyof JobNotify;
 
 const INLINE_NOTIFICATION_OPTIONS: { key: InlineNotificationKey; label: string; hint: string }[] = [
   { key: "start", label: "Job started", hint: "Notify when the job begins" },
@@ -337,7 +337,7 @@ const InlineNotificationCheckboxes = ({
   const handleChange = async (key: InlineNotificationKey, enabled: boolean) => {
     setSavingKey(key);
     try {
-      await onUpdateJob({ telegram_notify: { ...job.telegram_notify, [key]: enabled } });
+      await onUpdateJob({ notify: { ...job.notify, [key]: enabled } });
     } finally {
       setSavingKey(null);
     }
@@ -351,7 +351,7 @@ const InlineNotificationCheckboxes = ({
           <label key={key} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: savingKey ? "wait" : "pointer" }}>
             <input
               type="checkbox"
-              checked={job.telegram_notify[key]}
+              checked={job.notify[key]}
               disabled={savingKey !== null}
               onChange={(event) => { void handleChange(key, event.target.checked); }}
               style={{ margin: 0 }}
@@ -365,7 +365,7 @@ const InlineNotificationCheckboxes = ({
   );
 };
 
-const notificationSummary = (notify: TelegramNotify) => [
+const notificationSummary = (notify: JobNotify) => [
   notify.start && "start",
   notify.working && "working",
   notify.logs && "logs",
@@ -857,7 +857,7 @@ export function DesktopDetailSections({
                   onUpdateJob={onUpdateJob}
                 />
               ) : (
-                <DetailRow label="Notifications" value={notificationSummary(job.telegram_notify)} />
+                <DetailRow label="Notifications" value={notificationSummary(job.notify)} />
               )}
             </>
           )}
@@ -869,7 +869,7 @@ export function DesktopDetailSections({
                 onUpdateJob={onUpdateJob}
               />
             ) : (
-              <DetailRow label="Notifications" value={notificationSummary(job.telegram_notify)} />
+              <DetailRow label="Notifications" value={notificationSummary(job.notify)} />
             )
           )}
         </div>

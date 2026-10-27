@@ -155,7 +155,7 @@ fn build_monitor_params(
             .is_some_and(|once| once.remove_after_start),
         kill_on_end: job.kill_on_end,
         telegram,
-        telegram_notify: job.telegram_notify.clone(),
+        notify: job.notify.clone(),
         notify_target: job.notify_target.clone(),
         history: Arc::clone(&ctx.history),
         job_status: Arc::clone(&ctx.job_status),
@@ -269,7 +269,7 @@ async fn dispatch_notification(rc: &RunCtx<'_>, outcome: &RunOutcome<'_>) {
     }
     match job.notify_target {
         NotifyTarget::Telegram => {
-            if job.telegram_notify.finish && outcome.success {
+            if job.notify.finish && outcome.success {
                 let Some(ref tg) = rc.telegram_config else {
                     return;
                 };
@@ -285,7 +285,7 @@ async fn dispatch_notification(rc: &RunCtx<'_>, outcome: &RunOutcome<'_>) {
             }
         }
         NotifyTarget::App => {
-            if !job.telegram_notify.finish {
+            if !job.notify.finish {
                 return;
             }
             let event = if outcome.success {

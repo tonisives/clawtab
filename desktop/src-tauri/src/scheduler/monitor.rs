@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use chrono::Utc;
 
-use crate::config::jobs::{JobStatus, NotifyTarget, TelegramNotify};
+use crate::config::jobs::{JobNotify, JobStatus, NotifyTarget};
 use crate::history::HistoryStore;
 use crate::relay::RelayHandle;
 use crate::terminal_backend as tmux;
@@ -30,7 +30,7 @@ pub struct MonitorParams {
     pub retired_one_shot: bool,
     pub kill_on_end: bool,
     pub telegram: Option<TelegramStream>,
-    pub telegram_notify: TelegramNotify,
+    pub notify: JobNotify,
     pub notify_target: NotifyTarget,
     pub history: Arc<Mutex<HistoryStore>>,
     pub job_status: Arc<Mutex<HashMap<String, JobStatus>>>,
@@ -174,7 +174,7 @@ pub async fn monitor_pane(params: MonitorParams) {
 }
 
 async fn notify_start(params: &MonitorParams, use_telegram: bool, use_app: bool) {
-    if !params.telegram_notify.start || params.is_reattach {
+    if !params.notify.start || params.is_reattach {
         return;
     }
     if use_telegram {
@@ -203,7 +203,7 @@ async fn notify_start(params: &MonitorParams, use_telegram: bool, use_app: bool)
 }
 
 async fn init_working_message(params: &MonitorParams, use_telegram: bool) -> Option<i64> {
-    if !params.telegram_notify.working || !use_telegram || params.is_reattach {
+    if !params.notify.working || !use_telegram || params.is_reattach {
         return None;
     }
     let tg = params.telegram.as_ref()?;
@@ -325,7 +325,7 @@ async fn maybe_update_working_message(
     started_at: std::time::Instant,
     tick_counter: u32,
 ) {
-    if !params.telegram_notify.working || !use_telegram || !tick_counter.is_multiple_of(4) {
+    if !params.notify.working || !use_telegram || !tick_counter.is_multiple_of(4) {
         return;
     }
     let Some(tg) = params.telegram.as_ref() else {
@@ -362,7 +362,7 @@ async fn handle_capture_diff(
         accumulate_and_push_log(params, state, &new_content, use_telegram);
     } else if !process_exited.load(Ordering::Acquire) {
         state.idle_ticks += 1;
-        if params.telegram_notify.logs && use_telegram {
+        if params.notify.logs && use_telegram {
             maybe_flush_stale_pending(params, state).await;
         }
     }
@@ -394,7 +394,7 @@ fn accumulate_and_push_log(
     state.accumulated_log.push_str(new_content);
     truncate_to_tail(&mut state.accumulated_log, MAX_ACCUMULATED_LOG_BYTES);
     crate::relay::push_log_chunk(&params.relay, &params.slug, new_content);
-    if params.telegram_notify.logs && use_telegram {
+    if params.notify.logs && use_telegram {
         if state.pending_diff.is_empty() {
             state.pending_diff = new_content.to_string();
         } else {
@@ -433,7 +433,7 @@ async fn maybe_flush_stale_pending(params: &MonitorParams, state: &mut PollState
 }
 
 async fn maybe_flush_idle_logs(params: &MonitorParams, use_telegram: bool, state: &mut PollState) {
-    if !params.telegram_notify.logs
+    if !params.notify.logs
         || !use_telegram
         || state.idle_ticks < IDLE_SEND_THRESHOLD
         || state.pending_diff.is_empty()
@@ -576,7 +576,7 @@ async fn notify_finish(
             },
         );
     }
-    if !params.telegram_notify.finish {
+    if !params.notify.finish {
         return;
     }
     let status = if succeeded { "completed" } else { "failed" };

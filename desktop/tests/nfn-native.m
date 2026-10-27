@@ -13,6 +13,20 @@ static NSUInteger attempts;
 static pid_t previousApplication;
 static BOOL positionSaved;
 
+static void verifyEmptyBarToggle(void (^finish)(void)) {
+    NSString *script = @"document.querySelector('.bar-toggle').click(); const historyOpened = document.querySelector('[data-history=true]')?.getAttribute('aria-selected') === 'true'; document.querySelector('.bar-toggle').click(); historyOpened && document.querySelector('#surface').classList.contains('pill')";
+    [surface.web evaluateJavaScript:script completionHandler:^(id kept, NSError *error) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 5), dispatch_get_main_queue(), ^{
+            if (error || ![kept boolValue] || !surface.panel.visible || !surface.notificationsVisible) { fprintf(stderr, "Collapsing empty History hid the notification bar\n"); exit(1); }
+            [surface.statusItem.button performClick:nil];
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 5), dispatch_get_main_queue(), ^{
+                if (surface.panel.visible || surface.notificationsVisible) { fprintf(stderr, "Second menu icon click did not hide the empty bar\n"); exit(1); }
+                finish();
+            });
+        });
+    }];
+}
+
 static void verifyInlineSettings(void (^finish)(void)) {
     [surface.web evaluateJavaScript:@"window.nfn.collapse()" completionHandler:^(id value, NSError *error) {
         if (error) { fprintf(stderr, "Could not reset the notification fixture\n"); exit(1); }
@@ -37,15 +51,14 @@ static void verifyInlineSettings(void (^finish)(void)) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 5), dispatch_get_main_queue(), ^{
             [surface.web evaluateJavaScript:@"document.querySelector('#surface').classList.contains('pill') && !document.querySelector('.card, .queue')" completionHandler:^(id opened, NSError *openError) {
                 if (openError || ![opened boolValue] || !surface.panel.visible || !surface.notificationsVisible || surface.surfaceWidth > 225 || surface.surfaceHeight > 44) { fprintf(stderr, "Empty menu bar notifications did not open as a collapsed bar with native delivery\n"); exit(1); }
-                [surface.web evaluateJavaScript:@"window.nfn.collapse()" completionHandler:^(id closed, NSError *closeError) {
-                    if (closeError) { fprintf(stderr, "Could not close menu bar notifications\n"); exit(1); }
+                verifyEmptyBarToggle(^{
                     [surface push:@{@"type":@"settings"}];
                     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 2), dispatch_get_main_queue(), ^{
                         [surface.web evaluateJavaScript:@"Boolean(document.querySelector('.notification-settings'))" completionHandler:^(id visible, NSError *viewError) {
                             if (viewError || ![visible boolValue] || !surface.panel.visible || !surface.settingsVisible) {
                                 fprintf(stderr, "Inline settings did not open with no cards and native delivery\n"); exit(1);
                             }
-                            [surface.web evaluateJavaScript:@"[...document.querySelectorAll('.notification-settings button')].find(button => button.textContent === 'Done').click()" completionHandler:^(id closed, NSError *closeError) {
+                            [surface.web evaluateJavaScript:@"document.querySelector('.close-bar').click()" completionHandler:^(id closed, NSError *closeError) {
                                 dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 5), dispatch_get_main_queue(), ^{
                                     if (closeError || surface.settingsVisible || surface.panel.visible) { fprintf(stderr, "Closing empty settings left the panel visible\n"); exit(1); }
                                     printf("Native inline settings checks passed: opens with no pending cards or overlay delivery, then closes completely.\n");
@@ -55,7 +68,7 @@ static void verifyInlineSettings(void (^finish)(void)) {
                             }];
                         }];
                     });
-                }];
+                });
             }];
         });
     }];

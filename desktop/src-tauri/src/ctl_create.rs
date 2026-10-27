@@ -6,8 +6,8 @@ use std::process::Command;
 use chrono::{DateTime, Local, TimeZone};
 use clawtab_lib::agent_session::ProcessProvider;
 use clawtab_lib::config::jobs::{
-    derive_slug, Job, JobType, JobsConfig, NotifyTarget, RunOnceSchedule, TelegramLogMode,
-    TelegramNotify,
+    derive_slug, Job, JobNotify, JobType, JobsConfig, NotifyTarget, RunOnceSchedule,
+    TelegramLogMode,
 };
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use crossterm::terminal::{
@@ -323,7 +323,7 @@ fn prepare_job(input: CreateInput, config: &JobsConfig, cwd: &Path) -> Result<Jo
         job_id: Some(job_id),
         telegram_chat_id: None,
         telegram_log_mode: TelegramLogMode::OnPrompt,
-        telegram_notify: TelegramNotify::default(),
+        notify: JobNotify::default(),
         notify_target: NotifyTarget::None,
         group,
         slug,

@@ -41,7 +41,7 @@ export const emptyJob: Job = {
   job_id: null,
   telegram_chat_id: null,
   telegram_log_mode: "on_prompt",
-  telegram_notify: { start: false, working: false, logs: false, finish: false },
+  notify: { start: false, working: false, logs: false, finish: false },
   notify_target: "none",
   group: "dog-free",
   slug: "",

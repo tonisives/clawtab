@@ -43,8 +43,8 @@ impl Default for NotifyTarget {
 
 /// Per-job notification flags shared by the configured notification targets.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct TelegramNotify {
-    #[serde(default = "bool_true")]
+pub struct JobNotify {
+    #[serde(default)]
     pub start: bool,
     #[serde(default = "bool_true")]
     pub working: bool,
@@ -58,10 +58,10 @@ fn bool_true() -> bool {
     true
 }
 
-impl Default for TelegramNotify {
+impl Default for JobNotify {
     fn default() -> Self {
         Self {
-            start: true,
+            start: false,
             working: true,
             logs: true,
             finish: true,
@@ -120,8 +120,8 @@ pub struct Job {
     pub telegram_chat_id: Option<i64>,
     #[serde(default)]
     pub telegram_log_mode: TelegramLogMode,
-    #[serde(default)]
-    pub telegram_notify: TelegramNotify,
+    #[serde(default, alias = "telegram_notify")]
+    pub notify: JobNotify,
     #[serde(default)]
     pub notify_target: NotifyTarget,
     #[serde(default = "default_group")]
@@ -344,8 +344,12 @@ impl JobsConfig {
                 Ok(mut job) => {
                     job.slug = slug.to_string();
                     let notify_target_migrated = migrate_legacy_notify_target(&mut job, &contents);
+                    let notify_renamed =
+                        serde_yml::from_str::<HashMap<String, serde_yml::Value>>(&contents)
+                            .is_ok_and(|fields| fields.contains_key("telegram_notify"));
                     let agent_selection_migrated = migrate_agent_selection(&mut job);
                     if contents.contains("job_type: folder")
+                        || notify_renamed
                         || notify_target_migrated
                         || agent_selection_migrated
                     {
@@ -1125,6 +1129,51 @@ mod tests {
         assert_eq!(job.params[0].value, None);
         assert_eq!(job.params[1].name, "bar");
         assert_eq!(job.params[1].value.as_deref(), Some("baz"));
+    }
+
+    #[test]
+    fn job_notifications_default_to_no_start_alert() {
+        let omitted = parse_job(&base_yaml("params: []"));
+        let partial = parse_job(&base_yaml("notify:\n  finish: true"));
+        assert!(!omitted.notify.start);
+        assert!(!partial.notify.start);
+        assert!(omitted.notify.finish);
+        assert!(partial.notify.finish);
+    }
+
+    #[test]
+    fn legacy_notification_flags_are_saved_as_notify_without_changing_target() {
+        for target in ["app", "telegram", "none"] {
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("job.yaml");
+            let yaml = base_yaml(&format!(
+                "notify_target: {target}\ntelegram_notify:\n  start: false\n  working: false\n  logs: true\n  finish: true"
+            ));
+            std::fs::write(&path, yaml).unwrap();
+            let job = JobsConfig::load_job_yaml(&path, "test/job").unwrap();
+            assert_eq!(
+                job.notify,
+                JobNotify {
+                    start: false,
+                    working: false,
+                    logs: true,
+                    finish: true
+                }
+            );
+            let saved = std::fs::read_to_string(&path).unwrap();
+            assert!(saved.contains("\nnotify:\n"));
+            assert!(!saved.contains("telegram_notify:"));
+            assert!(saved.contains(&format!("notify_target: {target}")));
+            assert_eq!(parse_job(&saved).notify, job.notify);
+        }
+    }
+
+    #[test]
+    fn explicit_start_notification_remains_an_opt_in() {
+        for field in ["notify", "telegram_notify"] {
+            let job = parse_job(&base_yaml(&format!("{field}:\n  start: true")));
+            assert!(job.notify.start);
+        }
     }
 
     #[test]

@@ -12,7 +12,7 @@
   let menu = null;
   let queueReturnId = null;
   let settingsOpen = false, settingsBusy = false, settingsReturnExpanded = false;
-  let explicitOpen = false;
+  let explicitOpen = false, hiddenByUser = false;
   let geometry = {}, layoutAnimation = null, contentAnimations = [], lastSize = "", renderedLayout = "";
   const autoYesBusy = new Set();
   const selectedNotifications = new Set();
@@ -228,11 +228,20 @@
     if (record.request.data?.event === "agent_alert" && pending(record)) return;
     timerStarted = performance.now(); collapseTimer = setTimeout(collapse, Math.max(100, remaining));
   }
-  function collapse(keepVisible = false) {
+  function collapse(keepVisible) {
+    if (typeof keepVisible !== "boolean") keepVisible = explicitOpen && !pendingCount();
     leaveSettings();
     explicitOpen = keepVisible === true; native({ native: "presentation", active: explicitOpen });
     clearTimeout(completionTimer); pauseTimer(); stopContext(); expanded = false; details = false; queue = false; current = null; focused = false; menu = null;
     native({ native: "text_focus", active: false }); render();
+  }
+  function hideBar() {
+    hiddenByUser = true; queueReturnId = null; collapse(false);
+  }
+  function toggleBar() {
+    if (current || queue || expanded) collapse();
+    else if (pendingCount()) openLatest();
+    else showQueue(true);
   }
   function openRecord(id) {
     if (busy) return;
@@ -273,11 +282,12 @@
     pauseTimer(); expanded = true; menu = menu === next ? null : next; render();
     if (menu === "agent") refreshContext();
   }
-  function showQueue() {
+  function showQueue(showHistory = false) {
     if (busy) return;
     leaveSettings();
     if (current) queueReturnId = current;
-    clearTimeout(completionTimer); pauseTimer(); stopContext(); expanded = true; details = false; queue = true; history = false; current = null; renderedId = null; menu = null; selectedNotifications.clear(); queueError = ""; render();
+    clearTimeout(completionTimer); pauseTimer(); stopContext(); expanded = true; details = false; queue = true; history = showHistory === true; current = null; renderedId = null; menu = null; selectedNotifications.clear(); queueError = ""; render();
+    if (history) loadHistory(true);
   }
   async function toggleQueue() {
     if (settingsOpen) { showQueue(); return; }
@@ -699,6 +709,7 @@
   }
   function openSettings() {
     if (settingsOpen) return;
+    hiddenByUser = false;
     settingsReturnExpanded = expanded;
     clearTimeout(completionTimer); pauseTimer(); stopContext(); menu = null; settingsOpen = true; expanded = true;
     native({ native: "settings", active: true }); render();
@@ -718,7 +729,7 @@
     if (!view) {
       view = el("section", "notification-settings"); view.setAttribute("aria-label", "Notification settings");
       const heading = el("div", "settings-heading");
-      heading.append(el("h1", "", "Notifications"), button("Done", closeSettings, "utility")); view.append(heading);
+      heading.append(el("h1", "", "Notifications"), button("Close bar", hideBar, "utility close-bar")); view.append(heading);
       const form = el("div", "settings-fields"); view.append(form);
       const fields = [
         ["placement", "Position", [["notch", "Notch"], ["right", "Right side"], ["custom", "Custom"]]],
@@ -821,20 +832,19 @@
     if (!continuingAnimation) stopAnimation();
     renderedLayout = signature;
     const count = pendingCount();
-    if (!preview && !settingsOpen && !explicitOpen && (!snapshot.visible || (!current && !queue && !count))) { host.className = "empty"; host.replaceChildren(); renderedId = null; card = null; stopContext(); size(); return; }
+    if (!preview && !settingsOpen && (hiddenByUser || (!explicitOpen && (!snapshot.visible || (!current && !queue && !count))))) { host.className = "empty"; host.replaceChildren(); renderedId = null; card = null; stopContext(); size(); return; }
     host.className = `${placement} ${expanded ? "expanded" : !current ? "pill" : ""} ${details && !settingsOpen ? "details-open" : ""} ${settingsOpen ? "settings-open" : ""} ${queue && !settingsOpen ? "queue-open" : ""} ${menu ? "menu-open" : ""}`;
     let top = host.querySelector(".top");
     if (!top) {
       top = el("div", "top"); host.prepend(top);
       top.addEventListener("contextmenu", event => { event.preventDefault(); openSettings(); });
-      const toggle = button("", () => (current || queue || expanded) ? collapse() : openLatest(), "bar-toggle");
+      const toggle = button("", toggleBar, "bar-toggle");
       draggableBar(toggle); top.append(toggle);
       const latest = button("", openSettings, "utility brand icon-button"); latest.title = "Notification settings"; latest.setAttribute("aria-label", "Notification settings");
       const logo = el("img"); logo.src = "https://cdn.clawtab.cc/assets/app-icon.png"; logo.alt = ""; latest.append(logo); top.append(latest);
       const controls = el("div", "top-actions");
       controls.append(iconButton("Previous notification", "M14 6l-6 6 6 6", () => navigate(-1), "nav-step previous"));
-      const count = button("", () => queue && !settingsOpen ? toggleQueue() : settingsOpen ? openLatest() : (current || expanded) ? collapse() : openLatest(), "utility count");
-      draggableBar(count); controls.append(count);
+      controls.append(el("span", "count"));
       controls.append(iconButton("Next notification", "M10 6l6 6-6 6", () => navigate(1), "nav-step next"));
       top.append(controls);
       const list = iconButton("Notification list", "M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01", toggleQueue, "list-toggle");
@@ -844,9 +854,14 @@
     const isOpen = Boolean(current || queue || expanded), toggle = top.querySelector(".bar-toggle");
     toggle.setAttribute("aria-label", isOpen ? "Collapse notifications" : "Expand notifications"); toggle.setAttribute("aria-expanded", String(isOpen));
     toggle.title = `${isOpen ? "Collapse" : "Open"} notifications. Drag to move.`;
-    const countButton = top.querySelector(".count");
+    let countButton = top.querySelector(".count");
+    if (isOpen !== (countButton.tagName === "BUTTON")) {
+      const label = isOpen ? button("", () => queue && !settingsOpen ? toggleQueue() : settingsOpen ? openLatest() : toggleBar(), "utility count") : el("span", "count");
+      if (isOpen) draggableBar(label);
+      countButton.replaceWith(label); countButton = label;
+    }
     countButton.textContent = current && index >= 0 && !settingsOpen ? `${index + 1} / ${count}` : `${count} pending`;
-    countButton.title = queue || settingsOpen ? "Return to notification" : isOpen ? "Collapse notifications" : "Open notifications";
+    if (isOpen) countButton.title = queue || settingsOpen ? "Return to notification" : "Collapse notifications";
     for (const step of top.querySelectorAll(".nav-step")) step.hidden = !current || count < 2 || settingsOpen;
     top.querySelector(".list-toggle").setAttribute("aria-pressed", String(queue && !settingsOpen));
     if (!settingsOpen) host.querySelector(".notification-settings")?.remove();
@@ -872,6 +887,8 @@
       if (value.error) promise.reject(new Error(value.error)); else promise.resolve(value.value); return;
     }
     if (value.type === "show" || value.type === "latest") {
+      if (value.type === "latest" && !pendingCount() && !host.classList.contains("empty")) { hideBar(); return; }
+      hiddenByUser = false;
       explicitOpen = true; native({ native: "presentation", active: true });
       if (value.type === "latest") openLatest(); else showQueue();
       return;
@@ -888,6 +905,7 @@
       const id = current;
       call({ op: "get", id }).then(record => { records.set(id, record); if (id === current) updateCard(); }).catch(showError);
     }
+    if (value.arrival && records.has(value.arrival)) hiddenByUser = false;
     if (value.arrival && records.has(value.arrival) && !current && !settingsOpen && !busy && !bulkBusy && (!queue || !selectedNotifications.size)) {
       clearTimeout(completionTimer); pauseTimer(); stopContext();
       current = value.arrival; queueReturnId = current; queue = false; history = false; details = false; menu = null;

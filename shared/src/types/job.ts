@@ -72,7 +72,7 @@ export interface JobUpdate {
   aerospace_workspace?: string | null;
   notify_target?: "none" | "app" | "telegram" | string | null;
   telegram_chat_id?: number | null;
-  telegram_notify?: TelegramNotify;
+  notify?: JobNotify;
   kill_on_end?: boolean;
   auto_yes?: boolean;
   max_history?: number;
@@ -84,7 +84,7 @@ export interface JobUpdate {
 
 export type TelegramLogMode = "off" | "on_prompt" | "always";
 
-export interface TelegramNotify {
+export interface JobNotify {
   start: boolean;
   working: boolean;
   logs: boolean;
@@ -102,7 +102,7 @@ export interface DesktopJob extends RemoteJob {
   job_id: string | null;
   telegram_chat_id: number | null;
   telegram_log_mode: TelegramLogMode;
-  telegram_notify: TelegramNotify;
+  notify: JobNotify;
   skill_paths: string[];
   agent_provider?: ProcessProvider | null;
   agent_model?: string | null;

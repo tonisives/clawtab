@@ -21,7 +21,7 @@ fn params(directory: &std::path::Path, target: NotifyTarget, finish: bool) -> Mo
         retired_one_shot: false,
         kill_on_end: false,
         telegram: None,
-        telegram_notify: TelegramNotify {
+        notify: JobNotify {
             finish,
             ..Default::default()
         },
@@ -41,6 +41,37 @@ fn params(directory: &std::path::Path, target: NotifyTarget, finish: bool) -> Mo
         result_file: None,
         resource_lease: None,
     }
+}
+
+#[tokio::test]
+async fn default_notifications_skip_start_and_keep_completion() {
+    let directory = tempfile::tempdir().expect("test directory");
+    let mut params = params(directory.path(), NotifyTarget::App, true);
+    let notifier = Arc::new(RecordingNotifier::default());
+    params.notifier = Some(notifier.clone());
+    notify_start(&params, false, true).await;
+    assert!(notifier.0.lock().is_empty());
+    notify_finish(&params, false, true, Some(0), true).await;
+    assert_eq!(
+        notifier.0.lock().as_slice(),
+        &[("local/quiet-job".to_string(), "completed".to_string())]
+    );
+}
+
+#[tokio::test]
+async fn start_alert_requires_opt_in_and_is_never_repeated_on_reattach() {
+    let directory = tempfile::tempdir().expect("test directory");
+    let mut params = params(directory.path(), NotifyTarget::App, true);
+    let notifier = Arc::new(RecordingNotifier::default());
+    params.notifier = Some(notifier.clone());
+    params.notify.start = true;
+    notify_start(&params, false, true).await;
+    params.is_reattach = true;
+    notify_start(&params, false, true).await;
+    assert_eq!(
+        notifier.0.lock().as_slice(),
+        &[("local/quiet-job".to_string(), "started".to_string())]
+    );
 }
 
 #[tokio::test]

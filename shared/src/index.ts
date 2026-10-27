@@ -16,7 +16,7 @@ export type {
   RunRecord,
   RunDetail,
   TelegramLogMode,
-  TelegramNotify,
+  JobNotify,
 } from "./types/job";
 export type {
   DetectedProcess,

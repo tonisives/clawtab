@@ -1,7 +1,7 @@
 //! Shared agent utilities used by commands, relay, and telegram modules.
 
 use crate::agent_session::ProcessProvider;
-use crate::config::jobs::{Job, JobType, NotifyTarget, TelegramLogMode, TelegramNotify};
+use crate::config::jobs::{Job, JobNotify, JobType, NotifyTarget, TelegramLogMode};
 use crate::config::settings::AppSettings;
 
 /// Returns the path to the agent working directory.
@@ -398,7 +398,7 @@ pub fn build_agent_job(
         job_id: Some("default".to_string()),
         telegram_chat_id: chat_id,
         telegram_log_mode: TelegramLogMode::OnPrompt,
-        telegram_notify: TelegramNotify::default(),
+        notify: JobNotify::default(),
         notify_target: if chat_id.is_some() {
             NotifyTarget::Telegram
         } else {

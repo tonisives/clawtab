@@ -1,6 +1,6 @@
 import type { Job, NotifyTarget } from "../../../types";
 
-type NotificationKey = keyof Job["telegram_notify"];
+type NotificationKey = keyof Job["notify"];
 
 type NotificationOption = {
   key: NotificationKey;
@@ -31,7 +31,7 @@ const NotificationCheckboxes = ({ form, setForm, label }: NotificationCheckboxes
   const handleNotificationChange = (key: NotificationKey, enabled: boolean) => {
     setForm((prev) => ({
       ...prev,
-      telegram_notify: { ...prev.telegram_notify, [key]: enabled },
+      notify: { ...prev.notify, [key]: enabled },
     }));
   };
 
@@ -43,7 +43,7 @@ const NotificationCheckboxes = ({ form, setForm, label }: NotificationCheckboxes
           <label key={key} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
             <input
               type="checkbox"
-              checked={form.telegram_notify[key]}
+              checked={form.notify[key]}
               onChange={(e) => handleNotificationChange(key, e.target.checked)}
               style={{ margin: 0 }}
             />

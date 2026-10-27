@@ -90,6 +90,21 @@ environment variables (same as Claude jobs).
 Folder jobs use the same `group/name+YYYY-MM-DD` run titles as Claude jobs.
 Scheduled and manually started runs follow the same naming rule.
 
+## Notifications
+
+Use `notify` for event choices and `notify_target` for delivery:
+
+```yaml
+notify:
+  start: false
+  working: false
+  logs: false
+  finish: true
+notify_target: app
+```
+
+`notify_target` accepts `app`, `telegram`, or `none`. Start alerts are off by default. `working` and `logs` control Telegram updates while a job runs. Existing `telegram_notify` settings are read and migrated to `notify` with their event choices and delivery target preserved.
+
 ## Tmux Monitoring
 
 Claude and Folder jobs are monitored asynchronously after launch:

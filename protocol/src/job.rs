@@ -223,8 +223,8 @@ pub struct JobUpdate {
     pub notify_target: Option<Option<String>>,
     #[serde(default, deserialize_with = "deserialize_optional_optional")]
     pub telegram_chat_id: Option<Option<i64>>,
-    #[serde(default)]
-    pub telegram_notify: Option<NotificationEvents>,
+    #[serde(default, alias = "telegram_notify")]
+    pub notify: Option<NotificationEvents>,
     #[serde(default)]
     pub kill_on_end: Option<bool>,
     #[serde(default)]
@@ -242,6 +242,19 @@ pub struct JobUpdate {
 #[cfg(test)]
 mod tests {
     use super::{AgentActivity, JobUpdate};
+
+    #[test]
+    fn job_update_accepts_both_notification_names_and_writes_notify() {
+        for field in ["notify", "telegram_notify"] {
+            let value = serde_json::json!({field: {"start": false, "working": false, "logs": false, "finish": true}});
+            let update: JobUpdate = serde_json::from_value(value).unwrap();
+            assert!(!update.notify.as_ref().unwrap().start);
+            assert!(update.notify.as_ref().unwrap().finish);
+            let saved = serde_json::to_value(update).unwrap();
+            assert!(saved.get("notify").is_some());
+            assert!(saved.get("telegram_notify").is_none());
+        }
+    }
 
     #[test]
     fn activity_accepts_old_snapshots_and_preserves_alert_messages() {
