@@ -53,10 +53,13 @@ if [[ -f "$ICON_SRC" ]]; then
   cp "$ICON_SRC" "$APP_PATH/Contents/Resources/icon.icns"
 fi
 
-# Ad-hoc sign the bundle so macOS treats it as a real .app and grants it a
-# stable code-identity for NotificationCenter and TCC. Without this, the
-# system treats every rebuild as a new app and re-prompts for permissions.
-codesign --force --sign - "$APP_PATH" >/dev/null 2>&1 || true
+# Local installers supply a certificate so macOS recognizes app updates.
+# Release builds can stage an ad-hoc bundle before the signing job runs.
+if [[ -z "${CLAWTAB_SIGNING_IDENTITY:-${APPLE_SIGNING_IDENTITY:-}}" ]]; then
+  python3 "$SCRIPT_DIR/sign-macos.py" --ad-hoc "$APP_PATH"
+else
+  python3 "$SCRIPT_DIR/sign-macos.py" "$APP_PATH"
+fi
 
 # Register the bundle with LaunchServices so its bundle id becomes known
 # system wide. Without this, UNUserNotificationCenter rejects authorization
