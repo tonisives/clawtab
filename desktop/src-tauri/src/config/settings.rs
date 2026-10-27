@@ -234,6 +234,11 @@ pub struct AppSettings {
     /// connected mobile clients don't receive notifications.
     #[serde(default = "default_true")]
     pub notify_questions_remote: bool,
+    /// Notify when an interactive agent finishes a turn.
+    #[serde(default = "default_true")]
+    pub notify_agent_completion_local: bool,
+    #[serde(default = "default_true")]
+    pub notify_agent_completion_remote: bool,
     /// Session transcript size warning in MB. Zero disables the warning.
     #[serde(default = "default_session_file_warning_mb")]
     pub session_file_warning_mb: u64,
@@ -293,6 +298,8 @@ impl Default for AppSettings {
             enhanced_notifications: Default::default(),
             notify_job_failures_local: true,
             notify_questions_remote: true,
+            notify_agent_completion_local: true,
+            notify_agent_completion_remote: true,
             session_file_warning_mb: default_session_file_warning_mb(),
             auto_release_on_blur: false,
             managed_close_with_terminal: false,

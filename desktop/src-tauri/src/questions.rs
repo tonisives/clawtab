@@ -14,6 +14,7 @@ use crate::config::settings::AppSettings;
 use crate::ipc::AgentActivity;
 use crate::relay::RelayHandle;
 
+mod completions;
 #[cfg(test)]
 mod hermes_live_tests;
 
@@ -623,6 +624,7 @@ pub async fn question_detection_loop(
 ) {
     let mut question_cache: HashMap<String, CachedQuestion> = HashMap::new();
     let mut activity_tracker = ActivityTracker::default();
+    let mut completion_tracker = completions::Tracker::default();
     let mut last_sent_ids: HashSet<String> = HashSet::new();
     let mut ticks_since_send: u32 = 0;
     let mut auto_answered_ids: HashMap<String, u32> = HashMap::new();
@@ -717,6 +719,17 @@ pub async fn question_detection_loop(
             &hook_runtime,
             &detection.session_activity,
         );
+        let completed = completion_tracker.update(
+            &processes,
+            &activity,
+            &hook_runtime,
+            &detection.agent_processes,
+        );
+        if let Some(service) = crate::nfn::service() {
+            for source in completed {
+                service.agent_completed(&source);
+            }
+        }
         for item in &mut activity {
             if let Some(warning) = crate::agent_session::session_file_size_alert(
                 detection
@@ -1801,6 +1814,7 @@ impl ActivityTracker {
 struct DetectionResult {
     processes: Vec<DetectedAgent>,
     session_activity: HashMap<String, SessionActivity>,
+    agent_processes: HashMap<String, completions::ProcessIdentity>,
     /// All pane IDs that currently exist in tmux (not just Claude processes).
     all_pane_ids: HashSet<String>,
 }
@@ -1899,6 +1913,7 @@ fn detect_question_processes(
     let match_entries = collect_q_match_entries(jobs_config);
 
     let mut session_activity = HashMap::new();
+    let mut agent_processes = HashMap::new();
     let mut all_pane_ids = HashSet::new();
     let mut seen = HashSet::new();
     let mut results = Vec::new();
@@ -1951,6 +1966,9 @@ fn detect_question_processes(
         if !seen.insert(pane_id.to_string()) {
             continue;
         }
+        if let Some(identity) = completions::process_identity(pane_pid, process_snapshot) {
+            agent_processes.insert(pane_id.to_string(), identity);
+        }
 
         let (matched_group, matched_job) =
             resolve_q_group_job(pane_id, cwd, &running_panes, &match_entries);
@@ -1999,6 +2017,11 @@ fn detect_question_processes(
         let Ok(screen) = crate::terminal_backend::snapshot(&info.id) else {
             continue;
         };
+        if let Some(identity) =
+            completions::process_identity(&info.child_pid.to_string(), process_snapshot)
+        {
+            agent_processes.insert(info.id.clone(), identity);
+        }
         if provider == ProcessProvider::Codex {
             if let Some(activity) = crate::agent_session::codex_session_activity_for_pane(
                 &info.child_pid.to_string(),
@@ -2066,6 +2089,7 @@ fn detect_question_processes(
     DetectionResult {
         processes: results,
         session_activity,
+        agent_processes,
         all_pane_ids,
     }
 }

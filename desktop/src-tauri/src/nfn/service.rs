@@ -247,6 +247,45 @@ impl Service {
         }
     }
 
+    pub fn agent_completed(&self, expected: &NfnSource) {
+        let Some(pane) = expected.pane_id.as_deref() else {
+            return;
+        };
+        let settings = self.ctx.settings.lock().clone();
+        if !settings.notify_agent_completion_local && !settings.notify_agent_completion_remote {
+            return;
+        }
+        let Ok(mut source) = resolve_source(pane, None) else {
+            return;
+        };
+        if source.agent_pid != expected.agent_pid
+            || source.agent_started_at != expected.agent_started_at
+            || expected
+                .session_id
+                .as_ref()
+                .is_some_and(|id| source.session_id.as_ref() != Some(id))
+        {
+            return;
+        }
+        source.group = source.group.or_else(|| expected.group.clone());
+        match self.store.send(request_for_completion(source), None) {
+            Ok((record, true)) => {
+                self.announce(&record);
+                if settings.notify_agent_completion_remote {
+                    if let Some(handle) = self.ctx.relay.lock().as_ref() {
+                        handle.send_message(&clawtab_protocol::DesktopMessage::AgentAlert {
+                            pane_id: pane.into(),
+                            title: record.request.title.clone(),
+                            body: record.request.body.clone(),
+                        });
+                    }
+                }
+            }
+            Ok(_) => {}
+            Err(error) => log::warn!("[nfn] agent completion notification failed: {error}"),
+        }
+    }
+
     fn announce(&self, record: &NfnRecord) {
         if !record.pending() {
             return;
@@ -816,7 +855,9 @@ impl Service {
 }
 
 fn local_enabled(settings: &crate::config::settings::AppSettings, record: &NfnRecord) -> bool {
-    if record.request.data["event"] == "agent_alert" {
+    if record.request.data["event"] == "agent_finished" {
+        settings.notify_agent_completion_local
+    } else if record.request.data["event"] == "agent_alert" {
         settings.notify_questions_local
     } else if record.request.source.job_id.is_some() && record.question_id.is_none() {
         !record
@@ -861,6 +902,39 @@ fn refresh_pending_record(
         return false;
     }
     true
+}
+
+fn request_for_completion(source: NfnSource) -> NfnRequest {
+    let name = [
+        source.task.as_deref(),
+        source.window_name.as_deref(),
+        source.pane_title.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    .find(|name| !name.trim().is_empty())
+    .unwrap_or("Agent");
+    NfnRequest {
+        title: format!("{name} finished"),
+        body: "The agent finished its turn and is ready for your next message.".into(),
+        template: "update".into(),
+        data: json!({"event":"agent_finished"}),
+        source,
+        actions: vec![
+            NfnAction {
+                id: "focus".into(),
+                label: "Open session".into(),
+                kind: "focus".into(),
+                ..Default::default()
+            },
+            NfnAction {
+                id: "acknowledge".into(),
+                label: "Got it".into(),
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    }
 }
 
 fn question_key(question: &ClaudeQuestion) -> String {
@@ -1098,6 +1172,37 @@ mod tests {
         assert!(refresh_pending_record(&mut record, None, 20_000, |_| false));
         assert_eq!(record.status, "expired");
         assert!(record.error.is_some());
+    }
+
+    #[test]
+    fn completions_use_update_cards_and_their_own_notification_settings() {
+        let source = NfnSource {
+            pane_id: Some("%13".into()),
+            session_id: Some("conversation".into()),
+            task: Some("Fix notifications".into()),
+            ..Default::default()
+        };
+        let request = request_for_completion(source.clone());
+        assert_eq!(request.source, source);
+        assert_eq!(request.title, "Fix notifications finished");
+        assert_eq!(request.template, "update");
+        assert_eq!(request.data["event"], "agent_finished");
+        assert_eq!(request.actions[0].kind, "focus");
+        assert_eq!(request.actions[1].id, "acknowledge");
+        let directory = tempfile::tempdir().unwrap();
+        let store = Store::open(&directory.path().join("notifications.sqlite")).unwrap();
+        let (record, _) = store.send(request, None).unwrap();
+        assert!(record.question_id.is_none());
+        let mut settings: crate::config::settings::AppSettings =
+            serde_json::from_str("{}").unwrap();
+        settings.notify_questions_local = false;
+        assert!(settings.notify_agent_completion_remote);
+        assert!(local_enabled(&settings, &record));
+        settings.notify_agent_completion_local = false;
+        settings.notify_questions_local = true;
+        assert!(!local_enabled(&settings, &record));
+        // An unread update must not deduplicate the next completion.
+        assert!(store.send(request_for_completion(source), None).unwrap().1);
     }
 
     #[test]

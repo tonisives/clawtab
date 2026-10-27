@@ -192,7 +192,7 @@ function NotificationSettingsContent() {
             Desktop question notifications
           </label>
         </div>
-        <div className="form-group" style={{ marginBottom: 0 }}>
+        <div className="form-group">
           <label className="checkbox-label">
             <input
               type="checkbox"
@@ -200,6 +200,26 @@ function NotificationSettingsContent() {
               onChange={(e) => update({ notify_questions_remote: e.target.checked })}
             />
             Remote question notifications
+          </label>
+        </div>
+        <div className="form-group">
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={settings.notify_agent_completion_local}
+              onChange={(e) => update({ notify_agent_completion_local: e.target.checked })}
+            />
+            Desktop agent completion notifications
+          </label>
+        </div>
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={settings.notify_agent_completion_remote}
+              onChange={(e) => update({ notify_agent_completion_remote: e.target.checked })}
+            />
+            Remote agent completion notifications
           </label>
         </div>
         <EnhancedNotifications settings={settings.enhanced_notifications} onChange={value => update({ enhanced_notifications: value })} />

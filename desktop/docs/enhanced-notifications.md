@@ -74,6 +74,8 @@ JSON
 
 For progress reports that need no decision, send `"template": "update"` without `--wait`. Update cards show **Got it**, with no reply composer. Use question or permission templates when the workflow needs an answer. Sending a notification alone does not pause an agent; the workflow must wait for and consume its response.
 
+Interactive agents started from a terminal or ClawTab send an update card when they finish a turn. **Open session** returns to the originating conversation; **Got it** clears the card. Desktop and remote agent completion notifications are enabled by default and can be changed separately in Settings → Notifications. Permission waits and errors do not count as completions, and restarting the daemon does not replay old completions. Scheduled jobs use their own finish notification settings.
+
 ```sh
 cwtctl nfn get REQUEST_ID
 cwtctl nfn wait REQUEST_ID --timeout 60

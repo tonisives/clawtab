@@ -164,6 +164,8 @@ export interface AppSettings {
   shortcuts: ShortcutSettings;
   notify_questions_local: boolean;
   notify_questions_remote: boolean;
+  notify_agent_completion_local: boolean;
+  notify_agent_completion_remote: boolean;
   enhanced_notifications: EnhancedNotificationSettings;
   session_file_warning_mb?: number;
   auto_release_on_blur: boolean;
