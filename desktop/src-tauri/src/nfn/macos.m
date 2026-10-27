@@ -169,19 +169,12 @@ static void emit(NSDictionary *value) {
     if (self.statusItem) return;
     self.statusItem = [NSStatusBar.systemStatusBar statusItemWithLength:NSSquareStatusItemLength];
     self.statusItem.button.image = self.statusIcon;
-    self.statusItem.button.toolTip = @"ClawTab Daemon";
-    self.statusItem.button.accessibilityLabel = @"ClawTab Daemon";
-    NSMenu *menu = [NSMenu new];
-    NSArray *titles = @[@"Notifications", @"Pending and History", @"Notification Settings..."];
-    NSArray *actions = @[@"latest", @"show", @"settings"];
-    for (NSUInteger i = 0; i < titles.count; i++) {
-        NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:titles[i] action:@selector(openFromStatusItem:) keyEquivalent:@""];
-        item.target = self; item.representedObject = actions[i];
-        [menu addItem:item];
-    }
-    self.statusItem.menu = menu;
+    self.statusItem.button.toolTip = @"ClawTab notifications";
+    self.statusItem.button.accessibilityLabel = @"ClawTab notifications";
+    self.statusItem.button.target = self;
+    self.statusItem.button.action = @selector(openNotifications:);
 }
-- (void)openFromStatusItem:(NSMenuItem *)item { [self push:@{@"type":item.representedObject}]; }
+- (void)openNotifications:(id)sender { [self push:@{@"type":@"latest"}]; }
 - (void)screensChanged:(NSNotification *)notification {
     NSMutableSet *connected = [NSMutableSet set];
     for (NSScreen *screen in NSScreen.screens) [connected addObject:[screen.deviceDescription[@"NSScreenNumber"] stringValue]];

@@ -324,9 +324,9 @@
     }
   }
   function hasBlock(layout, kind) { return (layout || []).some(b => b.type === kind || hasBlock(b.children, kind)); }
-  function autoYesControl(record, inline = false) {
-    const row = el("div", "auto-yes"); row.append(el("span", "", "Auto-yes"));
-    if (inline) row.classList.add("inline-auto-yes");
+  function autoYesControl(record, inCard = false) {
+    const row = el("div", "auto-yes");
+    if (inCard) row.classList.add("answer-auto-yes"); else row.append(el("span", "", "Auto-yes"));
     const control = button("", async () => {
       const pane = record.request.source.pane_id;
       if (autoYesBusy.has(pane)) return;
@@ -340,18 +340,20 @@
         }
       } catch (error) { if (record.id === current) showError(error); }
       finally { autoYesBusy.delete(pane); updateAutoYes(); }
-    }, "auto-yes-switch");
+    }, `auto-yes-switch${inCard ? " auto-yes-button" : ""}`);
     control.setAttribute("role", "switch"); control.setAttribute("aria-label", "Auto-yes for this agent");
     control.title = "Automatically answers this agent's prompts until you turn it off";
     control.dataset.pane = record.request.source.pane_id;
-    control.append(el("span", "switch-state"), el("span", "switch-track")); row.append(control);
+    control.append(el("span", "switch-state"));
+    if (!inCard) control.append(el("span", "switch-track"));
+    row.append(control);
     return row;
   }
   function updateAutoYes() {
     for (const control of host.querySelectorAll(".auto-yes-switch")) {
       const enabled = (snapshot.auto_yes_panes || []).includes(control.dataset.pane);
       control.setAttribute("aria-checked", String(enabled));
-      control.querySelector(".switch-state").textContent = enabled ? "On" : "Off";
+      control.querySelector(".switch-state").textContent = control.classList.contains("auto-yes-button") ? enabled ? "! Auto ON" : "! Yes all" : enabled ? "On" : "Off";
       control.disabled = autoYesBusy.has(control.dataset.pane);
     }
   }
@@ -389,10 +391,10 @@
       actions.append(control);
     }
     const answerRow = el("div", "answer-row"); answerRow.append(actions);
-    if (hasAgent(record) && (record.question_id || ["question", "permission"].includes(record.request.template))) {
-      answerRow.append(autoYesControl(record, true));
-    }
     node.append(answerRow);
+    if (hasAgent(record) && (record.question_id || ["question", "permission"].includes(record.request.template))) {
+      node.append(autoYesControl(record, true));
+    }
     if (record.request.template !== "update" && (hasBlock(layout, "reply") || record.request.source?.pane_id)) {
       const toAgent = Boolean(record.question_id || record.request.response_destination === "agent_message");
       const reply = el("div", "reply");

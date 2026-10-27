@@ -46,7 +46,7 @@ position: null
 
 Dragging sets `placement: custom`, records the display ID, and saves `position: {right: 100, top: 40}` in points from the display's usable top-right corner. Cards grow left and down from this anchor and stay within the display. Choose Notch or Right column to restore an automatic position.
 
-The daemon owns the optional macOS menu bar icon. Its menu opens the latest notification, Pending and History, or notification settings. The desktop app has a Dock icon and does not create a second menu bar icon. Change `menu_bar_icon` in this file or use the **Menu bar icon** checkbox in notification settings; no desktop app or restart is needed.
+The daemon owns the optional macOS menu bar icon. Clicking it opens the notification window directly. Use the list icon for Pending and History, and the ClawTab icon inside the window for notification settings. The desktop app has a Dock icon and does not create a second menu bar icon. Change `menu_bar_icon` in this file or use the **Menu bar icon** checkbox in notification settings; no desktop app or restart is needed.
 
 New notifications open their card when Pending or History is visible. A card being reviewed, an active bulk selection, and the settings form keep their current view.
 

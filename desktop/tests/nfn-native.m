@@ -21,8 +21,8 @@ static void verifyInlineSettings(void (^finish)(void)) {
         snapshot[@"settings"] = @{@"delivery":@"native", @"focus":@"follow", @"placement":@"right", @"display":@"primary"};
         [surface push:snapshot];
         NSStatusItem *item = surface.statusItem;
-        if (!item || !item.button.image.isTemplate || item.menu.numberOfItems != 3 || ![item.button.accessibilityLabel isEqual:@"ClawTab Daemon"]) {
-            fprintf(stderr, "Daemon menu bar icon or menu is missing\n"); exit(1);
+        if (!item || !item.button.image.isTemplate || item.menu || item.button.action != @selector(openNotifications:) || ![item.button.accessibilityLabel isEqual:@"ClawTab notifications"]) {
+            fprintf(stderr, "Daemon menu bar icon is not a direct notification button\n"); exit(1);
         }
         [surface push:snapshot];
         if (surface.statusItem != item) { fprintf(stderr, "Snapshot recreated the menu bar icon\n"); exit(1); }
@@ -33,13 +33,13 @@ static void verifyInlineSettings(void (^finish)(void)) {
         settings[@"menu_bar_icon"] = @YES;
         [surface push:snapshot];
         if (!surface.statusItem) { fprintf(stderr, "Menu bar icon did not return after being enabled\n"); exit(1); }
-        [surface.statusItem.menu performActionForItemAtIndex:0];
+        [surface.statusItem.button performClick:nil];
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 5), dispatch_get_main_queue(), ^{
             [surface.web evaluateJavaScript:@"Boolean(document.querySelector('.queue')) && !document.querySelector('#surface').classList.contains('empty')" completionHandler:^(id opened, NSError *openError) {
                 if (openError || ![opened boolValue] || !surface.panel.visible || !surface.notificationsVisible) { fprintf(stderr, "Menu bar notifications did not open with native delivery\n"); exit(1); }
                 [surface.web evaluateJavaScript:@"window.nfn.collapse()" completionHandler:^(id closed, NSError *closeError) {
                     if (closeError) { fprintf(stderr, "Could not close menu bar notifications\n"); exit(1); }
-                    [surface.statusItem.menu performActionForItemAtIndex:2];
+                    [surface push:@{@"type":@"settings"}];
                     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 2), dispatch_get_main_queue(), ^{
                         [surface.web evaluateJavaScript:@"Boolean(document.querySelector('.notification-settings'))" completionHandler:^(id visible, NSError *viewError) {
                             if (viewError || ![visible boolValue] || !surface.panel.visible || !surface.settingsVisible) {
@@ -49,7 +49,7 @@ static void verifyInlineSettings(void (^finish)(void)) {
                                 dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 5), dispatch_get_main_queue(), ^{
                                     if (closeError || surface.settingsVisible || surface.panel.visible) { fprintf(stderr, "Closing empty settings left the panel visible\n"); exit(1); }
                                     printf("Native inline settings checks passed: opens with no pending cards or overlay delivery, then closes completely.\n");
-                                    printf("Native menu bar checks passed: icon persists across refreshes, toggles immediately, and opens notifications and settings with native delivery.\n");
+                                    printf("Native menu bar checks passed: icon persists across refreshes, toggles immediately, and opens the notification window directly with native delivery.\n");
                                     finish();
                                 });
                             }];
