@@ -30,6 +30,25 @@ pub async fn execute(request: HostRequest) -> Result<Value, String> {
             }
         }
         HostRequest::Info => Ok(info()),
+        HostRequest::Message { command } => {
+            let command: crate::nfn::NfnCommand =
+                serde_json::from_value(command).map_err(|e| e.to_string())?;
+            if !matches!(
+                command,
+                crate::nfn::NfnCommand::Get { .. }
+                    | crate::nfn::NfnCommand::List { .. }
+                    | crate::nfn::NfnCommand::Respond { .. }
+                    | crate::nfn::NfnCommand::Read { .. }
+                    | crate::nfn::NfnCommand::Dismiss { .. }
+                    | crate::nfn::NfnCommand::Cancel { .. }
+            ) {
+                return Err("Unsupported remote message operation".into());
+            }
+            crate::nfn::service()
+                .ok_or("Message service unavailable")?
+                .execute(command)
+                .await
+        }
         HostRequest::JournalContext { query } => work_journal::context(&query).await,
         HostRequest::Repository { path } => {
             serde_json::to_value(git::get_git_repository(path).await?).map_err(|e| e.to_string())
@@ -102,6 +121,7 @@ pub fn info() -> Value {
         "host_management",
         "transfer_v1",
         "journal_query_v1",
+        "messages_v1",
     ];
     if security::enabled() {
         capabilities.push("signed_commands_v1");

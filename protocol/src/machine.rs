@@ -16,6 +16,9 @@ pub struct MachineCommand {
 #[serde(tag = "action", rename_all = "snake_case")]
 pub enum HostRequest {
     Info,
+    Message {
+        command: Value,
+    },
     Secure {
         envelope: Value,
     },

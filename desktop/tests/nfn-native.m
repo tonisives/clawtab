@@ -13,6 +13,18 @@ static NSUInteger attempts;
 static pid_t previousApplication;
 static BOOL positionSaved;
 
+static void verifyIdleSignals(void) {
+    [surface powerChanged:[NSNotification notificationWithName:NSWorkspaceScreensDidSleepNotification object:nil]];
+    NSDictionary *sleeping = [NSJSONSerialization JSONObjectWithData:[surface.lastPlatform dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
+    if (![sleeping[@"screen_sleeping"] boolValue] || [sleeping[@"user_active"] boolValue]) { fprintf(stderr, "Screen sleep must mark the Mac idle\n"); exit(1); }
+    [surface powerChanged:[NSNotification notificationWithName:NSWorkspaceScreensDidWakeNotification object:nil]];
+    [surface lockChanged:[NSNotification notificationWithName:@"com.apple.screenIsLocked" object:nil]];
+    NSDictionary *locked = [NSJSONSerialization JSONObjectWithData:[surface.lastPlatform dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
+    if (![locked[@"screen_locked"] boolValue] || [locked[@"user_active"] boolValue]) { fprintf(stderr, "Screen lock must mark the Mac idle\n"); exit(1); }
+    [surface lockChanged:[NSNotification notificationWithName:@"com.apple.screenIsUnlocked" object:nil]];
+    printf("Idle signal checks passed: screen sleep, wake, lock, and unlock.\n");
+}
+
 static void waitForSettledSurface(NSUInteger attempt, void (^finish)(void)) {
     NSString *script = @"document.querySelector('h1')?.textContent === 'Notification layout test' && document.querySelector('#surface').getAnimations().length === 0";
     [surface.web evaluateJavaScript:script completionHandler:^(id settled, NSError *error) {
@@ -233,7 +245,7 @@ static void bridge(const char *raw) {
     if ([operation isEqual:@"set_position"]) { positionSaved = YES; return; }
     if ([operation isEqual:@"platform"]) {
         NSDictionary *state = value[@"command"][@"state"];
-        for (NSString *key in @[@"available", @"sound_allowed", @"user_active", @"focused", @"authorized"]) {
+        for (NSString *key in @[@"available", @"sound_allowed", @"user_active", @"screen_sleeping", @"screen_locked", @"focused", @"authorized"]) {
             id flag = state[key];
             BOOL nullable = [key isEqual:@"focused"] || [key isEqual:@"authorized"];
             if ((!flag || CFGetTypeID((__bridge CFTypeRef)flag) != CFBooleanGetTypeID()) && !(nullable && flag == NSNull.null)) {
@@ -264,6 +276,7 @@ int main(int argc, const char **argv) {
             [surface.web evaluateJavaScript:@"window.fixture && JSON.stringify(window.fixture.snapshot('first'))" completionHandler:^(id value, NSError *error) {
                 if (loaded || error || ![value isKindOfClass:NSString.class]) return;
                 loaded = YES;
+                verifyIdleSignals();
                 NSMutableDictionary *snapshot = [[NSJSONSerialization JSONObjectWithData:[value dataUsingEncoding:NSUTF8StringEncoding] options:NSJSONReadingMutableContainers error:nil] mutableCopy];
                 snapshot[@"records"][0][@"request"][@"title"] = @"Notification layout test";
                 snapshot[@"records"][0][@"request"][@"body"] = @"Checking notch alignment and resize animation. This temporary test closes automatically.";

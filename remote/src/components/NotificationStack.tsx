@@ -13,6 +13,9 @@ import { spacing } from "@clawtab/shared";
 import type { AutoYesEntry, DetectedProcess, ClaudeQuestion } from "@clawtab/shared";
 import type { NotificationDetailTarget } from "./notificationTypes";
 import { notificationJobRoute, notificationProcessRoute } from "../lib/notificationRoutes";
+import { MessageCards } from "./MessageCards";
+import { questionMessage, uncoveredAlerts, useMessageStore } from "../store/messages";
+import { messageAction } from "../lib/messageActions";
 
 function syncAutoYesToRelay(paneIds: Set<string>) {
   const send = getWsSend();
@@ -40,9 +43,11 @@ export function NotificationStack({
   cardBottomRadius,
 }: NotificationStackProps) {
   const router = useRouter();
+  const records = useMessageStore(state => state.records);
+  const messageCount = records.length;
   const questions = useNotificationStore((s) => s.questions);
   const detectedProcesses = useJobsStore((s) => s.detectedProcesses);
-  const alerts = useMemo(() => agentAlertProcesses(detectedProcesses), [detectedProcesses]);
+  const alerts = useMemo(() => uncoveredAlerts(records, agentAlertProcesses(detectedProcesses)), [records, detectedProcesses]);
   const deepLinkQuestionId = useNotificationStore(
     (s) => s.deepLinkQuestionId,
   );
@@ -100,6 +105,14 @@ export function NotificationStack({
 
   const sendAnswer = useCallback(
     (q: ClaudeQuestion, resolvedJob: string | null, optionNumber: string) => {
+      const record = questionMessage(records, q);
+      if (record) {
+        const action = record.request.actions.find(action => action.kind === "choice" && action.value === optionNumber);
+        if (action) void messageAction({ machine: record.machine_id, id: record.id, op: "respond", action_id: action.id }).catch(error => {
+          useMessageStore.getState().updateRecord({ ...record, error: String(error) });
+        });
+        return;
+      }
       const send = getWsSend();
       if (!send) return;
       if (resolvedJob) {
@@ -111,17 +124,18 @@ export function NotificationStack({
         }
       }
     },
-    [processMap],
+    [processMap, records],
   );
 
   const handleSendOption = useCallback(
     (q: ClaudeQuestion, resolvedJob: string | null, optionNumber: string) => {
       sendAnswer(q, resolvedJob, optionNumber);
+      if (questionMessage(records, q)) return;
       dismissQuestionNotification(q.question_id);
       // Delay store removal so the card's fly-away animation (400ms delay + 300ms) can play
       setTimeout(() => answerQuestion(q.question_id), 750);
     },
-    [answerQuestion, sendAnswer],
+    [answerQuestion, sendAnswer, records],
   );
 
   const handleToggleAutoYes = useCallback(
@@ -239,7 +253,7 @@ export function NotificationStack({
   );
 
   // Keep rendering briefly after questions drop to 0 so departure animations play
-  const hasContent = activeQuestions.length > 0 || alerts.length > 0 || autoYesEntries.length > 0;
+  const hasContent = messageCount > 0 || activeQuestions.length > 0 || alerts.length > 0 || autoYesEntries.length > 0;
   const [visible, setVisible] = useState(hasContent);
   const hideTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
@@ -258,6 +272,7 @@ export function NotificationStack({
 
   return (
     <View style={[styles.container, embedded && styles.embeddedContainer]}>
+      <MessageCards onSelectDetail={onSelectDetail} onNavigateAway={onNavigateAway} />
       <AutoYesBanner
         entries={autoYesEntries}
         onDisable={handleDisableAutoYes}

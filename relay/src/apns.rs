@@ -154,6 +154,42 @@ impl ApnsClient {
             .await
     }
 
+    pub async fn send_message_notification(
+        &self,
+        token: &str,
+        machine: &str,
+        record: &serde_json::Value,
+    ) -> Result<(), String> {
+        let request = &record["request"];
+        let actions: Vec<_> = request["actions"].as_array().into_iter().flatten()
+            .filter(|action| action["kind"] == "choice").take(3)
+            .map(|action| serde_json::json!({"id":action["id"],"label":action["label"].as_str().unwrap_or("").chars().take(48).collect::<String>()})).collect();
+        let options: Vec<_> = actions.iter().enumerate().map(|(index, action)| serde_json::json!({"number":(index+1).to_string(),"label":action["label"]})).collect();
+        let kind = request["kind"]
+            .as_str()
+            .filter(|kind| !kind.is_empty())
+            .unwrap_or_else(|| match request["template"].as_str() {
+                Some("update") => "update",
+                Some("permission" | "agent-approval" | "social-review") => "approval",
+                _ => "question",
+            });
+        let custom = serde_json::json!({"event":"message","message_id":record["id"],"machine_id":machine,"kind":kind,"actions":actions,"options":options});
+        let title: String = request["title"]
+            .as_str()
+            .unwrap_or("ClawTab")
+            .chars()
+            .take(100)
+            .collect();
+        let body: String = request["body"]
+            .as_str()
+            .unwrap_or("")
+            .chars()
+            .take(300)
+            .collect();
+        self.send_status_notification(token, &title, &body, &custom)
+            .await
+    }
+
     async fn send_status_notification(
         &self,
         device_token: &str,
@@ -171,12 +207,26 @@ impl ApnsClient {
                 .set_body(&body)
                 .set_sound("default");
 
+            let builder = if custom_json["event"] == "message"
+                && matches!(custom_json["kind"].as_str(), Some("question" | "approval"))
+            {
+                let category = match custom_json["actions"].as_array().map_or(0, Vec::len) {
+                    0 => "CLAWTAB_M0",
+                    1 => "CLAWTAB_M1",
+                    2 => "CLAWTAB_M2",
+                    _ => "CLAWTAB_M3",
+                };
+                builder.set_category(category).set_mutable_content()
+            } else {
+                builder
+            };
+
             let options_obj = NotificationOptions {
                 apns_id: None,
                 apns_expiration: None,
                 apns_priority: Some(Priority::High),
                 apns_topic: Some(&self.topic),
-                apns_collapse_id: None,
+                apns_collapse_id: custom_json["message_id"].as_str(),
                 apns_push_type: Some(PushType::Alert),
             };
 

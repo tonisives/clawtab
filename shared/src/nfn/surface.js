@@ -782,13 +782,15 @@
         ["hover_expand", "Expand on hover", "checkbox"],
         ["sound", "Sound", "checkbox"],
         ["menu_bar_icon", "Menu bar icon", "checkbox"],
+        ["mobile_when_idle", "Send to mobile when idle", "checkbox"],
+        ["idle_seconds", "Idle time before mobile delivery", null],
       ];
       for (const [key, title, options] of fields) {
         const row = el("label", "setting-row"), input = el(Array.isArray(options) ? "select" : "input");
         input.dataset.setting = key; input.setAttribute("aria-label", title);
         if (Array.isArray(options)) for (const [value, text] of options) { const option = el("option", "", text); option.value = value; input.append(option); }
         else if (options === "checkbox") input.type = "checkbox";
-        else { input.type = "number"; input.min = "2"; input.max = "120"; input.step = "1"; input.required = true; input.title = "Seconds before a status update collapses"; }
+        else { input.type = "number"; input.min = key === "idle_seconds" ? "10" : "2"; input.max = key === "idle_seconds" ? "3600" : "120"; input.step = "1"; input.required = true; input.title = key === "idle_seconds" ? "Seconds without keyboard or mouse activity before sending to mobile" : "Seconds before a status update collapses"; }
         input.addEventListener("change", () => {
           if (!input.checkValidity()) { view._notice.textContent = input.validationMessage; return; }
           const value = input.type === "checkbox" ? input.checked : input.type === "number" ? Number(input.value) : input.value;
@@ -813,7 +815,7 @@
       }
       view._notice = el("div", "notice settings-notice"); view._notice.setAttribute("role", "status"); view.append(view._notice);
     }
-    const values = { delivery: "enhanced", placement: "notch", display: "primary", focus: "follow", preview_seconds: 8, hover_expand: false, sound: true, menu_bar_icon: true, ...snapshot.settings };
+    const values = { delivery: "enhanced", placement: "notch", display: "primary", focus: "follow", preview_seconds: 8, hover_expand: false, sound: true, menu_bar_icon: true, mobile_when_idle: true, idle_seconds: 60, ...snapshot.settings };
     const display = view.querySelector('[data-setting="display"]');
     const displays = [["primary", "Primary display"], ["built_in", "Built-in display"], ["pointer", "Follow pointer"], ...(snapshot.platform?.displays || []).map(item => [item.id, item.name])];
     if (!displays.some(([id]) => id === values.display)) displays.push([values.display, "Saved display"]);

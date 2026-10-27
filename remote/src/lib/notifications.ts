@@ -14,6 +14,13 @@ Notifications.setNotificationHandler({
 export function registerNotificationCategories() {
   if (Platform.OS !== "ios") return;
 
+  for (let count = 0; count <= 3; count++) {
+    Notifications.setNotificationCategoryAsync(`CLAWTAB_M${count}`, [
+      ...Array.from({ length: count }, (_, index) => ({ identifier: String(index + 1), buttonTitle: `Option ${index + 1}`, options: { opensAppToForeground: true } })),
+      { identifier: "TEXT_INPUT", buttonTitle: "Reply", textInput: { submitButtonTitle: "Send", placeholder: "Your reply" }, options: { opensAppToForeground: true } },
+    ]).catch(() => {});
+  }
+
   // Pre-register fallback categories for different option counts.
   // The NSE dynamically creates per-question categories with real labels,
   // but these serve as fallbacks if the NSE doesn't run.
@@ -62,6 +69,17 @@ export async function dismissQuestionNotification(questionId: string) {
   } catch (e) {
     console.log("[notifications] failed to dismiss:", e);
   }
+}
+
+export async function dismissMessageNotification(messageId: string) {
+  if (Platform.OS === "web") return;
+  try {
+    for (const notification of await Notifications.getPresentedNotificationsAsync()) {
+      const trigger = notification.request.trigger as { payload?: { clawtab?: { message_id?: string } } } | null;
+      const data = notification.request.content.data as { clawtab?: { message_id?: string } };
+      if ((data?.clawtab ?? trigger?.payload?.clawtab)?.message_id === messageId) await Notifications.dismissNotificationAsync(notification.request.identifier);
+    }
+  } catch { /* Resolution is still recorded by the host if an OS banner has gone. */ }
 }
 
 export async function getPushToken(): Promise<string | null> {

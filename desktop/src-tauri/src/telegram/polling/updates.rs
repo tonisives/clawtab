@@ -45,7 +45,7 @@ impl fmt::Display for GetUpdatesError {
 /// if telegram is unconfigured or the priming call kept failing.
 pub(super) async fn prime_offset(state: &AgentState) -> Option<i64> {
     let config = lock_or_log(&state.settings, "settings").and_then(|s| s.telegram.clone())?;
-    if !(config.agent_enabled && config.is_configured()) {
+    if !config.is_configured() {
         return None;
     }
 

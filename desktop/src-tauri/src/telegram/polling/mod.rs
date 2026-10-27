@@ -44,7 +44,7 @@ pub async fn start_polling(state: AgentState) {
     loop {
         let config = lock_or_log(&state.settings, "settings").and_then(|s| s.telegram.clone());
         let config = match config {
-            Some(c) if c.agent_enabled && c.is_configured() => c,
+            Some(c) if c.is_configured() => c,
             _ => {
                 tokio::time::sleep(std::time::Duration::from_secs(10)).await;
                 continue;

@@ -13,6 +13,8 @@ pub struct NfnSettings {
     pub hover_expand: bool,
     pub sound: bool,
     pub menu_bar_icon: bool,
+    pub mobile_when_idle: bool,
+    pub idle_seconds: u32,
 }
 
 impl Default for NfnSettings {
@@ -27,6 +29,8 @@ impl Default for NfnSettings {
             hover_expand: false,
             sound: true,
             menu_bar_icon: true,
+            mobile_when_idle: true,
+            idle_seconds: 60,
         }
     }
 }
@@ -37,6 +41,7 @@ impl NfnSettings {
             || !["notch", "right", "custom"].contains(&self.placement.as_str())
             || !["follow", "independent"].contains(&self.focus.as_str())
             || !(2..=120).contains(&self.preview_seconds)
+            || !(10..=3600).contains(&self.idle_seconds)
             || self.display.is_empty()
             || self.position.as_ref().is_some_and(|p| {
                 !p.right.is_finite() || !p.top.is_finite() || p.right < 0.0 || p.top < 0.0
@@ -115,6 +120,9 @@ pub struct NfnMedia {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct NfnRequest {
+    pub kind: String,
+    pub channels: Vec<String>,
+    pub telegram_chat_id: Option<i64>,
     pub title: String,
     pub body: String,
     pub template: String,
@@ -131,6 +139,9 @@ pub struct NfnRequest {
 impl Default for NfnRequest {
     fn default() -> Self {
         Self {
+            kind: String::new(),
+            channels: Vec::new(),
+            telegram_chat_id: None,
             title: String::new(),
             body: String::new(),
             template: "question".into(),
@@ -146,7 +157,46 @@ impl Default for NfnRequest {
 }
 
 impl NfnRequest {
+    pub fn message_kind(&self) -> &str {
+        if !self.kind.is_empty() {
+            return &self.kind;
+        }
+        match self.template.as_str() {
+            "update"
+                if self.data["event"] == "agent_finished" || self.data["event"] == "completed" =>
+            {
+                "completed"
+            }
+            "update" if self.data["event"] == "agent_alert" || self.data["event"] == "failed" => {
+                "failed"
+            }
+            "update" => "update",
+            "agent-approval" | "permission" | "social-review" => "approval",
+            _ => "question",
+        }
+    }
+
+    pub fn channel(&self, channel: &str) -> bool {
+        self.channels.is_empty() || self.channels.iter().any(|value| value == channel)
+    }
+
+    pub fn needs_response(&self) -> bool {
+        matches!(self.message_kind(), "question" | "approval")
+    }
+
     pub fn validate(&self) -> Result<(), String> {
+        if !["update", "question", "approval", "completed", "failed"].contains(&self.message_kind())
+        {
+            return Err("kind must be update, question, approval, completed, or failed".into());
+        }
+        if self.channels.len() > 3
+            || self
+                .channels
+                .iter()
+                .any(|channel| !["desktop", "mobile", "telegram"].contains(&channel.as_str()))
+        {
+            return Err("channels must contain desktop, mobile, or telegram".into());
+        }
         if serde_json::to_vec(self).map_err(|e| e.to_string())?.len() > 512 * 1024 {
             return Err("Notification request exceeds 512 KiB".into());
         }
@@ -218,6 +268,19 @@ pub struct NfnRecord {
     pub dismissed_at: Option<i64>,
     pub error: Option<String>,
     pub question_id: Option<String>,
+    #[serde(default)]
+    pub deliveries: std::collections::BTreeMap<String, MessageDelivery>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct MessageDelivery {
+    pub status: String,
+    pub updated_at: i64,
+    pub error: Option<String>,
+    pub external_id: Option<i64>,
+    pub external_ids: Vec<i64>,
+    pub target: Option<i64>,
 }
 
 impl NfnRecord {
@@ -317,6 +380,9 @@ pub struct PlatformState {
     pub sound_allowed: bool,
     pub frontmost_pid: Option<u32>,
     pub user_active: bool,
+    pub idle_seconds: u64,
+    pub screen_sleeping: bool,
+    pub screen_locked: bool,
     pub displays: Vec<Value>,
 }
 

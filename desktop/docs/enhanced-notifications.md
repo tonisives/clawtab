@@ -1,4 +1,26 @@
-# Enhanced notifications
+# Messages and notifications
+
+Use `cwtctl message` for updates, questions, approvals, and completion messages. Desktop, mobile, and Telegram share a stored message ID and response. Existing `cwtctl nfn` commands and `cwtctl telegram send TEXT` remain available as aliases.
+
+```sh
+cwtctl message send "Build finished" --kind completed
+cwtctl message send "Which branch should I use?" --kind question --wait
+cwtctl message send "Ship this release?" --choice "ship=Ship" --choice "revise=Revise" --wait
+cwtctl message send "Review needed" --channel desktop --channel telegram
+cwtctl message send "Build failed" --kind failed --channel mobile
+cwtctl message list --pending
+cwtctl message reply MESSAGE_ID "Use beta"
+cwtctl message reply MESSAGE_ID --action ship
+cwtctl message dismiss MESSAGE_ID
+```
+
+### Desktop and mobile delivery
+
+Messages appear locally by default. While a message is still pending, ClawTab also sends it to mobile after 60 seconds without keyboard or mouse activity, or when the Mac locks or its screen sleeps. A message that arrives while the Mac is idle goes to mobile immediately. Reading or collapsing a card keeps it pending; answering or dismissing it stops escalation. Delivery receipts prevent repeat pushes for the same message.
+
+Set `mobile_when_idle: false` to keep automatic delivery local, or change `idle_seconds` in notification settings. Explicit `--channel mobile` sends immediately. Repeat `--channel` to include several channels; `--channel telegram` alone sends only to Telegram. Mobile push uses the signed-in account's registered iOS devices and requires a relay with push configured. Pending messages and recent history also appear in the mobile inbox. Replies made offline are saved and submitted when the originating host reconnects.
+
+Telegram uses the configured chats; `--chat ID` selects one. Questions include choice buttons and accept a reply to the bot's message. The first accepted answer resolves the shared message, and buttons are removed from its Telegram copies. Terminal log streaming and typing indicators continue using their existing Telegram settings.
 
 The daemon owns the notification queue and the macOS overlay. Cards remain available while the desktop app is closed. On macOS 12 or later, cards appear below the notch on the selected display, or in a right column on displays without a notch. Settings also allow the right column on every display.
 
@@ -23,11 +45,11 @@ Following macOS Focus requires notification and Focus access for **ClawTab Daemo
 The daemon reads `~/.config/clawtab/notifications.yaml` and reloads edits within a second. The desktop app is optional. Existing preferences migrate to this file when the daemon starts.
 
 ```sh
-cwtctl nfn settings                       # Open settings in the notification surface
-cwtctl nfn settings --json                # Show the path and current values
-cwtctl nfn settings ./notifications.yaml  # Apply a YAML file
-cwtctl nfn settings --stdin < ./notifications.yaml
-cwtctl nfn settings --ui                  # Also opens the notification settings surface
+cwtctl message settings                       # Open settings in the notification surface
+cwtctl message settings --json                # Show the path and current values
+cwtctl message settings ./notifications.yaml  # Apply a YAML file
+cwtctl message settings --stdin < ./notifications.yaml
+cwtctl message settings --ui                  # Also opens the notification settings surface
 ```
 
 Applying a partial file preserves unspecified values. Invalid values and unknown keys are rejected. Direct edits that are temporarily invalid leave the running configuration unchanged.
@@ -41,6 +63,8 @@ preview_seconds: 8       # 2–120; status updates only
 hover_expand: false
 sound: true
 menu_bar_icon: true      # ClawTab Daemon's menu bar icon
+mobile_when_idle: true
+idle_seconds: 60          # 10–3600; keyboard and mouse inactivity
 position: null
 ```
 
@@ -57,7 +81,7 @@ New notifications open their card when Pending or History is visible. A card bei
 Agent prompts and job notifications enter the queue automatically. Agents and scripts can also submit JSON:
 
 ```sh
-cwtctl nfn send --stdin --wait --timeout 300 <<'JSON'
+cwtctl message send --stdin --wait --timeout 300 <<'JSON'
 {
   "title": "Review the launch post",
   "body": "The caption and video are ready for review.",
@@ -77,13 +101,13 @@ For progress reports that need no decision, send `"template": "update"` without 
 Interactive agents started from a terminal or ClawTab send an update card when they finish a turn. **Open session** returns to the originating conversation and dismisses the notification from Pending; it stays in History. **Open agent** does the same for other agent cards. If opening the session fails, the card stays available to retry. **Got it** dismisses the completion without sending a response. Desktop and remote agent completion notifications are enabled by default and can be changed separately in Settings → Notifications. Permission waits and errors do not count as completions, and restarting the daemon does not replay old completions. Scheduled jobs use their own finish notification settings.
 
 ```sh
-cwtctl nfn get REQUEST_ID
-cwtctl nfn wait REQUEST_ID --timeout 60
-cwtctl nfn cancel REQUEST_ID
-cwtctl nfn show
-cwtctl nfn settings
-cwtctl nfn templates list
-cwtctl nfn templates validate ./my-review.yaml
+cwtctl message get REQUEST_ID
+cwtctl message wait REQUEST_ID --timeout 60
+cwtctl message cancel REQUEST_ID
+cwtctl message show
+cwtctl message settings
+cwtctl message templates list
+cwtctl message templates validate ./my-review.yaml
 ```
 
 The CLI uses `CODEX_THREAD_ID` to find the sending Codex conversation, since shared command runners can carry another pane's `TMUX_PANE`. Managed agents use `CLAWTAB_SESSION_ID`, with the conversation checked by the daemon. Without a Codex thread, the CLI infers the pane from `CLAWTAB_SESSION_ID` or `TMUX_PANE`. An explicit `source.pane_id` takes precedence. Binary jobs should set `source.job_id` and `source.run_id`; they then use that run's log and do not inherit a terminal pane. Media supports HTTPS URLs and absolute local file paths. The native overlay streams local video in bounded chunks and releases it when the card closes. Local media is displayed by the daemon overlay; the in-app inbox supports HTTPS media.
@@ -107,7 +131,7 @@ An explicit request can supply up to 32 actions. All options appear in one horiz
 }
 ```
 
-Agent cards have a **…** menu beside their title with **Auto-yes**, Agent controls, and Dismiss. Job cards omit the agent menu. Clicking the ClawTab icon or right-clicking the bar opens inline settings; `cwtctl nfn settings` opens the same view. Questions and permission cards show a yellow Auto-yes button on its own row below the answers. Their reply composer starts collapsed; click **Reply to agent** to open it. Reply drafts and open composers survive navigation. Cards show more context in a scrollable body. Auto-yes uses the same pane-specific setting as the remote app and tmux: future prompts from that agent are automatically answered until it is turned off. Its state stays synchronized with other clients, and stale sessions cannot toggle a replacement agent.
+Agent cards have a **…** menu beside their title with **Auto-yes**, Agent controls, and Dismiss. Job cards omit the agent menu. Clicking the ClawTab icon or right-clicking the bar opens inline settings; `cwtctl message settings` opens the same view. Questions and permission cards show a yellow Auto-yes button on its own row below the answers. Their reply composer starts collapsed; click **Reply to agent** to open it. Reply drafts and open composers survive navigation. Cards show more context in a scrollable body. Auto-yes uses the same pane-specific setting as the remote app and tmux: future prompts from that agent are automatically answered until it is turned off. Its state stays synchronized with other clients, and stale sessions cannot toggle a replacement agent.
 
 Action kinds are `choice` (default), `focus`, `auto_yes`, `model`, and `plugin`. Model and plugin actions use `value` for the model or installed action ID and `parameters` for string values, such as reasoning `effort`. The **… > Agent controls** menu offers Codex model selection and available installed plugin actions without opening Details.
 

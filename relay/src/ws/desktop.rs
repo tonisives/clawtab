@@ -189,6 +189,19 @@ async fn handle_message(state: &AppState, user_id: Uuid, device_id: Uuid, text: 
     let guests = get_shared_guests(&state.pool, user_id, device_id).await;
 
     match &msg {
+        DesktopMessage::MessagesChanged { .. } => {}
+        DesktopMessage::MessageNotification { record } => {
+            let state = state.clone();
+            let record = record.clone();
+            tokio::spawn(async move {
+                let result =
+                    crate::ws::push::handle_message_push(&state, user_id, device_id, &record).await;
+                let receipt = serde_json::json!({"type":"message_delivery_receipt","message_id":record["id"],"status":if result.is_ok(){"sent"}else{"failed"},"error":result.err()});
+                if let Some(host) = state.machines.read().await.hosts.get(&device_id) {
+                    let _ = host.tx.try_send(receipt.to_string());
+                }
+            });
+        }
         DesktopMessage::ClaudeQuestions {
             questions,
             apns_questions,

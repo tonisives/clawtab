@@ -73,11 +73,10 @@ _cwtctl_complete() {
     'agent:Agent pane controls'
     'plugin:Run catalog agent plugins'
     'secrets:Manage secrets'
-    'telegram:Send a Telegram message'
+    'message:Messages and human input'
     'pane:Pane controls'
     'session:Manage durable CLI sessions'
     'daemon:Daemon management'
-    'nfn:Enhanced notifications and templates'
   )
 
   _arguments -C \
@@ -90,17 +89,26 @@ _cwtctl_complete() {
       ;;
     args)
       case $words[1] in
-        nfn)
+        message|nfn)
           if (( CURRENT == 2 )); then
             local -a sub
-            sub=('send:Submit a JSON notification' 'get:Get a request and its decision' 'wait:Wait for a decision' 'cancel:Cancel a request' 'show:Open the notification queue' 'settings:Read or apply notification settings' 'templates:List or validate layouts')
-            _describe -t subcmd 'nfn command' sub
+            sub=('send:Send a message' 'list:List pending messages and history' 'get:Get a message and its response' 'wait:Wait for a response' 'reply:Reply or choose an action' 'read:Mark a message read' 'dismiss:Dismiss a message' 'cancel:Cancel a message' 'show:Open the message queue' 'settings:Read or apply message settings' 'templates:List or validate layouts')
+            _describe -t subcmd 'message command' sub
           elif [[ $words[2] == templates && CURRENT == 3 ]]; then
             compadd list validate
           elif [[ $words[2] == templates && $words[3] == validate ]]; then
             _files
           elif [[ $words[2] == send ]]; then
-            compadd -- --stdin --wait --timeout --template
+            case $words[CURRENT-1] in
+              --kind) compadd update question approval completed failed ;;
+              --channel) compadd desktop mobile telegram ;;
+              --response-destination) compadd result agent_message ;;
+              *) compadd -- --stdin --wait --timeout --template --kind --channel --choice --title --chat --response-destination ;;
+            esac
+          elif [[ $words[2] == list ]]; then
+            compadd -- --pending --offset
+          elif [[ $words[2] == reply ]]; then
+            compadd -- --action
           elif [[ $words[2] == wait ]]; then
             compadd -- --timeout
           elif [[ $words[2] == settings ]]; then

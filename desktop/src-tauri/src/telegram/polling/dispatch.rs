@@ -19,11 +19,34 @@ pub(super) async fn handle_update(update: &Update, config: &TelegramConfig, stat
                 message.chat.id
             );
         } else if let Some(ref text) = message.text {
+            if let (Some(service), Some(parent)) =
+                (crate::nfn::service(), message.reply_to_message.as_ref())
+            {
+                if let Some(result) = service
+                    .telegram_reply(
+                        message.chat.id,
+                        None,
+                        Some(parent.message_id),
+                        None,
+                        Some(text.clone()),
+                    )
+                    .await
+                {
+                    if let Err(error) = result {
+                        let _ = telegram::send_message(&config.bot_token, message.chat.id, &error)
+                            .await;
+                    }
+                    return;
+                }
+            }
             log::info!(
                 "Telegram message from {}: {}",
                 message.chat.id,
                 &text[..text.len().min(100)]
             );
+            if !config.agent_enabled {
+                return;
+            }
             if let Some(reply) = handle_message(text, config, state, message.chat.id).await {
                 log::info!("Sending reply: {}", &reply[..reply.len().min(100)]);
                 if let Err(e) =
@@ -42,6 +65,24 @@ pub(super) async fn handle_update(update: &Update, config: &TelegramConfig, stat
             return;
         };
         if !config.chat_ids.contains(&chat_id) {
+            return;
+        }
+        if let Some(value) = data.strip_prefix("msg:") {
+            if let (Some(service), Some((id, index))) =
+                (crate::nfn::service(), value.rsplit_once(':'))
+            {
+                if let Ok(index) = index.parse::<usize>() {
+                    if let Some(Err(error)) = service
+                        .telegram_reply(chat_id, Some(id), None, Some(index), None)
+                        .await
+                    {
+                        let _ = telegram::send_message(&config.bot_token, chat_id, &error).await;
+                    }
+                }
+            }
+            return;
+        }
+        if !config.agent_enabled {
             return;
         }
         log::info!("Callback query from chat {}: {}", chat_id, data);

@@ -13,6 +13,7 @@ import { JobDetailPane } from "./JobDetailPane";
 import { ProcessDetailPane } from "./ProcessDetailPane";
 import { NotificationStack } from "./NotificationStack";
 import type { NotificationDetailTarget } from "./notificationTypes";
+import { useMessageStore } from "../store/messages";
 
 interface NotificationsPanelProps {
   mode: "popup" | "screen";
@@ -34,6 +35,7 @@ export function NotificationsPanel({
   const windowSize = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const questions = useNotificationStore((s) => s.questions);
+  const messageCount = useMessageStore(state => state.records.length);
   const alertCount = useJobsStore((s) => s.detectedProcesses.filter(process => process._agent_alert?.trim()).length);
   const autoYesPaneIds = useNotificationStore((s) => s.autoYesPaneIds);
   const [localDetailTarget, setLocalDetailTarget] = useState<NotificationDetailTarget | null>(null);
@@ -75,7 +77,7 @@ export function NotificationsPanel({
 
   const activeQuestionCount = questions.length;
 
-  const hasContent = activeQuestionCount > 0 || alertCount > 0 || autoYesPaneIds.size > 0;
+  const hasContent = messageCount > 0 || activeQuestionCount > 0 || alertCount > 0 || autoYesPaneIds.size > 0;
   const nativeTop = insets.top + 58;
   const nativeBottom = insets.bottom + 58;
   const nativeAvailableHeight = Math.max(260, windowSize.height - nativeTop - nativeBottom - 24);

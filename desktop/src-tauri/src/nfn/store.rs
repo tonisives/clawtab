@@ -93,14 +93,27 @@ impl Store {
         self.list_where("status IN ('pending', 'delivering')", 0, 2000)
     }
 
+    pub fn deliveries_to_close(&self) -> Result<Vec<NfnRecord>, String> {
+        self.list_where(
+            "(status NOT IN ('pending','delivering') OR json_extract(record,'$.dismissed_at') IS NOT NULL)
+             AND EXISTS (SELECT 1 FROM json_each(record,'$.deliveries')
+                WHERE key LIKE 'telegram:%' AND json_extract(value,'$.status') IN ('sent','closing','close_failed'))",
+            0,
+            2000,
+        )
+    }
+
     pub fn send(
         &self,
         mut request: NfnRequest,
         question_id: Option<String>,
     ) -> Result<(NfnRecord, bool), String> {
+        if request.kind.is_empty() {
+            request.kind = request.message_kind().to_string();
+        }
         request.validate()?;
         let template = templates::load_one(&request.template)?;
-        if request.actions.is_empty() {
+        if request.actions.is_empty() && request.data["text_input"] != true {
             request.actions = template.actions;
         }
         request.validate()?;
@@ -119,6 +132,23 @@ impl Store {
                 let mut record: NfnRecord =
                     serde_json::from_str(&raw).map_err(|e| e.to_string())?;
                 if record.status == "pending" {
+                    let mut channels = record.request.channels.clone();
+                    if channels.is_empty() {
+                        channels.push("desktop".into());
+                    }
+                    let incoming = if request.channels.is_empty() {
+                        vec!["desktop".to_string()]
+                    } else {
+                        request.channels.clone()
+                    };
+                    for channel in incoming {
+                        if !channels.contains(&channel) {
+                            channels.push(channel);
+                        }
+                    }
+                    request.channels = channels;
+                    request.telegram_chat_id =
+                        request.telegram_chat_id.or(record.request.telegram_chat_id);
                     record.request = request;
                     record.updated_at = now();
                     Self::write(&conn, &record)?;
@@ -143,6 +173,7 @@ impl Store {
             dismissed_at: None,
             error: None,
             question_id,
+            deliveries: Default::default(),
         };
         conn.execute("INSERT INTO notifications(id,status,dedupe,record,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?6)",
             params![record.id, record.status, dedupe, serde_json::to_string(&record).map_err(|e| e.to_string())?, record.created_at, record.updated_at]).map_err(|e| e.to_string())?;
@@ -236,6 +267,70 @@ mod tests {
         assert!(second.read_at.is_some());
         store.claim(&second.id).unwrap();
         assert!(store.claim(&second.id).is_err());
+    }
+
+    #[test]
+    fn channel_merging_preserves_delivery_and_dismissal_state() {
+        let store = Store::from_connection(Connection::open_in_memory().unwrap()).unwrap();
+        let (mut first, _) = store.send(request(), None).unwrap();
+        first.deliveries.insert(
+            "mobile".into(),
+            MessageDelivery {
+                status: "sent".into(),
+                updated_at: now(),
+                ..Default::default()
+            },
+        );
+        first.dismissed_at = Some(now());
+        store.save(&mut first).unwrap();
+        let mut telegram = request();
+        telegram.channels = vec!["telegram".into()];
+        telegram.telegram_chat_id = Some(123);
+        let (merged, created) = store.send(telegram, None).unwrap();
+        assert!(!created);
+        assert_eq!(merged.id, first.id);
+        assert_eq!(merged.request.channels, vec!["desktop", "telegram"]);
+        assert_eq!(merged.deliveries, first.deliveries);
+        assert_eq!(merged.dismissed_at, first.dismissed_at);
+        assert_eq!(merged.request.telegram_chat_id, Some(123));
+    }
+
+    #[test]
+    fn telegram_cleanup_finds_old_resolved_records_beyond_the_first_page() {
+        let store = Store::from_connection(Connection::open_in_memory().unwrap()).unwrap();
+        let (mut first, _) = store.send(request(), None).unwrap();
+        first.created_at = 1;
+        first.status = "resolved".into();
+        first.deliveries.insert(
+            "telegram:123".into(),
+            MessageDelivery {
+                status: "closing".into(),
+                target: Some(123),
+                ..Default::default()
+            },
+        );
+        store.save(&mut first).unwrap();
+        for i in 0..60 {
+            if i == 0 {
+                store
+                    .conn
+                    .lock()
+                    .execute(
+                        "UPDATE notifications SET created_at=1 WHERE id=?1",
+                        [&first.id],
+                    )
+                    .unwrap();
+            }
+            let mut newer = request();
+            newer.dedupe_key = Some(format!("new-{i}"));
+            store.send(newer, None).unwrap();
+        }
+        assert!(!store
+            .list(0)
+            .unwrap()
+            .iter()
+            .any(|record| record.id == first.id));
+        assert_eq!(store.deliveries_to_close().unwrap()[0].id, first.id);
     }
     #[test]
     fn interrupted_delivery_is_not_replayed_after_restart() {

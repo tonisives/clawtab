@@ -26,6 +26,20 @@ pub(crate) fn enqueue(
     let Some(config) = config.filter(|c| c.notify_on_failure && !c.bot_token.is_empty()) else {
         return;
     };
+    if let Some(service) = crate::nfn::service() {
+        let event = failure
+            .exit_code
+            .map(|code| format!("failed (exit {code})"))
+            .unwrap_or_else(|| "failed".into());
+        service.job_message(
+            failure.slug,
+            &event,
+            Some(failure.run_id),
+            vec!["telegram".into()],
+            failure.chat_id,
+        );
+        return;
+    }
     let text = format!(
         "{}\nRun: <code>{}</code>\nRestart: <code>cwtctl jobs restart {}</code>",
         super::format_job_status_message(

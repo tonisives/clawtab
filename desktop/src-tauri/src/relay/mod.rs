@@ -70,6 +70,9 @@ pub fn push_full_state(
         jobs: remote_jobs,
         statuses: remote_statuses,
     });
+    if let Some(service) = crate::nfn::service() {
+        service.publish_messages(handle);
+    }
 }
 
 /// Push full state to relay if connected. Convenience wrapper for job config changes.
@@ -110,6 +113,10 @@ pub fn push_job_notification(
     event: &str,
     run_id: &str,
 ) {
+    if let Some(service) = crate::nfn::service() {
+        service.job_message(job_id, event, Some(run_id), vec!["desktop".into()], None);
+        return;
+    }
     {
         let guard = relay.lock();
         if let Some(handle) = guard.as_ref() {

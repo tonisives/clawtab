@@ -361,6 +361,14 @@
   assert(!window.fixture.settings.menu_bar_icon && window.fixture.calls.at(-1).patch.menu_bar_icon === false, "the daemon menu bar icon can be disabled from inline settings");
   document.querySelector('[data-setting="menu_bar_icon"]').click(); await sleep(30);
   assert(window.fixture.settings.menu_bar_icon, "the daemon menu bar icon can be enabled again");
+  const mobile = document.querySelector('[data-setting="mobile_when_idle"]');
+  assert(mobile.checked, "idle mobile delivery is enabled by default");
+  mobile.click(); await sleep(30);
+  assert(window.fixture.settings.mobile_when_idle === false, "idle mobile delivery can be disabled without restarting the daemon");
+  mobile.click(); await sleep(30);
+  const idle = document.querySelector('[data-setting="idle_seconds"]');
+  idle.value = "120"; idle.dispatchEvent(new Event("change")); await sleep(30);
+  assert(window.fixture.settings.idle_seconds === 120 && idle.min === "10" && idle.max === "3600", "idle duration saves with the supported limits");
   duration.value = "12"; duration.dispatchEvent(new Event("change")); await sleep(30);
   assert(window.fixture.settings.preview_seconds === 12 && document.querySelector(".notification-settings") === settingsView, "inline settings save without rebuilding the form");
   const position = document.querySelector('[data-setting="placement"]'); position.value = "custom"; position.dispatchEvent(new Event("change")); await sleep(30);

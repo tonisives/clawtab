@@ -7,6 +7,7 @@ import { useNotificationStore } from "../store/notifications";
 import { getWsSend, nextId } from "../lib/wsRuntime";
 import { enqueueAnswer } from "../lib/pendingAnswers";
 import { postAnswer, refreshToken } from "../api/client";
+import { messageAction } from "../lib/messageActions";
 
 // Track which responses we've already sent answers for / navigated for,
 // to avoid double-processing between cold-start and the listener.
@@ -77,6 +78,9 @@ async function handleNotificationResponse(
 
   const clawtab = (source as { clawtab?: {
     event?: string;
+    message_id?: string;
+    machine_id?: string;
+    actions?: { id: string; label: string }[];
     question_id?: string;
     pane_id?: string;
     matched_job?: string;
@@ -88,6 +92,22 @@ async function handleNotificationResponse(
   if (!clawtab) {
     console.log("[notif] no clawtab data, content.data=" + JSON.stringify(contentData) + " trigger.payload=" + JSON.stringify(trigger?.payload));
 
+    return;
+  }
+  if (clawtab.event === "message" && clawtab.message_id && clawtab.machine_id) {
+    const action = response.actionIdentifier;
+    if (!alreadyAnswered && action !== Notifications.DEFAULT_ACTION_IDENTIFIER) {
+      const text = response.userText;
+      const actionId = action === "TEXT_INPUT" ? "reply" : clawtab.actions?.[Number(action) - 1]?.id;
+      if (actionId) {
+        try {
+          await messageAction({ machine: clawtab.machine_id, id: clawtab.message_id, op: "respond", action_id: actionId, ...(text ? { text } : {}) });
+          answeredResponses.add(key);
+          await Notifications.dismissNotificationAsync(response.notification.request.identifier);
+        } catch (error) { console.log("[messages] reply queued or awaiting connection", String(error)); }
+      }
+    }
+    if (navigate && !alreadyNavigated) { navigatedResponses.add(key); navigate("/notifications"); }
     return;
   }
   console.log("[notif] clawtab q=" + clawtab.question_id + " pane=" + clawtab.pane_id + " job=" + clawtab.matched_job);

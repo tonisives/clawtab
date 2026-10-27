@@ -96,6 +96,9 @@ async fn refresh(state: &AppState, user: Uuid, client: Uuid, replay: bool) {
         let Ok(grant) = super::access(state, user, machine).await else {
             continue;
         };
+        if grant.is_some() && payload["type"] == "messages_changed" {
+            continue;
+        }
         let payload = filtered(&payload, grant.as_ref().and_then(|g| g.as_deref()));
         if let Some(payload) = payload {
             state.machines.read().await.send(

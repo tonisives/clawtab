@@ -65,6 +65,8 @@ static NfnCallback callback;
 @property NSStatusItem *statusItem;
 @property NSImage *statusIcon;
 @property BOOL pointerDown;
+@property BOOL screenSleeping;
+@property BOOL screenLocked;
 @property NSDictionary *pendingPresentation;
 @end
 
@@ -148,6 +150,10 @@ static void emit(NSDictionary *value) {
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(screensChanged:) name:NSApplicationDidChangeScreenParametersNotification object:nil];
     [NSWorkspace.sharedWorkspace.notificationCenter addObserver:self selector:@selector(screensChanged:) name:NSWorkspaceActiveSpaceDidChangeNotification object:nil];
     [NSWorkspace.sharedWorkspace.notificationCenter addObserver:self selector:@selector(activationChanged:) name:NSWorkspaceDidActivateApplicationNotification object:nil];
+    for (NSString *name in @[NSWorkspaceScreensDidSleepNotification, NSWorkspaceWillSleepNotification, NSWorkspaceScreensDidWakeNotification, NSWorkspaceDidWakeNotification])
+        [NSWorkspace.sharedWorkspace.notificationCenter addObserver:self selector:@selector(powerChanged:) name:name object:nil];
+    for (NSString *name in @[@"com.apple.screenIsLocked", @"com.apple.screenIsUnlocked"])
+        [NSDistributedNotificationCenter.defaultCenter addObserver:self selector:@selector(lockChanged:) name:name object:nil];
     if (NSBundle.mainBundle.bundleIdentifier) {
         [UNUserNotificationCenter.currentNotificationCenter requestAuthorizationWithOptions:UNAuthorizationOptionAlert | UNAuthorizationOptionSound completionHandler:^(BOOL granted, NSError *error) {
             (void)granted; (void)error;
@@ -159,6 +165,14 @@ static void emit(NSDictionary *value) {
 }
 
 - (void)activationChanged:(NSNotification *)notification { [self publishPlatform]; }
+- (void)powerChanged:(NSNotification *)notification {
+    self.screenSleeping = [notification.name isEqual:NSWorkspaceScreensDidSleepNotification] || [notification.name isEqual:NSWorkspaceWillSleepNotification];
+    [self publishPlatform];
+}
+- (void)lockChanged:(NSNotification *)notification {
+    self.screenLocked = [notification.name isEqual:@"com.apple.screenIsLocked"];
+    [self publishPlatform];
+}
 - (void)updateStatusItem {
     BOOL enabled = !self.settings[@"menu_bar_icon"] || [self.settings[@"menu_bar_icon"] boolValue];
     if (!enabled) {
@@ -233,9 +247,14 @@ static void emit(NSDictionary *value) {
         [displays addObject:@{@"id":identifier ?: @"", @"name":screen.localizedName ?: @"Display"}];
     }
     NSTimeInterval idle = CGEventSourceSecondsSinceLastEventType(kCGEventSourceStateCombinedSessionState, kCGAnyInputEventType);
+    NSDictionary *session = CFBridgingRelease(CGSessionCopyCurrentDictionary());
+    BOOL locked = self.screenLocked || [session[@"CGSSessionScreenIsLocked"] boolValue];
+    BOOL sleeping = self.screenSleeping;
+    NSUInteger idleLimit = [self.settings[@"idle_seconds"] unsignedIntegerValue] ?: 60;
     NSDictionary *state = @{@"available":@YES, @"focused":[self focusStatus],
         @"authorized":self.authorizationKnown ? @(self.authorized) : NSNull.null, @"sound_allowed":@(self.soundAllowed),
-        @"frontmost_pid":@(NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier), @"user_active":idle < 60 ? @YES : @NO, @"displays":displays};
+        @"frontmost_pid":@(NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier), @"user_active":@(idle < idleLimit && !sleeping && !locked),
+        @"idle_seconds":@((NSUInteger)idle), @"screen_sleeping":@(sleeping), @"screen_locked":@(locked), @"displays":displays};
     NSString *serialized = [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:state options:NSJSONWritingSortedKeys error:nil] encoding:NSUTF8StringEncoding];
     if (![serialized isEqual:self.lastPlatform]) {
         self.lastPlatform = serialized;
