@@ -32,8 +32,9 @@ cd /work/dir && claude "$(cat /prompts/review-pr.txt)"
 
 Secrets are injected as tmux environment variables via `-e KEY=VALUE` flags on window/pane creation, not as shell `export` prefixes.
 
-- Creates tmux window `cwt-<project>` in the configured session (project is derived from the slug prefix, e.g. slug `myapp/review` produces window `cwt-myapp`)
-- If the window already exists, splits a new pane instead
+- Creates a new tmux window for each run in the configured session
+- Window and pane display names use `group/name+YYYY-MM-DD`, using the configured group, job name, and UTC start date (for example, `myapp/review+2026-10-27`)
+- Managed terminals use the same run title
 - Output monitored asynchronously (see [Monitoring](#tmux-monitoring))
 
 ## Folder
@@ -85,6 +86,9 @@ ClawTab writes the assembled shared context, per-job context, skill references,
 and `job.md` content to a private temporary prompt file before launching the
 agent, then removes the file when the agent exits. Secrets are injected as tmux
 environment variables (same as Claude jobs).
+
+Folder jobs use the same `group/name+YYYY-MM-DD` run titles as Claude jobs.
+Scheduled and manually started runs follow the same naming rule.
 
 ## Tmux Monitoring
 

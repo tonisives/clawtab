@@ -20,7 +20,7 @@ use std::path::Path;
 use chrono::Utc;
 use clawtab_protocol::JobPolicy;
 
-use crate::config::jobs::{Job, JobStatus, JobType};
+use crate::config::jobs::{job_group, Job, JobStatus, JobType};
 use crate::config::settings::AppSettings;
 use crate::history::RunRecord;
 use crate::job_context::JobContext;
@@ -86,20 +86,6 @@ pub(super) fn resolve_agent_effort(
     })
 }
 
-/// Generate a unique tmux window name for a single agent spawn.
-///
-/// Each spawn gets its own window so clawtab can resize it independently -
-/// splits in a shared window force all panes to the same geometry, which
-/// breaks per-tab sizing in the viewer.
-pub(super) fn project_window_name(job: &Job) -> String {
-    let project = match job.slug.split_once('/') {
-        Some((prefix, _)) if !prefix.is_empty() => prefix,
-        _ => &job.name,
-    };
-    let suffix = Utc::now().format("%Y%m%d");
-    format!("cwt-{}-{}", project, suffix)
-}
-
 pub async fn execute_job(
     job: &Job,
     ctx: &JobContext,
@@ -137,7 +123,14 @@ pub async fn execute_job(
         .clone()
         .or_else(|| trigger_id.clone())
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-    let started_at = Utc::now().to_rfc3339();
+    let started_at = Utc::now();
+    let run_title = format!(
+        "{}/{}+{}",
+        job_group(job),
+        job.name,
+        started_at.format("%Y-%m-%d")
+    );
+    let started_at = started_at.to_rfc3339();
 
     let result_file = prepare_result_file(job, trigger_id.as_deref());
     let stream_log_path = prepare_stream_log(job, &run_id);
@@ -165,6 +158,7 @@ pub async fn execute_job(
         job,
         ctx,
         run_id: &run_id,
+        run_title: &run_title,
         started_at: &started_at,
         params,
         result_file: result_file.as_deref(),
@@ -501,6 +495,7 @@ struct DispatchOptions<'a> {
     job: &'a Job,
     ctx: &'a JobContext,
     run_id: &'a str,
+    run_title: &'a str,
     started_at: &'a str,
     params: &'a HashMap<String, String>,
     result_file: Option<&'a std::path::Path>,
@@ -517,6 +512,7 @@ async fn dispatch_job(
         job,
         ctx,
         run_id,
+        run_title,
         started_at,
         params,
         result_file,
@@ -539,6 +535,7 @@ async fn dispatch_job(
         JobType::Claude => {
             execute_claude_job(
                 job,
+                run_title,
                 &ctx.secrets,
                 &ctx.settings,
                 params,
@@ -550,6 +547,7 @@ async fn dispatch_job(
         JobType::Job => {
             execute_folder_job(
                 job,
+                run_title,
                 &ctx.secrets,
                 &ctx.settings,
                 params,

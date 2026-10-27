@@ -128,7 +128,8 @@ pub(super) async fn spawn_agent_pane(
         return Err(error);
     }
 
-    tag_pane(&pane_id, slug);
+    let display_name = (!use_agent_window_name).then_some(window_name.as_str());
+    tag_pane(&pane_id, slug, display_name);
 
     if let Some(workspace) = aerospace_workspace {
         move_to_aerospace_workspace(&tmux_session, &window_name, workspace).await;
@@ -346,12 +347,14 @@ mod tests {
     }
 }
 
-/// Tag the pane with the job slug so reattach can identify it. Title is a
-/// best-effort hint (the running process can overwrite it via escape sequences);
-/// the user option is the authoritative tag.
-fn tag_pane(pane_id: &str, slug: &str) {
-    if let Err(e) = tmux::set_pane_title(pane_id, slug) {
-        log::warn!("Failed to set pane title for '{}': {}", slug, e);
+/// Keep the run's display name separate from its stable job slug for reattach.
+fn tag_pane(pane_id: &str, slug: &str, display_name: Option<&str>) {
+    let result = match display_name {
+        Some(name) => tmux::set_pane_display_name(pane_id, Some(name)),
+        None => tmux::set_pane_title(pane_id, slug),
+    };
+    if let Err(e) = result {
+        log::warn!("Failed to set pane name for '{}': {}", slug, e);
     }
     if let Err(e) = tmux::set_pane_slug(pane_id, slug) {
         log::warn!("Failed to set pane slug for '{}': {}", slug, e);
@@ -434,6 +437,13 @@ fn spawn_managed(
         }
         args.agent_command
     };
+    let mut metadata = std::collections::BTreeMap::from([
+        ("slug".into(), args.slug.into()),
+        ("title".into(), args.window_name.clone()),
+    ]);
+    if !args.use_agent_window_name {
+        metadata.insert("display_name".into(), args.window_name);
+    }
     let info = crate::managed::launch_preapproved(
         crate::managed::Launch {
             program,
@@ -443,10 +453,7 @@ fn spawn_managed(
             close_with_terminal: false,
             provider: args.provider.as_str().into(),
             conversation_id: None,
-            metadata: std::collections::BTreeMap::from([
-                ("slug".into(), args.slug.into()),
-                ("title".into(), args.window_name),
-            ]),
+            metadata,
         },
         &args.env_vars,
     )?;

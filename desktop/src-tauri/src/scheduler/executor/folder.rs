@@ -9,10 +9,11 @@ use clawtab_protocol::JobPolicy;
 
 use super::params::{apply_params, collect_env_vars};
 use super::tmux_spawn::{spawn_agent_pane, SpawnArgs};
-use super::{project_window_name, resolve_agent_effort, resolve_agent_model, TmuxHandle};
+use super::{resolve_agent_effort, resolve_agent_model, TmuxHandle};
 
 pub(super) async fn execute_folder_job(
     job: &Job,
+    run_title: &str,
     secrets: &Arc<Mutex<SecretsManager>>,
     settings: &Arc<Mutex<AppSettings>>,
     params: &HashMap<String, String>,
@@ -95,7 +96,7 @@ pub(super) async fn execute_folder_job(
     spawn_agent_pane(SpawnArgs {
         backend,
         tmux_session,
-        window_name: project_window_name(job),
+        window_name: run_title.to_string(),
         work_dir,
         env_vars,
         provider,
