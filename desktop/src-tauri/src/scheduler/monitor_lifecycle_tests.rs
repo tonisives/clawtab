@@ -1,21 +1,29 @@
 use super::*;
 
 #[test]
-fn guarded_monitor_never_latches_startup_idle_or_query_failure() {
+fn monitor_waits_through_startup_idle_and_query_failure() {
     for sample in [
         Ok(tmux::PaneProcessState::Running),
         Err("temporary inventory failure".into()),
         Ok(tmux::PaneProcessState::Running),
     ] {
-        assert_eq!(guarded_completion(sample), None);
+        assert_eq!(pane_completion(sample), None);
     }
     assert_eq!(
-        guarded_completion(Ok(tmux::PaneProcessState::Exited(Some(7)))),
+        pane_completion(Ok(tmux::PaneProcessState::Exited(Some(7)))),
         Some(Some(7))
     );
     assert_eq!(
-        guarded_completion(Ok(tmux::PaneProcessState::Missing)),
+        pane_completion(Ok(tmux::PaneProcessState::Exited(None))),
         Some(None)
+    );
+}
+
+#[test]
+fn manually_closed_pane_completes_successfully() {
+    assert_eq!(
+        pane_completion(Ok(tmux::PaneProcessState::Missing)),
+        Some(Some(0))
     );
 }
 

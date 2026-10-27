@@ -287,7 +287,7 @@ pub fn pane_process_state(id: &str) -> Result<PaneProcessState, String> {
     Ok(match info.status {
         Status::Running => PaneProcessState::Running,
         Status::Exited => PaneProcessState::Exited(info.exit_code.map(|code| code as i32)),
-        Status::Interrupted => PaneProcessState::Missing,
+        Status::Interrupted => PaneProcessState::Exited(None),
     })
 }
 pub fn retain_exited_pane(id: &str) -> Result<(), String> {

@@ -135,10 +135,7 @@ fn reattach_retired_one_shot(
             true
         }
         Ok(state) => {
-            let exit_code = match state {
-                tmux::PaneProcessState::Exited(code) => code,
-                _ => None,
-            };
+            let exit_code = super::monitor::pane_completion(Ok(state)).flatten();
             let output = tmux::capture_pane_full(pane_id).unwrap_or_default();
             let history = ctx.history.lock();
             let _ =
@@ -228,14 +225,10 @@ fn finalize_if_dead_or_idle(
 ) -> bool {
     match tmux::pane_process_state(pane_id) {
         Ok(tmux::PaneProcessState::Running) => false,
-        Ok(tmux::PaneProcessState::Exited(exit_code)) => {
+        Ok(state) => {
+            let exit_code = super::monitor::pane_completion(Ok(state)).flatten();
             finalize_idle_pane(run, job, pane_id, exit_code, &ctx.history);
             queue_orphan_failure(run, job, exit_code, ctx);
-            true
-        }
-        Ok(tmux::PaneProcessState::Missing) => {
-            finalize_idle_pane(run, job, pane_id, None, &ctx.history);
-            queue_orphan_failure(run, job, None, ctx);
             true
         }
         Err(error) => {

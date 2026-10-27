@@ -61,6 +61,9 @@ fn terminal_fixture() {
         if line == "quit" {
             break;
         }
+        if line == "fail" {
+            std::process::exit(7);
+        }
         if line == "size" {
             let (cols, rows) = crossterm::terminal::size().unwrap();
             println!("SIZE={cols}x{rows}");
@@ -270,6 +273,7 @@ fn close_policy_stops_only_on_origin_loss_and_explicit_detach_keeps_running() {
     assert_eq!(snapshot(&mut origin).status, Status::Running);
     drop(origin);
     wait_for(|| session.saved().status == Status::Exited);
+    assert_eq!(session.saved().exit_code, Some(0));
 
     let detached = Session::with_close_policy();
     let mut origin = detached.connect();
@@ -286,6 +290,21 @@ fn close_policy_stops_only_on_origin_loss_and_explicit_detach_keeps_running() {
     assert_eq!(snapshot(&mut viewer).status, Status::Running);
     viewer.request(Request::Stop).unwrap();
     wait_for(|| detached.saved().status == Status::Exited);
+    assert_eq!(detached.saved().exit_code, Some(0));
+}
+
+#[test]
+fn command_failure_preserves_its_exit_code() {
+    let session = Session::start();
+    let mut client = session.connect();
+    wait_for(|| snapshot(&mut client).text.contains("FIXTURE_READY"));
+    client
+        .request(Request::AutomationInput {
+            data: b"fail\r".to_vec(),
+        })
+        .unwrap();
+    wait_for(|| session.saved().status == Status::Exited);
+    assert_eq!(session.saved().exit_code, Some(7));
 }
 
 #[test]

@@ -31,6 +31,7 @@ struct State {
     local: HashMap<String, LocalViewer>,
     desktop_size: Size,
     origin_seen: bool,
+    closed_by_user: bool,
     launched: Instant,
     watchers: usize,
     master: Box<dyn MasterPty + Send>,
@@ -127,10 +128,15 @@ impl State {
     fn detach(&mut self, viewer: &str, explicit: bool) {
         if let Some(local) = self.local.remove(viewer) {
             if local.origin && self.info.launch.close_with_terminal && !explicit {
-                let _ = self.stop();
+                let _ = self.close();
             }
             self.revision += 1;
         }
+    }
+    fn close(&mut self) -> Result<(), String> {
+        self.stop()?;
+        self.closed_by_user = true;
+        Ok(())
     }
     fn handle(
         &mut self,
@@ -213,7 +219,7 @@ impl State {
                 Ok(Response::Ok)
             }
             Request::Stop => {
-                self.stop()?;
+                self.close()?;
                 Ok(Response::Ok)
             }
         }
@@ -368,6 +374,7 @@ pub(super) fn serve(id: &str, launch: Launch) -> Result<(), String> {
     let state = Arc::new(Mutex::new(State {
         desktop_size: size,
         origin_seen: false,
+        closed_by_user: false,
         launched: Instant::now(),
         watchers: 0,
         info,
@@ -445,7 +452,11 @@ fn await_exit(
     {
         let mut state = state.lock();
         state.info.status = Status::Exited;
-        state.info.exit_code = Some(exit.exit_code());
+        state.info.exit_code = Some(if state.closed_by_user {
+            0
+        } else {
+            exit.exit_code()
+        });
         state.revision += 1;
         store::save(&directory.join("screen.json"), &state.snapshot())?;
         store::save(

@@ -109,6 +109,68 @@ async fn successful_job_never_queues_failure_alert() {
         .is_empty());
 }
 
+#[tokio::test]
+async fn manual_shell_close_records_success_and_only_notifies_completion() {
+    let directory = tempfile::tempdir().expect("test directory");
+    let mut params = params(directory.path(), NotifyTarget::App, true);
+    let recorder = Arc::new(RecordingNotifier::default());
+    params.notifier = Some(recorder.clone());
+    rusqlite::Connection::open(directory.path().join("history.db"))
+        .expect("history connection")
+        .execute_batch(
+            "CREATE TABLE runs (
+                id TEXT PRIMARY KEY, job_name TEXT NOT NULL, started_at TEXT NOT NULL,
+                finished_at TEXT, exit_code INTEGER, trigger_type TEXT NOT NULL,
+                stdout TEXT NOT NULL DEFAULT '', stderr TEXT NOT NULL DEFAULT '',
+                pane_id TEXT, log_path TEXT
+            );",
+        )
+        .expect("runs table");
+    params
+        .history
+        .lock()
+        .insert(&crate::history::RunRecord {
+            id: params.run_id.clone(),
+            job_id: params.slug.clone(),
+            started_at: Utc::now().to_rfc3339(),
+            finished_at: None,
+            exit_code: None,
+            trigger: "manual".into(),
+            stdout: String::new(),
+            stderr: String::new(),
+            pane_id: Some("%17".into()),
+            log_path: None,
+        })
+        .expect("running job");
+
+    let exit_code = pane_completion(Ok(tmux::PaneProcessState::Missing))
+        .expect("closed pane completes");
+    let succeeded = exit_code == Some(0);
+    persist_finish(&params, "work completed", exit_code, succeeded);
+    notify_finish(&params, false, true, exit_code, succeeded).await;
+
+    let history = params.history.lock();
+    let run = history
+        .get_by_id(&params.run_id)
+        .expect("saved run")
+        .expect("run exists");
+    assert!(run.finished_at.is_some());
+    assert_eq!(run.exit_code, Some(0));
+    assert_eq!(run.stdout, "work completed");
+    assert!(matches!(
+        params.job_status.lock().get(&params.slug),
+        Some(JobStatus::Success { .. })
+    ));
+    assert!(history
+        .pending_failure_notifications()
+        .expect("pending")
+        .is_empty());
+    assert_eq!(
+        recorder.0.lock().as_slice(),
+        &[(params.slug.clone(), "completed".into())]
+    );
+}
+
 #[derive(Default)]
 struct RecordingNotifier(Mutex<Vec<(String, String)>>);
 

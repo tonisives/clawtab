@@ -234,10 +234,13 @@ struct ExitPoller {
     task: tokio::task::JoinHandle<()>,
 }
 
-fn guarded_completion(state: Result<tmux::PaneProcessState, String>) -> Option<Option<i32>> {
+pub(super) fn pane_completion(
+    state: Result<tmux::PaneProcessState, String>,
+) -> Option<Option<i32>> {
     match state {
         Ok(tmux::PaneProcessState::Exited(code)) => Some(code),
-        Ok(tmux::PaneProcessState::Missing) => Some(None),
+        // Job panes retain natural exits. Removing the pane completes the job.
+        Ok(tmux::PaneProcessState::Missing) => Some(Some(0)),
         Ok(tmux::PaneProcessState::Running) | Err(_) => None,
     }
 }
@@ -251,7 +254,7 @@ fn spawn_exit_poller(pane_id: &str) -> ExitPoller {
     let task = tokio::spawn(async move {
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-            let completion = guarded_completion(tmux::pane_process_state(&exit_pane));
+            let completion = pane_completion(tmux::pane_process_state(&exit_pane));
             if let Some(code) = completion {
                 *observed_code.lock() = code;
                 exit_flag.store(true, Ordering::Release);
