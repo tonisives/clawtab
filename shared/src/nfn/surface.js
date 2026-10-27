@@ -309,9 +309,11 @@
   async function act(action_id, text) {
     if (busy || !current) return;
     const id = current; busy = true; if (card) card._clientError = ""; pauseTimer(); updateCard();
+    const dismissOnly = records.get(id)?.request.template === "update" && action_id === "acknowledge";
     try {
-      const value = await call({ op: "respond", id, action_id, text: text || null });
+      const value = await call(dismissOnly ? { op: "dismiss", id } : { op: "respond", id, action_id, text: text || null });
       if (value.id) records.set(value.id, value);
+      if (dismissOnly && !preview) { if (current === id) collapse(false); return; }
       acceptFocus(id, value);
       if (!preview && value.status === "resolved") {
         drafts.delete(id); if (current === id && card?._reply) card._reply.value = "";
