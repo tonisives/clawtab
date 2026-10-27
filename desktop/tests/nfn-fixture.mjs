@@ -87,6 +87,10 @@ window.fixture.records.set("first", window.fixture.record("first"));
 window.nfn.receive(window.fixture.snapshot("first"));
 `;
 const native = process.argv.includes("--native");
+// Tart's no-graphics mode marks every page hidden. These UI scenarios exercise a visible card.
+const visibility = process.argv.includes("--headless-visible")
+  ? `Object.defineProperty(document, "hidden", { configurable: true, get: () => false }); Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "visible" });\n`
+  : "";
 const todoFileIndex = process.argv.indexOf("--todo-data");
 const todoData = todoFileIndex >= 0 ? JSON.parse(readFileSync(process.argv[todoFileIndex + 1], "utf8")) : { linked: true, note: "/notes/today.md", items: [
   { id: "release", text: "Prepare the release", group: "clawtab", depth: 0, checked: false, agent: { pane: "%42", state: "working", summary: "Checking the release artifacts" } },
@@ -96,5 +100,5 @@ const todoData = todoFileIndex >= 0 ? JSON.parse(readFileSync(process.argv[todoF
 const todoSetup = process.argv.includes("--todos") || todoFileIndex >= 0 ? `window.fixture.todos = ${JSON.stringify(todoData)}; window.nfn.receive({type:"todos",todos:window.fixture.todos});` : "";
 const fixtureSetup = native ? setup.slice(0, setup.indexOf("window.webkit =")) + setup.slice(setup.indexOf("window.fixture.record")) : setup;
 const document = read("surface.html").replace("/* NFN_CSS */", read("surface.css") + (native ? "" : "\nbody{background:#202126;padding:24px;display:flex;justify-content:center}"))
-  .replace("/* NFN_JS */", fixtureSetup + "\n" + read("surface.js") + "\n" + ready + "\n" + todoSetup);
+  .replace("/* NFN_JS */", visibility + fixtureSetup + "\n" + read("surface.js") + "\n" + ready + "\n" + todoSetup);
 writeFileSync(process.argv[2] || fileURLToPath(new URL("./nfn-fixture.html", import.meta.url)), document);

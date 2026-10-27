@@ -253,7 +253,7 @@ static void emit(NSDictionary *value) {
     NSUInteger idleLimit = [self.settings[@"idle_seconds"] unsignedIntegerValue] ?: 60;
     NSDictionary *state = @{@"available":@YES, @"focused":[self focusStatus],
         @"authorized":self.authorizationKnown ? @(self.authorized) : NSNull.null, @"sound_allowed":@(self.soundAllowed),
-        @"frontmost_pid":@(NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier), @"user_active":@(idle < idleLimit && !sleeping && !locked),
+        @"frontmost_pid":@(NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier), @"user_active":@((BOOL)(idle < idleLimit && !sleeping && !locked)),
         @"idle_seconds":@((NSUInteger)idle), @"screen_sleeping":@(sleeping), @"screen_locked":@(locked), @"displays":displays};
     NSString *serialized = [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:state options:NSJSONWritingSortedKeys error:nil] encoding:NSUTF8StringEncoding];
     if (![serialized isEqual:self.lastPlatform]) {
