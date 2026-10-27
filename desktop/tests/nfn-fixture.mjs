@@ -53,7 +53,7 @@ window.webkit = { messageHandlers: { nfn: { postMessage(value) {
 } } } };
 window.fixture.record = (id, actions = 4) => ({
   id, status: "pending", read_at: null, dismissed_at: null, created_at: Date.now(),
-  request: { title: "Review the launch post", body: "The launch post is ready. Review the changes and decide how to continue.\n<img src=x onerror=window.unsafeMarkup=true>", template: "review", response_destination: "agent_message", source: { pane_id: "%test", task: "Review the launch post", provider: "codex", branch: "launch", cwd: "~/projects/clawtab" },
+    request: { title: "Review the launch post", body: "The launch post is ready. Review the changes and decide how to continue.\n<img src=x onerror=window.unsafeMarkup=true>", template: "review", response_destination: "agent_message", source: { pane_id: "%test", provider: "codex", branch: "launch", cwd: "~/projects/clawtab" },
     data: { diff: "- Previous caption\n+ New launch caption", plan: "Review the caption\nApprove publication" },
     media: [], actions: ["Approve", "Request changes", "Reject", "Later"].slice(0, actions).map((label, i) => ({ id: String(i), label, kind: "choice" })) }
 });

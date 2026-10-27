@@ -84,6 +84,8 @@ cwtctl nfn templates validate ./my-review.yaml
 
 The CLI infers the originating pane from `CLAWTAB_SESSION_ID` or `TMUX_PANE`. An explicit `source.pane_id` takes precedence. Binary jobs should set `source.job_id` and `source.run_id`; they then use that run's log and do not inherit a terminal pane. Media supports HTTPS URLs and absolute local file paths. The native overlay streams local video in bounded chunks and releases it when the card closes. Local media is displayed by the daemon overlay; the in-app inbox supports HTTPS media.
 
+Agent card headings show the group on the left and the tmux window title in the center. The pane title, agent title, and notification title are fallbacks when the window has no name. Senders can set `source.group` and `source.agent_title` to override the displayed labels. Questions use their matched ClawTab group; other tmux notifications use the owning session. Full labels are available on hover.
+
 The default response destination, `result`, records a choice for the caller to consume. `agent_message` sends the decision and optional feedback to the originating live agent instead; it cannot be combined with `--wait`. Posting to a social network, touching a security key, granting permissions, and installing a background job remain the responsibility of the requesting workflow.
 
 An explicit request can supply up to 32 actions. All options appear in one horizontally scrolling row of rounded, single-line buttons:
@@ -101,7 +103,7 @@ An explicit request can supply up to 32 actions. All options appear in one horiz
 }
 ```
 
-Agent cards have a **…** menu beside their title with **Auto-yes**, Agent controls, Dismiss, and notification settings. Job cards omit the agent menu. Right-clicking the bar also opens a settings menu; `cwtctl nfn settings --ui` opens the Notifications tab directly. Questions and permission cards also show Auto-yes at the right of the answer row. Auto-yes uses the same pane-specific setting as the remote app and tmux: future prompts from that agent are automatically answered until it is turned off. Its state stays synchronized with other clients, and stale sessions cannot toggle a replacement agent.
+Agent cards have a **…** menu beside their title with **Auto-yes**, Agent controls, and Dismiss. Job cards omit the agent menu. Clicking the ClawTab icon or right-clicking the bar opens inline settings; `cwtctl nfn settings` opens the same view. Questions and permission cards show a yellow Auto-yes button on its own row below the answers. Their reply composer starts collapsed; click **Reply to agent** to open it. Reply drafts and open composers survive navigation. Cards show more context in a scrollable body. Auto-yes uses the same pane-specific setting as the remote app and tmux: future prompts from that agent are automatically answered until it is turned off. Its state stays synchronized with other clients, and stale sessions cannot toggle a replacement agent.
 
 Action kinds are `choice` (default), `focus`, `auto_yes`, `model`, and `plugin`. Model and plugin actions use `value` for the model or installed action ID and `parameters` for string values, such as reasoning `effort`. The **… > Agent controls** menu offers Codex model selection and available installed plugin actions without opening Details.
 

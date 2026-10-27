@@ -3,6 +3,7 @@
   "use strict";
   const host = document.getElementById("surface");
   const records = new Map(), drafts = new Map(), promises = new Map();
+  const replyStates = new Map();
   let snapshot = {}, current = null, expanded = false, details = false, queue = false, history = false, preview = false;
   let renderedId = null, card = null, logTimer = null, collapseTimer = null, remaining = 8000, timerStarted = 0;
   let hovering = false, focused = false, busy = false, contextBusy = false, serial = 0, placement = "right";
@@ -135,6 +136,13 @@
     const provider = { codex: "Codex", claude: "Claude", hermes: "Hermes" }[source.provider] || source.provider;
     const project = source.cwd?.replace(/\/$/, "").split("/").pop();
     return [provider, project].filter(Boolean).join(" · ");
+  }
+  function sourceHeading(record) {
+    const source = record.request.source || {};
+    const clean = value => typeof value === "string" ? stripAnsi(value).trim() : "";
+    const group = source.group == null ? clean(source.cwd?.replace(/\/$/, "").split("/").pop()) : clean(source.group);
+    const title = [source.agent_title, source.window_name, source.pane_title, source.task, record.request.title].map(clean).find(Boolean);
+    return { group, title };
   }
   function messageText(record) {
     const body = stripAnsi(record.request.body).trim();
@@ -361,13 +369,18 @@
     const node = el("article", "card");
     node._wasPending = pending(record) && !record.dismissed_at;
     node._signature = JSON.stringify([record.request, template(record)]);
-    const heading = el("div", "heading"); heading.append(el("h1", "", record.request.title));
-    const status = el("span", "status"); heading.append(status); node._status = status;
+    const heading = el("div", "heading"), agent = hasAgent(record), identity = sourceHeading(record);
+    const title = el("h1", "", agent ? identity.title : record.request.title); title.title = title.textContent;
+    if (agent) { heading.classList.add("agent-heading"); const group = el("span", "source-group", identity.group); group.title = identity.group; heading.append(group); }
+    heading.append(title);
+    const tools = el("div", "heading-tools"); heading.append(tools);
+    const status = el("span", "status"); tools.append(status); node._status = status;
     if (hasAgent(record)) {
       const options = iconButton("Notification options", "M5 12h.01M12 12h.01M19 12h.01", () => toggleMenu("options"), "options-toggle");
-      options.title = "Agent options"; options.setAttribute("aria-label", "Notification options"); options.setAttribute("aria-haspopup", "dialog"); node._options = options; heading.append(options);
+      options.title = "Agent options"; options.setAttribute("aria-label", "Notification options"); options.setAttribute("aria-haspopup", "dialog"); node._options = options; tools.append(options);
     }
     node.append(heading);
+    if (agent && !record.question_id && record.request.title !== identity.group && record.request.title !== identity.title) node.append(el("div", "notification-title", record.request.title));
     const message = el("div", "message", messageText(record)); node.append(message);
     const layout = template(record).layout, primitives = {};
     const content = el("div", "details-content"); node._content = content;
@@ -392,15 +405,28 @@
     }
     const answerRow = el("div", "answer-row"); answerRow.append(actions);
     node.append(answerRow);
-    if (hasAgent(record) && (record.question_id || ["question", "permission"].includes(record.request.template))) {
+    const questionOptions = agent && choices.length > 0 && (record.question_id || ["question", "permission", "agent-approval"].includes(record.request.template));
+    if (questionOptions) {
       node.append(autoYesControl(record, true));
     }
     if (record.request.template !== "update" && (hasBlock(layout, "reply") || record.request.source?.pane_id)) {
       const toAgent = Boolean(record.question_id || record.request.response_destination === "agent_message");
       const reply = el("div", "reply");
-      const label = el("label", "reply-label", toAgent ? "Reply to agent" : "Your reply"); label.htmlFor = "notification-reply"; reply.append(label);
+      const replyLabel = toAgent ? "Reply to agent" : "Your reply";
+      if (questionOptions) {
+        const open = replyStates.get(record.id) ?? Boolean(drafts.get(record.id));
+        const toggle = button(replyLabel, () => {
+          replyStates.set(record.id, !open); pauseTimer(); expanded = true; renderedId = null; render();
+          if (!open) { native({ native: "text_focus", active: true }); card?._reply?.focus({ preventScroll: true }); }
+        }, "utility reply-toggle");
+        toggle.setAttribute("aria-expanded", String(open)); toggle.setAttribute("aria-controls", "notification-reply-row"); reply.append(toggle);
+      } else {
+        const label = el("label", "reply-label", replyLabel); label.htmlFor = "notification-reply"; reply.append(label);
+      }
       const row = el("div", "reply-row");
+      row.id = "notification-reply-row"; row.hidden = Boolean(questionOptions) && !(replyStates.get(record.id) ?? Boolean(drafts.get(record.id)));
       const input = el("textarea"); input.id = "notification-reply"; input.rows = 2;
+      input.setAttribute("aria-label", replyLabel);
       input.placeholder = "Message...";
       input.value = drafts.get(record.id) || "";
       input.addEventListener("input", () => { drafts.set(record.id, input.value); updateCard(); });
@@ -793,7 +819,7 @@
   }
   function render() {
     const before = host.getBoundingClientRect();
-    const signature = JSON.stringify([current, expanded, details, queue, settingsOpen, menu, geometry, snapshot.visible, records.get(current)?.request]);
+    const signature = JSON.stringify([current, expanded, details, queue, settingsOpen, menu, replyStates.get(current), geometry, snapshot.visible, records.get(current)?.request]);
     const continuingAnimation = layoutAnimation && signature === renderedLayout;
     if (!continuingAnimation) stopAnimation();
     renderedLayout = signature;

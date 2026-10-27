@@ -170,7 +170,7 @@ impl Service {
             }
             let request = request_for_question(question, key.clone());
             match self.store.send(request, Some(key.clone())) {
-                Ok((_, created)) => changed |= created,
+                Ok(_) => changed = true,
                 Err(error) => {
                     seen.remove(&key);
                     log::warn!("[nfn] question registration failed: {error}");
@@ -540,15 +540,8 @@ impl Service {
                     {
                         return Err("Agent session changed before request submission".into());
                     }
-                    let task = request.source.task.take();
-                    let job_id = request.source.job_id.take();
-                    let run_id = request.source.run_id.take();
-                    request.source = source;
-                    request.source.job_id = job_id;
-                    request.source.run_id = run_id;
-                    if task.is_some() {
-                        request.source.task = task;
-                    }
+                    request.source =
+                        merge_reported_source(source, std::mem::take(&mut request.source));
                 }
                 if request.response_destination == "agent_message"
                     && request.source.agent_pid.is_none()
@@ -863,11 +856,17 @@ fn question_key(question: &ClaudeQuestion) -> String {
 }
 
 fn request_for_question(question: &ClaudeQuestion, dedupe_key: String) -> NfnRequest {
-    let source = resolve_source(&question.pane_id, None).unwrap_or_else(|_| NfnSource {
+    let mut source = resolve_source(&question.pane_id, None).unwrap_or_else(|_| NfnSource {
         pane_id: Some(question.pane_id.clone()),
         cwd: Some(question.cwd.clone()),
         ..Default::default()
     });
+    source.group = question.matched_group.clone().or(source.group).or_else(|| {
+        (!question.tmux_session.trim().is_empty()).then(|| question.tmux_session.clone())
+    });
+    if source.window_name.is_none() && !question.window_name.trim().is_empty() {
+        source.window_name = Some(question.window_name.clone());
+    }
     NfnRequest {
         title: source
             .task
@@ -910,6 +909,15 @@ fn tmux(args: &[&str]) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&output.stdout).trim_end().into())
 }
 
+fn merge_reported_source(mut source: NfnSource, reported: NfnSource) -> NfnSource {
+    source.task = reported.task.or(source.task);
+    source.group = reported.group.or(source.group);
+    source.agent_title = reported.agent_title;
+    source.job_id = reported.job_id;
+    source.run_id = reported.run_id;
+    source
+}
+
 pub fn resolve_source(pane: &str, client_tty: Option<String>) -> Result<NfnSource, String> {
     let pid = crate::terminal_backend::pane_pid(pane)?;
     let cwd = crate::terminal_backend::get_pane_path(pane)?;
@@ -938,11 +946,35 @@ pub fn resolve_source(pane: &str, client_tty: Option<String>) -> Result<NfnSourc
         session_id: info.session_id,
         model: info.model_id,
         cwd: Some(cwd.clone()),
-        task: meta.and_then(|meta| meta.display_name),
+        task: meta
+            .as_ref()
+            .and_then(|meta| meta.display_name.clone())
+            .or(info.title),
+        group: meta.and_then(|meta| meta.group_override),
         client_tty,
         ..Default::default()
     };
     if !crate::managed::is_managed(pane) {
+        if let Ok(labels) = tmux(&[
+            "display-message",
+            "-p",
+            "-t",
+            pane,
+            "#{window_name}\n#{pane_title}",
+        ]) {
+            let mut lines = labels.lines();
+            source.window_name = lines
+                .next()
+                .filter(|s| !s.trim().is_empty())
+                .map(str::to_owned);
+            source.pane_title = lines
+                .next()
+                .filter(|s| !s.trim().is_empty())
+                .map(str::to_owned);
+        }
+        if source.group.is_none() {
+            source.group = crate::tmux::resolve_real_session_for_pane(pane).ok();
+        }
         if let Ok(clients) = tmux(&[
             "list-clients",
             "-t",
@@ -1002,6 +1034,25 @@ fn same_source(source: &NfnSource, current: &NfnSource) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reported_labels_preserve_the_bound_agent_and_tmux_metadata() {
+        let source = NfnSource {
+            pane_id: Some("%1".into()),
+            agent_pid: Some("42".into()),
+            group: Some("project".into()),
+            window_name: Some("Current tmux title".into()),
+            ..Default::default()
+        };
+        let unchanged = merge_reported_source(source.clone(), NfnSource::default());
+        assert_eq!(unchanged.group, source.group);
+        let reported = serde_json::from_value(json!({"group":"Custom group", "agent_title":"Reported title", "agent_pid":"wrong", "window_name":"wrong"})).unwrap();
+        let merged = merge_reported_source(source, reported);
+        assert_eq!(merged.group.as_deref(), Some("Custom group"));
+        assert_eq!(merged.agent_title.as_deref(), Some("Reported title"));
+        assert_eq!(merged.window_name.as_deref(), Some("Current tmux title"));
+        assert_eq!(merged.agent_pid.as_deref(), Some("42"));
+    }
 
     #[test]
     fn job_folder_rejects_paths_outside_the_job_directory() {
