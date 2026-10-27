@@ -20,6 +20,14 @@ Messages appear locally by default. While a message is still pending, ClawTab al
 
 Set `mobile_when_idle: false` to keep automatic delivery local, or change `idle_seconds` in notification settings. Explicit `--channel mobile` sends immediately. Repeat `--channel` to include several channels; `--channel telegram` alone sends only to Telegram. Mobile push uses the signed-in account's registered iOS devices and requires a relay with push configured. Pending messages and recent history also appear in the mobile inbox. Replies made offline are saved and submitted when the originating host reconnects.
 
+### Remote message view
+
+The existing Notifications button opens the shared desktop message renderer in the web app and iOS app. Tapping an iOS message notification opens that message on its originating machine, including after a cold launch. New messages appear in a popup while another app screen is open. Status previews use the desktop timer; review cards stay open for a decision.
+
+Social-review cards keep their caption, action IDs and ordered photo/video attachments. HTTPS media loads directly. Local attachments are fetched from the authenticated host by message ID and attachment index in ranges of at most 256 KiB, with a 128 MiB limit per attachment. The remote view assembles a temporary media URL for playback and seeking, then releases it when the attachment leaves the view. Replies retain the existing offline queue.
+
+The task ring uses the selected machine's task list. On a message-specific screen it uses that message's machine. Open agent navigates to the remote session. Task source configuration stays on desktop.
+
 Telegram uses the configured chats; `--chat ID` selects one. Questions include choice buttons and accept a reply to the bot's message. The first accepted answer resolves the shared message, and buttons are removed from its Telegram copies. Terminal log streaming and typing indicators continue using their existing Telegram settings.
 
 The daemon owns the notification queue and the macOS overlay. Cards remain available while the desktop app is closed. On macOS 12 or later, cards appear below the notch on the selected display, or in a right column on displays without a notch. Settings also allow the right column on every display.
@@ -110,7 +118,7 @@ cwtctl message templates list
 cwtctl message templates validate ./my-review.yaml
 ```
 
-The CLI uses `CODEX_THREAD_ID` to find the sending Codex conversation, since shared command runners can carry another pane's `TMUX_PANE`. Managed agents use `CLAWTAB_SESSION_ID`, with the conversation checked by the daemon. Without a Codex thread, the CLI infers the pane from `CLAWTAB_SESSION_ID` or `TMUX_PANE`. An explicit `source.pane_id` takes precedence. Binary jobs should set `source.job_id` and `source.run_id`; they then use that run's log and do not inherit a terminal pane. Media supports HTTPS URLs and absolute local file paths. The native overlay streams local video in bounded chunks and releases it when the card closes. Local media is displayed by the daemon overlay; the in-app inbox supports HTTPS media.
+The CLI uses `CODEX_THREAD_ID` to find the sending Codex conversation, since shared command runners can carry another pane's `TMUX_PANE`. Managed agents use `CLAWTAB_SESSION_ID`, with the conversation checked by the daemon. Without a Codex thread, the CLI infers the pane from `CLAWTAB_SESSION_ID` or `TMUX_PANE`. An explicit `source.pane_id` takes precedence. Binary jobs should set `source.job_id` and `source.run_id`; they then use that run's log and do not inherit a terminal pane. Media supports HTTPS URLs and absolute local file paths. The native overlay streams local video in bounded chunks and releases it when the card closes. The remote message view supports local and HTTPS media.
 
 Agent card headings show the group on the left and the tmux window title in the center. The pane title, agent title, and notification title are fallbacks when the window has no name. Senders can set `source.group` and `source.agent_title` to override the displayed labels. Questions use their matched ClawTab group; other tmux notifications use the owning session. Full labels are available on hover.
 
