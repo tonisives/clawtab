@@ -71,6 +71,7 @@ struct PollState {
     stale_ticks: u32,
     idle_ticks: u32,
     tick_counter: u32,
+    source_saved: bool,
 }
 
 pub async fn monitor_pane(params: MonitorParams) {
@@ -90,6 +91,7 @@ pub async fn monitor_pane(params: MonitorParams) {
     let use_app = params.notify_target == NotifyTarget::App;
     let started_at = std::time::Instant::now();
 
+    let source_saved = capture_notification_source(&params);
     notify_start(&params, use_telegram, use_app).await;
     let working_message_id = init_working_message(&params, use_telegram).await;
 
@@ -100,6 +102,7 @@ pub async fn monitor_pane(params: MonitorParams) {
         stale_ticks: 0,
         idle_ticks: 0,
         tick_counter: 0,
+        source_saved,
     };
 
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
@@ -173,6 +176,28 @@ pub async fn monitor_pane(params: MonitorParams) {
     );
 }
 
+fn capture_notification_source(params: &MonitorParams) -> bool {
+    let Ok(mut source) = crate::nfn::resolve_source(&params.pane_id, None) else {
+        return false;
+    };
+    if source.session_id.is_none() {
+        return false;
+    }
+    source.job_id = Some(params.slug.clone());
+    source.run_id = Some(params.run_id.clone());
+    match params
+        .history
+        .lock()
+        .save_notification_source(&params.run_id, &source)
+    {
+        Ok(()) => true,
+        Err(error) => {
+            log::warn!("[{}] {error}", params.run_id);
+            false
+        }
+    }
+}
+
 async fn notify_start(params: &MonitorParams, use_telegram: bool, use_app: bool) {
     if !params.notify.start || params.is_reattach {
         return;
@@ -197,7 +222,7 @@ async fn notify_start(params: &MonitorParams, use_telegram: bool, use_app: bool)
     if use_app {
         crate::relay::push_job_notification(&params.relay, &params.slug, "started", &params.run_id);
         if let Some(ref n) = params.notifier {
-            n.notify_job(&params.slug, "started");
+            n.notify_job_run(&params.slug, "started", &params.run_id);
         }
     }
 }
@@ -280,6 +305,9 @@ async fn run_poll_loop(
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(POLL_INTERVAL_SECS)).await;
         state.tick_counter += 1;
+        if !state.source_saved {
+            state.source_saved = capture_notification_source(params);
+        }
 
         let Some(trimmed) = capture_or_break(params) else {
             if process_exited.load(Ordering::Acquire) {
@@ -563,6 +591,7 @@ async fn notify_finish(
             params.notifier.as_deref(),
             local_enabled,
             &params.slug,
+            &params.run_id,
             exit_code,
         );
         let config = params.settings.lock().telegram.clone();
@@ -608,7 +637,7 @@ async fn notify_finish(
         crate::relay::push_job_notification(&params.relay, &params.slug, status, &params.run_id);
         if succeeded {
             if let Some(ref n) = params.notifier {
-                n.notify_job(&params.slug, status);
+                n.notify_job_run(&params.slug, status, &params.run_id);
             }
         }
     }

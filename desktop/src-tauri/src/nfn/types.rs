@@ -66,6 +66,7 @@ pub struct NfnSource {
     pub agent_pid: Option<String>,
     pub agent_started_at: Option<i64>,
     pub provider: Option<String>,
+    pub provider_home: Option<String>,
     pub model: Option<String>,
     pub cwd: Option<String>,
     pub task: Option<String>,

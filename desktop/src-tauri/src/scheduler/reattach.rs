@@ -152,6 +152,7 @@ fn reattach_retired_one_shot(
                     ctx.notifier.as_deref(),
                     local_enabled,
                     &run.job_id,
+                    &run.id,
                     exit_code,
                 );
                 let config = ctx.settings.lock().telegram.clone();
@@ -257,6 +258,7 @@ fn queue_orphan_failure(
         ctx.notifier.as_deref(),
         local_enabled,
         &job.slug,
+        &run.id,
         exit_code,
     );
     let config = ctx.settings.lock().telegram.clone();

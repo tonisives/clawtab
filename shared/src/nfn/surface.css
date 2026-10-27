@@ -47,7 +47,8 @@ button.icon-button { display: flex; align-items: center; justify-content: center
 .menu-open > .card, .menu-overlay { grid-area: 2 / 1; }
 .pill .top { border: 0; }
 .notch.pill .top { height: 32px; padding: 2px 8px; }
-.card { min-height: 0; padding: 12px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.card { display: flex; flex: 1; flex-direction: column; min-height: 0; padding: 12px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.card > * { flex: none; }
 .details-open .card { display: flex; flex-direction: column; overflow: hidden; }
 .details-open .card > * { flex: none; }
 .heading { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
@@ -74,8 +75,8 @@ button.reply-toggle { padding: 0; font-size: 12px; }
 .actions { display: flex; flex: 1; min-width: 0; gap: 8px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; }
 .actions::-webkit-scrollbar { display: none; }
 .actions:empty { display: none; }
-.actions button { flex: 0 0 auto; min-width: 80px; max-width: 280px; padding: 8px 12px; border-radius: 20px; color: #aeb8ed; border-color: #7986cb80; background: #7986cb1a; font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.actions button:hover { background: #7986cb30; }
+.actions button, button.open-session { flex: 0 0 auto; min-width: 80px; max-width: 280px; padding: 8px 12px; border-radius: 20px; color: #aeb8ed; border-color: #7986cb80; background: #7986cb1a; font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.actions button:hover, button.open-session:hover { background: #7986cb30; }
 .reply { margin-top: 12px; }
 .reply-label { display: block; font-size: 12px; font-weight: 500; margin-bottom: 6px; }
 .reply-row { display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
@@ -83,6 +84,10 @@ textarea { display: block; width: 100%; min-width: 0; height: 58px; min-height: 
 textarea::placeholder { color: #98989d; }
 button.send { flex: none; align-self: flex-end; min-width: 54px; padding: 7px 12px; border-radius: 20px; border-color: #7986cb80; font-size: 12px; font-weight: 500; }
 .controls { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 7px -7px -4px; font-size: 11px; }
+.card > .controls { margin-top: auto; padding-top: 7px; }
+.controls.session-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); padding-top: 14px; }
+.session-controls .details-toggle { justify-self: start; max-width: 100%; white-space: normal; text-align: left; }
+.session-controls .open-session { grid-column: 2; }
 .notice { font-size: 12px; line-height: 1.45; margin-top: 8px; white-space: pre-wrap; overflow-wrap: anywhere; color: #ff9f0a; }
 .notice:empty { display: none; }
 .details-open .card > .details-content { flex: 0 1 auto; min-height: 0; }
