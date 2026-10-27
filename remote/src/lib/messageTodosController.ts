@@ -1,6 +1,6 @@
 import { resourceKey } from "@clawtab/shared";
 
-type Machine = { id: string; online: boolean };
+type Machine = { id: string; online: boolean; owned?: boolean };
 type Command = Record<string, unknown>;
 type Snapshot = Record<string, any>;
 type Options = {
@@ -12,6 +12,11 @@ type Options = {
 
 export const isMessageTodoCommand = (command: Command) =>
   ["todos", "todo_add", "todo_update", "todo_start", "todo_focus"].includes(String(command.op));
+
+export function messageTodoMachine(machines: Machine[], selected: string | null, selection?: string | null) {
+  if (selection) return machines.find(machine => selection.startsWith(`${machine.id}::`));
+  return machines.find(machine => machine.id === selected) ?? machines.find(machine => machine.online && machine.owned);
+}
 
 export function messageTodosController(options: Options) {
   return async (command: Command) => {

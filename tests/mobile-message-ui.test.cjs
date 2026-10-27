@@ -23,7 +23,7 @@ const routes = load("messageRoutes");
 const { messageNotificationRoute } = load("messageNotificationRoute");
 const presentation = load("messagePresentation");
 const { messageSurfaceController } = load("messageSurfaceController");
-const { messageTodosController, isMessageTodoCommand } = load("messageTodosController");
+const { messageTodosController, messageTodoMachine, isMessageTodoCommand } = load("messageTodosController");
 const record = (machine, id = "same-id", extra = {}) => ({
   machine_id: machine, id, status: "pending", created_at: 10,
   request: { title: "Review post", body: "Caption", template: "social-review", source: { pane_id: `${machine}::%1` },
@@ -155,6 +155,15 @@ test("a late task snapshot cannot overwrite the newly selected machine", async (
   finish({ items: [] });
   await pending;
   assert.equal(updates.length, 0);
+});
+
+test("a message-specific task view never falls back to another machine", () => {
+  const a = { id: "mac-a", online: true, owned: true };
+  const b = { id: "mac-b", online: false, owned: true };
+  assert.equal(messageTodoMachine([a], "mac-a", "mac-b::review"), undefined);
+  assert.equal(messageTodoMachine([a, b], "mac-a", "mac-b::review"), b);
+  assert.equal(messageTodoMachine([a, b], "mac-a", null), a);
+  assert.equal(messageTodoMachine([a, b], null, null), a);
 });
 
 test("remote task controls reject desktop source linking and disconnected mutations", async () => {

@@ -6,7 +6,7 @@ import { useMessageStore } from "../store/messages";
 import { useNotificationStore } from "../store/notifications";
 import { messageAction } from "../lib/messageActions";
 import { messageSurfaceController } from "../lib/messageSurfaceController";
-import { isMessageTodoCommand, messageTodosController } from "../lib/messageTodosController";
+import { isMessageTodoCommand, messageTodoMachine, messageTodosController } from "../lib/messageTodosController";
 import { surfaceId, surfaceRecord } from "../lib/messagePresentation";
 import { notificationJobRoute, notificationProcessRoute } from "../lib/notificationRoutes";
 import type { NotificationDetailTarget } from "./notificationTypes";
@@ -86,9 +86,7 @@ export function MessageInbox({ selection, popup = false, onSelectDetail, onNavig
     }
     return () => { active = false; };
   }, [machineKey]);
-  const todoMachine = (selection ? machines.find(machine => selection.startsWith(`${machine.id}::`))
-    : machines.find(machine => machine.id === selected))
-    ?? machines.find(machine => machine.online && machine.owned);
+  const todoMachine = messageTodoMachine(machines, selected, selection);
   const todoMachineRef = useRef(todoMachine);
   todoMachineRef.current = todoMachine;
   const todoCommand = useMemo(() => messageTodosController({
