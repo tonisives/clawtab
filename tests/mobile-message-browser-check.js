@@ -43,5 +43,7 @@ async () => {
   window.nfn.receive({ type: "open_record", id: message.id, popup: true });
   await new Promise(resolve => setTimeout(resolve, 200));
   assert(Boolean(document.querySelector(".card textarea")), "social approvals remain open for a decision");
+  await wait(() => document.querySelector(".media img")?.naturalWidth > 0);
+  if (video) await wait(() => document.querySelector(".media video")?.readyState >= 1);
   return checks;
 }
