@@ -40,7 +40,10 @@ int main(int argc, const char **argv) {
         checks.script = [NSString stringWithContentsOfFile:[NSString stringWithUTF8String:argv[2]] encoding:NSUTF8StringEncoding error:nil];
         if (argc == 4) checks.screenshotPath = [NSString stringWithUTF8String:argv[3]];
         if (!checks.script) return 2;
-        NSRect frame = NSMakeRect(40, 40, 1280, 900);
+        NSDictionary *environment = NSProcessInfo.processInfo.environment;
+        double width = environment[@"NFN_CHECK_WIDTH"] ? [environment[@"NFN_CHECK_WIDTH"] doubleValue] : 1280;
+        double height = environment[@"NFN_CHECK_HEIGHT"] ? [environment[@"NFN_CHECK_HEIGHT"] doubleValue] : 900;
+        NSRect frame = NSMakeRect(40, 40, width, height);
         checks.window = [[NSWindow alloc] initWithContentRect:frame styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];
         WKWebView *web = [[WKWebView alloc] initWithFrame:frame];
         web.navigationDelegate = checks;

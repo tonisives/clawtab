@@ -23,6 +23,7 @@ const routes = load("messageRoutes");
 const { messageNotificationRoute } = load("messageNotificationRoute");
 const presentation = load("messagePresentation");
 const { messageSurfaceController } = load("messageSurfaceController");
+const { messageTodosController, isMessageTodoCommand } = load("messageTodosController");
 const record = (machine, id = "same-id", extra = {}) => ({
   machine_id: machine, id, status: "pending", created_at: 10,
   request: { title: "Review post", body: "Caption", template: "social-review", source: { pane_id: `${machine}::%1` },
@@ -123,4 +124,44 @@ test("generated mobile document uses the production surface and native bridge", 
   assert.ok(document.includes(fs.readFileSync(path.resolve(__dirname, "../shared/src/nfn/surface.js"), "utf8")));
   assert.ok(document.includes("window.ReactNativeWebView.postMessage"));
   assert.ok(document.includes("media-src https: clawtab-nfn:"));
+});
+
+test("shared task actions use the selected host and open its agent in the remote app", async () => {
+  const calls = [], opened = [], updates = [];
+  const execute = messageTodosController({
+    machine: () => ({ id: "mac-b", online: true }),
+    host: async (machine, command) => { calls.push({ machine, ...command }); return { items: [{ id: "task", agent: { pane: "%8" } }] }; },
+    update: value => updates.push(value), openAgent: pane => opened.push(pane),
+  });
+  await execute({ op: "todo_add", text: "Review launch", group: "ClawTab" });
+  await execute({ op: "todo_update", id: "task", checked: true });
+  await execute({ op: "todo_start", id: "task", cwd: "/projects/clawtab" });
+  await execute({ op: "todo_focus", id: "task" });
+  assert.deepEqual(calls.map(call => call.op), ["todo_add", "todo_update", "todo_start", "todos"]);
+  assert.ok(calls.every(call => call.machine === "mac-b"));
+  assert.equal(calls[2].cwd, "/projects/clawtab");
+  assert.deepEqual(opened, ["mac-b::%8"]);
+  assert.equal(updates.length, 4);
+});
+
+test("a late task snapshot cannot overwrite the newly selected machine", async () => {
+  let machine = { id: "mac-a", online: true }, finish;
+  const updates = [];
+  const execute = messageTodosController({ machine: () => machine,
+    host: () => new Promise(resolve => { finish = resolve; }), update: value => updates.push(value), openAgent: () => {},
+  });
+  const pending = execute({ op: "todos" });
+  machine = { id: "mac-b", online: true };
+  finish({ items: [] });
+  await pending;
+  assert.equal(updates.length, 0);
+});
+
+test("remote task controls reject desktop source linking and disconnected mutations", async () => {
+  const execute = messageTodosController({ machine: () => ({ id: "mac-a", online: false }),
+    host: async () => assert.fail("offline task must not send"), update: () => {}, openAgent: () => {},
+  });
+  assert.equal(isMessageTodoCommand({ op: "todo_link" }), false);
+  await assert.rejects(execute({ op: "todo_link", note: "/notes/today.md" }), /Unsupported/);
+  await assert.rejects(execute({ op: "todo_update", id: "task", checked: true }), /Connect/);
 });

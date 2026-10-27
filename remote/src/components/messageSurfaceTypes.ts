@@ -10,6 +10,7 @@ export type SurfaceMessage = {
 export type MessageSurfaceProps = {
   snapshot: Record<string, unknown>;
   selection?: string | null;
+  popup?: boolean;
   onCommand: (command: Record<string, unknown>) => Promise<unknown>;
   onNative?: (message: SurfaceMessage) => void;
 };

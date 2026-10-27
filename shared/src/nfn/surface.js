@@ -111,8 +111,10 @@
     const options = el("details", "todo-options"); options.open = todoOptionsOpen; options.addEventListener("toggle", () => { todoOptionsOpen = options.open; }); options.append(el("summary", "hint", "Source and agent settings"));
     options.append(el("label", "hint", "Working directory for new Codex agents"), todoInput("Agent working directory", "cwd", "/path/to/project"));
     options.append(el("p", "hint", "Start agent opens a tmux window in the task's group using Codex Sol 6.1 with high reasoning."));
-    options.append(todoInput("Markdown source path", "note", todoData.note || "/path/to/tasks.md"), todoInput("Agent mapping path", "agents", "Optional /path/to/agents.json"));
-    const link = button("Link Markdown checklist", () => todoAction({ op: "todo_link", note: todoDraft.note || "", agents: todoDraft.agents || null })); link.disabled = todoBusy; options.append(link);
+    if (!snapshot.remote) {
+      options.append(todoInput("Markdown source path", "note", todoData.note || "/path/to/tasks.md"), todoInput("Agent mapping path", "agents", "Optional /path/to/agents.json"));
+      const link = button("Link Markdown checklist", () => todoAction({ op: "todo_link", note: todoDraft.note || "", agents: todoDraft.agents || null })); link.disabled = todoBusy; options.append(link);
+    }
     view.append(options);
     view._restoreFocus = () => {
       list.scrollTop = scroll;
@@ -1100,6 +1102,7 @@
         if (reviewVersion !== version) return;
         records.set(record.id, record); openRecord(record.id);
         if (record.request.media?.length) toggleDetails();
+        else if (value.popup && record.request.template === "update") { expanded = false; render(); resumeTimer(); }
       };
       if (records.has(value.id)) open(records.get(value.id));
       else call({ op: "get", id: value.id }).then(open).catch(error => {

@@ -33,8 +33,8 @@ export function MessageArrival() {
       <Pressable accessibilityRole="button" accessibilityLabel="Close message popup" style={styles.close}
         onPress={() => setTarget(null)}><Text style={styles.label}>Close</Text></Pressable>
     </View>
-    <MessageInbox selection={`${target.machine}::${target.id}`} onNavigateAway={() => setTarget(null)}
-      onNative={value => { if (value.native === "hide") setTarget(null); }} />
+    <MessageInbox popup selection={`${target.machine}::${target.id}`} onNavigateAway={() => setTarget(null)}
+      onNative={value => { if (value.native === "presentation" && value.active === false) setTarget(null); }} />
   </View>;
 }
 

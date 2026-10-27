@@ -52,6 +52,10 @@ fn allowed(command: &NfnCommand) -> bool {
             | NfnCommand::Cancel { .. }
             | NfnCommand::Context { .. }
             | NfnCommand::Templates
+            | NfnCommand::Todos
+            | NfnCommand::TodoAdd { .. }
+            | NfnCommand::TodoUpdate { .. }
+            | NfnCommand::TodoStart { .. }
     )
 }
 
@@ -167,6 +171,11 @@ mod tests {
             id: "review".into()
         }));
         assert!(allowed(&NfnCommand::Templates));
+        assert!(allowed(&NfnCommand::Todos));
+        assert!(!allowed(&NfnCommand::TodoLink {
+            note: "/tmp/tasks.md".into(),
+            agents: None
+        }));
         assert!(!allowed(&NfnCommand::SaveSettings {
             patch: json!({"sound":false})
         }));

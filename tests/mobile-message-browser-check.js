@@ -31,5 +31,17 @@ async () => {
   window.nfn.receive({ type: "open_record", id: "mac-b::launch-review" });
   await wait(() => document.querySelector(".message")?.textContent.includes("Your agents, wherever you are"));
   assert(document.querySelector("textarea").value === "Keep this caption edit", "changing messages restores the original draft");
+  const original = window.lastSnapshot;
+  const message = original.records.find(record => record.id === "mac-b::launch-review");
+  const update = { ...message, request: { ...message.request, template: "update", media: [], source: {}, actions: [] } };
+  window.nfn.receive({ ...original, records: original.records.map(record => record.id === update.id ? update : record), settings: { preview_seconds: .15 } });
+  window.nfn.receive({ type: "open_record", id: update.id, popup: true });
+  assert(!document.querySelector("#surface").classList.contains("expanded"), "status arrivals use the desktop timed preview");
+  await wait(() => !document.querySelector(".card"));
+  assert(true, "status popup collapses after its preview interval");
+  window.nfn.receive(original);
+  window.nfn.receive({ type: "open_record", id: message.id, popup: true });
+  await new Promise(resolve => setTimeout(resolve, 200));
+  assert(Boolean(document.querySelector(".card textarea")), "social approvals remain open for a decision");
   return checks;
 }
