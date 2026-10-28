@@ -8,7 +8,7 @@ import time
 
 root = Path(__file__).resolve().parent.parent
 if os.environ.get("BUILD_SERVICE_WORKER") != "1":
-    raise SystemExit("Run with buildctl run --prepare-node -- python3 tests/check-messages.py")
+    raise SystemExit("Run with buildctl run --cwd desktop --prepare-node -- python3 ../tests/check-messages.py")
 
 results = root / "dist/message-checks"
 results.mkdir(parents=True, exist_ok=True)

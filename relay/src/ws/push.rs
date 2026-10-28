@@ -24,6 +24,7 @@ pub(super) async fn handle_message_push(
     }
     let mut invalid = Vec::new();
     let mut failed = false;
+    let mut delivered = false;
     for (token_id, token) in tokens {
         let key = (machine, id.to_string(), token_id);
         let redis_key = format!("message_push:{machine}:{id}:{token_id}");
@@ -44,6 +45,7 @@ pub(super) async fn handle_message_push(
             false
         };
         if already_sent || cached {
+            delivered = true;
             continue;
         }
         match apns
@@ -51,6 +53,7 @@ pub(super) async fn handle_message_push(
             .await
         {
             Ok(()) => {
+                delivered = true;
                 let mut hub = state.machines.write().await;
                 hub.message_pushes
                     .retain(|_, at| at.elapsed().as_secs() < 86400);
@@ -77,8 +80,10 @@ pub(super) async fn handle_message_push(
     delete_invalid_tokens(state, &invalid).await;
     if failed {
         Err("Mobile push delivery failed; retrying".into())
-    } else {
+    } else if delivered {
         Ok(())
+    } else {
+        Err("No valid mobile push devices registered".into())
     }
 }
 

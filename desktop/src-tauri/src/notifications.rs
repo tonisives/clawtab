@@ -11,6 +11,9 @@ use crate::ipc::{self, EventSubscribers, IpcEvent};
 pub trait Notifier: Send + Sync {
     fn notify_question(&self, question: &ClaudeQuestion);
     fn notify_job(&self, job_id: &str, event: &str);
+    fn notify_job_run(&self, job_id: &str, event: &str, _run_id: &str) {
+        self.notify_job(job_id, event);
+    }
 }
 
 /// Failure banners do not wait for network delivery or routine finish notifications.
@@ -18,6 +21,7 @@ pub fn notify_job_failure(
     notifier: Option<&dyn Notifier>,
     enabled: bool,
     slug: &str,
+    run_id: &str,
     exit_code: Option<i32>,
 ) {
     if !enabled {
@@ -28,7 +32,7 @@ pub fn notify_job_failure(
             || "failed".to_string(),
             |code| format!("failed (exit {code})"),
         );
-        notifier.notify_job(slug, &event);
+        notifier.notify_job_run(slug, &event, run_id);
     }
 }
 
@@ -212,6 +216,14 @@ impl IpcNotifier {
 }
 
 impl Notifier for IpcNotifier {
+    fn notify_job_run(&self, job_id: &str, event: &str, run_id: &str) {
+        if let Some(service) = crate::nfn::service() {
+            service.job_notification(job_id, event, Some(run_id));
+        } else {
+            self.notify_job(job_id, event);
+        }
+    }
+
     fn notify_question(&self, question: &ClaudeQuestion) {
         if let Some(service) = crate::nfn::service() {
             service.announce_question(question);
@@ -228,7 +240,7 @@ impl Notifier for IpcNotifier {
 
     fn notify_job(&self, job_id: &str, event: &str) {
         if let Some(service) = crate::nfn::service() {
-            service.job_notification(job_id, event);
+            service.job_notification(job_id, event, None);
             return;
         }
         let body = format!("Job {} {}", job_id, event);
@@ -414,6 +426,45 @@ pub fn notify_new_questions(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn failure_delivery_binds_the_exact_run_before_a_newer_job_can_start() {
+        #[derive(Default)]
+        struct RunNotifier(Mutex<Vec<(String, String, String)>>);
+        impl Notifier for RunNotifier {
+            fn notify_question(&self, _: &ClaudeQuestion) {}
+            fn notify_job(&self, _: &str, _: &str) {
+                panic!("failure delivery must include its run id");
+            }
+            fn notify_job_run(&self, slug: &str, event: &str, run: &str) {
+                self.0.lock().push((slug.into(), event.into(), run.into()));
+            }
+        }
+        let notifier = RunNotifier::default();
+        notify_job_failure(
+            Some(&notifier),
+            true,
+            "project/job",
+            "failed-run",
+            Some(143),
+        );
+        assert_eq!(
+            *notifier.0.lock(),
+            vec![(
+                "project/job".into(),
+                "failed (exit 143)".into(),
+                "failed-run".into()
+            )]
+        );
+        notify_job_failure(
+            Some(&notifier),
+            false,
+            "project/job",
+            "disabled-run",
+            Some(1),
+        );
+        assert_eq!(notifier.0.lock().len(), 1);
+    }
 
     struct ReentrantNotifier {
         state: Arc<Mutex<NotificationState>>,

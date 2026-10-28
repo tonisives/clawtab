@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [[ "${BUILD_SERVICE_WORKER:-}" != 1 ]]; then
-  echo 'Run this check with buildctl run --prepare-node -- bash desktop/tests/check-messages.sh' >&2
+  echo 'Run this check with buildctl run --cwd desktop --prepare-node -- bash tests/check-messages.sh' >&2
   exit 2
 fi
 

@@ -10,5 +10,6 @@ mod todos;
 pub mod templates;
 pub mod types;
 
+pub(crate) use service::resolve_source;
 pub use service::{initialize, service, viewed_pane, Service};
 pub use types::*;
