@@ -64,6 +64,8 @@ pub struct NfnPosition {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct NfnSource {
+    pub browser_pane_id: Option<String>,
+    pub browser_session: Option<String>,
     pub pane_id: Option<String>,
     pub session_id: Option<String>,
     pub pane_pid: Option<String>,
@@ -396,6 +398,9 @@ pub enum NfnCommand {
         text: Option<String>,
     },
     Focus {
+        id: String,
+    },
+    OpenBrowser {
         id: String,
     },
     OpenJob {

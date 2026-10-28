@@ -628,6 +628,11 @@ impl Service {
                 self.changed();
                 return Ok(json!({"saved":true}));
             }
+            NfnCommand::OpenBrowser { id } => {
+                let record = self.store.get(&id)?;
+                open_browser(&record.request.source).await?;
+                return Ok(json!({"opened":true}));
+            }
             NfnCommand::OpenJob { id } => {
                 let record = self.store.get(&id)?;
                 let job = record
@@ -1513,6 +1518,8 @@ fn job_request(slug: &str, event: &str, run_id: Option<&str>, mut source: NfnSou
 }
 
 fn merge_reported_source(mut source: NfnSource, reported: NfnSource) -> NfnSource {
+    source.browser_pane_id = reported.browser_pane_id;
+    source.browser_session = reported.browser_session;
     source.task = reported.task.or(source.task);
     source.group = reported.group.or(source.group);
     source.agent_title = reported.agent_title;
@@ -2182,6 +2189,41 @@ fn job_directory(job: &str) -> Result<std::path::PathBuf, String> {
         return Err("This job folder no longer exists".into());
     }
     Ok(directory)
+}
+
+async fn bmux_command(args: &[&str]) -> Result<Value, String> {
+    let mut command = tokio::process::Command::new("bmux");
+    command.args(args).kill_on_drop(true);
+    let output = tokio::time::timeout(std::time::Duration::from_secs(15), command.output())
+        .await
+        .map_err(|_| "BMUX did not respond".to_string())?
+        .map_err(|error| format!("Could not open BMUX: {error}"))?;
+    let value: Value = serde_json::from_slice(&output.stdout)
+        .map_err(|_| "BMUX returned an invalid response".to_string())?;
+    if !output.status.success() || value["ok"] != true {
+        return Err(value["error"]
+            .as_str()
+            .unwrap_or("Could not open browser session")
+            .to_string());
+    }
+    Ok(value["result"].clone())
+}
+
+async fn open_browser(source: &NfnSource) -> Result<(), String> {
+    let pane = source
+        .browser_pane_id
+        .as_deref()
+        .ok_or("This message has no browser pane")?;
+    let session = source
+        .browser_session
+        .as_deref()
+        .ok_or("This message has no browser session")?;
+    let client = bmux_command(&["attach-session", "-t", session]).await?;
+    let id = client["id"]
+        .as_str()
+        .ok_or("BMUX returned no browser client")?;
+    bmux_command(&["select-pane", "-c", id, "-t", pane]).await?;
+    Ok(())
 }
 
 async fn reveal_job(job: &str) -> Result<(), String> {

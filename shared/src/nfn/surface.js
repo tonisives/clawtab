@@ -674,6 +674,11 @@
       options.title = "Agent options"; options.setAttribute("aria-label", "Notification options"); options.setAttribute("aria-haspopup", "dialog"); node._options = options; tools.append(options);
     }
     node.append(heading);
+    if (!agent) {
+      const source = record.request.source || {};
+      const label = [source.group, source.agent_title || source.task, source.browser_pane_id ? `BMUX pane ${source.browser_pane_id}` : source.pane_id ? `Pane ${source.pane_id}` : ""].filter(Boolean).join(" · ");
+      if (label) node.append(el("div", "notification-title source-attribution", label));
+    }
     if (agent && !record.question_id && record.request.title !== identity.group && record.request.title !== identity.title) node.append(el("div", "notification-title", record.request.title));
     const messages = cardMessages(record);
     if (messages.length > 1) {
@@ -748,7 +753,17 @@
     const utilities = el("div", "controls");
     const detailButton = button(details ? "Hide details" : (record.request.media?.length ? "View attachment" : "Details"), toggleDetails, "utility details-toggle");
     detailButton.setAttribute("aria-expanded", String(details)); utilities.append(detailButton);
-    if (record.request.source?.pane_id || choices.some(action => action.kind === "focus")) {
+    if (!snapshot.remote && record.request.source?.browser_pane_id && record.request.source?.browser_session) {
+      utilities.classList.add("session-controls");
+      const openBrowser = button("Open browser", async () => {
+        openBrowser.disabled = true;
+        try { await call({ op: "open_browser", id: record.id }); }
+        catch (error) { showError(error); }
+        finally { openBrowser.disabled = false; }
+      }, "primary open-session");
+      openBrowser.title = "Open the browser session and select this pane";
+      utilities.append(openBrowser);
+    } else if (record.request.source?.pane_id || choices.some(action => action.kind === "focus")) {
       utilities.classList.add("session-controls");
       const focus = choices.find(action => action.kind === "focus");
       const openSession = button("Open session", () => focus ? act(record.id, focus.id, "") : performAction(record.id, { op: "focus", id: record.id }), "primary open-session");

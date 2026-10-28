@@ -265,6 +265,18 @@
   assert(Boolean(document.querySelector(".card")), "an explicitly opened update stays expanded while using another app");
   window.nfn.collapse();
   window.fixture.records.clear();
+  const scheduler = window.fixture.record("browser-scheduler", 0);
+  scheduler.request.title = "UGC scheduler: tiktok needs help";
+  scheduler.request.source = { browser_pane_id: "%16", browser_session: "tskr-furniture-20261028-browsing", group: "Browser simulations", agent_title: "tskr-furniture-20261028-browsing", task: "UGC scheduler: tiktok" };
+  scheduler.request.template = "update";
+  scheduler.request.actions = [{ id: "acknowledge", label: "Got it", kind: "choice" }];
+  window.fixture.records.set(scheduler.id, scheduler);
+  window.nfn.receive(window.fixture.snapshot(scheduler.id));
+  assert(document.querySelector("h1").textContent === scheduler.request.title && document.querySelector(".source-attribution").textContent === "Browser simulations · tskr-furniture-20261028-browsing · BMUX pane %16", "background scheduler cards identify the browser session and pane without an agent process");
+  assert(document.querySelector(".controls .open-session"), "background scheduler cards offer Open browser");
+  click("Open browser"); await sleep(30);
+  assert(window.fixture.calls.some(command => command.op === "open_browser" && command.id === scheduler.id), "browser links use BMUX without focusing an unrelated terminal pane");
+  window.nfn.collapse(); window.fixture.records.clear();
   const completion = window.fixture.record("agent-finished", 0);
   completion.request.title = "Fix notifications finished";
   completion.request.body = "The agent finished its turn and is ready for your next message.";
