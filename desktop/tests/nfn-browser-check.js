@@ -645,5 +645,35 @@
   flowRecord("slash-notch", 4); window.nfn.receive(window.fixture.snapshot("slash-notch"));
   assert(slashes().length === 3, "the notch placement uses the same arrival slash");
   await sleep(250);
+  window.nfn.collapse(); window.fixture.records.clear();
+  const postReview = id => {
+    const record = window.fixture.record(id, 0);
+    record.request.template = "social-review"; record.request.source = {}; record.request.data = { platform: "X", account: "@totovoto", draft_sha256: "fixture" };
+    record.request.response_destination = "result";
+    record.request.actions = [{ id: "post", kind: "choice", label: "Post to X", value: "", parameters: {} },
+      { id: "revise", kind: "choice", label: "Request changes", value: "", parameters: {} }, { id: "reject", kind: "choice", label: "Reject", value: "", parameters: {} }];
+    window.fixture.records.set(id, record); window.nfn.receive(window.fixture.snapshot(id));
+    return record;
+  };
+  const revision = postReview("x-revision"), reviewedBody = revision.request.body;
+  assert(document.querySelector("textarea").getAttribute("aria-label") === "Changes to the draft" && document.querySelector(".send").textContent === "Request changes", "X post feedback is presented as a request for changes");
+  draft("Change the opening sentence");
+  assert(document.querySelector('[data-action-id="post"]').disabled, "Post to X is disabled while draft feedback is entered");
+  document.querySelector(".send").click(); await sleep(30);
+  const revisionResponse = window.fixture.calls.find(command => command.op === "respond" && command.id === revision.id);
+  assert(revisionResponse.action_id === "revise" && revisionResponse.text === "Change the opening sentence" && revision.request.body === reviewedBody, "draft feedback returns revise while preserving the reviewed text");
+  const keyboardRevision = postReview("x-keyboard-revision");
+  const feedbackInput = draft("Use a clearer final sentence");
+  feedbackInput.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true })); await sleep(30);
+  assert(window.fixture.calls.find(command => command.op === "respond" && command.id === keyboardRevision.id)?.action_id === "revise", "the feedback keyboard shortcut also returns revise");
+  const approvedPost = postReview("x-post");
+  document.querySelector('[data-action-id="post"]').click(); await sleep(30);
+  const postResponse = window.fixture.calls.find(command => command.op === "respond" && command.id === approvedPost.id);
+  assert(postResponse.action_id === "post" && !postResponse.text, "Post to X without feedback preserves the explicit post decision and empty text");
+  const posted = window.fixture.record("x-verified", 0);
+  posted.request.template = "update"; posted.request.source = {}; posted.request.title = "Posted to X as @totovoto";
+  posted.request.body = "https://x.com/totovoto/status/1"; posted.request.data = { details: "Verified author, reviewed text, publication time, and permalink." };
+  window.fixture.records.set(posted.id, posted); window.nfn.receive(window.fixture.snapshot(posted.id));
+  assert(!buttons().some(button => button.textContent === "Post to X") && !document.querySelector("textarea"), "verified publication updates have no publishing action or draft composer");
   return { passed: checks.length, checks };
 })()

@@ -549,7 +549,15 @@
       render(); resumeTimer();
     }
   }
+  function revisionChoice(record) {
+    if (record?.request.template !== "social-review" || record.request.data?.platform !== "X") return null;
+    const actions = record.request.actions || [];
+    return actions.some(action => action.id === "post" && action.kind === "choice")
+      ? actions.find(action => action.id === "revise" && action.kind === "choice") : null;
+  }
   async function act(id, action_id, text) {
+    const revision = revisionChoice(records.get(id));
+    if (revision && (action_id === "reply" || action_id === "post" && text?.trim())) action_id = revision.id;
     const dismissOnly = records.get(id)?.request.template === "update" && action_id === "acknowledge";
     await performAction(id, dismissOnly ? { op: "dismiss", id } : { op: "respond", id, action_id, text: text || null });
   }
@@ -646,6 +654,7 @@
     for (const [index, action] of choices.entries()) {
       const control = button(action.label, () => act(record.id, action.id, drafts.get(record.id) || ""), index === 0 ? "primary" : "");
       control.title = action.label;
+      control.dataset.actionId = action.id;
       actions.append(control);
     }
     const answerRow = el("div", "answer-row"); answerRow.append(actions);
@@ -657,7 +666,8 @@
     if (record.request.template !== "update" && (hasBlock(layout, "reply") || record.request.source?.pane_id)) {
       const toAgent = Boolean(record.question_id || record.request.response_destination === "agent_message");
       const reply = el("div", "reply");
-      const replyLabel = toAgent ? "Reply to agent" : "Your reply";
+      const revision = revisionChoice(record);
+      const replyLabel = revision ? "Changes to the draft" : toAgent ? "Reply to agent" : "Your reply";
       if (questionOptions) {
         const open = replyStates.get(record.id) ?? Boolean(drafts.get(record.id));
         const toggle = button(replyLabel, () => {
@@ -672,13 +682,13 @@
       row.id = "notification-reply-row"; row.hidden = Boolean(questionOptions) && !(replyStates.get(record.id) ?? Boolean(drafts.get(record.id)));
       const input = el("textarea"); input.id = "notification-reply"; input.rows = 2;
       input.setAttribute("aria-label", replyLabel);
-      input.placeholder = "Message...";
+      input.placeholder = revision ? "Describe the changes..." : "Message...";
       input.value = drafts.get(record.id) || "";
       input.addEventListener("input", () => { drafts.set(record.id, input.value); updateCard(); });
       input.addEventListener("keydown", event => { if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) { event.preventDefault(); act(record.id, "reply", input.value); } });
       node._reply = input; row.append(input);
-      const send = button("Send", () => act(record.id, "reply", input.value), "primary send");
-      send.title = "Send reply (Command + Enter)"; node._send = send; row.append(send); reply.append(row); node.append(reply);
+      const send = button(revision?.label || "Send", () => act(record.id, "reply", input.value), "primary send");
+      send.title = `${revision?.label || "Send reply"} (Command + Enter)`; node._send = send; row.append(send); reply.append(row); node.append(reply);
     }
     const notice = el("div", "notice"); notice.setAttribute("role", "status"); node._notice = notice; node.append(notice);
     const utilities = el("div", "controls");
@@ -734,7 +744,9 @@
     card._status.classList.toggle("alert", alert && isPending);
     card._status.textContent = record.status === "delivering" || busy ? "Sending..." : isPending ? (alert ? "! Alert" : "") : record.status === "resolved" ? (alert ? "Recovered" : update ? "Seen" : "Sent") : record.status;
     card._options?.setAttribute("aria-expanded", String(menu === "options" || menu === "agent"));
-    for (const control of card._actions.querySelectorAll("button")) control.disabled = !isPending || busy || Boolean(record.question_id && drafts.get(record.id)?.trim());
+    const feedback = Boolean(drafts.get(record.id)?.trim());
+    for (const control of card._actions.querySelectorAll("button")) control.disabled = !isPending || busy
+      || Boolean(record.question_id && feedback) || Boolean(revisionChoice(record) && control.dataset.actionId === "post" && feedback);
     if (card._send) card._send.disabled = !isPending || busy || !card._reply.value.trim();
     if (card._reply) card._reply.readOnly = !isPending || busy;
     if (actionErrors.has(current)) card._notice.textContent = actionErrors.get(current);
