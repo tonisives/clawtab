@@ -11,6 +11,8 @@ pub struct NfnSettings {
     pub position: Option<NfnPosition>,
     pub preview_seconds: u32,
     pub hover_expand: bool,
+    pub keyboard_hints: bool,
+    pub focus_shortcut: String,
     pub sound: bool,
     pub menu_bar_icon: bool,
     pub mobile_when_idle: bool,
@@ -27,6 +29,8 @@ impl Default for NfnSettings {
             position: None,
             preview_seconds: 8,
             hover_expand: false,
+            keyboard_hints: false,
+            focus_shortcut: "Ctrl+Alt+w".into(),
             sound: true,
             menu_bar_icon: true,
             mobile_when_idle: true,
@@ -37,6 +41,15 @@ impl Default for NfnSettings {
 
 impl NfnSettings {
     pub fn validate(&self) -> Result<(), String> {
+        if !self.focus_shortcut.is_empty() {
+            let binding = self.focus_shortcut.to_ascii_lowercase();
+            let parts: Vec<_> = binding.split('+').collect();
+            let key = parts.last().copied().unwrap_or("");
+            if parts.len() < 2 || !parts[..parts.len()-1].iter().all(|part| matches!(*part, "ctrl" | "alt" | "option" | "shift" | "meta" | "cmd"))
+                || !(key == "space" || key.len() == 1 && key.as_bytes()[0].is_ascii_alphanumeric()) {
+                return Err("Focus shortcut must combine modifiers with a letter, digit, or Space".into());
+            }
+        }
         if !["enhanced", "native", "both"].contains(&self.delivery.as_str())
             || !["notch", "right", "custom"].contains(&self.placement.as_str())
             || !["follow", "independent"].contains(&self.focus.as_str())
@@ -454,6 +467,7 @@ pub enum NfnCommand {
 #[serde(default)]
 pub struct PlatformState {
     pub available: bool,
+    pub focus_shortcut_error: Option<String>,
     pub focused: Option<bool>,
     pub authorized: Option<bool>,
     pub sound_allowed: bool,

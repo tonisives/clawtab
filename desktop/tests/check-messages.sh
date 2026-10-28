@@ -14,9 +14,9 @@ mkdir -p "$results"
 node desktop/tests/nfn-fixture.mjs "$temporary/renderer.html"
 node desktop/tests/nfn-fixture.mjs "$temporary/native.html" --native
 clang -fobjc-arc -fblocks desktop/tests/nfn-webkit.m -framework AppKit -framework WebKit -o "$temporary/renderer-check"
-clang -fobjc-arc -fblocks desktop/tests/nfn-native.m -framework AppKit -framework WebKit -framework Intents -framework UserNotifications -framework ApplicationServices -o "$temporary/native-check"
+clang -fobjc-arc -fblocks desktop/tests/nfn-native.m -framework AppKit -framework WebKit -framework Intents -framework UserNotifications -framework ApplicationServices -framework Carbon -o "$temporary/native-check"
 "$temporary/renderer-check" "$temporary/renderer.html" "$root/desktop/tests/nfn-browser-check.js" > "$results/renderer.log" 2>&1
-"$temporary/native-check" "$temporary/native.html" --geometry-only > "$results/native.log" 2>&1
+"$temporary/native-check" "$temporary/native.html" --right > "$results/native.log" 2>&1
 "$temporary/native-check" "$temporary/native.html" --notch-geometry > "$results/notch.log" 2>&1
 for image in /tmp/clawtab-nfn-*.png; do
   [[ ! -f "$image" ]] || cp "$image" "$results/"

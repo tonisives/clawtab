@@ -9,6 +9,7 @@ fn main() {
             .compile("clawtab_nfn");
         for framework in [
             "AppKit",
+            "Carbon",
             "WebKit",
             "Intents",
             "UserNotifications",

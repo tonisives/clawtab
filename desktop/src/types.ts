@@ -179,6 +179,8 @@ export interface EnhancedNotificationSettings {
   display: string;
   preview_seconds: number;
   hover_expand: boolean;
+  keyboard_hints: boolean;
+  focus_shortcut: string;
   sound: boolean;
   menu_bar_icon: boolean;
   mobile_when_idle: boolean;

@@ -76,6 +76,19 @@ mod tests {
     use super::*;
 
     #[test]
+    fn keyboard_settings_default_and_patch() {
+        let defaults = NfnSettings::default();
+        assert!(!defaults.keyboard_hints);
+        assert_eq!(defaults.focus_shortcut, "Ctrl+Alt+w");
+        let changed = parse("keyboard_hints: true\nfocus_shortcut: Ctrl+Alt+q", &defaults).unwrap();
+        assert!(changed.keyboard_hints);
+        assert_eq!(parse(&serde_yml::to_string(&changed).unwrap(), &defaults).unwrap(), changed);
+        assert!(parse("focus_shortcut: w", &defaults).is_err());
+        assert!(parse("focus_shortcut: Ctrl+Alt+wat", &defaults).is_err());
+        assert!(parse("focus_shortcut: ''", &defaults).is_ok());
+    }
+
+    #[test]
     fn partial_yaml_preserves_preferences_and_rejects_mistakes() {
         let current = NfnSettings {
             sound: false,

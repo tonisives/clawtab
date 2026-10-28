@@ -460,6 +460,7 @@
     leaveSettings(); todosOpen = false;
     presented = false; explicitOpen = keepVisible === true; native({ native: "presentation", active: explicitOpen });
     clearTimeout(completionTimer); pauseTimer(); stopContext(); expanded = false; details = false; queue = false; current = null; focused = false; menu = null;
+    native({ native: "keyboard_exit", restore: true });
     native({ native: "text_focus", active: false }); render();
   }
   function hideBar() {
@@ -1113,6 +1114,8 @@
         ["focus", "Focus", [["follow", "Follow macOS"], ["independent", "Always show"]]],
         ["preview_seconds", "Update duration", null],
         ["hover_expand", "Expand on hover", "checkbox"],
+        ["keyboard_hints", "Keyboard hints (double Option)", "checkbox"],
+        ["focus_shortcut", "Focus shortcut", "text"],
         ["sound", "Sound", "checkbox"],
         ["menu_bar_icon", "Menu bar icon", "checkbox"],
         ["mobile_when_idle", "Send to mobile when idle", "checkbox"],
@@ -1123,6 +1126,7 @@
         input.dataset.setting = key; input.setAttribute("aria-label", title);
         if (Array.isArray(options)) for (const [value, text] of options) { const option = el("option", "", text); option.value = value; input.append(option); }
         else if (options === "checkbox") input.type = "checkbox";
+        else if (options === "text") { input.type = "text"; input.placeholder = "Ctrl+Alt+w"; }
         else { input.type = "number"; input.min = key === "idle_seconds" ? "10" : "2"; input.max = key === "idle_seconds" ? "3600" : "120"; input.step = "1"; input.required = true; input.title = key === "idle_seconds" ? "Seconds without keyboard or mouse activity before sending to mobile" : "Seconds before a status update collapses"; }
         input.addEventListener("change", () => {
           if (!input.checkValidity()) { view._notice.textContent = input.validationMessage; return; }
@@ -1148,7 +1152,8 @@
       }
       view._notice = el("div", "notice settings-notice"); view._notice.setAttribute("role", "status"); view.append(view._notice);
     }
-    const values = { delivery: "enhanced", placement: "notch", display: "primary", focus: "follow", preview_seconds: 8, hover_expand: false, sound: true, menu_bar_icon: true, mobile_when_idle: true, idle_seconds: 60, ...snapshot.settings };
+    if (shortcutError) view._notice.textContent = shortcutError;
+    const values = { delivery: "enhanced", placement: "notch", display: "primary", focus: "follow", preview_seconds: 8, hover_expand: false, keyboard_hints: false, focus_shortcut: "Ctrl+Alt+w", sound: true, menu_bar_icon: true, mobile_when_idle: true, idle_seconds: 60, ...snapshot.settings };
     const display = view.querySelector('[data-setting="display"]');
     const displays = [["primary", "Primary display"], ["built_in", "Built-in display"], ["pointer", "Follow pointer"], ...(snapshot.platform?.displays || []).map(item => [item.id, item.name])];
     if (!displays.some(([id]) => id === values.display)) displays.push([values.display, "Saved display"]);
@@ -1274,6 +1279,22 @@
     renderMenu(); cleanupRemoteMedia(); if (!continuingAnimation) animateLayout(before, !queue && !menu && !settingsOpen);
   }
   function receive(value) {
+    if (value.type === "keyboard_focus") {
+      if (!value.active) { hintInput = ""; return; }
+      hiddenByUser = false; explicitOpen = true; native({ native: "presentation", active: true });
+      if (host.classList.contains("pill") || host.classList.contains("empty") || !current && !queue && !settingsOpen && !todosOpen) {
+        if (current) openRecord(current); else if (pendingCount()) openLatest(); else showQueue(true);
+      }
+      host.tabIndex = -1; host.focus({ preventScroll: true }); render(); return;
+    }
+    if (value.type === "keyboard_collapse") { collapse(true); return; }
+    if (value.type === "toggle_hints") {
+      if (preview || snapshot.remote) return;
+      call({ op: "save_settings", patch: { keyboard_hints: !snapshot.settings?.keyboard_hints } })
+        .then(result => { snapshot.settings = result.settings; render(); }).catch(error => showError(error));
+      return;
+    }
+    if (value.type === "shortcut_status") { shortcutError = value.error || ""; if (settingsOpen) render(); return; }
     if (value.type === "todos") { todoData = value.todos; render(); return; }
     if (value.type === "response") {
       const promise = promises.get(String(value.token)); if (!promise) return;
@@ -1353,6 +1374,59 @@
     }
     if (value.visible) startContext();
   }
+  let hintInput = "", hintTargets = [], hintLabels = [], shortcutError = "";
+  const hintOverlay = el("div", "keyboard-hints");
+  hintOverlay.setAttribute("aria-hidden", "true"); document.body.append(hintOverlay);
+  function refreshHints() {
+    if (!snapshot.settings?.keyboard_hints || snapshot.remote || host.classList.contains("empty")) {
+      hintOverlay.replaceChildren(); hintTargets = []; hintLabels = []; hintInput = ""; return;
+    }
+    const targets = [...host.querySelectorAll('button,input:not([type="hidden"]),textarea,select,summary,a[href],[role="button"]')].filter(node => {
+      if (node.disabled || node.closest('[hidden],[inert]') || node.getAttribute("aria-disabled") === "true") return false;
+      const r = node.getBoundingClientRect(), style = getComputedStyle(node);
+      if (!r.width || !r.height || style.visibility === "hidden" || style.display === "none") return false;
+      const x = Math.max(0, r.left) + Math.min(r.width, innerWidth - Math.max(0, r.left)) / 2;
+      const y = Math.max(0, r.top) + Math.min(r.height, innerHeight - Math.max(0, r.top)) / 2;
+      const hit = document.elementFromPoint(x, y);
+      return hit === node || node.contains(hit);
+    }).sort((a,b) => {
+      const x = a.getBoundingClientRect(), y = b.getBoundingClientRect();
+      return Math.abs(x.top-y.top) > 8 ? x.top-y.top : x.left-y.left;
+    });
+    if (targets.length !== hintTargets.length || targets.some((node,i) => node !== hintTargets[i])) {
+      hintTargets = targets; hintInput = ""; hintOverlay.replaceChildren();
+      const alphabet = "ASGJKQWETYUIOPZXVBM", length = Math.max(1, Math.ceil(Math.log(Math.max(1, targets.length))/Math.log(alphabet.length)));
+      hintLabels = targets.map((node, index) => {
+        let label = "", value = index;
+        for (let i=0;i<length;i++) { label = alphabet[value % alphabet.length]+label; value = Math.floor(value/alphabet.length); }
+        const badge = el("span", "keyboard-hint", label); badge.dataset.target = node.getAttribute("aria-label") || node.textContent;
+        hintOverlay.append(badge); return label;
+      });
+    }
+    [...hintOverlay.children].forEach((badge,i) => {
+      const r = hintTargets[i].getBoundingClientRect();
+      badge.style.left = `${Math.max(0, r.left+2)}px`; badge.style.top = `${Math.max(0, r.top+1)}px`;
+      badge.hidden = !hintLabels[i].startsWith(hintInput);
+    });
+  }
+  function handleHintKey(event) {
+    if (!snapshot.settings?.keyboard_hints || snapshot.remote || preview || !document.hasFocus()) return false;
+    if (event.isComposing || event.target.closest('input,textarea,select,[contenteditable="true"]') || event.ctrlKey || event.metaKey || event.altKey) return false;
+    if (event.key === "Escape" && hintInput) { hintInput = ""; event.preventDefault(); refreshHints(); return true; }
+    if (event.key === "Backspace" && hintInput) { hintInput = hintInput.slice(0,-1); event.preventDefault(); refreshHints(); return true; }
+    if (!/^[a-z]$/i.test(event.key)) return false;
+    event.preventDefault(); if (event.repeat) return true;
+    refreshHints(); const next = hintInput + event.key.toUpperCase();
+    const index = hintLabels.findIndex(label => label === next);
+    if (index >= 0 && hintTargets[index]?.isConnected) {
+      const target = hintTargets[index]; hintInput = "";
+      if (target.matches('input:not([type="checkbox"]):not([type="radio"]),textarea,select')) { native({ native: "text_focus", active: true }); target.focus(); }
+      else target.click();
+    } else hintInput = hintLabels.some(label => label.startsWith(next)) ? next : "";
+    refreshHints(); return true;
+  }
+  window.addEventListener("blur", () => { hintInput = ""; });
+  setInterval(refreshHints, 80);
   host.addEventListener("mouseenter", () => { hovering = true; pauseTimer(); if (snapshot.settings?.hover_expand && current && !expanded) openRecord(current); });
   host.addEventListener("mouseleave", () => { hovering = false; resumeTimer(); });
   document.addEventListener("pointerdown", event => { if (event.target.closest("input,textarea,select")) native({ native: "text_focus", active: true }); });
@@ -1362,6 +1436,7 @@
     if (!focused) { native({ native: "text_focus", active: false }); resumeTimer(); }
   }));
   document.addEventListener("keydown", event => {
+    if (handleHintKey(event)) return;
     if (event.key === "Escape") { event.preventDefault(); if (settingsOpen) closeSettings(); else if (menu) toggleMenu(menu); else collapse(); }
     if ((event.metaKey || event.ctrlKey) && event.shiftKey && ["[", "]", "{", "}"].includes(event.key)) {
       event.preventDefault(); navigate(event.key === "[" || event.key === "{" ? -1 : 1);

@@ -15,7 +15,7 @@ type Info = {
   auto_yes_panes: string[]
   settings: EnhancedNotificationSettings
   templates: TemplateList
-  platform: { available: boolean; focused: boolean | null; authorized: boolean | null; displays: { id: string; name: string }[] }
+  platform: { focus_shortcut_error?: string; available: boolean; focused: boolean | null; authorized: boolean | null; displays: { id: string; name: string }[] }
 }
 
 const surfaceDocument = html.replace("/* NFN_CSS */", css + "\nbody{display:flex;justify-content:center;padding:12px 4px;overflow:auto}#surface{flex-shrink:0;max-width:calc(100vw - 8px)}")
@@ -72,11 +72,12 @@ actions:
     label: Reject
 `
 
-export function EnhancedNotifications({ settings, onChange }: {
+export function EnhancedNotifications({ settings: initialSettings, onChange }: {
   settings: EnhancedNotificationSettings
   onChange: (settings: EnhancedNotificationSettings) => Promise<void>
 }) {
   const [info, setInfo] = useState<Info | null>(null)
+  const settings = info?.settings ?? initialSettings
   const [error, setError] = useState("")
   const [editor, setEditor] = useState(false)
   const [inbox, setInbox] = useState(false)
@@ -104,7 +105,11 @@ export function EnhancedNotifications({ settings, onChange }: {
     return () => { cancelled = true; window.clearTimeout(timer) }
   }, [yaml])
 
-  const change = (patch: Partial<EnhancedNotificationSettings>) => { void onChange({ ...settings, ...patch }).catch(e => setError(String(e))) }
+  const change = (patch: Partial<EnhancedNotificationSettings>) => {
+    void nfnCommand<{ settings: EnhancedNotificationSettings }>({ op: "save_settings", patch })
+      .then(async value => { setInfo(current => current ? { ...current, settings: value.settings } : current); await onChange(value.settings) })
+      .catch(e => setError(String(e)))
+  }
   const chooseTemplate = (id: string) => { setSelected(id); setYaml(id === "new" ? newTemplate : info?.templates.sources[id] || ""); setSaved(false) }
   const save = async () => {
     setSaving(true); setError("")
@@ -149,7 +154,9 @@ export function EnhancedNotifications({ settings, onChange }: {
         onChange={e => { const seconds = Number(e.target.value); if (seconds >= 2 && seconds <= 120) change({ preview_seconds: seconds }) }} /></label>
       <label>Idle time before mobile delivery (seconds)<input type="number" min={10} max={3600} value={settings.idle_seconds ?? 60}
         onChange={e => { const seconds = Number(e.target.value); if (seconds >= 10 && seconds <= 3600) change({ idle_seconds: seconds }) }} /></label>
+      <label>Focus message bar shortcut<input aria-label="Focus message bar shortcut" defaultValue={settings.focus_shortcut ?? "Ctrl+Alt+w"} onBlur={e => change({ focus_shortcut: e.target.value })} /></label>
       <div className="nfn-options">
+        <label className="checkbox-label"><input type="checkbox" checked={settings.keyboard_hints ?? false} onChange={e => change({ keyboard_hints: e.target.checked })} />Keyboard hints (double Option while the bar is focused)</label>
         <label className="checkbox-label"><input type="checkbox" checked={settings.hover_expand} onChange={e => change({ hover_expand: e.target.checked })} />Expand on hover</label>
         <label className="checkbox-label"><input type="checkbox" checked={settings.sound} onChange={e => change({ sound: e.target.checked })} />Sound</label>
         <label className="checkbox-label"><input type="checkbox" checked={settings.menu_bar_icon} onChange={e => change({ menu_bar_icon: e.target.checked })} />Menu bar icon</label>
@@ -177,6 +184,7 @@ export function EnhancedNotifications({ settings, onChange }: {
       <span className="hint">Layout files: {info?.templates.directory}</span>
       {info?.templates.errors.map(item => <span key={item.path} className="nfn-error">{item.path}: {item.error}</span>)}
     </div>}
+    {info?.platform.focus_shortcut_error && <span className="nfn-error" role="status">{info.platform.focus_shortcut_error}</span>}
     {error && <span className="nfn-error" role="status">{error}</span>}
   </div>
 }

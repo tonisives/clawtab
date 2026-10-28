@@ -207,3 +207,6 @@ button.auto-yes-button[aria-checked="true"] { background: rgba(255, 159, 10, .15
 .todo-options summary { cursor: pointer; }
 .todo-options > input, .todo-options > button, .todo-options > label { display: block; margin-top: 8px; }
 .notch .todo-ring > span { background: #000; }
+
+.keyboard-hints{position:fixed;inset:0;pointer-events:none;z-index:10000}
+.keyboard-hint{position:absolute;background:#ffcc00;color:#111;font:700 12px/1.25 ui-monospace,monospace;padding:1px 4px;border:1px solid #0004;border-radius:3px;box-shadow:0 1px 3px #0008}

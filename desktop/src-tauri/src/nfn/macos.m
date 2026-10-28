@@ -1,4 +1,5 @@
 #import <AppKit/AppKit.h>
+#import <Carbon/Carbon.h>
 #import <WebKit/WebKit.h>
 #import <Intents/Intents.h>
 #import <UserNotifications/UserNotifications.h>
@@ -18,9 +19,10 @@ static NfnCallback callback;
 
 @interface NfnPanel : NSPanel
 @property BOOL textFocus;
+@property BOOL keyboardFocus;
 @end
 @implementation NfnPanel
-- (BOOL)canBecomeKeyWindow { return self.textFocus; }
+- (BOOL)canBecomeKeyWindow { return self.textFocus || self.keyboardFocus; }
 - (BOOL)canBecomeMainWindow { return NO; }
 - (void)sendEvent:(NSEvent *)event {
     if (event.type == NSEventTypeLeftMouseDown && !self.isKeyWindow) {
@@ -57,6 +59,15 @@ static NfnCallback callback;
 @property BOOL soundAllowed;
 @property BOOL authorizationKnown;
 @property BOOL ready;
+@property NSRunningApplication *previousApplication;
+@property EventHotKeyRef focusHotKey;
+@property EventHandlerRef hotKeyHandler;
+@property NSString *registeredShortcut;
+@property NSString *shortcutError;
+@property id keyboardMonitor;
+@property NSTimeInterval optionPressedAt;
+@property NSTimeInterval optionReleasedAt;
+@property NSUInteger optionTaps;
 @property id mouseMonitor;
 @property id localMouseMonitor;
 @property NSUInteger ticks;
@@ -75,6 +86,8 @@ static NfnCallback callback;
 @property BOOL screenSleeping;
 @property BOOL screenLocked;
 @property NSDictionary *pendingPresentation;
+- (void)toggleKeyboardFocus;
+- (void)endKeyboardFocus:(BOOL)restore;
 @end
 
 static NfnSurface *surface;
@@ -91,6 +104,12 @@ static void emit(NSDictionary *value) {
     if (!callback) return;
     NSData *data = [NSJSONSerialization dataWithJSONObject:value options:0 error:nil];
     if (data) callback([[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding].UTF8String);
+}
+
+static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, void *context) {
+    (void)next; (void)event; (void)context;
+    [surface toggleKeyboardFocus];
+    return noErr;
 }
 
 @implementation NfnSurface
@@ -138,12 +157,30 @@ static void emit(NSDictionary *value) {
         [self publishPlatform];
         if (![self allowsOverlay]) { [self.panel orderOut:nil]; [self releaseTextFocus]; }
     }];
+    self.keyboardMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskFlagsChanged | NSEventMaskKeyDown handler:^NSEvent *(NSEvent *event) {
+        NfnSurface *self = weakSelf;
+        if (!self.panel.isKeyWindow) { self.optionTaps = 0; self.optionPressedAt = 0; return event; }
+        NSUInteger flags = event.modifierFlags & (NSEventModifierFlagOption | NSEventModifierFlagCommand | NSEventModifierFlagShift | NSEventModifierFlagControl);
+        BOOL option = event.keyCode == kVK_Option || event.keyCode == kVK_RightOption;
+        if (event.type == NSEventTypeKeyDown || !option || (flags && flags != NSEventModifierFlagOption)) {
+            self.optionTaps = 0; self.optionPressedAt = 0; return event;
+        }
+        if (flags == NSEventModifierFlagOption) {
+            if (event.timestamp - self.optionReleasedAt > .3) self.optionTaps = 0;
+            self.optionPressedAt = event.timestamp;
+        } else if (self.optionPressedAt && event.timestamp - self.optionPressedAt <= .2) {
+            self.optionPressedAt = 0; self.optionReleasedAt = event.timestamp;
+            if (++self.optionTaps == 2) { self.optionTaps = 0; [self push:@{@"type":@"toggle_hints"}]; }
+        } else { self.optionTaps = 0; self.optionPressedAt = 0; }
+        return event;
+    }];
     NSEventMask pointerEvents = NSEventMaskMouseMoved | NSEventMaskLeftMouseDragged | NSEventMaskRightMouseDragged | NSEventMaskLeftMouseDown | NSEventMaskRightMouseDown | NSEventMaskLeftMouseUp;
     self.mouseMonitor = [NSEvent addGlobalMonitorForEventsMatchingMask:pointerEvents handler:^(NSEvent *event) {
         NfnSurface *self = weakSelf;
         if (event.type == NSEventTypeLeftMouseUp) self.pointerDown = NO;
         [self updateMousePassthrough];
         if ((event.type == NSEventTypeLeftMouseDown || event.type == NSEventTypeRightMouseDown) && self.panel.visible && !NSPointInRect(NSEvent.mouseLocation, [self surfaceFrame])) {
+            [self endKeyboardFocus:NO];
             [self releaseTextFocus];
             [self.web evaluateJavaScript:@"window.nfn && window.nfn.outsideClick()" completionHandler:nil];
         }
@@ -171,13 +208,19 @@ static void emit(NSDictionary *value) {
     return self;
 }
 
-- (void)activationChanged:(NSNotification *)notification { [self publishPlatform]; }
+- (void)activationChanged:(NSNotification *)notification {
+    NSRunningApplication *app = notification.userInfo[NSWorkspaceApplicationKey];
+    if (app.processIdentifier != NSProcessInfo.processInfo.processIdentifier) [self endKeyboardFocus:NO];
+    [self publishPlatform];
+}
 - (void)powerChanged:(NSNotification *)notification {
     self.screenSleeping = [notification.name isEqual:NSWorkspaceScreensDidSleepNotification] || [notification.name isEqual:NSWorkspaceWillSleepNotification];
+    if (self.screenSleeping) [self endKeyboardFocus:NO];
     [self publishPlatform];
 }
 - (void)lockChanged:(NSNotification *)notification {
     self.screenLocked = [notification.name isEqual:@"com.apple.screenIsLocked"];
+    if (self.screenLocked) [self endKeyboardFocus:NO];
     [self publishPlatform];
 }
 - (void)updateStatusItem {
@@ -258,7 +301,7 @@ static void emit(NSDictionary *value) {
     BOOL locked = self.screenLocked || [session[@"CGSSessionScreenIsLocked"] boolValue];
     BOOL sleeping = self.screenSleeping;
     NSUInteger idleLimit = [self.settings[@"idle_seconds"] unsignedIntegerValue] ?: 60;
-    NSDictionary *state = @{@"available":@YES, @"focused":[self focusStatus],
+    NSDictionary *state = @{@"focus_shortcut_error":self.shortcutError ?: @"", @"available":@YES, @"focused":[self focusStatus],
         @"authorized":self.authorizationKnown ? @(self.authorized) : NSNull.null, @"sound_allowed":@(self.soundAllowed),
         @"frontmost_pid":@(NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier), @"user_active":@((BOOL)(idle < idleLimit && !sleeping && !locked)),
         @"idle_seconds":@((NSUInteger)idle), @"screen_sleeping":@(sleeping), @"screen_locked":@(locked), @"displays":displays};
@@ -383,11 +426,59 @@ static void emit(NSDictionary *value) {
     self.panel.ignoresMouseEvents = !self.pointerDown && !self.dragging && !NSPointInRect(NSEvent.mouseLocation, [self surfaceFrame]);
 }
 
+- (void)configureFocusShortcut {
+    NSString *binding = self.settings[@"focus_shortcut"] ?: @"Ctrl+Alt+w";
+    if ([binding isEqual:self.registeredShortcut]) return;
+    if (self.focusHotKey) { UnregisterEventHotKey(self.focusHotKey); self.focusHotKey = NULL; }
+    self.registeredShortcut = binding; self.shortcutError = @"";
+    if (binding.length) {
+        NSArray *parts = [binding.lowercaseString componentsSeparatedByString:@"+"];
+        UInt32 modifiers = 0; BOOL valid = parts.count > 1;
+        for (NSString *part in [parts subarrayWithRange:NSMakeRange(0, parts.count - 1)]) {
+            if ([part isEqual:@"ctrl"]) modifiers |= controlKey;
+            else if ([part isEqual:@"alt"] || [part isEqual:@"option"]) modifiers |= optionKey;
+            else if ([part isEqual:@"shift"]) modifiers |= shiftKey;
+            else if ([part isEqual:@"meta"] || [part isEqual:@"cmd"]) modifiers |= cmdKey;
+            else valid = NO;
+        }
+        NSDictionary *codes = @{@"a":@0,@"s":@1,@"d":@2,@"f":@3,@"h":@4,@"g":@5,@"z":@6,@"x":@7,@"c":@8,@"v":@9,@"b":@11,@"q":@12,@"w":@13,@"e":@14,@"r":@15,@"y":@16,@"t":@17,@"1":@18,@"2":@19,@"3":@20,@"4":@21,@"6":@22,@"5":@23,@"9":@25,@"7":@26,@"8":@28,@"0":@29,@"o":@31,@"u":@32,@"i":@34,@"p":@35,@"l":@37,@"j":@38,@"k":@40,@"n":@45,@"m":@46,@"space":@49};
+        NSNumber *code = codes[parts.lastObject];
+        if (!self.hotKeyHandler) {
+            EventTypeSpec type = {kEventClassKeyboard, kEventHotKeyPressed};
+            InstallApplicationEventHandler(focusHotKeyHandler, 1, &type, NULL, &_hotKeyHandler);
+        }
+        EventHotKeyID identifier = {'cwnf', 1};
+        OSStatus status = valid && modifiers && code ? RegisterEventHotKey(code.unsignedIntValue, modifiers, identifier, GetApplicationEventTarget(), 0, &_focusHotKey) : paramErr;
+        if (status != noErr) self.shortcutError = [NSString stringWithFormat:@"Could not register focus shortcut %@ (%d)", binding, (int)status];
+    }
+    [self push:@{@"type":@"shortcut_status",@"error":self.shortcutError}];
+}
+
+- (void)toggleKeyboardFocus {
+    if (self.panel.isKeyWindow) { [self push:@{@"type":@"keyboard_collapse"}]; [self endKeyboardFocus:YES]; return; }
+    if (self.screenLocked || self.screenSleeping) return;
+    self.previousApplication = NSWorkspace.sharedWorkspace.frontmostApplication;
+    self.panel.keyboardFocus = YES;
+    self.notificationsVisible = YES;
+    [self push:@{@"type":@"keyboard_focus",@"active":@YES}];
+    [NSApp activateIgnoringOtherApps:YES];
+    [self.panel makeKeyAndOrderFront:nil];
+    [self.panel makeFirstResponder:self.web];
+}
+
+- (void)endKeyboardFocus:(BOOL)restore {
+    self.optionTaps = 0; self.optionPressedAt = 0;
+    if (!self.panel.keyboardFocus) return;
+    self.panel.keyboardFocus = NO;
+    NSRunningApplication *previous = self.previousApplication; self.previousApplication = nil;
+    self.panel.textFocus = NO; [self.panel makeFirstResponder:nil]; [self.panel resignKeyWindow];
+    if (restore && previous && !previous.terminated) [previous activateWithOptions:NSApplicationActivateIgnoringOtherApps];
+}
+
 - (void)releaseTextFocus {
     if (!self.panel.textFocus) return;
     self.panel.textFocus = NO;
-    [self.panel makeFirstResponder:nil];
-    [self.panel resignKeyWindow];
+    if (!self.panel.keyboardFocus) { [self.panel makeFirstResponder:nil]; [self.panel resignKeyWindow]; }
 }
 
 - (void)push:(NSDictionary *)value {
@@ -403,6 +494,7 @@ static void emit(NSDictionary *value) {
         self.snapshot = value;
         self.settings = value[@"settings"] ?: @{};
         [self updateStatusItem];
+        [self configureFocusShortcut];
         [self positionWidth:self.surfaceWidth height:self.surfaceHeight];
         [self.media removeAllObjects];
         for (NSDictionary *record in value[@"records"]) {
@@ -426,6 +518,7 @@ static void emit(NSDictionary *value) {
 
 - (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {
     self.ready = YES;
+    [self push:@{@"type":@"shortcut_status",@"error":self.shortcutError ?: @""}];
     if (self.snapshot) [self push:self.snapshot];
     if (self.pendingPresentation) { NSDictionary *value = self.pendingPresentation; self.pendingPresentation = nil; [self push:value]; }
     [self publishPlatform];
@@ -447,6 +540,8 @@ static void emit(NSDictionary *value) {
         else if (![self.snapshot[@"visible"] boolValue] || ![self allowsOverlay]) { [self.panel orderOut:nil]; [self releaseTextFocus]; }
     } else if ([operation isEqual:@"drag"]) {
         [self drag:value];
+    } else if ([operation isEqual:@"keyboard_exit"]) {
+        [self endKeyboardFocus:[value[@"restore"] boolValue]];
     } else if ([operation isEqual:@"text_focus"]) {
         if ([value[@"active"] boolValue]) {
             self.panel.textFocus = YES;
@@ -547,5 +642,5 @@ void clawtab_nfn_push(const char *json) {
     }
 }
 void clawtab_nfn_stop(void) { dispatch_async(dispatch_get_main_queue(), ^{ [NSApp stop:nil]; [NSApp postEvent:[NSEvent otherEventWithType:NSEventTypeApplicationDefined location:NSZeroPoint modifierFlags:0 timestamp:0 windowNumber:0 context:nil subtype:0 data1:0 data2:0] atStart:NO]; }); }
-void clawtab_nfn_activate(unsigned int pid) { dispatch_async(dispatch_get_main_queue(), ^{ [surface releaseTextFocus]; [[NSRunningApplication runningApplicationWithProcessIdentifier:(pid_t)pid] activateWithOptions:NSApplicationActivateIgnoringOtherApps]; }); }
-void clawtab_nfn_activate_clawtab(void) { dispatch_async(dispatch_get_main_queue(), ^{ [surface releaseTextFocus]; for (NSRunningApplication *app in [NSRunningApplication runningApplicationsWithBundleIdentifier:@"cc.clawtab"]) [app activateWithOptions:NSApplicationActivateIgnoringOtherApps]; }); }
+void clawtab_nfn_activate(unsigned int pid) { dispatch_async(dispatch_get_main_queue(), ^{ [surface endKeyboardFocus:NO]; [surface releaseTextFocus]; [[NSRunningApplication runningApplicationWithProcessIdentifier:(pid_t)pid] activateWithOptions:NSApplicationActivateIgnoringOtherApps]; }); }
+void clawtab_nfn_activate_clawtab(void) { dispatch_async(dispatch_get_main_queue(), ^{ [surface endKeyboardFocus:NO]; [surface releaseTextFocus]; for (NSRunningApplication *app in [NSRunningApplication runningApplicationsWithBundleIdentifier:@"cc.clawtab"]) [app activateWithOptions:NSApplicationActivateIgnoringOtherApps]; }); }

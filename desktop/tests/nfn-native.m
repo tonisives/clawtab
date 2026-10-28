@@ -1,6 +1,6 @@
 // Foreground visual smoke test. No daemon, job, or user preferences are changed.
 // clang -fobjc-arc -fblocks nfn-native.m -framework AppKit -framework WebKit
-//   -framework Intents -framework UserNotifications -framework ApplicationServices
+//   -framework Intents -framework UserNotifications -framework ApplicationServices -framework Carbon
 //   -o /tmp/clawtab-nfn-native
 // Generate the HTML with nfn-fixture.mjs FILE --native, then pass FILE here.
 // --right checks the fallback position; --geometry-only skips keyboard focus.
@@ -12,6 +12,7 @@ static BOOL platformReceived;
 static NSUInteger attempts;
 static pid_t previousApplication;
 static BOOL positionSaved;
+static NSUInteger hintToggles;
 
 static void verifyIdleSignals(void) {
     [surface powerChanged:[NSNotification notificationWithName:NSWorkspaceScreensDidSleepNotification object:nil]];
@@ -189,6 +190,36 @@ static void verifyDragging(void (^finish)(void)) {
     finish();
 }
 
+static void verifyKeyboardControl(void (^finish)(void)) {
+    clawtab_nfn_activate(previousApplication);
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 4), dispatch_get_main_queue(), ^{
+        [surface toggleKeyboardFocus];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 4), dispatch_get_main_queue(), ^{
+            if (!surface.panel.keyboardFocus || !surface.panel.isKeyWindow) { fprintf(stderr,"Global keyboard entry did not focus panel\n"); exit(1); }
+            [surface releaseTextFocus];
+            if (!surface.panel.isKeyWindow) { fprintf(stderr,"Field blur released keyboard session\n"); exit(1); }
+            NSTimeInterval at = NSProcessInfo.processInfo.systemUptime;
+            for (NSUInteger i = 0; i < 4; i++) {
+                NSEvent *event = [NSEvent keyEventWithType:NSEventTypeFlagsChanged location:NSZeroPoint modifierFlags:i % 2 ? 0 : NSEventModifierFlagOption timestamp:at + i * .04 windowNumber:surface.panel.windowNumber context:nil characters:@"" charactersIgnoringModifiers:@"" isARepeat:NO keyCode:kVK_Option];
+                [NSApp sendEvent:event];
+            }
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 4), dispatch_get_main_queue(), ^{
+                if (hintToggles != 1) { fprintf(stderr,"Double Option did not toggle hints exactly once (%lu)\n", (unsigned long)hintToggles); exit(1); }
+                [surface.web evaluateJavaScript:@"(() => { const badge = [...document.querySelectorAll('.keyboard-hint')].find(b => b.dataset.target === 'Details'); if (!badge) throw Error('Details hint missing'); const host = document.getElementById('surface'); for (const key of badge.textContent) host.dispatchEvent(new KeyboardEvent('keydown', {key:key.toLowerCase(),bubbles:true,cancelable:true})); return document.getElementById('surface').classList.contains('details-open'); })()" completionHandler:^(id activated, NSError *error) {
+                    if (error || ![activated boolValue]) { fprintf(stderr,"Typing a hint did not activate Details: %s\n", error.description.UTF8String); exit(1); }
+                    [surface toggleKeyboardFocus];
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 4), dispatch_get_main_queue(), ^{
+                    if (surface.panel.keyboardFocus || surface.panel.isKeyWindow) { fprintf(stderr,"Second hotkey did not release panel\n"); exit(1); }
+                    printf("Keyboard control checks passed: focus entry, field blur lease, double Option, and second-press exit.\n");
+                    [surface push:@{@"type":@"latest"}];
+                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 4), dispatch_get_main_queue(), finish);
+                });
+                }];
+            });
+        });
+    });
+}
+
 static void verifyEditing(void (^finish)(void)) {
     [surface.web evaluateJavaScript:@"const input = document.querySelector('textarea'); input.value = 'Reply shortcut check'; input.focus(); input.setSelectionRange(input.value.length, input.value.length)" completionHandler:^(id value, NSError *error) {
         NSEvent *selectAll = [NSEvent keyEventWithType:NSEventTypeKeyDown location:NSZeroPoint modifierFlags:NSEventModifierFlagCommand timestamp:NSProcessInfo.processInfo.systemUptime windowNumber:surface.panel.windowNumber context:nil characters:@"a" charactersIgnoringModifiers:@"a" isARepeat:NO keyCode:0];
@@ -278,6 +309,7 @@ static void bridge(const char *raw) {
     }
     if (!value[@"token"]) return;
     NSDictionary *result = @{};
+    if ([operation isEqual:@"save_settings"]) { hintToggles++; NSMutableDictionary *settings = [surface.settings mutableCopy]; [settings addEntriesFromDictionary:value[@"command"][@"patch"]]; result = @{@"settings":settings}; }
     if ([operation isEqual:@"context"]) result = @{@"log":@"Review ready\nWaiting for a decision",@"models":@[],@"plugins":@[],@"source":@{}};
     clawtab_nfn_push([[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:@{@"type":@"response",@"token":value[@"token"],@"value":result} options:0 error:nil] encoding:NSUTF8StringEncoding].UTF8String);
 }
@@ -338,13 +370,13 @@ int main(int argc, const char **argv) {
                         verifyFirstClick(^{
                             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 4), dispatch_get_main_queue(), ^{
                                 if (!surface.panel.textFocus || !surface.panel.isKeyWindow) { fprintf(stderr,"Reply focus lease failed: lease=%d key=%d can-key=%d\n",surface.panel.textFocus,surface.panel.isKeyWindow,surface.panel.canBecomeKeyWindow); exit(1); }
-                                verifyEditing(^{
+                                verifyEditing(^{ verifyKeyboardControl(^{
                                     clawtab_nfn_activate(previousApplication);
                                     verifyExpansion(^{
                                         printf("Native checks passed: platform JSON booleans, passive panel, foreground preserved, notch overlap, window cycling excluded, reply focus, Command-A selection, animated expansion and fixed top anchor. Screenshots: /tmp/clawtab-nfn-native.png, /tmp/clawtab-nfn-expanded.png\n");
                                         verifyMenuLayout(^{ verifyDragging(^{ verifyPresentationLifetime(^{ verifyInlineSettings(^{ clawtab_nfn_stop(); }); }); }); });
                                     });
-                                });
+                                }); });
                             });
                         });
                     }];

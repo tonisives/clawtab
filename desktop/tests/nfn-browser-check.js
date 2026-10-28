@@ -880,5 +880,19 @@
   window.nfn.receive(window.fixture.snapshot());
   document.querySelector('[aria-label="Notification list"]').click(); await sleep(30);
   assert(![...document.querySelectorAll(".queue-item")].some(item => item.textContent.includes(oldPermission.id)), "disabling auto-yes keeps the handled permission out of Pending");
+  resetFlow();
+  flowRecord("hint-card", 1);
+  const hintSnapshot = window.fixture.snapshot("hint-card");
+  hintSnapshot.settings.keyboard_hints = false;
+  window.nfn.receive(hintSnapshot); await sleep(120);
+  assert(!document.querySelector(".keyboard-hint"), "keyboard hints default off");
+  hintSnapshot.settings.keyboard_hints = true;
+  window.nfn.receive(hintSnapshot); await sleep(120);
+  const badges = [...document.querySelectorAll(".keyboard-hint")];
+  assert(badges.length > 5 && new Set(badges.map(b => b.textContent)).size === badges.length, "visible controls get unique keyboard hints");
+  assert(getComputedStyle(document.querySelector(".keyboard-hints")).pointerEvents === "none", "hint overlay preserves mouse interaction");
+  hintSnapshot.remote = true;
+  window.nfn.receive(hintSnapshot); await sleep(120);
+  assert(!document.querySelector(".keyboard-hint"), "mobile surfaces omit desktop keyboard hints");
   return { passed: checks.length, checks };
 })()

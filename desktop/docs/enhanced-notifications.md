@@ -78,6 +78,8 @@ focus: follow            # follow, independent
 display: primary         # primary, built_in, pointer, or a display ID
 preview_seconds: 8       # 2–120; status updates only
 hover_expand: false
+keyboard_hints: false
+focus_shortcut: Ctrl+Alt+w
 sound: true
 menu_bar_icon: true      # ClawTab Daemon's menu bar icon
 mobile_when_idle: true
@@ -254,3 +256,5 @@ Dependency setup starts in `remote`, which contains its package manifest and loc
 `tests/serve-mobile-message-app.py` serves the returned web export with two synthetic machines and local image/video fixtures. Open its printed exact-message URL to check the production router and iframe bridge. Its decision actions remain pending. The parent `scripts/test-mobile-messages-tart.py` runner checks the same renderer and bounded media bridge in a phone-sized native WKWebView.
 
 Background activity cards show their source below the message title. Browser-simulation recovery cards include the saved session and BMUX pane, with an **Open browser** footer action that opens that session and selects the browser pane. Browser pane IDs are kept separate from terminal pane IDs. If the browser session has ended, the card keeps its details and reports the open error.
+
+Use Ctrl+Option+W to expand and focus the message bar. Press it again to collapse and return to the previous app. Double-tap Option while the bar is focused to toggle keyboard hints. Type a button’s hint to activate it; reply fields retain normal typing and Command+Enter. Hints remain visible while enabled, including when another app has focus. Change the focus shortcut in notification settings; an empty value disables it.
