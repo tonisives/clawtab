@@ -193,6 +193,13 @@
     const node = el("button", className, text); node.type = "button";
     node.addEventListener("click", action); return node;
   }
+  const messageDateFormat = new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  function messageTimestamp(record) {
+    const date = new Date(record.created_at);
+    const node = el("time", "message-timestamp", messageDateFormat.format(date));
+    node.dateTime = date.toISOString(); node.title = date.toLocaleString();
+    return node;
+  }
   function iconButton(label, path, action, className = "") {
     const control = button("", action, `utility icon-button ${className}`);
     control.setAttribute("aria-label", label); control.title = label;
@@ -233,7 +240,7 @@
     return [...records.values()].filter(item => item.id === record.id || (key && threadKey(item) === key
       && pending(item) && !item.dismissed_at && !item.ignored && messageOrder(item, record) < 0)).sort(messageOrder);
   }
-  function cardSignature(record) { return JSON.stringify([cardMessages(record).map(item => [item.id, item.request]), template(record)]); }
+  function cardSignature(record) { return JSON.stringify([cardMessages(record).map(item => [item.id, item.created_at, item.request]), template(record)]); }
   function pendingCount() { return pendingCards().length + unseenPending; }
   function updateUnseenPending() {
     const incoming = new Set((snapshot.records || []).map(record => record.id));
@@ -687,11 +694,13 @@
       const thread = el("ol", "message-thread"); thread.setAttribute("aria-label", `${messages.length} messages from this agent`);
       for (const item of messages) {
         const entry = el("li", "message-thread-item"); entry.dataset.id = item.id;
-        entry.append(el("div", "hint", `${item.id === record.id ? "Latest · " : ""}${item.request.title}`), el("div", "message", messageText(item)));
+        const header = el("div", "message-header");
+        header.append(el("div", "hint", `${item.id === record.id ? "Latest · " : ""}${item.request.title}`), messageTimestamp(item));
+        entry.append(header, el("div", "message", messageText(item)));
         thread.append(entry);
       }
       node._thread = thread; node.append(thread);
-    } else node.append(el("div", "message", messageText(record)));
+    } else node.append(messageTimestamp(record), el("div", "message", messageText(record)));
     const layout = template(record).layout, primitives = {};
     const content = el("div", "details-content"); node._content = content;
     content.addEventListener("scroll", () => { node._followLogs = content.scrollHeight - content.scrollTop - content.clientHeight < 30; });
@@ -978,7 +987,7 @@
       return list;
     }
     const items = history ? historyItems : pendingCards();
-    const signature = JSON.stringify([history, items.map(record => [record.id, record.read_at, queueSummary(record)]), [...selectedNotifications], bulkBusy, queueError, loadingQueue, hasMoreHistory, unseenPending]);
+    const signature = JSON.stringify([history, items.map(record => [record.id, record.created_at, record.read_at, queueSummary(record)]), [...selectedNotifications], bulkBusy, queueError, loadingQueue, hasMoreHistory, unseenPending]);
     if (list.dataset.signature === signature) return list;
     list.dataset.signature = signature;
     const content = list._content, scroll = content.scrollTop;
@@ -1006,7 +1015,9 @@
         checkbox.addEventListener("change", () => { if (checkbox.checked) selectedNotifications.add(record.id); else selectedNotifications.delete(record.id); render(); }); row.append(checkbox);
       }
       const item = button("", () => { records.set(record.id, record); openRecord(record.id); }, `queue-item ${record.read_at ? "" : "unread"}`);
-      item.append(el("strong", "", summary.title), el("div", "meta", summary.message)); row.append(item);
+      const header = el("div", "message-header");
+      header.append(el("strong", "", summary.title), messageTimestamp(record));
+      item.append(header, el("div", "meta", summary.message)); row.append(item);
       if (!history) {
         const dismiss = iconButton(`Dismiss ${summary.title}`, "M6 6l12 12M18 6L6 18", () => dismissNotifications([record.id]), "dismiss-item");
         dismiss.disabled = bulkBusy; row.append(dismiss);
