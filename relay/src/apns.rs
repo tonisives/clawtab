@@ -1,7 +1,7 @@
 use std::io::Cursor;
 
 use a2::{
-    Client, ClientConfig, DefaultNotificationBuilder, Endpoint, NotificationBuilder,
+    Client, ClientConfig, CollapseId, DefaultNotificationBuilder, Endpoint, NotificationBuilder,
     NotificationOptions, Priority, PushType,
 };
 use serde::Serialize;
@@ -33,6 +33,14 @@ struct PayloadOption {
 struct JobPayload {
     job_id: String,
     run_id: String,
+}
+
+fn message_collapse_id(metadata: &serde_json::Value) -> Result<Option<CollapseId<'_>>, String> {
+    metadata["message_id"]
+        .as_str()
+        .map(CollapseId::new)
+        .transpose()
+        .map_err(|error| error.to_string())
 }
 
 /// Result of a single APNs send attempt.
@@ -200,6 +208,7 @@ impl ApnsClient {
         // APNs limits the whole payload to 4 KiB, including source metadata.
         let title: String = title.chars().take(160).collect();
         let body: String = body.chars().take(600).collect();
+        let collapse_id = message_collapse_id(custom_json)?;
 
         let build_payload = || {
             let builder = DefaultNotificationBuilder::new()
@@ -226,7 +235,7 @@ impl ApnsClient {
                 apns_expiration: None,
                 apns_priority: Some(Priority::High),
                 apns_topic: Some(&self.topic),
-                apns_collapse_id: custom_json["message_id"].as_str(),
+                apns_collapse_id: collapse_id.clone(),
                 apns_push_type: Some(PushType::Alert),
             };
 
@@ -329,6 +338,41 @@ impl ApnsClient {
             }
             SendResult::BadToken => Err("invalid_token:both".to_string()),
             SendResult::Fatal(e) => Err(e),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::message_collapse_id;
+    use serde_json::json;
+
+    #[test]
+    fn collapse_id_preserves_the_message_uuid() {
+        let id = uuid::Uuid::new_v4().to_string();
+        let metadata = json!({"message_id": id});
+        assert_eq!(message_collapse_id(&metadata).unwrap().unwrap().value, id);
+    }
+
+    #[test]
+    fn collapse_id_limit_counts_utf8_bytes() {
+        for id in ["a".repeat(64), "é".repeat(32)] {
+            let metadata = json!({"message_id": id});
+            assert_eq!(message_collapse_id(&metadata).unwrap().unwrap().value, id);
+        }
+        for id in ["a".repeat(65), "é".repeat(33)] {
+            assert!(message_collapse_id(&json!({"message_id": id})).is_err());
+        }
+    }
+
+    #[test]
+    fn collapse_id_is_optional_for_legacy_metadata() {
+        for metadata in [
+            json!({}),
+            json!({"message_id": null}),
+            json!({"message_id": 7}),
+        ] {
+            assert!(message_collapse_id(&metadata).unwrap().is_none());
         }
     }
 }
