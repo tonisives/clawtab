@@ -201,7 +201,7 @@
   }
   function pending(record) { return record.status === "pending" || record.status === "delivering"; }
   function hasAgent(record) { const source = record.request.source; return Boolean(source?.pane_id && (source.agent_pid || source.provider || record.question_id)); }
-  function pendingRecords(includeActions = false) { return [...records.values()].filter(r => pending(r) && !r.dismissed_at && !r.ignored && (includeActions || !actionsInProgress.has(r.id))).sort((a, b) => a.created_at - b.created_at); }
+  function pendingRecords(includeActions = false) { return [...records.values()].filter(r => pending(r) && !r.dismissed_at && !r.ignored && (includeActions || !actionInProgress(r))).sort((a, b) => a.created_at - b.created_at); }
   function agentKey(record) {
     const source = record.request.source || {};
     if (!source.pane_id && !(source.job_id && source.run_id)) return null;
@@ -209,6 +209,14 @@
       source.agent_started_at, source.job_id, source.run_id]);
   }
   function messageOrder(a, b) { return a.created_at - b.created_at || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0); }
+  function actionInProgress(record) {
+    if (actionsInProgress.has(record.id)) return true;
+    const key = agentKey(record);
+    return key && [...actionsInProgress.keys()].some(id => {
+      const handled = records.get(id);
+      return handled && agentKey(handled) === key && messageOrder(record, handled) <= 0;
+    });
+  }
   function pendingCards() {
     const agents = new Map();
     for (const record of pendingRecords().sort(messageOrder)) agents.set(agentKey(record) || record.id, record);
@@ -557,7 +565,7 @@
       const updated = value.record || (value.id ? value : null);
       if (updated) records.set(id, updated);
       if (updated && (!pending(updated) || updated.dismissed_at)) {
-        for (const item of handled) if (item.id !== id) records.set(item.id, { ...item, status: "superseded" });
+        for (const item of cardMessages(record)) if (item.id !== id) records.set(item.id, { ...item, status: "superseded" });
       }
       if (value.status === "resolved") drafts.delete(id);
       accept(value);

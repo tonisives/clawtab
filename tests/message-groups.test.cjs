@@ -50,11 +50,14 @@ test("a successful latest response closes earlier cards but leaves a newer arriv
   for (const item of [record("old", 1), record("latest", 2)]) app.records.set(item.id, item);
   app.window.webkit = { messageHandlers: { nfn: { postMessage({ token, command }) {
     assert.equal(command.id, "latest");
+    app.records.set("unloaded", record("unloaded", 0));
+    assert.equal(app.pendingCards().length, 0);
     app.records.set("newer", record("newer", 3));
     app.receive({ type: "response", token, value: { ...app.records.get("latest"), status: "resolved" } });
   } } } };
   await app.performAction("latest", { op: "respond", id: "latest", action_id: "approve" });
   assert.equal(app.records.get("old").status, "superseded");
+  assert.equal(app.records.get("unloaded").status, "superseded");
   assert.deepEqual(Array.from(app.pendingCards(), item => item.id), ["newer"]);
 });
 
