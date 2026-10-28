@@ -22,7 +22,9 @@ async () => {
   }
   assert(document.documentElement.scrollWidth <= innerWidth, "shared card fits the mobile viewport without horizontal overflow");
   const reply = document.querySelector("textarea");
+  assert(reply.getAttribute("aria-label") === "Changes to the draft" && document.querySelector(".send").textContent === "Request changes", "social draft feedback uses the configured revision choice");
   reply.value = "Keep this caption edit"; reply.dispatchEvent(new Event("input", { bubbles: true }));
+  assert(document.querySelector('[data-action-id="post"]').disabled, "entering caption feedback disables Post to X on mobile");
   window.nfn.receive({ ...window.lastSnapshot, records: window.lastSnapshot.records.map(record => ({ ...record, updated_at: Date.now() })) });
   assert(document.querySelector("textarea").value === "Keep this caption edit", "live relay updates preserve the reply draft");
   window.nfn.receive({ type: "open_record", id: "mac-a::launch-review" });

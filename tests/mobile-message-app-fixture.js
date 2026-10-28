@@ -13,10 +13,10 @@
     read_at: null, dismissed_at: null, response: null, question_id: null, error: null,
     request: { title: "Review the launch post", template: "social-review", body,
       source: { provider: "codex", group: "ClawTab", agent_title: machine, pane_id: "%18" },
-      response_destination: "result", data: {},
+      response_destination: "result", data: { platform: "X" },
       media: [{ kind: "image", src: "/fixture/preview.png", alt: "ClawTab terminal and agent" },
         { kind: "video", src: "/fixture/preview.mp4", alt: "ClawTab remote demo" }],
-      actions: [{ id: "approve", kind: "choice", label: "Post to X" },
+      actions: [{ id: "post", kind: "choice", label: "Post to X" },
         { id: "revise", kind: "choice", label: "Request changes" }, { id: "reject", kind: "choice", label: "Reject" }],
     },
   });
