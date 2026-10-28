@@ -131,7 +131,8 @@ def approved(record, receipt, reconcile=False):
     if record.get('id') != receipt['message_id'] or any(
             request.get(k) != wanted[k] for k in wanted):
         raise WorkflowError('Review payload changed; create a new review')
-    if (record.get('status') != 'resolved' or response.get('status') != 'resolved'
+    if (record.get('wait_timed_out') or record.get('status') != 'resolved'
+            or response.get('status') != 'resolved'
             or response.get('request_id') != receipt['message_id']
             or response.get('action_id') != 'post'):
         raise WorkflowError('This draft has no Post to X decision')
@@ -336,6 +337,7 @@ def publish(path, verify_url=None, browser_factory=Browser):
                 pass
         try:
             message('send', '--stdin', payload={
+                'kind': 'completed',
                 'title': f'Posted to X as @{receipt["draft"]["account"]}',
                 'template': 'update', 'body': receipt['url'],
                 'dedupe_key': 'x-post-verified:' + receipt['sha256'],
