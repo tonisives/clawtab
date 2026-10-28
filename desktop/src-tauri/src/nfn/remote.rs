@@ -49,6 +49,9 @@ fn allowed(command: &NfnCommand) -> bool {
             | NfnCommand::Respond { .. }
             | NfnCommand::Read { .. }
             | NfnCommand::Dismiss { .. }
+            | NfnCommand::Ignore { .. }
+            | NfnCommand::Unignore { .. }
+            | NfnCommand::IgnoredAgents
             | NfnCommand::Cancel { .. }
             | NfnCommand::Context { .. }
             | NfnCommand::Templates

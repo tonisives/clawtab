@@ -71,6 +71,12 @@ h1 { margin: 0; font-size: 15px; line-height: 1.35; font-weight: 600; overflow-w
 .status.alert { color: #ff8700; font-weight: 700; }
 .message { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; max-height: 210px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 .message:empty { display: none; }
+.message-thread { list-style: none; margin: 10px 0; padding: 0; max-height: 280px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.message-thread-item { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.message-thread-item:first-child { padding-top: 0; }
+.message-thread-item:last-child { border-bottom: 0; padding-bottom: 0; }
+.message-thread .message { max-height: none; overflow: visible; margin-top: 4px; }
+.details-open .message-thread { flex: 0 1 auto; min-height: 70px; }
 button.reply-toggle { padding: 0; font-size: 12px; }
 .reply-toggle::before { content: "›"; display: inline-block; margin-right: 6px; }
 .reply-toggle[aria-expanded="true"]::before { transform: rotate(90deg); }

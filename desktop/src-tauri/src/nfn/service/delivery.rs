@@ -23,6 +23,7 @@ fn remote_enabled(settings: &crate::config::settings::AppSettings, record: &NfnR
 
 fn mobile_due(settings: &NfnSettings, platform: &PlatformState, record: &NfnRecord) -> bool {
     if !record.pending()
+        || record.ignored
         || record.status == "delivering"
         || record.dismissed_at.is_some()
         || record
@@ -88,6 +89,7 @@ impl Service {
         let platform = self.platform.lock().clone();
         for mut record in self.store.pending().unwrap_or_default() {
             if record.status != "pending"
+                || record.ignored
                 || record.dismissed_at.is_some()
                 || record
                     .request
@@ -342,6 +344,7 @@ mod tests {
             updated_at: 0,
             read_at: Some(1),
             dismissed_at: None,
+            ignored: false,
             error: None,
             question_id: None,
             deliveries: Default::default(),
@@ -357,6 +360,9 @@ mod tests {
         }
         platform.idle_seconds = 60;
         assert!(mobile_due(&settings, &platform, &record));
+        record.ignored = true;
+        assert!(!mobile_due(&settings, &platform, &record));
+        record.ignored = false;
         platform.idle_seconds = 0;
         platform.screen_locked = true;
         assert!(mobile_due(&settings, &platform, &record));

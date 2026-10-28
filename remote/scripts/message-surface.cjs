@@ -17,6 +17,7 @@ button,input,select,textarea{font-size:16px}
 .actions button,.send{min-height:40px}
 .icon-button{min-height:36px}
 .message{max-height:35dvh}
+.message-thread{max-height:35dvh}
 .details-content{max-height:none}
 `)
     .replace("/* NFN_JS */", read("surface.js"));

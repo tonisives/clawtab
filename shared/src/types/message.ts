@@ -14,6 +14,7 @@ export type MessageRecord = {
   }
   status: string
   dismissed_at?: number | null
+  ignored?: boolean
   created_at: number
   updated_at: number
   question_id?: string | null
@@ -29,4 +30,4 @@ export const messageKind = (record: MessageRecord): string => record.request.kin
   ["agent-approval", "permission", "social-review"].includes(record.request.template) ? "approval" : "question"
 )
 export const messageNeedsReply = (record: MessageRecord) => ["question", "approval"].includes(messageKind(record))
-export const messagePending = (record: MessageRecord) => !record.dismissed_at && ["pending", "delivering"].includes(record.status)
+export const messagePending = (record: MessageRecord) => !record.ignored && !record.dismissed_at && ["pending", "delivering"].includes(record.status)

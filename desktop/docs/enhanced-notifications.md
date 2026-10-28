@@ -12,9 +12,16 @@ cwtctl message list --pending
 cwtctl message reply MESSAGE_ID "Use beta"
 cwtctl message reply MESSAGE_ID --action ship
 cwtctl message dismiss MESSAGE_ID
+cwtctl message ignore MESSAGE_ID
+cwtctl message ignored-agents
+cwtctl message unignore MESSAGE_ID
 ```
 
 ### Desktop and mobile delivery
+
+Messages from the same agent session appear as a list in one card. The latest message supplies the choices and reply field. Handling it also closes the earlier pending messages as superseded, while keeping them in History. A failed reply keeps the group available for retry.
+
+Choose **Ignore agent** in the card's options to hide that session's messages and stop its desktop, mobile, and Telegram notifications. The preference survives daemon restarts. Open the notification list's **Ignored agents** tab and choose **Stop ignoring** to restore it. Ignoring leaves the messages pending without sending a response.
 
 Messages appear locally by default. While a message is still pending, ClawTab also sends it to mobile after 60 seconds without keyboard or mouse activity, or when the Mac locks or its screen sleeps. A message that arrives while the Mac is idle goes to mobile immediately. Reading or collapsing a card keeps it pending; answering or dismissing it stops escalation. Delivery receipts prevent repeat pushes for the same message.
 

@@ -21,6 +21,7 @@
   const remoteMedia = new Map();
   const selectedNotifications = new Set();
   let bulkBusy = false, queueError = "";
+  let ignoredOpen = false, ignoredAgents = [], ignoredBusy = false;
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
   let arrivalAnimations = [], arrivalTimer = null, lastArrivalId = null;
 
@@ -200,8 +201,26 @@
   }
   function pending(record) { return record.status === "pending" || record.status === "delivering"; }
   function hasAgent(record) { const source = record.request.source; return Boolean(source?.pane_id && (source.agent_pid || source.provider || record.question_id)); }
-  function pendingRecords(includeActions = false) { return [...records.values()].filter(r => pending(r) && !r.dismissed_at && (includeActions || !actionsInProgress.has(r.id))).sort((a, b) => a.created_at - b.created_at); }
-  function pendingCount() { return pendingRecords().length + unseenPending; }
+  function pendingRecords(includeActions = false) { return [...records.values()].filter(r => pending(r) && !r.dismissed_at && !r.ignored && (includeActions || !actionsInProgress.has(r.id))).sort((a, b) => a.created_at - b.created_at); }
+  function agentKey(record) {
+    const source = record.request.source || {};
+    if (!source.pane_id && !(source.job_id && source.run_id)) return null;
+    return JSON.stringify([record.machine_id, source.pane_id, source.session_id, source.agent_pid,
+      source.agent_started_at, source.job_id, source.run_id]);
+  }
+  function messageOrder(a, b) { return a.created_at - b.created_at || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0); }
+  function pendingCards() {
+    const agents = new Map();
+    for (const record of pendingRecords().sort(messageOrder)) agents.set(agentKey(record) || record.id, record);
+    return [...agents.values()].sort(messageOrder);
+  }
+  function cardMessages(record) {
+    const key = agentKey(record);
+    return [...records.values()].filter(item => item.id === record.id || (key && agentKey(item) === key
+      && pending(item) && !item.dismissed_at && !item.ignored && messageOrder(item, record) < 0)).sort(messageOrder);
+  }
+  function cardSignature(record) { return JSON.stringify([cardMessages(record).map(item => [item.id, item.request]), template(record)]); }
+  function pendingCount() { return pendingCards().length + unseenPending; }
   function addPendingPage(result) {
     const before = pendingRecords(true).length;
     for (const record of result.records || []) records.set(record.id, record);
@@ -429,6 +448,8 @@
     }
   }
   function openRecord(id) {
+    const record = records.get(id), key = record && agentKey(record);
+    if (record && pending(record) && !record.dismissed_at && !record.ignored && key) id = pendingCards().find(item => agentKey(item) === key)?.id || id;
     todosOpen = false;
     if (actionsInProgress.has(id)) return;
     leaveSettings();
@@ -439,7 +460,7 @@
   }
   function openLatest() {
     resetHandledActions();
-    const latest = pendingRecords().at(-1);
+    const latest = pendingCards().at(-1);
     if (latest) openRecord(latest.id);
     else { queueReturnId = null; collapse(true); }
   }
@@ -448,12 +469,12 @@
     const id = current, version = reviewVersion;
     navigating = true;
     try {
-      let items = pendingRecords(), index = items.findIndex(record => record.id === current);
+      let items = pendingCards(), index = items.findIndex(record => record.id === current);
       while (unseenPending > 0 && (index + step >= items.length || index + step < 0)) {
         const result = await call({ op: "list", offset: pendingOffset, pending_only: true });
         addPendingPage(result);
         if (current !== id || version !== reviewVersion || queue || settingsOpen) return;
-        items = pendingRecords(); index = items.findIndex(record => record.id === current);
+        items = pendingCards(); index = items.findIndex(record => record.id === current);
       }
       const retry = step > 0 && items.find(record => record.id !== current && retryIds.has(record.id));
       if (items.length) openRecord((retry || items[(Math.max(index, 0) + step + items.length) % items.length]).id);
@@ -478,7 +499,7 @@
     resetHandledActions();
     leaveSettings();
     if (current) queueReturnId = current;
-    clearTimeout(completionTimer); pauseTimer(); stopContext(); expanded = true; details = false; queue = true; history = showHistory === true; current = null; renderedId = null; menu = null; selectedNotifications.clear(); queueError = ""; render();
+    clearTimeout(completionTimer); pauseTimer(); stopContext(); expanded = true; details = false; queue = true; history = showHistory === true; ignoredOpen = false; current = null; renderedId = null; menu = null; selectedNotifications.clear(); queueError = ""; render();
     if (history) loadHistory(true);
   }
   async function toggleQueue() {
@@ -502,7 +523,7 @@
   async function advanceAfter(record) {
     const version = reviewVersion;
     const next = () => {
-      const items = pendingRecords();
+      const items = pendingCards();
       return items.find(item => retryIds.has(item.id)) || items.find(item => item.created_at >= record.created_at) || items[0];
     };
     // Reload from the front when draining a page: completed actions shift server offsets.
@@ -526,7 +547,8 @@
     const record = records.get(id);
     if (!record) return;
     const version = reviewVersion, state = { pending: true };
-    actionsInProgress.set(id, state); actionErrors.delete(id); retryIds.delete(id);
+    const handled = cardMessages(record);
+    for (const item of handled) { actionsInProgress.set(item.id, state); actionErrors.delete(item.id); retryIds.delete(item.id); }
     pauseTimer();
     const response = call(command);
     if (current === id && !queue && !settingsOpen) advanceAfter(record);
@@ -534,10 +556,13 @@
       const value = await response;
       const updated = value.record || (value.id ? value : null);
       if (updated) records.set(id, updated);
+      if (updated && (!pending(updated) || updated.dismissed_at)) {
+        for (const item of handled) if (item.id !== id) records.set(item.id, { ...item, status: "superseded" });
+      }
       if (value.status === "resolved") drafts.delete(id);
       accept(value);
     } catch (error) {
-      actionsInProgress.delete(id);
+      for (const item of handled) { actionsInProgress.delete(item.id); if (!records.has(item.id)) records.set(item.id, item); }
       if (!records.has(id)) records.set(id, record);
       showError(error, id);
       const latest = records.get(id);
@@ -618,7 +643,7 @@
   function createCard(record) {
     const node = el("article", "card");
     node._wasPending = pending(record) && !record.dismissed_at;
-    node._signature = JSON.stringify([record.request, template(record)]);
+    node._signature = cardSignature(record);
     const heading = el("div", "heading"), agent = hasAgent(record), identity = sourceHeading(record);
     const title = el("h1", "", agent ? identity.title : record.request.title); title.title = title.textContent;
     if (agent) { heading.classList.add("agent-heading"); const group = el("span", "source-group", identity.group); group.title = identity.group; heading.append(group); }
@@ -631,7 +656,16 @@
     }
     node.append(heading);
     if (agent && !record.question_id && record.request.title !== identity.group && record.request.title !== identity.title) node.append(el("div", "notification-title", record.request.title));
-    const message = el("div", "message", messageText(record)); node.append(message);
+    const messages = cardMessages(record);
+    if (messages.length > 1) {
+      const thread = el("ol", "message-thread"); thread.setAttribute("aria-label", `${messages.length} messages from this agent`);
+      for (const item of messages) {
+        const entry = el("li", "message-thread-item"); entry.dataset.id = item.id;
+        entry.append(el("div", "hint", `${item.id === record.id ? "Latest · " : ""}${item.request.title}`), el("div", "message", messageText(item)));
+        thread.append(entry);
+      }
+      node._thread = thread; node.append(thread);
+    } else node.append(el("div", "message", messageText(record)));
     const layout = template(record).layout, primitives = {};
     const content = el("div", "details-content"); node._content = content;
     content.addEventListener("scroll", () => { node._followLogs = content.scrollHeight - content.scrollTop - content.clientHeight < 30; });
@@ -720,7 +754,7 @@
     if (!card || !current) return;
     const record = records.get(current); if (!record) return;
     const wasPending = card._wasPending;
-    if (card._signature !== JSON.stringify([record.request, template(record)])) {
+    if (card._signature !== cardSignature(record)) {
       const scroll = card._content.scrollTop, active = document.activeElement === card._reply;
       const selection = card._reply ? [card._reply.selectionStart, card._reply.selectionEnd] : null;
       stopContext();
@@ -729,7 +763,8 @@
       if (active && card._reply) { card._reply.focus({ preventScroll: true }); if (selection) card._reply.setSelectionRange(...selection); }
       startContext();
     }
-    const isPending = pending(record) && !record.dismissed_at;
+    const isPending = pending(record) && !record.dismissed_at && !record.ignored;
+    if (card._thread && !card._thread._positioned) { card._thread.scrollTop = card._thread.scrollHeight; card._thread._positioned = true; }
     card._wasPending = isPending;
     if (wasPending && !isPending && !preview) {
       clearTimeout(completionTimer);
@@ -743,7 +778,7 @@
     const alert = record.request.data?.event === "agent_alert";
     const busy = actionsInProgress.has(current);
     card._status.classList.toggle("alert", alert && isPending);
-    card._status.textContent = record.status === "delivering" || busy ? "Sending..." : isPending ? (alert ? "! Alert" : "") : record.status === "resolved" ? (alert ? "Recovered" : update ? "Seen" : "Sent") : record.status;
+    card._status.textContent = record.ignored ? "Ignored" : record.status === "delivering" || busy ? "Sending..." : isPending ? (alert ? "! Alert" : "") : record.status === "resolved" ? (alert ? "Recovered" : update ? "Seen" : "Sent") : record.status;
     card._options?.setAttribute("aria-expanded", String(menu === "options" || menu === "agent"));
     const feedback = Boolean(drafts.get(record.id)?.trim());
     for (const control of card._actions.querySelectorAll("button")) control.disabled = !isPending || busy
@@ -752,6 +787,7 @@
     if (card._reply) card._reply.readOnly = !isPending || busy;
     if (actionErrors.has(current)) card._notice.textContent = actionErrors.get(current);
     else if (record.error) card._notice.textContent = record.error;
+    else if (record.ignored) card._notice.textContent = "Agent ignored";
     else if (!isPending) card._notice.textContent = record.response ? (update ? "Acknowledged" : "Reply sent") : `Request ${record.status}`;
     else card._notice.textContent = "";
     updateAutoYes();
@@ -825,7 +861,7 @@
     bulkBusy = true; queueError = ""; render();
     try {
       while (unseenPending > 0) addPendingPage(await call({ op: "list", offset: pendingOffset, pending_only: true }));
-      for (const record of pendingRecords()) selectedNotifications.add(record.id);
+      for (const record of pendingCards()) selectedNotifications.add(record.id);
     } catch (error) { queueError = String(error.message || error); }
     finally { bulkBusy = false; render(); }
   }
@@ -833,12 +869,37 @@
     if (bulkBusy || !ids.length) return;
     bulkBusy = true; queueError = ""; render();
     try {
+      const previous = ids.flatMap(id => records.has(id) ? cardMessages(records.get(id)).filter(item => item.id !== id) : []);
       const result = await call({ op: "dismiss_many", ids });
+      for (const record of previous) records.set(record.id, { ...record, status: "superseded" });
       for (const record of result.records || []) { records.set(record.id, record); selectedNotifications.delete(record.id); }
       pendingOffset = pendingRecords().length;
       historyItems = []; historyOffset = 0;
     } catch (error) { queueError = String(error.message || error); }
     finally { bulkBusy = false; render(); }
+  }
+  async function loadIgnoredAgents() {
+    ignoredBusy = true; queueError = ""; render();
+    try { ignoredAgents = (await call({ op: "ignored_agents" })).agents || []; }
+    catch (error) { queueError = String(error.message || error); }
+    finally { ignoredBusy = false; render(); }
+  }
+  async function setAgentIgnored(record, ignored) {
+    if (ignoredBusy) return;
+    ignoredBusy = true;
+    try {
+      const result = await call({ op: ignored ? "ignore" : "unignore", id: record.id });
+      for (const item of result.records || []) records.set(item.id, item);
+      if (ignored) {
+        menu = null;
+        if (current === record.id) await advanceAfter(record);
+      } else {
+        ignoredAgents = ignoredAgents.filter(agent => agent.id !== record.id);
+      }
+      queueError = "";
+    } catch (error) {
+      if (ignored) showError(error, record.id); else queueError = String(error.message || error);
+    } finally { ignoredBusy = false; render(); }
   }
   function renderQueue() {
     let list = host.querySelector(".queue");
@@ -847,21 +908,38 @@
       const segments = el("div", "segments"); segments.setAttribute("role", "tablist"); segments.setAttribute("aria-label", "Notifications");
       for (const [label, isHistory] of [["Pending", false], ["History", true]]) {
         const tab = button(label, () => {
-          if (history === isHistory) return;
+          if (history === isHistory && !ignoredOpen) return;
           list._scroll[history ? "history" : "pending"] = list._content.scrollTop;
-          history = isHistory; selectedNotifications.clear(); queueError = ""; render();
+          history = isHistory; ignoredOpen = false; selectedNotifications.clear(); queueError = ""; render();
           list._content.scrollTop = list._scroll[history ? "history" : "pending"] || 0;
           if (history) loadHistory(true);
         });
         tab.setAttribute("role", "tab"); tab.dataset.history = String(isHistory); segments.append(tab);
       }
+      const ignored = button("Ignored agents", () => { ignoredOpen = true; selectedNotifications.clear(); loadIgnoredAgents(); });
+      ignored.setAttribute("role", "tab"); ignored.dataset.ignored = "true"; segments.append(ignored);
       list._scroll = {};
       list._content = el("div", "queue-content");
       list.append(segments, list._content);
     }
-    for (const tab of list.querySelectorAll('[role="tab"]')) tab.setAttribute("aria-selected", String(tab.dataset.history === String(history)));
-    const items = history ? historyItems : pendingRecords();
-    const signature = JSON.stringify([history, items.map(record => [record.id, record.read_at, record.request.title, sourceText(record.request.source)]), [...selectedNotifications], bulkBusy, queueError, loadingQueue, hasMoreHistory, unseenPending]);
+    for (const tab of list.querySelectorAll('[role="tab"]')) tab.setAttribute("aria-selected", String(ignoredOpen ? tab.dataset.ignored === "true" : tab.dataset.history === String(history)));
+    if (ignoredOpen) {
+      const signature = JSON.stringify(["ignored", ignoredAgents, ignoredBusy, queueError]);
+      if (list.dataset.signature === signature) return list;
+      list.dataset.signature = signature; list._content.replaceChildren();
+      if (queueError) list._content.append(el("div", "notice", queueError));
+      for (const agent of ignoredAgents) {
+        const row = el("div", "queue-row ignored-agent");
+        const identity = sourceHeading({ request: { source: agent.source, title: agent.title } });
+        const label = el("div", "queue-item"); label.append(el("strong", "", identity.title), el("div", "meta", [identity.group, agent.machine_id].filter(Boolean).join(" · ")));
+        const restore = button("Stop ignoring", () => setAgentIgnored(agent, false), "utility"); restore.disabled = ignoredBusy;
+        row.append(label, restore); list._content.append(row);
+      }
+      if (!ignoredAgents.length) list._content.append(el("div", "empty-state", ignoredBusy ? "Loading..." : "No ignored agents"));
+      return list;
+    }
+    const items = history ? historyItems : pendingCards();
+    const signature = JSON.stringify([history, items.map(record => [record.id, record.read_at, record.request.title, sourceText(record.request.source), history ? [] : cardMessages(record).map(item => item.id)]), [...selectedNotifications], bulkBusy, queueError, loadingQueue, hasMoreHistory, unseenPending]);
     if (list.dataset.signature === signature) return list;
     list.dataset.signature = signature;
     const content = list._content, scroll = content.scrollTop;
@@ -888,7 +966,8 @@
         checkbox.addEventListener("change", () => { if (checkbox.checked) selectedNotifications.add(record.id); else selectedNotifications.delete(record.id); render(); }); row.append(checkbox);
       }
       const item = button("", () => { records.set(record.id, record); openRecord(record.id); }, `queue-item ${record.read_at ? "" : "unread"}`);
-      item.append(el("strong", "", record.request.title), el("div", "meta", sourceText(record.request.source))); row.append(item);
+      const messageCount = history ? 1 : cardMessages(record).length;
+      item.append(el("strong", "", record.request.title), el("div", "meta", [sourceText(record.request.source), messageCount > 1 ? `${messageCount} messages` : ""].filter(Boolean).join(" · "))); row.append(item);
       if (!history) {
         const dismiss = iconButton(`Dismiss ${record.request.title}`, "M6 6l12 12M18 6L6 18", () => dismissNotifications([record.id]), "dismiss-item");
         dismiss.disabled = bulkBusy; row.append(dismiss);
@@ -929,6 +1008,10 @@
         panel.append(autoYesControl(record));
         const controls = button("Agent controls", () => toggleMenu("agent"), "utility menu-link");
         controls.setAttribute("aria-haspopup", "dialog"); panel.append(controls);
+      }
+      if (agentKey(record)) {
+        const ignore = button(record.ignored ? "Stop ignoring agent" : "Ignore agent", () => setAgentIgnored(record, !record.ignored), "utility menu-link");
+        ignore.disabled = ignoredBusy; panel.append(ignore);
       }
       panel.append(button("Notification settings", openSettings, "utility menu-link"));
       const dismiss = button("Dismiss notification", () => performAction(record.id, { op: "dismiss", id: record.id }), "utility dismiss"); dismiss.title = "Remove this card from Pending"; panel.append(dismiss);
@@ -1106,7 +1189,7 @@
       top.append(list);
     }
     updateTodoRing(top);
-    const items = pendingRecords(), index = items.findIndex(record => record.id === current);
+    const items = pendingCards(), index = items.findIndex(record => record.id === current);
     const isOpen = Boolean(current || queue || expanded), toggle = top.querySelector(".bar-toggle");
     toggle.setAttribute("aria-label", isOpen ? "Collapse notifications" : "Expand notifications"); toggle.setAttribute("aria-expanded", String(isOpen));
     toggle.title = `${isOpen ? "Collapse" : "Open"} notifications. Drag to move.`;
@@ -1177,6 +1260,14 @@
     if (value.todos) todoData = value.todos;
     const incoming = new Set();
     for (const record of value.records || []) { records.set(record.id, record); incoming.add(record.id); }
+    const activeRecord = records.get(current), activeKey = activeRecord && agentKey(activeRecord);
+    if (activeRecord && pending(activeRecord) && !activeRecord.dismissed_at && !activeRecord.ignored && activeKey && !actionsInProgress.has(current)) {
+      const latest = pendingCards().find(item => agentKey(item) === activeKey);
+      if (latest && latest.id !== current) {
+        pauseTimer(); stopContext(); current = latest.id; queueReturnId = current; renderedId = null; menu = null;
+        remaining = (value.settings?.preview_seconds || 8) * 1000;
+      }
+    }
     for (const [id, action] of actionsInProgress) {
       const record = records.get(id);
       if (!action.pending && (!incoming.has(id) || !pending(record) || record.dismissed_at)) actionsInProgress.delete(id);

@@ -7,7 +7,7 @@ const ts = require("../desktop/node_modules/typescript");
 const base = path.resolve(__dirname, "../remote/src/lib");
 const shared = {
   resourceKey: (machine, id) => `${machine}::${id}`,
-  messagePending: record => !record.dismissed_at && ["pending", "delivering"].includes(record.status),
+  messagePending: record => !record.ignored && !record.dismissed_at && ["pending", "delivering"].includes(record.status),
 };
 const modules = { "@clawtab/shared": shared };
 function load(name) {
@@ -54,6 +54,32 @@ test("surface record identity and arrivals distinguish hosts with identical IDs"
   assert.equal(presentation.targetRecord([a, b], { machine: "mac-b", id: "same-id" }), b);
   assert.equal(presentation.newMessageArrival(new Set(["mac-a::same-id"]), [a, b]), b);
   assert.equal(presentation.newMessageArrival(new Set(), [record("mac-a", "resolved", { status: "resolved" })]), null);
+  assert.equal(presentation.newMessageArrival(new Set(), [record("mac-a", "ignored", { ignored: true })]), null);
+});
+
+test("ignored agents from different machines retain their host when restored", async () => {
+  const h = harness([]);
+  h.options.host = async (machine, command) => {
+    h.calls.push({ machine, ...command });
+    return { agents: [{ id: "same-agent", title: machine, source: { pane_id: "%1" } }] };
+  };
+  const result = await h.controller.execute({ op: "ignored_agents" });
+  assert.deepEqual(Array.from(result.agents, agent => agent.id).sort(), ["mac-a::same-agent", "mac-b::same-agent"]);
+  await h.controller.execute({ op: "unignore", id: "mac-b::same-agent" });
+  assert.deepEqual(h.calls.at(-1), { machine: "mac-b", op: "unignore", id: "same-agent" });
+  assert.equal(h.calls.filter(command => command.op === "get").length, 0);
+});
+
+test("ignoring an agent updates its messages from the owning host", async () => {
+  const h = harness();
+  h.options.host = async (machine, command) => {
+    h.calls.push({ machine, ...command });
+    return { records: [record(machine, command.id, { ignored: true })] };
+  };
+  const result = await h.controller.execute({ op: "ignore", id: "mac-b::same-id" });
+  assert.equal(result.records[0].id, "mac-b::same-id");
+  assert.equal(result.records[0].ignored, true);
+  assert.deepEqual(h.calls, [{ machine: "mac-b", op: "ignore", id: "same-id" }]);
 });
 
 test("arrival tracking seeds cached and initial host history before showing new messages", () => {

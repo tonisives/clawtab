@@ -34,10 +34,25 @@ export function messageSurfaceController(options: Options) {
     if (existing) return existing;
     return remember(target.machine, await options.host(target.machine, { op: "get", id: target.id }));
   };
+  const scopedAgents = (machine: string, agents: Result[]) => agents.map(agent => ({ ...agent, machine_id: machine, id: resourceKey(machine, agent.id) }));
 
   return {
     async execute(command: Command): Promise<Result> {
       const op = String(command.op);
+      if (op === "ignored_agents") {
+        const agents = await Promise.all(options.machines().filter(machine => machine.online).map(async machine => {
+          const result = await options.host(machine.id, { op });
+          return scopedAgents(machine.id, result.agents || []);
+        }));
+        return { agents: agents.flat() };
+      }
+      if ((op === "ignore" || op === "unignore") && typeof command.id === "string") {
+        const { machine, id } = parseSurfaceId(command.id);
+        const result = await options.host(machine, { op, id });
+        const records = (result.records || []).map((raw: Result) => remember(machine, raw));
+        for (const record of records) options.update(record);
+        return { records: records.map(surfaceRecord) };
+      }
       if (op === "templates" && typeof command.machine === "string") {
         return options.host(command.machine, { op: "templates" });
       }

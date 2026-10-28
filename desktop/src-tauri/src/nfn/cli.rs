@@ -33,6 +33,8 @@ pub async fn message(args: &[String]) -> Result<Value, String> {
             "cwtctl message send --stdin [--wait] [--timeout SECONDS]",
             "cwtctl message list [--pending] [--offset N]",
             "cwtctl message get|wait|cancel|read|dismiss ID [--timeout SECONDS]",
+            "cwtctl message ignore|unignore ID",
+            "cwtctl message ignored-agents",
             "cwtctl message reply ID [TEXT] [--action ID]",
             "cwtctl message show|settings|templates [args]"
         ]}));
@@ -54,15 +56,17 @@ pub async fn message(args: &[String]) -> Result<Value, String> {
             })
             .await
         }
-        "read" | "dismiss" => {
+        "ignored-agents" => call(NfnCommand::IgnoredAgents).await,
+        "read" | "dismiss" | "ignore" | "unignore" => {
             if args.len() != 2 {
                 return Err("Pass a message ID".into());
             }
             let id = args[1].clone();
-            call(if args[0] == "read" {
-                NfnCommand::Read { id }
-            } else {
-                NfnCommand::Dismiss { id }
+            call(match args[0].as_str() {
+                "read" => NfnCommand::Read { id },
+                "ignore" => NfnCommand::Ignore { id },
+                "unignore" => NfnCommand::Unignore { id },
+                _ => NfnCommand::Dismiss { id },
             })
             .await
         }

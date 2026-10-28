@@ -317,7 +317,7 @@ impl Service {
     }
 
     fn announce(&self, record: &NfnRecord) {
-        if !record.pending() {
+        if !record.pending() || record.ignored {
             return;
         }
         let settings = self.ctx.settings.lock().clone();
@@ -360,6 +360,7 @@ impl Service {
                 record.request.channel("desktop")
                     && local_enabled(&settings, record)
                     && record.dismissed_at.is_none()
+                    && !record.ignored
             })
             .collect();
         let count = pending.len();
@@ -373,7 +374,9 @@ impl Service {
             }
         }
         let todos = super::todos::snapshot();
-        let has_todos = todos["items"].as_array().is_some_and(|items| !items.is_empty());
+        let has_todos = todos["items"]
+            .as_array()
+            .is_some_and(|items| !items.is_empty());
         let visible = settings.enhanced_notifications.delivery != "native"
             && (!records.is_empty() || has_todos)
             && (settings.enhanced_notifications.focus == "independent"
@@ -473,6 +476,7 @@ impl Service {
                 )
             }
             NfnCommand::Templates => return Ok(templates::list()),
+            NfnCommand::IgnoredAgents => return Ok(json!({"agents":self.store.ignored_agents()?})),
             NfnCommand::Info => {
                 let auto_yes_panes: Vec<_> =
                     self.ctx.auto_yes_panes.lock().iter().cloned().collect();
@@ -623,15 +627,24 @@ impl Service {
         let operation = match &command {
             NfnCommand::Read { .. } => "read",
             NfnCommand::Dismiss { .. } => "dismiss",
+            NfnCommand::Ignore { .. } => "ignore",
             _ => "cancel",
         };
         let _guard = self.mutation.lock().await;
         let result = match command {
+            NfnCommand::Ignore { id } | NfnCommand::Unignore { id } => {
+                let records = self.store.set_ignored(&id, operation == "ignore")?;
+                json!({"records":records,"agents":self.store.ignored_agents()?})
+            }
             NfnCommand::DismissMany { ids } => {
                 if ids.len() > 10000 {
                     return Err("Select up to 10000 notifications at a time".into());
                 }
-                json!({"records":self.store.dismiss_many(&ids)?})
+                let mut records = self.store.dismiss_many(&ids)?;
+                for record in records.clone() {
+                    records.extend(self.store.supersede_previous(&record)?);
+                }
+                json!({"records":records})
             }
             NfnCommand::Send { mut request } => {
                 request.validate()?;
@@ -695,6 +708,9 @@ impl Service {
                     }
                 }
                 self.store.save(&mut record)?;
+                if operation == "dismiss" {
+                    self.store.supersede_previous(&record)?;
+                }
                 serde_json::to_value(record).map_err(|e| e.to_string())?
             }
             NfnCommand::Respond {
@@ -712,6 +728,7 @@ impl Service {
         validate_source(&record.request.source)?;
         focus_source(&record.request.source).await?;
         let dismissed = self.store.dismiss_many(std::slice::from_ref(&record.id))?;
+        self.store.supersede_previous(record)?;
         Ok(json!({"focused":true, "record":dismissed[0]}))
     }
 
@@ -729,7 +746,9 @@ impl Service {
         }
         let mut record = self.store.get(id)?;
         if !record.request.needs_response() && action_id == "acknowledge" {
-            return Ok(json!({"record":self.store.dismiss_many(&[id.to_string()])?[0]}));
+            let dismissed = self.store.dismiss_many(&[id.to_string()])?;
+            self.store.supersede_previous(&record)?;
+            return Ok(json!({"record":dismissed[0]}));
         }
         if record
             .request
@@ -899,6 +918,7 @@ impl Service {
                     responded_at: now(),
                 });
                 self.store.save(&mut record)?;
+                self.store.supersede_previous(&record)?;
             }
             Err(error) => {
                 record.status = "pending".into();

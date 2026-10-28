@@ -86,6 +86,33 @@ pub struct NfnSource {
     pub origin_pid: Option<u32>,
 }
 
+impl NfnSource {
+    pub fn agent_key(&self) -> Option<String> {
+        (self.pane_id.is_some() || (self.job_id.is_some() && self.run_id.is_some())).then(|| {
+            serde_json::to_string(&(
+                &self.pane_id,
+                &self.session_id,
+                &self.agent_pid,
+                &self.agent_started_at,
+                &self.job_id,
+                &self.run_id,
+            ))
+            .unwrap()
+        })
+    }
+
+    pub fn same_agent(&self, other: &Self) -> bool {
+        let identified = self.pane_id.is_some() || (self.job_id.is_some() && self.run_id.is_some());
+        identified
+            && self.pane_id == other.pane_id
+            && self.session_id == other.session_id
+            && self.agent_pid == other.agent_pid
+            && self.agent_started_at == other.agent_started_at
+            && self.job_id == other.job_id
+            && self.run_id == other.run_id
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct NfnAction {
@@ -266,10 +293,20 @@ pub struct NfnRecord {
     pub updated_at: i64,
     pub read_at: Option<i64>,
     pub dismissed_at: Option<i64>,
+    #[serde(default)]
+    pub ignored: bool,
     pub error: Option<String>,
     pub question_id: Option<String>,
     #[serde(default)]
     pub deliveries: std::collections::BTreeMap<String, MessageDelivery>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IgnoredAgent {
+    pub id: String,
+    pub source: NfnSource,
+    pub title: String,
+    pub ignored_at: i64,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -336,6 +373,13 @@ pub enum NfnCommand {
     DismissMany {
         ids: Vec<String>,
     },
+    Ignore {
+        id: String,
+    },
+    Unignore {
+        id: String,
+    },
+    IgnoredAgents,
     Respond {
         id: String,
         action_id: String,

@@ -24,7 +24,8 @@ impl Store {
                 created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
             CREATE INDEX IF NOT EXISTS nfn_status ON notifications(status, created_at);
             CREATE UNIQUE INDEX IF NOT EXISTS nfn_active_dedupe ON notifications(dedupe)
-                WHERE status IN ('pending', 'delivering') AND dedupe IS NOT NULL;",
+                WHERE status IN ('pending', 'delivering') AND dedupe IS NOT NULL;
+            CREATE TABLE IF NOT EXISTS ignored_agents (key TEXT PRIMARY KEY, record TEXT NOT NULL);",
         )
         .map_err(|e| e.to_string())?;
         let store = Self {
@@ -80,11 +81,11 @@ impl Store {
         self.list_where("1=1", offset, 50)
     }
     pub fn pending_count(&self) -> Result<usize, String> {
-        self.conn.lock().query_row("SELECT count(*) FROM notifications WHERE status IN ('pending','delivering') AND json_extract(record,'$.dismissed_at') IS NULL", [], |row| row.get(0)).map_err(|e| e.to_string())
+        self.conn.lock().query_row("SELECT count(*) FROM notifications WHERE status IN ('pending','delivering') AND json_extract(record,'$.dismissed_at') IS NULL AND COALESCE(json_extract(record,'$.ignored'),0)=0", [], |row| row.get(0)).map_err(|e| e.to_string())
     }
     pub fn pending_page(&self, offset: usize) -> Result<Vec<NfnRecord>, String> {
         self.list_where(
-            "status IN ('pending','delivering') AND json_extract(record,'$.dismissed_at') IS NULL",
+            "status IN ('pending','delivering') AND json_extract(record,'$.dismissed_at') IS NULL AND COALESCE(json_extract(record,'$.ignored'),0)=0",
             offset,
             50,
         )
@@ -95,7 +96,7 @@ impl Store {
 
     pub fn deliveries_to_close(&self) -> Result<Vec<NfnRecord>, String> {
         self.list_where(
-            "(status NOT IN ('pending','delivering') OR json_extract(record,'$.dismissed_at') IS NOT NULL)
+            "(status NOT IN ('pending','delivering') OR json_extract(record,'$.dismissed_at') IS NOT NULL OR json_extract(record,'$.ignored')=1)
              AND EXISTS (SELECT 1 FROM json_each(record,'$.deliveries')
                 WHERE key LIKE 'telegram:%' AND json_extract(value,'$.status') IN ('sent','closing','close_failed'))",
             0,
@@ -117,6 +118,10 @@ impl Store {
             request.actions = template.actions;
         }
         request.validate()?;
+        let ignored = self
+            .ignored_agents()?
+            .iter()
+            .any(|agent| agent.source.same_agent(&request.source));
         let dedupe = request.dedupe_key.as_ref().map(|key| {
             format!(
                 "{}:{}:{}:{key}",
@@ -171,6 +176,7 @@ impl Store {
             updated_at: timestamp,
             read_at: None,
             dismissed_at: None,
+            ignored,
             error: None,
             question_id,
             deliveries: Default::default(),
@@ -252,6 +258,115 @@ impl Store {
         }
         Ok(record)
     }
+
+    pub fn supersede_previous(&self, latest: &NfnRecord) -> Result<Vec<NfnRecord>, String> {
+        let mut conn = self.conn.lock();
+        let transaction = conn.transaction().map_err(|e| e.to_string())?;
+        let previous = {
+            let mut statement = transaction.prepare(
+                "SELECT record FROM notifications WHERE status='pending' AND created_at <= ?1 AND id != ?2",
+            ).map_err(|e| e.to_string())?;
+            let rows = statement
+                .query_map(params![latest.created_at, latest.id], |row| {
+                    row.get::<_, String>(0)
+                })
+                .map_err(|e| e.to_string())?;
+            rows.collect::<Result<Vec<_>, _>>()
+                .map_err(|e| e.to_string())?
+        };
+        let mut superseded = Vec::new();
+        for raw in previous {
+            let mut record: NfnRecord = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+            if record.dismissed_at.is_some()
+                || (record.created_at, &record.id) > (latest.created_at, &latest.id)
+                || !latest.request.source.same_agent(&record.request.source)
+            {
+                continue;
+            }
+            record.status = "superseded".into();
+            record.read_at = Some(now());
+            record.updated_at = now();
+            Self::write(&transaction, &record)?;
+            superseded.push(record);
+        }
+        transaction.commit().map_err(|e| e.to_string())?;
+        Ok(superseded)
+    }
+
+    pub fn ignored_agents(&self) -> Result<Vec<IgnoredAgent>, String> {
+        let conn = self.conn.lock();
+        let mut statement = conn
+            .prepare("SELECT record FROM ignored_agents ORDER BY rowid DESC")
+            .map_err(|e| e.to_string())?;
+        let rows = statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|e| e.to_string())?;
+        rows.map(|row| {
+            serde_json::from_str(&row.map_err(|e| e.to_string())?).map_err(|e| e.to_string())
+        })
+        .collect()
+    }
+
+    pub fn set_ignored(&self, id: &str, ignored: bool) -> Result<Vec<NfnRecord>, String> {
+        let agent = if ignored {
+            let record = self.get(id)?;
+            IgnoredAgent {
+                id: id.into(),
+                source: record.request.source,
+                title: record.request.title,
+                ignored_at: now(),
+            }
+        } else {
+            let source = self.get(id).ok().map(|record| record.request.source);
+            self.ignored_agents()?
+                .into_iter()
+                .find(|agent| {
+                    agent.id == id
+                        || source
+                            .as_ref()
+                            .is_some_and(|source| source.same_agent(&agent.source))
+                })
+                .ok_or("Ignored agent not found")?
+        };
+        let key = agent
+            .source
+            .agent_key()
+            .ok_or("This message has no agent")?;
+        let mut conn = self.conn.lock();
+        let transaction = conn.transaction().map_err(|e| e.to_string())?;
+        if ignored {
+            transaction.execute("INSERT INTO ignored_agents(key,record) VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET record=excluded.record",
+                params![key, serde_json::to_string(&agent).map_err(|e| e.to_string())?]).map_err(|e| e.to_string())?;
+        } else {
+            transaction
+                .execute("DELETE FROM ignored_agents WHERE key=?1", [key])
+                .map_err(|e| e.to_string())?;
+        }
+        let pending = {
+            let mut statement = transaction
+                .prepare(
+                    "SELECT record FROM notifications WHERE status IN ('pending','delivering')",
+                )
+                .map_err(|e| e.to_string())?;
+            let rows = statement
+                .query_map([], |row| row.get::<_, String>(0))
+                .map_err(|e| e.to_string())?;
+            rows.collect::<Result<Vec<_>, _>>()
+                .map_err(|e| e.to_string())?
+        };
+        let mut changed = Vec::new();
+        for raw in pending {
+            let mut record: NfnRecord = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+            if agent.source.same_agent(&record.request.source) {
+                record.ignored = ignored;
+                record.updated_at = now();
+                Self::write(&transaction, &record)?;
+                changed.push(record);
+            }
+        }
+        transaction.commit().map_err(|e| e.to_string())?;
+        Ok(changed)
+    }
 }
 
 #[cfg(test)]
@@ -265,6 +380,119 @@ mod tests {
             ..Default::default()
         }
     }
+    #[test]
+    fn handling_latest_supersedes_only_earlier_messages_from_the_same_agent() {
+        let store = Store::from_connection(Connection::open_in_memory().unwrap()).unwrap();
+        let base = now() + 100;
+        let send = |pane: &str, session: &str, time: i64| {
+            let request = NfnRequest {
+                source: NfnSource {
+                    pane_id: Some(pane.into()),
+                    session_id: Some(session.into()),
+                    ..Default::default()
+                },
+                dedupe_key: None,
+                ..request()
+            };
+            let (mut record, _) = store.send(request, None).unwrap();
+            record.created_at = time;
+            store.save(&mut record).unwrap();
+            record
+        };
+        let first = send("%1", "session-a", base);
+        let second = send("%1", "session-a", base + 1);
+        let latest = send("%1", "session-a", base + 2);
+        let newer = send("%1", "session-a", base + 3);
+        let other_agent = send("%2", "session-a", base);
+        let other_session = send("%1", "session-b", base);
+        let mut delivering = send("%1", "session-a", base);
+        delivering.status = "delivering".into();
+        store.save(&mut delivering).unwrap();
+        let closed = store.supersede_previous(&latest).unwrap();
+        assert_eq!(closed.len(), 2);
+        for record in [&first, &second] {
+            let record = store.get(&record.id).unwrap();
+            assert_eq!(record.status, "superseded");
+            assert!(record.response.is_none());
+        }
+        for record in [&latest, &newer, &other_agent, &other_session] {
+            assert_eq!(store.get(&record.id).unwrap().status, "pending");
+        }
+        assert_eq!(store.get(&delivering.id).unwrap().status, "delivering");
+        assert!(store.supersede_previous(&latest).unwrap().is_empty());
+    }
+
+    #[test]
+    fn messages_without_an_agent_are_independent_and_job_runs_stay_separate() {
+        let unidentified = NfnSource::default();
+        assert!(!unidentified.same_agent(&unidentified));
+        let source = NfnSource {
+            job_id: Some("daily".into()),
+            run_id: Some("run-a".into()),
+            ..Default::default()
+        };
+        assert!(source.same_agent(&source));
+        let mut other = source.clone();
+        other.run_id = Some("run-b".into());
+        assert!(!source.same_agent(&other));
+        let mut restarted = NfnSource {
+            pane_id: Some("%1".into()),
+            agent_pid: Some("123".into()),
+            agent_started_at: Some(10),
+            ..Default::default()
+        };
+        let before = restarted.clone();
+        restarted.agent_started_at = Some(20);
+        assert!(!before.same_agent(&restarted));
+    }
+
+    #[test]
+    fn ignoring_an_agent_survives_restart_and_can_be_removed_after_its_message_is_deleted() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("messages.db");
+        let request = NfnRequest {
+            dedupe_key: None,
+            source: NfnSource {
+                pane_id: Some("%1".into()),
+                session_id: Some("session-a".into()),
+                ..Default::default()
+            },
+            ..request()
+        };
+        let store = Store::open(&path).unwrap();
+        let (first, _) = store.send(request.clone(), None).unwrap();
+        let (second, _) = store.send(request.clone(), None).unwrap();
+        assert_eq!(store.set_ignored(&second.id, true).unwrap().len(), 2);
+        assert_eq!(store.pending_count().unwrap(), 0);
+        assert!(store.pending_page(0).unwrap().is_empty());
+        assert_eq!(store.get(&first.id).unwrap().status, "pending");
+        assert!(store.get(&first.id).unwrap().response.is_none());
+        drop(store);
+
+        let store = Store::open(&path).unwrap();
+        let (third, _) = store.send(request.clone(), None).unwrap();
+        assert!(third.ignored);
+        let mut other_session = request;
+        other_session.source.session_id = Some("session-b".into());
+        let (other, _) = store.send(other_session, None).unwrap();
+        assert!(!other.ignored);
+        assert_eq!(store.pending_count().unwrap(), 1);
+        store
+            .conn
+            .lock()
+            .execute("DELETE FROM notifications WHERE id=?1", [&second.id])
+            .unwrap();
+        let restored = store.set_ignored(&second.id, false).unwrap();
+        assert_eq!(restored.len(), 2);
+        assert!(restored
+            .iter()
+            .all(|record| !record.ignored && record.pending()));
+        assert!(store.ignored_agents().unwrap().is_empty());
+        assert_eq!(store.pending_count().unwrap(), 3);
+        assert!(store.set_ignored(&other.id, true).is_ok());
+        assert_eq!(store.pending_count().unwrap(), 2);
+    }
+
     #[test]
     fn viewing_deduplication_and_claiming_preserve_the_decision() {
         let store = Store::from_connection(Connection::open_in_memory().unwrap()).unwrap();
