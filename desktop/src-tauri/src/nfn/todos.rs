@@ -169,8 +169,9 @@ fn snapshot_links(links: &Links) -> Result<Value, String> {
         let mapped = agents
             .iter()
             .find(|agent| {
-                let group_matches = agent["session"]
+                let group_matches = agent["group"]
                     .as_str()
+                    .or_else(|| agent["session"].as_str())
                     .is_none_or(|group| group == item.group);
                 group_matches
                     && (agent["match"]
@@ -310,7 +311,11 @@ fn added_note(before: &str, text: &str, group: &str) -> String {
 }
 
 pub fn agent(id: &str) -> Result<Value, String> {
-    snapshot_result()?["items"]
+    agent_links(&load()?, id)
+}
+
+fn agent_links(links: &Links, id: &str) -> Result<Value, String> {
+    snapshot_links(links)?["items"]
         .as_array()
         .and_then(|items| items.iter().find(|item| item["id"] == id))
         .and_then(|item| item.get("agent"))
@@ -337,7 +342,10 @@ fn register_agent(path: &Path, agent: &Value) -> Result<(), String> {
 }
 
 pub fn start(id: &str, cwd: &str) -> Result<Value, String> {
-    let mut links = load()?;
+    start_links(load()?, id, cwd)
+}
+
+fn start_links(mut links: Links, id: &str, cwd: &str) -> Result<Value, String> {
     let (_, items) = read_items(&links)?;
     let item = items
         .iter()
@@ -346,7 +354,7 @@ pub fn start(id: &str, cwd: &str) -> Result<Value, String> {
     if item.checked {
         return Err("This task is already complete".into());
     }
-    if agent(id).is_ok() {
+    if agent_links(&links, id).is_ok() {
         return Err("This task already has a linked agent".into());
     }
     let cwd = fs::canonicalize(cwd).map_err(|e| e.to_string())?;
@@ -495,6 +503,38 @@ mod tests {
         assert_eq!(after["items"][1]["checked"], true);
         assert_eq!(after["items"][0]["checked"], false);
         assert_eq!(after["items"][1]["agent"]["state"], "done");
+    }
+    #[test]
+    fn explicit_note_group_overrides_tmux_session_without_duplicate_start() {
+        let directory = tempfile::tempdir().unwrap();
+        let note = directory.path().join("today.md");
+        let mapping = directory.path().join("agents.json");
+        fs::write(&note, "## build system\n- [ ] Build Queue app\n  - [ ] Compare requests\n## gp\n- [ ] Build Queue app\n- [ ] Legacy task\n").unwrap();
+        fs::write(&mapping, json!({"tasks":[
+            {"match":"Build Queue app","group":"build system","session":"gp","pane":"%39","window_id":"@102","thread":"existing-build-agent"},
+            {"match":"Legacy task","session":"gp","pane":"%40"}
+        ]}).to_string()).unwrap();
+        let links = Links {
+            note,
+            agents: Some(mapping),
+            ..Default::default()
+        };
+        let snapshot = snapshot_links(&links).unwrap();
+        let items = snapshot["items"].as_array().unwrap();
+        assert_eq!(items[0]["agent"]["pane"], "%39");
+        assert_eq!(items[0]["agent"]["session"], "gp");
+        assert_eq!(items[0]["agent"]["thread"], "existing-build-agent");
+        assert_eq!(items[0]["checked"], false);
+        assert_eq!(items[1]["agent"]["pane"], "%39");
+        assert!(items[2]["agent"].is_null());
+        assert_eq!(items[3]["agent"]["pane"], "%40");
+        let id = items[0]["id"].as_str().unwrap().to_owned();
+        // A nonexistent cwd ensures a failed duplicate guard cannot launch tmux.
+        let missing = directory.path().join("missing");
+        assert_eq!(
+            start_links(links, &id, missing.to_str().unwrap()).unwrap_err(),
+            "This task already has a linked agent"
+        );
     }
     #[test]
     fn new_agent_registration_preserves_controller_metadata_and_is_idempotent() {
