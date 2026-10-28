@@ -8,11 +8,41 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
 script = Path(__file__).resolve().parents[1] / "src-tauri/scripts/sign-macos.py"
 spec = importlib.util.spec_from_file_location("sign_macos", script)
 signing = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(signing)
+
+
+class EntitlementTests(unittest.TestCase):
+    def test_certificate_signed_daemon_is_repaired_when_photos_entitlement_is_missing(self):
+        signed = []
+        def run(command, **kwargs):
+            if "--sign" in command:
+                file = Path(command[command.index("--entitlements") + 1])
+                signed.append(plistlib.loads(file.read_bytes()))
+            return subprocess.CompletedProcess(command, 0)
+        with patch.object(signing, "signature_matches", return_value=True), \
+                patch.object(signing, "signed_entitlements", return_value={"existing.capability": True}), \
+                patch.object(signing.subprocess, "run", side_effect=run):
+            signing.sign_code(Path("daemon.app"), "B" * 40, "cc.clawtab.engine")
+        self.assertEqual(signed, [{"existing.capability": True,
+                                  "com.apple.security.personal-information.photos-library": True}])
+
+    def test_signed_daemon_with_photos_access_is_kept_unchanged(self):
+        with patch.object(signing, "signature_matches", return_value=True), \
+                patch.object(signing, "signed_entitlements", return_value={"com.apple.security.personal-information.photos-library": True}), \
+                patch.object(signing.subprocess, "run") as run:
+            signing.sign_code(Path("daemon.app"), "B" * 40, "cc.clawtab.engine")
+        run.assert_not_called()
+
+    def test_photos_entitlement_is_limited_to_the_daemon(self):
+        with patch.object(signing, "signature_matches", return_value=False), \
+                patch.object(signing.subprocess, "run") as run:
+            signing.sign_code(Path("clawtab-hook"), "B" * 40, "clawtab-hook")
+        self.assertNotIn("--entitlements", run.call_args_list[0].args[0])
 
 
 class IdentityTests(unittest.TestCase):

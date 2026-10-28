@@ -6,6 +6,12 @@ from pathlib import Path
 import plistlib
 import re
 import subprocess
+import tempfile
+
+
+REQUIRED_ENTITLEMENTS = {
+    "cc.clawtab.engine": {"com.apple.security.personal-information.photos-library": True},
+}
 
 
 def select_identity(identities, configured=""):
@@ -39,12 +45,30 @@ def signature_matches(path, identity, identifier):
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
 
 
+def signed_entitlements(path):
+    result = subprocess.run(["codesign", "-d", "--entitlements", "-", "--xml", str(path)],
+                            capture_output=True)
+    if result.returncode or not result.stdout:
+        return {}
+    return plistlib.loads(result.stdout)
+
+
 def sign_code(path, identity, identifier):
+    required = REQUIRED_ENTITLEMENTS.get(identifier, {})
+    entitlements = signed_entitlements(path) if required else {}
     # Avoid changing an already signed bundle when it is copied for install.
-    if identity != "-" and signature_matches(path, identity, identifier):
+    if identity != "-" and signature_matches(path, identity, identifier) and all(
+            entitlements.get(key) == value for key, value in required.items()):
         return
-    subprocess.run(["codesign", "--force", "--options", "runtime", "--timestamp=none",
-                    "--identifier", identifier, "--sign", identity, str(path)], check=True)
+    command = ["codesign", "--force", "--options", "runtime", "--timestamp=none",
+               "--identifier", identifier, "--sign", identity]
+    with tempfile.TemporaryDirectory(prefix="clawtab-signing-") as directory:
+        if required:
+            entitlements.update(required)
+            file = Path(directory) / "entitlements.plist"
+            file.write_bytes(plistlib.dumps(entitlements))
+            command.extend(["--entitlements", str(file)])
+        subprocess.run([*command, str(path)], check=True)
     subprocess.run(["codesign", "--verify", "--deep", "--strict", str(path)], check=True)
 
 
