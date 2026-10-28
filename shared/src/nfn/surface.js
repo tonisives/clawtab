@@ -1378,7 +1378,7 @@
   const hintOverlay = el("div", "keyboard-hints");
   hintOverlay.setAttribute("aria-hidden", "true"); document.body.append(hintOverlay);
   function refreshHints() {
-    if (!snapshot.settings?.keyboard_hints || snapshot.remote || host.classList.contains("empty")) {
+    if (!snapshot.settings?.keyboard_hints || snapshot.remote || preview || !document.hasFocus() || host.classList.contains("empty")) {
       hintOverlay.replaceChildren(); hintTargets = []; hintLabels = []; hintInput = ""; return;
     }
     const targets = [...host.querySelectorAll('button,input:not([type="hidden"]),textarea,select,summary,a[href],[role="button"]')].filter(node => {
@@ -1405,7 +1405,7 @@
     }
     [...hintOverlay.children].forEach((badge,i) => {
       const r = hintTargets[i].getBoundingClientRect();
-      badge.style.left = `${Math.max(0, r.left+2)}px`; badge.style.top = `${Math.max(0, r.top+1)}px`;
+      badge.style.left = `${Math.min(innerWidth - 2, r.right - 2)}px`; badge.style.top = `${Math.max(5, r.top + 1)}px`;
       badge.hidden = !hintLabels[i].startsWith(hintInput);
     });
   }
@@ -1425,7 +1425,8 @@
     } else hintInput = hintLabels.some(label => label.startsWith(next)) ? next : "";
     refreshHints(); return true;
   }
-  window.addEventListener("blur", () => { hintInput = ""; });
+  window.addEventListener("blur", () => { hintInput = ""; hintOverlay.replaceChildren(); hintTargets = []; hintLabels = []; });
+  window.addEventListener("focus", refreshHints);
   setInterval(refreshHints, 80);
   host.addEventListener("mouseenter", () => { hovering = true; pauseTimer(); if (snapshot.settings?.hover_expand && current && !expanded) openRecord(current); });
   host.addEventListener("mouseleave", () => { hovering = false; resumeTimer(); });

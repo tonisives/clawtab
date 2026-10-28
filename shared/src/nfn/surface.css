@@ -209,4 +209,4 @@ button.auto-yes-button[aria-checked="true"] { background: rgba(255, 159, 10, .15
 .notch .todo-ring > span { background: #000; }
 
 .keyboard-hints{position:fixed;inset:0;pointer-events:none;z-index:10000}
-.keyboard-hint{position:absolute;background:#ffcc00;color:#111;font:700 12px/1.25 ui-monospace,monospace;padding:1px 4px;border:1px solid #0004;border-radius:3px;box-shadow:0 1px 3px #0008}
+.keyboard-hint{position:absolute;transform:translate(-100%,-35%);background:#191919e6;color:#cfbd85;font:600 9px/1.1 ui-monospace,monospace;padding:0 2px;border:1px solid #cfbd8540;border-radius:2px;opacity:.85}
