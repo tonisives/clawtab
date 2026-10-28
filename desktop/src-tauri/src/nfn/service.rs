@@ -120,10 +120,8 @@ impl Service {
                 }
             }
             let current_auto_yes = self.ctx.auto_yes_panes.lock().clone();
-            if current_auto_yes != auto_yes_panes {
-                auto_yes_panes = current_auto_yes;
-                self.changed();
-            }
+            let mut changed = current_auto_yes != auto_yes_panes;
+            auto_yes_panes = current_auto_yes;
             let _guard = self.mutation.lock().await;
             let current: HashSet<String> = self.questions.lock().iter().map(question_key).collect();
             let current_questions = self
@@ -131,21 +129,25 @@ impl Service {
                 .load(Ordering::Relaxed)
                 .then_some(&current);
             if let Ok(records) = self.store.pending() {
-                let mut changed = false;
                 for mut record in records {
-                    if !refresh_pending_record(&mut record, current_questions, now(), |source| {
-                        !ticks.is_multiple_of(10) || validate_source(source).is_ok()
-                    }) {
+                    if !refresh_pending_record(
+                        &mut record,
+                        current_questions,
+                        &auto_yes_panes,
+                        now(),
+                        |source| !ticks.is_multiple_of(10) || validate_source(source).is_ok(),
+                    ) {
                         continue;
                     }
                     if let Err(error) = self.store.save(&mut record) {
                         log::warn!("[nfn] {error}");
+                        continue;
                     }
                     changed = true;
                 }
-                if changed {
-                    self.changed();
-                }
+            }
+            if changed {
+                self.changed();
             }
             drop(_guard);
             self.dispatch_pending();
@@ -154,10 +156,18 @@ impl Service {
 
     pub fn sync_questions(&self, questions: &[ClaudeQuestion]) {
         self.questions_ready.store(true, Ordering::Relaxed);
+        let Ok(_guard) = self.mutation.try_lock() else {
+            return;
+        };
+        let current: HashSet<String> = questions.iter().map(question_key).collect();
+        let auto_yes_panes = self.ctx.auto_yes_panes.lock().clone();
+        let mut changed = self.refresh_questions(Some(&current), &auto_yes_panes);
         let mut seen = self.seen_questions.lock();
-        seen.retain(|id| questions.iter().any(|q| &question_key(q) == id));
-        let mut changed = false;
+        seen.retain(|id| current.contains(id));
         for question in questions {
+            if auto_yes_panes.contains(&question.pane_id) {
+                continue;
+            }
             let key = question_key(question);
             if !seen.insert(key.clone()) {
                 continue;
@@ -175,6 +185,36 @@ impl Service {
         if changed {
             self.changed();
         }
+    }
+
+    pub fn sync_auto_yes(&self) {
+        let Ok(_guard) = self.mutation.try_lock() else {
+            return;
+        };
+        let auto_yes_panes = self.ctx.auto_yes_panes.lock().clone();
+        if self.refresh_questions(None, &auto_yes_panes) {
+            self.changed();
+        }
+    }
+
+    fn refresh_questions(
+        &self,
+        questions: Option<&HashSet<String>>,
+        auto_yes_panes: &HashSet<String>,
+    ) -> bool {
+        let mut changed = false;
+        for mut record in self.store.pending().unwrap_or_default() {
+            if record.question_id.is_none()
+                || !refresh_pending_record(&mut record, questions, auto_yes_panes, now(), |_| true)
+            {
+                continue;
+            }
+            match self.store.save(&mut record) {
+                Ok(()) => changed = true,
+                Err(error) => log::warn!("[nfn] {error}"),
+            }
+        }
+        changed
     }
 
     pub fn announce_question(&self, question: &ClaudeQuestion) {
@@ -1079,6 +1119,7 @@ fn local_enabled(settings: &crate::config::settings::AppSettings, record: &NfnRe
 fn refresh_pending_record(
     record: &mut NfnRecord,
     questions: Option<&HashSet<String>>,
+    auto_yes_panes: &HashSet<String>,
     timestamp: i64,
     source_valid: impl FnOnce(&NfnSource) -> bool,
 ) -> bool {
@@ -1092,10 +1133,15 @@ fn refresh_pending_record(
     {
         record.status = "expired".into();
     } else if let Some(id) = &record.question_id {
-        // Prompt detection owns the lifetime of terminal permissions. Metadata
-        // lookups can temporarily miss a session while its title changes.
-        // Responding still validates the bound agent and the live prompt.
-        if !questions.is_some_and(|questions| !questions.contains(id)) {
+        // Auto-yes takes over the prompt immediately, even before the next scan.
+        // Session metadata can be temporarily unavailable during title changes.
+        let automatic = record
+            .request
+            .source
+            .pane_id
+            .as_ref()
+            .is_some_and(|pane| auto_yes_panes.contains(pane));
+        if !automatic && !questions.is_some_and(|questions| !questions.contains(id)) {
             return false;
         }
         record.status = "resolved".into();
@@ -1477,6 +1523,7 @@ mod tests {
         assert!(!refresh_pending_record(
             &mut record,
             None,
+            &HashSet::new(),
             20_000,
             |_| panic!("job sessions outlive their process")
         ));
@@ -1585,18 +1632,24 @@ mod tests {
             assert!(!refresh_pending_record(
                 &mut record,
                 Some(&questions),
+                &HashSet::new(),
                 timestamp,
                 |_| { panic!("live permission lifetime must not depend on session metadata") }
             ));
             assert_eq!(record.status, "pending");
             assert!(record.error.is_none());
         }
-        assert!(!refresh_pending_record(&mut record, None, 310_000, |_| {
-            false
-        }));
+        assert!(!refresh_pending_record(
+            &mut record,
+            None,
+            &HashSet::new(),
+            310_000,
+            |_| false
+        ));
         assert!(refresh_pending_record(
             &mut record,
             Some(&HashSet::new()),
+            &HashSet::new(),
             320_000,
             |_| false
         ));
@@ -1604,23 +1657,124 @@ mod tests {
     }
 
     #[test]
+    fn auto_yes_resolves_live_permissions_before_the_next_prompt_scan() {
+        let questions = HashSet::from(["live-prompt".into()]);
+        let auto_yes = HashSet::from(["%10".into()]);
+        for current in [None, Some(&questions)] {
+            let mut record = pending_permission();
+            assert!(refresh_pending_record(
+                &mut record,
+                current,
+                &auto_yes,
+                10_000,
+                |_| panic!("auto-yes does not depend on session metadata")
+            ));
+            assert_eq!(record.status, "resolved");
+            assert!(record.response.is_none());
+            assert!(!refresh_pending_record(
+                &mut record,
+                Some(&questions),
+                &HashSet::new(),
+                20_000,
+                |_| true
+            ));
+            assert_eq!(record.status, "resolved");
+        }
+    }
+
+    #[test]
+    fn auto_yes_only_handles_detected_pending_permissions_for_its_pane() {
+        let questions = HashSet::from(["live-prompt".into()]);
+        let auto_yes = HashSet::from(["%10".into()]);
+        let mut other_pane = pending_permission();
+        other_pane.request.source.pane_id = Some("%11".into());
+        let mut explicit_request = pending_permission();
+        explicit_request.question_id = None;
+        let mut delivering = pending_permission();
+        delivering.status = "delivering".into();
+        for mut record in [other_pane, explicit_request, delivering] {
+            let before = record.clone();
+            assert!(!refresh_pending_record(
+                &mut record,
+                Some(&questions),
+                &auto_yes,
+                10_000,
+                |_| true
+            ));
+            assert_eq!(record, before);
+        }
+    }
+
+    #[test]
+    fn auto_yes_handling_survives_restart_and_keeps_the_permission_in_history() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("notifications.sqlite");
+        let id = {
+            let store = Store::open(&path).unwrap();
+            let permission = pending_permission();
+            let (mut record, _) = store
+                .send(permission.request, permission.question_id)
+                .unwrap();
+            assert!(refresh_pending_record(
+                &mut record,
+                None,
+                &HashSet::from(["%10".into()]),
+                now(),
+                |_| true
+            ));
+            store.save(&mut record).unwrap();
+            assert_eq!(store.pending_count().unwrap(), 0);
+            record.id
+        };
+        let store = Store::open(&path).unwrap();
+        assert!(store.pending_page(0).unwrap().is_empty());
+        assert_eq!(store.get(&id).unwrap().status, "resolved");
+        assert_eq!(store.list(0).unwrap()[0].id, id);
+    }
+
+    #[test]
     fn explicit_expiry_and_non_prompt_source_checks_still_apply() {
+        let auto_yes = HashSet::new();
         let mut record = pending_permission();
         record.request.expires_at = Some(5_000);
-        assert!(refresh_pending_record(&mut record, None, 5_000, |_| true));
+        assert!(refresh_pending_record(
+            &mut record,
+            None,
+            &auto_yes,
+            5_000,
+            |_| true
+        ));
         assert_eq!(record.status, "expired");
 
         let mut record = pending_permission();
         record.question_id = None;
-        assert!(!refresh_pending_record(&mut record, None, 10_000, |_| true));
-        assert!(refresh_pending_record(&mut record, None, 20_000, |_| false));
+        assert!(!refresh_pending_record(
+            &mut record,
+            None,
+            &auto_yes,
+            10_000,
+            |_| true
+        ));
+        assert!(refresh_pending_record(
+            &mut record,
+            None,
+            &auto_yes,
+            20_000,
+            |_| false
+        ));
         assert_eq!(record.status, "expired");
         assert!(record.error.is_some());
 
         let mut record = pending_permission();
         record.question_id = None;
         record.request.source.job_id = Some("project/job".into());
-        assert!(refresh_pending_record(&mut record, None, 20_000, |_| false));
+        assert!(refresh_pending_record(
+            &mut record,
+            None,
+            &auto_yes,
+            20_000,
+            |_| false
+        ));
         assert_eq!(record.status, "expired");
     }
 

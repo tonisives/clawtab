@@ -38,8 +38,9 @@ window.webkit = { messageHandlers: { nfn: { postMessage(value) {
       return;
     }
     const pane = record.request.source.pane_id;
-    if (fixture.autoYesPanes.has(pane)) fixture.autoYesPanes.delete(pane); else fixture.autoYesPanes.add(pane);
+    fixture.setAutoYes(pane, !fixture.autoYesPanes.has(pane));
     response = { auto_yes: fixture.autoYesPanes.has(pane) };
+    setTimeout(() => window.nfn.receive(fixture.snapshot()), 2);
   }
   if (command.op === "dismiss_many") {
     response = { records: command.ids.map(id => { const record = fixture.records.get(id); record.dismissed_at = Date.now(); record.read_at = Date.now(); return record; }) };
@@ -87,7 +88,13 @@ window.fixture.listRecords = pendingOnly => {
   const items = [...window.fixture.records.values()].filter(r => !pendingOnly || (["pending", "delivering"].includes(r.status) && !r.dismissed_at && !r.ignored));
   return window.fixture.serverOrder ? items.sort((a, b) => b.created_at - a.created_at || a.id.localeCompare(b.id)) : items;
 };
-window.fixture.snapshot = (arrival = null) => ({ todos: window.fixture.todos, type: "snapshot", visible: true, preview: false, records: window.fixture.listRecords(true).slice(0,50), pending_count: window.fixture.listRecords(true).length, arrival, auto_yes_panes: [...window.fixture.autoYesPanes],
+window.fixture.setAutoYes = (pane, enabled) => {
+  if (enabled) window.fixture.autoYesPanes.add(pane); else window.fixture.autoYesPanes.delete(pane);
+  if (enabled) for (const record of window.fixture.records.values()) {
+    if (record.status === "pending" && record.question_id && record.request.source.pane_id === pane) record.status = "resolved";
+  }
+};
+window.fixture.snapshot = (arrival = null) => ({ todos: window.fixture.todos, type: "snapshot", visible: true, preview: false, records: JSON.parse(JSON.stringify(window.fixture.listRecords(true).slice(0,50))), pending_count: window.fixture.listRecords(true).length, arrival, auto_yes_panes: [...window.fixture.autoYesPanes],
   settings: { ...window.fixture.settings }, platform: { displays: [{id:"test-display",name:"Test display"}] }, templates: { templates: [{ id: "review", layout: [{ type: "text", field: "body" }, { type: "row", children: [{ type: "diff", field: "data.diff" }, { type: "plan", field: "data.plan" }] }, { type: "reply" }, { type: "choices" }, { type: "logs" }] }] } });
 `;
 const ready = String.raw`
