@@ -106,7 +106,11 @@
   window.nfn.collapse();
   second.status = "pending";
   window.fixture.records.get("first").status = "pending";
-  for (let i = 0; i < 65; i++) window.fixture.records.set(`burst-${i}`, window.fixture.record(`burst-${i}`));
+  const burstTime = Date.now();
+  for (let i = 0; i < 65; i++) {
+    const record = window.fixture.record(`burst-${i}`); record.created_at = burstTime + i;
+    window.fixture.records.set(record.id, record);
+  }
   window.nfn.receive(window.fixture.snapshot()); window.nfn.receive({ type: "show" });
   assert(document.querySelectorAll(".queue-item").length === 50, "notification list loads a bounded page");
   const lastPageItem = document.querySelectorAll(".queue-item")[49]; lastPageItem.click(); await sleep(30);
