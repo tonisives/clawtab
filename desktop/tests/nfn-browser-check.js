@@ -383,9 +383,13 @@
   assert(document.querySelector(".bar-toggle") === barButton && !captures.length, "collapsing preserves the pointer target without starting drag capture");
   pointer("pointerdown"); pointer("pointerup"); barButton.click(); await sleep(30);
   assert(document.querySelector("h1").textContent === "Job failed", "the collapsed bar opens a notification");
+  const dragEventsBefore = window.fixture.nativeEvents.length;
   pointer("pointerdown");
   document.dispatchEvent(new PointerEvent("pointermove", { pointerId: 7, screenX: 520, screenY: 50 }));
+  document.dispatchEvent(new PointerEvent("pointermove", { pointerId: 7, screenX: 540, screenY: 70 }));
   document.dispatchEvent(new PointerEvent("pointerup", { pointerId: 7 }));
+  const dragEvents = window.fixture.nativeEvents.slice(dragEventsBefore).filter(event => event.native === "drag");
+  assert(dragEvents.length === 2 && dragEvents[0].phase === "start" && dragEvents[0].dx === 20 && dragEvents[0].dy === 10 && dragEvents[1].phase === "end", "dragging hands off the initial displacement and sends no per-movement bridge messages");
   barButton.click();
   assert(captures.length === 1 && window.fixture.nativeEvents.at(-1).phase === "end" && document.querySelector(".card"), "dragging captures only after movement and suppresses only the drag's click");
   pointer("pointerdown"); pointer("pointerup"); barButton.click();

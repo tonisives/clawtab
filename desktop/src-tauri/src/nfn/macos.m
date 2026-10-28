@@ -24,14 +24,6 @@ static NfnCallback callback;
 @implementation NfnPanel
 - (BOOL)canBecomeKeyWindow { return self.textFocus || self.keyboardFocus; }
 - (BOOL)canBecomeMainWindow { return NO; }
-- (void)sendEvent:(NSEvent *)event {
-    if (event.type == NSEventTypeLeftMouseDown && !self.isKeyWindow) {
-        self.textFocus = YES;
-        [NSApp activateIgnoringOtherApps:YES];
-        [self makeKeyWindow];
-    }
-    [super sendEvent:event];
-}
 - (BOOL)performKeyEquivalent:(NSEvent *)event {
     // The daemon has no Edit menu to route these commands to WebKit.
     NSEventModifierFlags modifiers = event.modifierFlags & (NSEventModifierFlagCommand | NSEventModifierFlagControl | NSEventModifierFlagOption | NSEventModifierFlagShift);
@@ -78,6 +70,7 @@ static NfnCallback callback;
 @property NSMutableDictionary<NSString *, NSDictionary *> *notchGeometry;
 @property BOOL dragging;
 @property NSPoint dragAnchor;
+@property NSPoint dragPointerOrigin;
 @property BOOL settingsVisible;
 @property BOOL notificationsVisible;
 @property NSStatusItem *statusItem;
@@ -177,6 +170,7 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
     NSEventMask pointerEvents = NSEventMaskMouseMoved | NSEventMaskLeftMouseDragged | NSEventMaskRightMouseDragged | NSEventMaskLeftMouseDown | NSEventMaskRightMouseDown | NSEventMaskLeftMouseUp;
     self.mouseMonitor = [NSEvent addGlobalMonitorForEventsMatchingMask:pointerEvents handler:^(NSEvent *event) {
         NfnSurface *self = weakSelf;
+        [self handleDragEvent:event];
         if (event.type == NSEventTypeLeftMouseUp) self.pointerDown = NO;
         [self updateMousePassthrough];
         if ((event.type == NSEventTypeLeftMouseDown || event.type == NSEventTypeRightMouseDown) && self.panel.visible && !NSPointInRect(NSEvent.mouseLocation, [self surfaceFrame])) {
@@ -186,9 +180,16 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
         }
     }];
     self.localMouseMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:pointerEvents handler:^NSEvent *(NSEvent *event) {
-        if (event.type == NSEventTypeLeftMouseDown && event.window == weakSelf.panel) weakSelf.pointerDown = YES;
-        if (event.type == NSEventTypeLeftMouseUp) weakSelf.pointerDown = NO;
-        [weakSelf updateMousePassthrough];
+        NfnSurface *self = weakSelf;
+        if (event.type == NSEventTypeLeftMouseDown && event.window == self.panel) {
+            self.pointerDown = YES;
+            self.dragPointerOrigin = [self.panel convertPointToScreen:event.locationInWindow];
+        }
+        BOOL moved = [self handleDragEvent:event];
+        if (event.type == NSEventTypeLeftMouseUp) self.pointerDown = NO;
+        [self updateMousePassthrough];
+        // Once dragging starts, move the panel without a WebKit round trip.
+        if (moved) return nil;
         return event;
     }];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(screensChanged:) name:NSApplicationDidChangeScreenParametersNotification object:nil];
@@ -383,6 +384,16 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
     }
 }
 
+- (BOOL)handleDragEvent:(NSEvent *)event {
+    if (!self.dragging) return NO;
+    if (event.type == NSEventTypeLeftMouseDragged || event.type == NSEventTypeLeftMouseUp) {
+        NSPoint pointer = event.window ? [event.window convertPointToScreen:event.locationInWindow] : NSEvent.mouseLocation;
+        [self drag:@{@"phase":@"move", @"dx":@(pointer.x - self.dragPointerOrigin.x), @"dy":@(self.dragPointerOrigin.y - pointer.y)}];
+        if (event.type == NSEventTypeLeftMouseUp) [self drag:@{@"phase":@"end"}];
+    }
+    return event.type == NSEventTypeLeftMouseDragged;
+}
+
 - (void)drag:(NSDictionary *)value {
     NSString *phase = value[@"phase"];
     if ([phase isEqual:@"start"]) {
@@ -393,11 +404,12 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
         self.notchPlacement = NO;
         self.lastGeometry = nil;
         [self.web evaluateJavaScript:[NSString stringWithFormat:@"window.nfn.setPlacement({placement:'right',overlap:0,max_width:%g,max_height:%g,reduce_motion:true})", self.panel.frame.size.width, self.panel.frame.size.height] completionHandler:nil];
+        [self drag:@{@"phase":@"move", @"dx":value[@"dx"] ?: @0, @"dy":value[@"dy"] ?: @0}];
     } else if ([phase isEqual:@"move"] && self.dragging) {
         NSRect frame = self.panel.frame;
         frame.origin.x = self.dragAnchor.x + [value[@"dx"] doubleValue] - frame.size.width;
         frame.origin.y = self.dragAnchor.y - [value[@"dy"] doubleValue] - frame.size.height;
-        [self.panel setFrame:frame display:YES];
+        [self.panel setFrameOrigin:frame.origin];
         self.panel.ignoresMouseEvents = NO;
     } else if ([phase isEqual:@"end"] && self.dragging) {
         self.dragging = NO;
@@ -545,8 +557,7 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
     } else if ([operation isEqual:@"text_focus"]) {
         if ([value[@"active"] boolValue]) {
             self.panel.textFocus = YES;
-            // The panel becomes key before WebKit handles the input click.
-            // Replacing its first responder here would blur the clicked field.
+            // Keep WebKit's clicked field as the first responder when taking focus.
             if (!self.panel.isKeyWindow) {
                 [NSApp activateIgnoringOtherApps:YES];
                 [self.panel makeKeyAndOrderFront:nil];

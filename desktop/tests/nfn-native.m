@@ -173,20 +173,29 @@ static void verifyInlineSettings(void (^finish)(void)) {
 }
 
 static void verifyDragging(void (^finish)(void)) {
+    [surface releaseTextFocus];
+    pid_t foreground = NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier;
     NSRect before = [surface surfaceFrame];
+    surface.dragPointerOrigin = NSMakePoint(NSMaxX(before) - 20, NSMaxY(before) - 20);
     [surface drag:@{@"phase":@"start"}];
-    [surface drag:@{@"phase":@"move", @"dx":@(-70), @"dy":@40}];
+    NSPoint pointer = NSMakePoint(surface.dragPointerOrigin.x - 70, surface.dragPointerOrigin.y - 40);
+    NSEvent *move = [NSEvent mouseEventWithType:NSEventTypeLeftMouseDragged location:[surface.panel convertPointFromScreen:pointer] modifierFlags:0 timestamp:NSProcessInfo.processInfo.systemUptime windowNumber:surface.panel.windowNumber context:nil eventNumber:1 clickCount:1 pressure:1];
+    [NSApp sendEvent:move];
     NSRect moved = [surface surfaceFrame];
     if (fabs(NSMaxX(before) - NSMaxX(moved) - 70) > 1 || surface.notchPlacement) {
         fprintf(stderr, "Dragging did not move the panel or detach the notch\n"); exit(1);
     }
-    [surface drag:@{@"phase":@"end"}];
+    NSEvent *up = [NSEvent mouseEventWithType:NSEventTypeLeftMouseUp location:[surface.panel convertPointFromScreen:pointer] modifierFlags:0 timestamp:NSProcessInfo.processInfo.systemUptime windowNumber:surface.panel.windowNumber context:nil eventNumber:1 clickCount:1 pressure:0];
+    [NSApp sendEvent:up];
     NSRect dropped = surface.panel.frame;
     [surface positionWidth:surface.surfaceWidth height:surface.surfaceHeight];
     if (!positionSaved || surface.dragging || ![surface.settings[@"placement"] isEqual:@"custom"] || !NSEqualRects(dropped, surface.panel.frame)) {
         fprintf(stderr, "Dropped position was not saved or preserved\n"); exit(1);
     }
-    printf("Native dragging checks passed: moves, detaches the notch, saves coordinates and preserves the dropped anchor.\n");
+    if (surface.panel.isKeyWindow || NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier != foreground) {
+        fprintf(stderr, "Dragging activated the notification panel or changed the foreground app\n"); exit(1);
+    }
+    printf("Native dragging checks passed: native mouse movement and release, unchanged focus, notch detach and saved drop coordinates.\n");
     finish();
 }
 
@@ -235,22 +244,43 @@ static void verifyEditing(void (^finish)(void)) {
     }];
 }
 
-static void verifyFirstClick(void (^finish)(void)) {
+static void clickWebPoint(NSArray *point) {
+    CGFloat y = [point[1] doubleValue];
+    NSPoint location = [surface.web convertPoint:NSMakePoint([point[0] doubleValue], surface.web.isFlipped ? y : surface.web.bounds.size.height - y) toView:nil];
+    for (NSNumber *type in @[@(NSEventTypeLeftMouseDown), @(NSEventTypeLeftMouseUp)]) {
+        NSEvent *event = [NSEvent mouseEventWithType:type.unsignedIntegerValue location:location modifierFlags:0 timestamp:NSProcessInfo.processInfo.systemUptime windowNumber:surface.panel.windowNumber context:nil eventNumber:1 clickCount:1 pressure:type.unsignedIntegerValue == NSEventTypeLeftMouseDown ? 1 : 0];
+        if (![surface.web acceptsFirstMouse:event]) { fprintf(stderr, "Notification web view rejects the activating click\n"); exit(1); }
+        [NSApp sendEvent:event];
+    }
+}
+
+static void verifyReplyFirstClick(void (^finish)(void)) {
     [surface releaseTextFocus];
     [surface.web evaluateJavaScript:@"(() => { window.firstClickCount = 0; const input = document.querySelector('textarea'); input.addEventListener('pointerdown', () => window.firstClickCount++); const r = input.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()" completionHandler:^(id point, NSError *error) {
         if (error || ![point isKindOfClass:NSArray.class] || surface.panel.isKeyWindow) { fprintf(stderr, "Could not prepare inactive reply click\n"); exit(1); }
-        CGFloat y = [point[1] doubleValue];
-        NSPoint location = [surface.web convertPoint:NSMakePoint([point[0] doubleValue], surface.web.isFlipped ? y : surface.web.bounds.size.height - y) toView:nil];
-        for (NSNumber *type in @[@(NSEventTypeLeftMouseDown), @(NSEventTypeLeftMouseUp)]) {
-            NSEvent *event = [NSEvent mouseEventWithType:type.unsignedIntegerValue location:location modifierFlags:0 timestamp:NSProcessInfo.processInfo.systemUptime windowNumber:surface.panel.windowNumber context:nil eventNumber:1 clickCount:1 pressure:type.unsignedIntegerValue == NSEventTypeLeftMouseDown ? 1 : 0];
-            if (![surface.web acceptsFirstMouse:event]) { fprintf(stderr, "Notification web view rejects the activating click\n"); exit(1); }
-            [NSApp sendEvent:event];
-        }
+        clickWebPoint(point);
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 4), dispatch_get_main_queue(), ^{
             [surface.web evaluateJavaScript:@"window.firstClickCount === 1 && document.activeElement === document.querySelector('textarea')" completionHandler:^(id received, NSError *clickError) {
                 if (clickError || ![received boolValue]) { fprintf(stderr, "First native click did not reach and focus the reply field\n"); exit(1); }
                 printf("Native first-click check passed: one mouse-down reaches and focuses the reply field from an inactive panel.\n");
                 finish();
+            }];
+        });
+    }];
+}
+
+static void verifyFirstClick(void (^finish)(void)) {
+    pid_t foreground = NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier;
+    [surface.web evaluateJavaScript:@"(() => { window.passiveClickCount = 0; const title = document.querySelector('h1'); title.addEventListener('pointerdown', () => window.passiveClickCount++); const r = title.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()" completionHandler:^(id point, NSError *error) {
+        if (error || ![point isKindOfClass:NSArray.class]) { fprintf(stderr, "Could not measure passive click target\n"); exit(1); }
+        clickWebPoint(point);
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 4), dispatch_get_main_queue(), ^{
+            [surface.web evaluateJavaScript:@"window.passiveClickCount === 1" completionHandler:^(id received, NSError *clickError) {
+                if (clickError || ![received boolValue] || surface.panel.isKeyWindow || surface.panel.textFocus || NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier != foreground) {
+                    fprintf(stderr, "Ordinary first click was lost or activated the notification panel\n"); exit(1);
+                }
+                printf("Native passive click check passed: first click delivered without changing key window or foreground app.\n");
+                verifyReplyFirstClick(finish);
             }];
         });
     }];

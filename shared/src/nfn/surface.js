@@ -1188,8 +1188,8 @@
       if (!origin || event.pointerId !== origin.pointerId) return;
       const dx = event.screenX - origin.x, dy = event.screenY - origin.y;
       if (!dragged && Math.hypot(dx, dy) < 5) return;
-      if (!dragged) { control.setPointerCapture(event.pointerId); pauseTimer(); stopAnimation(); native({ native: "drag", phase: "start" }); }
-      dragged = true; native({ native: "drag", phase: "move", dx, dy });
+      if (!dragged) { control.setPointerCapture(event.pointerId); pauseTimer(); stopAnimation(); native({ native: "drag", phase: "start", dx, dy }); }
+      dragged = true;
     };
     const finish = () => {
       if (!origin) return;
