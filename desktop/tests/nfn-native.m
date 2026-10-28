@@ -376,6 +376,10 @@ int main(int argc, const char **argv) {
                 [surface push:snapshot];
                 [surface.web evaluateJavaScript:@"document.querySelector('#surface').dispatchEvent(new MouseEvent('mouseenter'))" completionHandler:nil];
                 waitForSettledSurface(0, ^{
+                    if (surface.panel.level != NSStatusWindowLevel) {
+                        fprintf(stderr, "Message bar must remain above floating window borders: level=%ld expected=%ld\n", (long)surface.panel.level, (long)NSStatusWindowLevel); exit(1);
+                    }
+                    printf("Native overlay level check passed: status level %ld above floating borders at %ld.\n", (long)surface.panel.level, (long)NSFloatingWindowLevel);
                     BOOL nonactivating = (surface.panel.styleMask & NSWindowStyleMaskNonactivatingPanel) != 0;
                     BOOL foregroundPreserved = NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier == previousApplication;
                     BOOL geometry = surface.surfaceWidth >= 390 && surface.surfaceHeight > 100 && surface.surfaceHeight < 700;

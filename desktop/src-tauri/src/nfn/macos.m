@@ -117,12 +117,13 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
     self.panel = [[NfnPanel alloc] initWithContentRect:NSMakeRect(0, 0, 220, 40)
         styleMask:NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel
         backing:NSBackingStoreBuffered defer:NO];
-    self.panel.level = NSStatusWindowLevel;
     self.panel.collectionBehavior = NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorFullScreenAuxiliary | NSWindowCollectionBehaviorStationary | NSWindowCollectionBehaviorIgnoresCycle;
     self.panel.animationBehavior = NSWindowAnimationBehaviorNone;
     self.panel.hidesOnDeactivate = NO;
     self.panel.becomesKeyOnlyIfNeeded = YES;
     self.panel.floatingPanel = YES;
+    // Enabling floatingPanel resets the level to NSFloatingWindowLevel.
+    self.panel.level = NSStatusWindowLevel;
     self.panel.opaque = NO;
     self.panel.backgroundColor = NSColor.clearColor;
     self.panel.hasShadow = NO;
