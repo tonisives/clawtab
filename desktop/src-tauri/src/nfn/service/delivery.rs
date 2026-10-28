@@ -195,7 +195,7 @@ impl Service {
             }
         }
         for mut record in self.store.deliveries_to_close().unwrap_or_default() {
-            if record.pending() && record.dismissed_at.is_none() {
+            if record.pending() && record.dismissed_at.is_none() && !record.ignored {
                 continue;
             }
             let keys: Vec<_> = record
