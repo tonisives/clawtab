@@ -1,5 +1,12 @@
 // Run against the production renderer with fixture.todos and the todo bridge enabled.
 (async () => {
+  if (!window.fixture.todos.items.length) {
+    window.fixture.todos = { linked: true, note: '/notes/today.md', items: [
+      { id: 'linked', text: 'Review release', group: 'clawtab', depth: 0, checked: false, agent: { pane: '%8', state: 'working' } },
+      { id: 'unlinked', text: 'Research', group: 'gp', depth: 0, checked: false }
+    ] };
+    window.nfn.receive({ type: 'todos', todos: window.fixture.todos });
+  }
   const checks = [];
   const assert = (condition, message) => { if (!condition) throw new Error(message); checks.push(message); };
   const wait = () => new Promise(resolve => setTimeout(resolve, 100));
@@ -9,6 +16,8 @@
   assert(document.querySelectorAll('.todo-row').length === window.fixture.todos.items.length, 'all source tasks appear once');
   const groups = [...document.querySelectorAll('.todo-group')].map(node => node.textContent.split(' · ')[0]);
   assert(groups.join(',') === [...new Set(window.fixture.todos.items.map(item => item.group))].sort().join(','), 'tasks are grouped alphabetically');
+  click('.todo-refresh'); await wait();
+  assert(window.fixture.calls.some(command => command.op === 'todo_refresh'), 'refresh agents requests conversation rediscovery');
   const first = window.fixture.todos.items[0];
   const original = first.checked, originalDone = window.fixture.todos.items.filter(item => item.checked).length;
   click('.todo-row input'); await wait();

@@ -56,6 +56,7 @@ fn allowed(command: &NfnCommand) -> bool {
             | NfnCommand::Context { .. }
             | NfnCommand::Templates
             | NfnCommand::Todos
+            | NfnCommand::TodoRefresh
             | NfnCommand::TodoAdd { .. }
             | NfnCommand::TodoUpdate { .. }
             | NfnCommand::TodoStart { .. }

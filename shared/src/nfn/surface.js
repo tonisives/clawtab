@@ -92,6 +92,8 @@
     const items = todoItems(), done = items.filter(item => item.checked).length;
     const heading = el("div", "todo-heading");
     heading.append(el("h1", "", "Tasks"), el("span", "hint", `${done} / ${items.length} complete`)); view.append(heading);
+    const refresh = button(todoBusy ? "Refreshing..." : "Refresh agents", () => todoAction({ op: "todo_refresh" }), "utility todo-refresh");
+    refresh.disabled = todoBusy; heading.append(refresh);
     if (todoData.linked) {
       const source = el("div", "hint todo-source", `Synced with ${todoData.note}`); source.title = todoData.note; view.append(source);
     }
@@ -113,7 +115,7 @@
       const body = el("div", "todo-body"); body.append(el("div", "todo-title", item.text));
       const agent = item.agent;
       if (agent) {
-        body.append(el("div", `todo-state ${agent.state || ""}`, item.checked ? "Complete" : stateNames[agent.state] || "Agent linked"));
+        body.append(el("div", `todo-state ${agent.state || ""}`, item.checked ? "Complete" : agent.connected === false ? "Agent not found" : stateNames[agent.state] || "Agent linked"));
         if (agent.summary || agent.blocker) body.append(el("div", "hint todo-summary", agent.blocker || agent.summary));
       }
       row.append(checkbox, body);

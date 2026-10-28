@@ -504,9 +504,24 @@ impl Service {
         result
     }
 
+    async fn refresh_todo_agents(&self) -> Result<Value, String> {
+        let live = tokio::task::spawn_blocking(super::todos::live_agents)
+            .await
+            .map_err(|error| error.to_string())??;
+        let value = {
+            let _guard = self.mutation.lock().await;
+            super::todos::refresh(&live)?
+        };
+        self.changed();
+        Ok(value)
+    }
+
     async fn execute_inner(&self, command: NfnCommand) -> Result<Value, String> {
         match command {
             NfnCommand::Todos => return Ok(super::todos::snapshot()),
+            NfnCommand::TodoRefresh => {
+                return self.refresh_todo_agents().await;
+            }
             NfnCommand::TodoLink { note, agents } => {
                 let _guard = self.mutation.lock().await;
                 let value = super::todos::link(note, agents)?;
@@ -532,7 +547,14 @@ impl Service {
                 return Ok(value);
             }
             NfnCommand::TodoFocus { id } => {
+                self.refresh_todo_agents().await?;
                 let agent = super::todos::agent(&id)?;
+                if agent["connected"] == false {
+                    return Err(
+                        "Agent not found. Reopen the same conversation, then refresh agents."
+                            .into(),
+                    );
+                }
                 let pane = agent["pane"].as_str().ok_or("Agent has no tmux pane")?;
                 let window = tmux(&["display-message", "-p", "-t", pane, "#{window_id}"])?;
                 if agent["window_id"]
@@ -542,6 +564,14 @@ impl Service {
                     return Err("The linked agent window has closed".into());
                 }
                 let source = resolve_source(pane, None)?;
+                if agent["thread"]
+                    .as_str()
+                    .is_some_and(|thread| source.session_id.as_deref() != Some(thread))
+                {
+                    return Err(
+                        "The agent changed during refresh. Refresh agents and try again.".into(),
+                    );
+                }
                 focus_source(&source).await?;
                 return Ok(json!({"focused":true}));
             }

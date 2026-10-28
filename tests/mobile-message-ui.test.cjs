@@ -284,12 +284,22 @@ test("shared task actions use the selected host and open its agent in the remote
   await execute({ op: "todo_add", text: "Review launch", group: "ClawTab" });
   await execute({ op: "todo_update", id: "task", checked: true });
   await execute({ op: "todo_start", id: "task", cwd: "/projects/clawtab" });
+  await execute({ op: "todo_refresh" });
   await execute({ op: "todo_focus", id: "task" });
-  assert.deepEqual(calls.map(call => call.op), ["todo_add", "todo_update", "todo_start", "todos"]);
+  assert.deepEqual(calls.map(call => call.op), ["todo_add", "todo_update", "todo_start", "todo_refresh", "todo_refresh"]);
   assert.ok(calls.every(call => call.machine === "mac-b"));
   assert.equal(calls[2].cwd, "/projects/clawtab");
   assert.deepEqual(opened, ["mac-b::%8"]);
-  assert.equal(updates.length, 4);
+  assert.equal(updates.length, 5);
+});
+
+test("opening a missing conversation never navigates to its stale pane", async () => {
+  const execute = messageTodosController({
+    machine: () => ({ id: "mac-a", online: true }),
+    host: async () => ({ items: [{ id: "task", agent: { pane: "%8", connected: false } }] }),
+    update: () => {}, openAgent: () => assert.fail("must not open stale pane"),
+  });
+  await assert.rejects(execute({ op: "todo_focus", id: "task" }), /Agent not found/);
 });
 
 test("a late task snapshot cannot overwrite the newly selected machine", async () => {

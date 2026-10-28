@@ -341,6 +341,7 @@ impl NfnRecord {
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum NfnCommand {
     Todos,
+    TodoRefresh,
     TodoLink {
         note: String,
         agents: Option<String>,

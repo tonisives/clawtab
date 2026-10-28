@@ -310,6 +310,86 @@ fn added_note(before: &str, text: &str, group: &str) -> String {
     lines.concat()
 }
 
+// Resolve live conversation identities once per scan rather than trusting reused pane IDs.
+pub fn live_agents() -> Result<Vec<Value>, String> {
+    let identities = crate::agent_session::agent_identities()?;
+    // Check pane/window/process liveness again after resolving conversations.
+    let panes = super::service::tmux(&[
+        "list-panes",
+        "-a",
+        "-F",
+        "#{pane_id}\t#{window_id}\t#{pane_pid}\t#{pane_dead}\t#{session_name}",
+    ])?;
+    let rows: Vec<Vec<_>> = panes
+        .lines()
+        .map(|line| line.splitn(5, '\t').collect())
+        .collect();
+    Ok(identities.into_iter().filter_map(|identity| {
+        let fields = rows.iter().find(|fields| fields.len() == 5
+            && fields[0] == identity.pane_id && fields[1] == identity.window_id
+            && fields[2] == identity.pane_pid && fields[3] != "1")?;
+        Some(json!({"pane":identity.pane_id, "window_id":identity.window_id,
+            "session":fields[4], "thread":identity.session_id, "provider":identity.provider.as_str()}))
+    }).collect())
+}
+
+fn refreshed_agent(agent: &Value, live: &[Value]) -> Value {
+    let thread = agent["thread"]
+        .as_str()
+        .or_else(|| agent["session_id"].as_str());
+    let matches_identity = |candidate: &&Value| {
+        thread.is_some_and(|id| candidate["thread"] == id)
+            && agent["provider"]
+                .as_str()
+                .is_none_or(|provider| candidate["provider"] == provider)
+    };
+    let current = live.iter().find(|candidate| {
+        candidate["pane"] == agent["pane"]
+            && agent["window_id"]
+                .as_str()
+                .is_some_and(|window| candidate["window_id"] == window)
+            && (thread.is_none() || matches_identity(candidate))
+    });
+    let matches: Vec<_> = live.iter().filter(matches_identity).collect();
+    let found = current.or_else(|| (matches.len() == 1).then(|| matches[0]));
+    let mut updated = agent.clone();
+    if let Some(found) = found {
+        // Legacy mappings use the tmux session as the note group.
+        if agent["group"].is_null() && agent["session"] != found["session"] {
+            updated["group"] = agent["session"].clone();
+        }
+        for key in ["pane", "window_id", "session", "thread", "provider"] {
+            if !found[key].is_null() {
+                updated[key] = found[key].clone();
+            }
+        }
+    }
+    updated["connected"] = json!(found.is_some());
+    updated
+}
+
+pub fn refresh(live: &[Value]) -> Result<Value, String> {
+    let mut links = load()?;
+    if let Some(path) = &links.agents {
+        let before = fs::read_to_string(path).map_err(|e| e.to_string())?;
+        let mut mapping: Value = serde_json::from_str(&before).map_err(|e| e.to_string())?;
+        for key in ["tasks", "existing"] {
+            if let Some(agents) = mapping[key].as_array_mut() {
+                for agent in agents {
+                    *agent = refreshed_agent(agent, live);
+                }
+            }
+        }
+        let after = serde_json::to_string_pretty(&mapping).map_err(|e| e.to_string())? + "\n";
+        write_note(path, &before, &after)?;
+    }
+    for agent in links.spawned.values_mut() {
+        *agent = refreshed_agent(agent, live);
+    }
+    save(&links)?;
+    snapshot_links(&links)
+}
+
 pub fn agent(id: &str) -> Result<Value, String> {
     agent_links(&load()?, id)
 }
@@ -411,6 +491,43 @@ fn start_links(mut links: Links, id: &str, cwd: &str) -> Result<Value, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn refresh_follows_conversation_and_rejects_reused_or_ambiguous_panes() {
+        let agent = json!({"pane":"%1", "window_id":"@1", "thread":"original", "provider":"codex", "status":"status.json", "session":"old-group"});
+        let reused = json!({"pane":"%1", "window_id":"@2", "thread":"other", "provider":"codex"});
+        let reopened = json!({"pane":"%8", "window_id":"@8", "thread":"original", "provider":"codex", "session":"work"});
+        let updated = refreshed_agent(&agent, &[reused.clone(), reopened.clone()]);
+        assert_eq!(updated["pane"], "%8");
+        assert_eq!(updated["connected"], true);
+        assert_eq!(updated["status"], "status.json");
+        assert_eq!(updated["group"], "old-group");
+        assert_eq!(updated["session"], "work");
+        let mut explicit = agent.clone();
+        explicit["group"] = json!("build system");
+        assert_eq!(
+            refreshed_agent(&explicit, &[reopened.clone()])["group"],
+            "build system"
+        );
+        assert_eq!(refreshed_agent(&agent, &[reused])["connected"], false);
+        let duplicate =
+            json!({"pane":"%9", "window_id":"@9", "thread":"original", "provider":"codex"});
+        assert_eq!(
+            refreshed_agent(&agent, &[reopened, duplicate])["connected"],
+            false
+        );
+    }
+
+    #[test]
+    fn refresh_learns_identity_only_from_the_original_window() {
+        let agent = json!({"pane":"%1", "window_id":"@1", "match":"Task"});
+        let live = json!({"pane":"%1", "window_id":"@1", "thread":"original", "provider":"codex"});
+        let updated = refreshed_agent(&agent, &[live]);
+        assert_eq!(updated["thread"], "original");
+        let unknown =
+            json!({"pane":"%2", "window_id":"@2", "thread":"another", "provider":"codex"});
+        assert_eq!(refreshed_agent(&agent, &[unknown])["connected"], false);
+    }
+
     #[test]
     fn source_identity_survives_checkbox_and_unrelated_line_edits() {
         let before = "---\nid: today\n---\n## gp\n- [ ] First\n  - [ ] Child\n## clawtab\n- [x] Done\n```md\n- [ ] Example\n```\n";
