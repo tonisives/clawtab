@@ -54,6 +54,7 @@ pub fn initialize(
         seen_alerts: Default::default(),
         questions_ready: AtomicBool::new(false),
     });
+    service.recover_job_sessions();
     SERVICE
         .set(service.clone())
         .map_err(|_| "Notifications already initialized")?;
@@ -65,6 +66,39 @@ pub fn viewed_pane(pane_id: &str) -> bool {
 }
 
 impl Service {
+    fn recover_job_sessions(&self) {
+        let mut offset = 0;
+        loop {
+            let Ok(records) = self.store.list(offset) else {
+                break;
+            };
+            if records.is_empty() {
+                break;
+            }
+            offset += records.len();
+            for mut record in records {
+                if !job_notice(&record) || record.request.source.session_id.is_some() {
+                    continue;
+                }
+                let Some(run_id) = record.request.source.run_id.as_deref() else {
+                    continue;
+                };
+                let source = {
+                    let history = self.ctx.history.lock();
+                    let Ok(Some(run)) = history.get_by_id_bounded(run_id, 1) else {
+                        continue;
+                    };
+                    job_source_from_history(&history, &run)
+                };
+                if attach_job_session(&mut record, source) {
+                    if let Err(error) = self.store.save(&mut record) {
+                        log::warn!("[nfn] Could not recover job session: {error}");
+                    }
+                }
+            }
+        }
+    }
+
     pub async fn run(self: Arc<Self>) {
         use notify::Watcher;
         {
@@ -814,8 +848,23 @@ impl Service {
                 crate::terminal_backend::pane_process_state(pane)?,
                 crate::tmux::PaneProcessState::Running
             ) {
-                validate_source(&source)?;
-                return focus_source(&source).await;
+                match validate_source(&source) {
+                    Ok(()) => return focus_source(&source).await,
+                    Err(error) => {
+                        let finished = source.run_id.as_deref().is_some_and(|run| {
+                            self.ctx
+                                .history
+                                .lock()
+                                .get_by_id_bounded(run, 1)
+                                .ok()
+                                .flatten()
+                                .is_some_and(|run| run.finished_at.is_some())
+                        });
+                        if source.session_id.is_none() || !finished {
+                            return Err(error);
+                        }
+                    }
+                }
             }
             if source.session_id.is_none() {
                 return focus_source(&source).await;
@@ -1339,13 +1388,7 @@ fn job_request_from_history(
     };
     let source = run
         .as_ref()
-        .and_then(|run| history.notification_source(&run.id).ok().flatten())
-        .or_else(|| {
-            run.as_ref()?
-                .pane_id
-                .as_deref()
-                .and_then(|pane| resolve_source(pane, None).ok())
-        })
+        .map(|run| job_source_from_history(history, run))
         .unwrap_or_default();
     job_request(
         slug,
@@ -1353,6 +1396,75 @@ fn job_request_from_history(
         run_id.or_else(|| run.as_ref().map(|run| run.id.as_str())),
         source,
     )
+}
+
+fn job_source_from_history(
+    history: &crate::history::HistoryStore,
+    run: &crate::history::RunRecord,
+) -> NfnSource {
+    let mut source = history
+        .notification_source(&run.id)
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+    source.job_id = Some(run.job_id.clone());
+    source.run_id = Some(run.id.clone());
+    if source.session_id.is_some() {
+        return source;
+    }
+    if source.cwd.is_none() {
+        let job = crate::config::jobs::JobsConfig::jobs_dir_public()
+            .and_then(|dir| std::fs::read_to_string(dir.join(&run.job_id).join("job.yaml")).ok())
+            .and_then(|yaml| serde_yml::from_str::<crate::config::jobs::Job>(&yaml).ok());
+        if let Some(job) = job {
+            source.group = Some(crate::config::jobs::job_group(&job).into());
+            source.cwd = job.work_dir.or(job.folder_path);
+        }
+    }
+    if let Ok(Some(recovered)) = history.recover_notification_source(&run.id, source.clone()) {
+        return recovered;
+    }
+    if run.finished_at.is_none() {
+        if let Some(live) = run
+            .pane_id
+            .as_deref()
+            .and_then(|pane| resolve_source(pane, None).ok())
+        {
+            return live;
+        }
+    }
+    // Finished runs must not bind to a pane ID that tmux has since reused.
+    source.pane_id = None;
+    source
+}
+
+fn attach_job_session(record: &mut NfnRecord, source: NfnSource) -> bool {
+    if !job_notice(record)
+        || record.request.source.session_id.is_some()
+        || record.request.source.job_id != source.job_id
+        || record.request.source.run_id != source.run_id
+        || session_resume_command(&source).is_err()
+    {
+        return false;
+    }
+    record.request.source = source;
+    if !record
+        .request
+        .actions
+        .iter()
+        .any(|action| action.kind == "focus")
+    {
+        record.request.actions.insert(
+            0,
+            NfnAction {
+                id: "focus".into(),
+                label: "Open session".into(),
+                kind: "focus".into(),
+                ..Default::default()
+            },
+        );
+    }
+    true
 }
 
 fn job_request(slug: &str, event: &str, run_id: Option<&str>, mut source: NfnSource) -> NfnRequest {
@@ -1702,6 +1814,40 @@ mod tests {
                 .len(),
             1
         );
+    }
+
+    #[test]
+    fn recovered_job_cards_gain_a_session_action_without_reopening_history() {
+        let mut record = pending_permission();
+        record.question_id = None;
+        record.request = job_request(
+            "project/repair",
+            "failed (exit 1)",
+            Some("failed-run"),
+            NfnSource::default(),
+        );
+        record.dismissed_at = Some(100);
+        record.read_at = Some(90);
+        let source = NfnSource {
+            job_id: Some("project/repair".into()),
+            run_id: Some("failed-run".into()),
+            provider: Some("codex".into()),
+            session_id: Some("repair-session".into()),
+            cwd: Some("/workspace/project".into()),
+            ..Default::default()
+        };
+        let mut other_run = source.clone();
+        other_run.run_id = Some("newer-run".into());
+        assert!(!attach_job_session(&mut record, other_run));
+        assert!(attach_job_session(&mut record, source.clone()));
+        assert_eq!(record.request.actions[0].kind, "focus");
+        assert_eq!(record.request.source, source);
+        assert_eq!(record.dismissed_at, Some(100));
+        assert_eq!(record.read_at, Some(90));
+        assert_eq!(record.status, "pending");
+        assert!(record.response.is_none());
+        assert!(!attach_job_session(&mut record, source));
+        assert_eq!(record.request.actions.len(), 2);
     }
 
     fn pending_permission() -> NfnRecord {

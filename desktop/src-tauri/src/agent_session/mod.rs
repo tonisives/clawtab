@@ -5,6 +5,9 @@ mod common;
 pub(crate) mod hermes;
 mod identities;
 mod opencode;
+mod output;
+
+pub(crate) use output::{session_announcement, session_from_output};
 
 pub use identities::{agent_identities, AgentIdentity};
 

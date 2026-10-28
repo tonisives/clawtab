@@ -91,12 +91,13 @@ pub async fn monitor_pane(params: MonitorParams) {
     let use_app = params.notify_target == NotifyTarget::App;
     let started_at = std::time::Instant::now();
 
-    let source_saved = capture_notification_source(&params);
+    let initial_output = capture_trimmed(&params.tmux_session, &params.pane_id);
+    let source_saved = capture_notification_source(&params, Some(&initial_output));
     notify_start(&params, use_telegram, use_app).await;
     let working_message_id = init_working_message(&params, use_telegram).await;
 
     let mut state = PollState {
-        last_content: capture_trimmed(&params.tmux_session, &params.pane_id),
+        last_content: initial_output,
         pending_diff: String::new(),
         accumulated_log: String::new(),
         stale_ticks: 0,
@@ -122,6 +123,9 @@ pub async fn monitor_pane(params: MonitorParams) {
 
     finalize_telegram(&params, use_telegram, working_message_id).await;
     let full_output = compute_full_output(&params, state.accumulated_log);
+    if !state.source_saved {
+        capture_notification_source(&params, Some(&full_output));
+    }
     if let Some(path) = save_log_file(
         &params.slug,
         &params.run_id,
@@ -176,21 +180,36 @@ pub async fn monitor_pane(params: MonitorParams) {
     );
 }
 
-fn capture_notification_source(params: &MonitorParams) -> bool {
-    let Ok(mut source) = crate::nfn::resolve_source(&params.pane_id, None) else {
+fn capture_notification_source(params: &MonitorParams, output: Option<&str>) -> bool {
+    let saved = params
+        .history
+        .lock()
+        .notification_source(&params.run_id)
+        .ok()
+        .flatten();
+    let Some(mut source) = crate::nfn::resolve_source(&params.pane_id, None)
+        .ok()
+        .or(saved)
+    else {
         return false;
     };
     if source.session_id.is_none() {
-        return false;
+        if let Some((provider, session)) =
+            output.and_then(crate::agent_session::session_from_output)
+        {
+            source.provider = Some(provider.as_str().into());
+            source.session_id = Some(session);
+        }
     }
     source.job_id = Some(params.slug.clone());
     source.run_id = Some(params.run_id.clone());
+    let has_session = source.session_id.is_some();
     match params
         .history
         .lock()
         .save_notification_source(&params.run_id, &source)
     {
-        Ok(()) => true,
+        Ok(()) => has_session,
         Err(error) => {
             log::warn!("[{}] {error}", params.run_id);
             false
@@ -321,10 +340,6 @@ async fn run_poll_loop(
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(POLL_INTERVAL_SECS)).await;
         state.tick_counter += 1;
-        if !state.source_saved {
-            state.source_saved = capture_notification_source(params);
-        }
-
         let Some(trimmed) = capture_or_break(params) else {
             if process_exited.load(Ordering::Acquire) {
                 break;
@@ -332,6 +347,10 @@ async fn run_poll_loop(
             // A capture failure does not prove that the pane process exited.
             continue;
         };
+
+        if !state.source_saved {
+            state.source_saved = capture_notification_source(params, Some(&trimmed));
+        }
 
         maybe_update_working_message(
             params,

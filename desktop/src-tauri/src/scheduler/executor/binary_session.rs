@@ -48,18 +48,8 @@ impl Capture {
     }
 
     fn observe_line(&self, line: &[u8]) {
-        let Ok(value) = serde_json::from_slice::<serde_json::Value>(line) else {
-            return;
-        };
-        let (provider, session) = match value["type"].as_str() {
-            Some("thread.started") => (ProcessProvider::Codex, value["thread_id"].as_str()),
-            Some("system") if value["subtype"] == "init" => {
-                (ProcessProvider::Claude, value["session_id"].as_str())
-            }
-            _ => return,
-        };
-        if let Some(session) = session {
-            self.record(provider, session.into(), None);
+        if let Some((provider, session)) = agent_session::session_announcement(line) {
+            self.record(provider, session, None);
         }
     }
 

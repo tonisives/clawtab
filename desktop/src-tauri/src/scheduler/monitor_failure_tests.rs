@@ -43,6 +43,48 @@ fn params(directory: &std::path::Path, target: NotifyTarget, finish: bool) -> Mo
     }
 }
 
+#[test]
+fn shell_job_output_keeps_its_session_when_process_discovery_misses_it() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut params = params(directory.path(), NotifyTarget::App, true);
+    params.pane_id = "%999999999".into();
+    rusqlite::Connection::open(directory.path().join("history.db"))
+        .unwrap()
+        .execute_batch(
+            "CREATE TABLE runs (id TEXT PRIMARY KEY); INSERT INTO runs VALUES ('run-1');",
+        )
+        .unwrap();
+    let source = crate::nfn::NfnSource {
+        pane_id: Some(params.pane_id.clone()),
+        cwd: Some("/workspace/project".into()),
+        ..Default::default()
+    };
+    {
+        let history = params.history.lock();
+        history.initialize_notification_sources().unwrap();
+        history
+            .save_notification_source(&params.run_id, &source)
+            .unwrap();
+    }
+    assert!(capture_notification_source(
+        &params,
+        Some(
+            "starting shell job\n{\"type\":\"thread.started\",\"thread_id\":\"repair-session\"}\n"
+        )
+    ));
+    let saved = params
+        .history
+        .lock()
+        .notification_source(&params.run_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(saved.session_id.as_deref(), Some("repair-session"));
+    assert_eq!(saved.provider.as_deref(), Some("codex"));
+    assert_eq!(saved.cwd.as_deref(), Some("/workspace/project"));
+    assert_eq!(saved.job_id.as_deref(), Some("local/quiet-job"));
+    assert_eq!(saved.run_id.as_deref(), Some("run-1"));
+}
+
 #[tokio::test]
 async fn default_notifications_skip_start_and_keep_completion() {
     let directory = tempfile::tempdir().expect("test directory");
@@ -143,8 +185,8 @@ async fn manual_shell_close_records_success_and_only_notifies_completion() {
         })
         .expect("running job");
 
-    let exit_code = pane_completion(Ok(tmux::PaneProcessState::Missing))
-        .expect("closed pane completes");
+    let exit_code =
+        pane_completion(Ok(tmux::PaneProcessState::Missing)).expect("closed pane completes");
     let succeeded = exit_code == Some(0);
     persist_finish(&params, "work completed", exit_code, succeeded);
     notify_finish(&params, false, true, exit_code, succeeded).await;

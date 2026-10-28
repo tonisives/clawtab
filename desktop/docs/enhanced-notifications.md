@@ -119,6 +119,8 @@ Interactive agents started from a terminal or ClawTab send an update card when t
 
 Script jobs also save child-agent sessions, including Codex and Claude session announcements in their output. Their failure cards offer **Open session** when a conversation was saved, even if the job had no terminal pane or its pane was removed. Jobs without a saved session show **Go to job**.
 
+Shell jobs running inside tmux also capture session announcements from their terminal output. At startup, the daemon recovers missing sessions on existing job cards from each run's saved log. Dismissed cards keep their session action in History.
+
 ```sh
 cwtctl message get REQUEST_ID
 cwtctl message wait REQUEST_ID --timeout 60
