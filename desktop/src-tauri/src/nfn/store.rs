@@ -118,10 +118,6 @@ impl Store {
             request.actions = template.actions;
         }
         request.validate()?;
-        let ignored = self
-            .ignored_agents()?
-            .iter()
-            .any(|agent| agent.source.same_agent(&request.source));
         let dedupe = request.dedupe_key.as_ref().map(|key| {
             format!(
                 "{}:{}:{}:{key}",
@@ -131,6 +127,16 @@ impl Store {
             )
         });
         let conn = self.conn.lock();
+        let ignored = if let Some(key) = request.source.agent_key() {
+            conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM ignored_agents WHERE key=?1)",
+                [key],
+                |row| row.get::<_, bool>(0),
+            )
+            .map_err(|e| e.to_string())?
+        } else {
+            false
+        };
         if let Some(key) = &dedupe {
             let raw: Option<String> = conn.query_row("SELECT record FROM notifications WHERE dedupe=?1 AND status IN ('pending','delivering')", [key], |row| row.get(0)).optional().map_err(|e| e.to_string())?;
             if let Some(raw) = raw {
@@ -155,6 +161,7 @@ impl Store {
                     request.telegram_chat_id =
                         request.telegram_chat_id.or(record.request.telegram_chat_id);
                     record.request = request;
+                    record.ignored = ignored;
                     record.updated_at = now();
                     Self::write(&conn, &record)?;
                 }
@@ -491,6 +498,58 @@ mod tests {
         assert_eq!(store.pending_count().unwrap(), 3);
         assert!(store.set_ignored(&other.id, true).is_ok());
         assert_eq!(store.pending_count().unwrap(), 2);
+    }
+
+    #[test]
+    fn deduplication_refreshes_ignore_when_agent_identity_changes() {
+        for changed_field in ["pid", "started_at", "run_id"] {
+            let store = Store::from_connection(Connection::open_in_memory().unwrap()).unwrap();
+            let original = NfnRequest {
+                source: NfnSource {
+                    pane_id: Some("%1".into()),
+                    session_id: Some("session-a".into()),
+                    agent_pid: Some("123".into()),
+                    agent_started_at: Some(10),
+                    run_id: Some("run-a".into()),
+                    ..Default::default()
+                },
+                ..request()
+            };
+            let first = store.send(original.clone(), None).unwrap().0;
+            let mut replacement = original.clone();
+            match changed_field {
+                "pid" => replacement.source.agent_pid = Some("456".into()),
+                "started_at" => replacement.source.agent_started_at = Some(20),
+                "run_id" => replacement.source.run_id = Some("run-b".into()),
+                _ => unreachable!(),
+            }
+            let mut seed = replacement.clone();
+            seed.dedupe_key = None;
+            let ignored = store.send(seed, None).unwrap().0;
+            store.set_ignored(&ignored.id, true).unwrap();
+            assert!(!store.get(&first.id).unwrap().ignored);
+
+            let (updated, created) = store.send(replacement.clone(), None).unwrap();
+            assert!(!created);
+            assert_eq!(updated.id, first.id);
+            assert!(
+                updated.ignored,
+                "replacement must use ignored {changed_field}"
+            );
+            assert_eq!(updated.request.source, replacement.source);
+
+            let (restored, created) = store.send(original, None).unwrap();
+            assert!(!created);
+            assert_eq!(restored.id, first.id);
+            assert!(
+                !restored.ignored,
+                "original {changed_field} remains unignored"
+            );
+            assert_eq!(restored.status, "pending");
+            assert!(restored.response.is_none());
+            assert!(store.get(&ignored.id).unwrap().ignored);
+            assert_eq!(store.pending_count().unwrap(), 1);
+        }
     }
 
     #[test]
