@@ -217,6 +217,35 @@ test("missing deep-link record is fetched from its machine before opening", asyn
   assert.equal(h.calls.length, 1);
 });
 
+test("a live message refresh replaces cached pending state after an answer elsewhere", async () => {
+  const h = harness();
+  const updates = [];
+  h.options.host = async (machine, command) => record(machine, command.id, { status: "resolved" });
+  h.options.update = value => updates.push(value);
+  const result = await h.controller.execute({ op: "get", id: "mac-b::same-id" });
+  assert.equal(result.status, "resolved");
+  assert.equal(updates[0].status, "resolved");
+  assert.equal(updates[0].machine_id, "mac-b");
+  assert.equal(updates[0].request.source.pane_id, "mac-b::%1");
+});
+
+test("a fresh pending list excludes handled messages left in local caches", async () => {
+  const h = harness();
+  await h.controller.execute({ op: "list", offset: 0, pending_only: true });
+  h.options.host = async () => ({ records: [] });
+  const result = await h.controller.execute({ op: "list", offset: 0, pending_only: true });
+  assert.equal(result.records.length, 0);
+});
+
+test("offline machines keep their cached messages available during a live list refresh", async () => {
+  const h = harness();
+  h.options.machines = () => [{ id: "mac-a", online: true }, { id: "mac-b", online: false }];
+  h.options.host = async () => ({ records: [] });
+  const result = await h.controller.execute({ op: "list", offset: 0, pending_only: true });
+  assert.equal(result.records.length, 1);
+  assert.equal(result.records[0].id, "mac-b::same-id");
+});
+
 test("context keeps scoped source IDs for remote agent navigation", async () => {
   const h = harness();
   const result = await h.controller.execute({ op: "context", id: "mac-b::same-id" });

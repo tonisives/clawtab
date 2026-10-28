@@ -229,6 +229,11 @@
   }
   function cardSignature(record) { return JSON.stringify([cardMessages(record).map(item => [item.id, item.request]), template(record)]); }
   function pendingCount() { return pendingCards().length + unseenPending; }
+  function updateUnseenPending() {
+    const incoming = new Set((snapshot.records || []).map(record => record.id));
+    const knownPending = pendingRecords(true).filter(record => incoming.has(record.id) || !actionsInProgress.has(record.id));
+    unseenPending = Math.max(0, (snapshot.pending_count || 0) - knownPending.length);
+  }
   function addPendingPage(result) {
     const before = pendingRecords(true).length;
     for (const record of result.records || []) records.set(record.id, record);
@@ -1248,7 +1253,10 @@
       hiddenByUser = false; explicitOpen = true;
       const open = record => {
         if (reviewVersion !== version) return;
-        records.set(record.id, record); openRecord(record.id);
+        const before = pendingRecords(true).length;
+        records.set(record.id, record);
+        if (pendingRecords(true).length > before) unseenPending = Math.max(0, unseenPending - 1);
+        openRecord(record.id);
         if (record.request.media?.length) toggleDetails();
         else if (value.popup && record.request.template === "update") { expanded = false; render(); resumeTimer(); }
       };
@@ -1291,12 +1299,13 @@
       if (noLongerPending || (record && (!pending(record) || record.dismissed_at))) { retryIds.delete(id); actionErrors.delete(id); }
     }
     for (const id of records.keys()) if (id !== current && !incoming.has(id) && !selectedNotifications.has(id) && !actionsInProgress.has(id) && !retryIds.has(id)) records.delete(id);
-    const knownPending = pendingRecords(true).filter(record => incoming.has(record.id) || !actionsInProgress.has(record.id));
-    unseenPending = Math.max(0, (value.pending_count || 0) - knownPending.length);
+    updateUnseenPending();
     pendingOffset = 50;
     if (current && !incoming.has(current) && !preview) {
       const id = current;
-      call({ op: "get", id }).then(record => { records.set(id, record); if (id === current) updateCard(); }).catch(error => showError(error, id));
+      call({ op: "get", id }).then(record => {
+        records.set(id, record); updateUnseenPending(); render();
+      }).catch(error => showError(error, id));
     }
     if (value.arrival && records.has(value.arrival)) hiddenByUser = false;
     if (value.arrival && records.has(value.arrival) && !actionsInProgress.has(value.arrival) && !current && !settingsOpen && !todosOpen && !bulkBusy && (!queue || !selectedNotifications.size)) {

@@ -196,7 +196,11 @@
   const contextCount = window.fixture.contextCalls;
   autoYes.click(); autoYes.click(); await sleep(60);
   assert(window.fixture.calls.filter(command => command.op === "auto_yes").length === 1 && !document.querySelector(".card"), "auto-yes sends one command and advances past the last card");
+  assert(approval.status === "resolved", `auto-yes resolves its detected permission (${approval.status})`);
+  window.nfn.receive(window.fixture.snapshot());
   window.nfn.receive({ type: "latest" });
+  assert(!document.querySelector(".card"), "auto-yes handles the permission so opening the latest notification cannot bring it back");
+  window.nfn.receive({ type: "open_record", id: approval.id }); await sleep(30);
   document.querySelector('[aria-label="Notification options"]').click();
   autoYes = document.querySelector('.menu-panel [role="switch"]'); autoButton = document.querySelector(".auto-yes-button");
   assert(autoYes.getAttribute("aria-checked") === "true", "reopening an auto-yes card reflects confirmed daemon state");
@@ -206,6 +210,8 @@
   assert(window.fixture.contextCalls === contextCount, "auto-yes state does not require loading logs");
   window.fixture.autoYesPanes.clear(); window.nfn.receive(window.fixture.snapshot());
   assert(autoYes.getAttribute("aria-checked") === "false", "auto-yes stays in sync with changes from another client");
+  assert(approval.status === "resolved", "turning auto-yes off leaves the handled permission in history");
+  approval.status = "pending"; window.nfn.receive(window.fixture.snapshot());
   window.fixture.autoYesError = "Agent session changed";
   autoYes.click(); await sleep(60);
   document.querySelector('[aria-label="Notification options"]').click();
@@ -315,7 +321,7 @@
   window.nfn.receive(window.fixture.snapshot());
   alert.dismissed_at = null; window.nfn.receive(window.fixture.snapshot(alert.id));
   alert.status = "resolved";
-  window.nfn.receive(window.fixture.snapshot());
+  window.nfn.receive(window.fixture.snapshot()); await sleep(30);
   assert(document.querySelector(".status").textContent === "Recovered" && !document.querySelector(".status.alert"), "recovered agents clear the active warning");
   await sleep(180);
   assert(document.querySelector("#surface").classList.contains("empty") && !document.querySelector(".card"), "recovered alerts close after briefly showing their resolved state");
@@ -818,5 +824,30 @@
   assert(!ignoreFirst.ignored && !ignoreLatest.ignored && !document.querySelector(".ignored-agent"), "Stop ignoring restores the agent's messages and removes its saved ignore entry");
   click("Pending");
   assert(document.querySelectorAll(".queue-item").length === 2 && document.querySelector(".queue-item .meta").textContent === ignoreLatest.request.body.replace(/\s+/g, " "), "the restored agent returns as a single grouped card with its latest message preview");
+
+  resetFlow();
+  const answeredElsewhere = flowRecord("answered-elsewhere", 1);
+  answeredElsewhere.question_id = "answered-prompt";
+  flowRecord("still-waiting", 2);
+  window.nfn.receive(window.fixture.snapshot(answeredElsewhere.id));
+  answeredElsewhere.status = "resolved";
+  window.nfn.receive(window.fixture.snapshot()); await sleep(240);
+  assert(title() === "still-waiting" && document.querySelector(".count").textContent === "1 / 1", "an answer from another view hides the active permission and advances to the remaining card");
+
+  resetFlow();
+  window.fixture.serverOrder = true;
+  const oldPermission = flowRecord("older-permission", 1);
+  oldPermission.question_id = "older-prompt";
+  for (let i = 2; i <= 67; i++) flowRecord(`waiting-${i}`, i);
+  window.nfn.receive(window.fixture.snapshot());
+  window.nfn.receive({ type: "open_record", id: oldPermission.id }); await sleep(30);
+  assert(title() === oldPermission.id && document.querySelector(".count").textContent.endsWith(" / 67"), "opening a permission outside the first snapshot page preserves the pending count");
+  window.fixture.setAutoYes(oldPermission.request.source.pane_id, true);
+  window.nfn.receive(window.fixture.snapshot()); await sleep(240);
+  assert(title() !== oldPermission.id && document.querySelector(".count").textContent.endsWith(" / 66"), "auto-yes from another view hides an active permission outside the first snapshot page");
+  window.fixture.setAutoYes(oldPermission.request.source.pane_id, false);
+  window.nfn.receive(window.fixture.snapshot());
+  document.querySelector('[aria-label="Notification list"]').click(); await sleep(30);
+  assert(![...document.querySelectorAll(".queue-item")].some(item => item.textContent.includes(oldPermission.id)), "disabling auto-yes keeps the handled permission out of Pending");
   return { passed: checks.length, checks };
 })()

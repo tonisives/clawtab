@@ -125,6 +125,9 @@ impl EventSink for IpcBroadcastEventSink {
     }
 
     fn emit_auto_yes_changed(&self) {
+        if let Some(service) = crate::nfn::service() {
+            service.sync_auto_yes();
+        }
         self.spawn_broadcast(IpcEvent::AutoYesChanged);
     }
 

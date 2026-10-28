@@ -59,15 +59,21 @@ export function messageSurfaceController(options: Options) {
       if (op === "list") {
         const offset = Number(command.offset) || 0;
         const online = options.machines().filter(machine => machine.online);
+        const onlineIds = new Set(online.map(machine => machine.id));
+        const listed = new Map<string, MessageRecord>();
         // Each machine owns its pagination. Fetch through the global offset before merging pages.
         await Promise.all(online.map(async machine => {
           for (let page = 0; page <= offset; page += 50) {
             const result = await options.host(machine.id, { ...command, offset: page });
-            for (const record of result.records || []) remember(machine.id, record);
+            for (const raw of result.records || []) {
+              const record = remember(machine.id, raw);
+              listed.set(surfaceId(record), record);
+            }
             if ((result.records?.length || 0) < 50) break;
           }
         }));
-        const records = all().filter(record => !command.pending_only || messagePending(record))
+        const records = [...listed.values(), ...all().filter(record => !onlineIds.has(record.machine_id))]
+          .filter(record => !command.pending_only || messagePending(record))
           .sort((a, b) => b.created_at - a.created_at || surfaceId(a).localeCompare(surfaceId(b)));
         return { records: records.slice(offset, offset + 50).map(surfaceRecord), next_offset: offset + 50 };
       }
@@ -80,8 +86,13 @@ export function messageSurfaceController(options: Options) {
         return { records };
       }
       if (typeof command.id !== "string") throw new Error("Choose a message first");
-      const record = await get(command.id);
       const { machine, id } = parseSurfaceId(command.id);
+      if (op === "get" && options.machines().some(host => host.id === machine && host.online)) {
+        const record = remember(machine, await options.host(machine, { op, id }));
+        options.update(record);
+        return surfaceRecord(record);
+      }
+      const record = await get(command.id);
       if (op === "get") return surfaceRecord(record);
       if (op === "focus" || op === "open_job") {
         options.navigate(record);
