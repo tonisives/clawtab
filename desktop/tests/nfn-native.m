@@ -214,6 +214,10 @@ static void verifyKeyboardControl(void (^finish)(void)) {
             }
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 4), dispatch_get_main_queue(), ^{
                 if (hintToggles != 1) { fprintf(stderr,"Double Option did not toggle hints exactly once (%lu)\n", (unsigned long)hintToggles); exit(1); }
+                [surface.web takeSnapshotWithConfiguration:nil completionHandler:^(NSImage *image, NSError *snapshotError) {
+                    if (snapshotError || !image) { fprintf(stderr,"Hint snapshot failed\n"); exit(1); }
+                    NSBitmapImageRep *bitmap = [NSBitmapImageRep imageRepWithData:image.TIFFRepresentation];
+                    [[bitmap representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:@"/tmp/clawtab-nfn-hints.png" atomically:YES];
                 [surface.web evaluateJavaScript:@"(() => { const badge = [...document.querySelectorAll('.keyboard-hint')].find(b => b.dataset.target === 'Details'); if (!badge) throw Error('Details hint missing'); const host = document.getElementById('surface'); for (const key of badge.textContent) host.dispatchEvent(new KeyboardEvent('keydown', {key:key.toLowerCase(),bubbles:true,cancelable:true})); return document.getElementById('surface').classList.contains('details-open'); })()" completionHandler:^(id activated, NSError *error) {
                     if (error || ![activated boolValue]) { fprintf(stderr,"Typing a hint did not activate Details: %s\n", error.description.UTF8String); exit(1); }
                     [surface toggleKeyboardFocus];
@@ -223,6 +227,7 @@ static void verifyKeyboardControl(void (^finish)(void)) {
                     [surface push:@{@"type":@"latest"}];
                     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 4), dispatch_get_main_queue(), finish);
                 });
+                }];
                 }];
             });
         });
