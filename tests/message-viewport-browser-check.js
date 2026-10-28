@@ -1,7 +1,14 @@
 async () => {
   const checks = [];
   const assert = (value, label) => { if (!value) throw new Error(label); checks.push(label); };
-  const settle = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  const settle = async () => {
+    const started = Date.now();
+    do {
+      await new Promise(resolve => setTimeout(resolve, 40));
+      if (!document.getAnimations().some(animation => ["running", "paused"].includes(animation.playState))) return;
+    } while (Date.now() - started < 2000);
+    throw new Error("Message layout animation did not settle");
+  };
   const bounds = selector => document.querySelector(selector).getBoundingClientRect();
   const receive = value => window.nfn.receive(value);
   window.nfnMobile.setInsets(34, false);
