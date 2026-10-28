@@ -5,6 +5,7 @@
 
 mod binary;
 pub mod binary_runtime;
+mod binary_session;
 mod claude;
 mod finalize;
 mod folder;
@@ -526,6 +527,7 @@ async fn dispatch_job(
             started_at,
             &ctx.secrets,
             &ctx.settings,
+            &ctx.history,
             params,
             result_file,
             stream_log_path,

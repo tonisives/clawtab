@@ -115,6 +115,8 @@ For progress reports that need no decision, send `"template": "update"` without 
 
 Interactive agents started from a terminal or ClawTab send an update card when they finish a turn. **Open session** returns to the originating conversation and dismisses the notification from Pending; it stays in History. The same footer action is available on other agent cards. If opening the session fails, the card stays available to retry. **Got it** dismisses the completion without sending a response. Desktop and remote agent completion notifications are enabled by default and can be changed separately in Settings → Notifications. Permission waits and errors do not count as completions, and restarting the daemon does not replay old completions. Scheduled jobs use their own finish notification settings. Job runs save the agent conversation ID and working directory while the agent is running. Failed-job cards keep an Open session action after exit; it resumes the saved conversation when the original process has ended.
 
+Script jobs also save child-agent sessions, including Codex and Claude session announcements in their output. Their failure cards offer **Open session** when a conversation was saved, even if the job had no terminal pane or its pane was removed. Jobs without a saved session show **Go to job**.
+
 ```sh
 cwtctl message get REQUEST_ID
 cwtctl message wait REQUEST_ID --timeout 60

@@ -737,7 +737,7 @@
     const utilities = el("div", "controls");
     const detailButton = button(details ? "Hide details" : (record.request.media?.length ? "View attachment" : "Details"), toggleDetails, "utility details-toggle");
     detailButton.setAttribute("aria-expanded", String(details)); utilities.append(detailButton);
-    if (record.request.source?.pane_id) {
+    if (record.request.source?.pane_id || choices.some(action => action.kind === "focus")) {
       utilities.classList.add("session-controls");
       const focus = choices.find(action => action.kind === "focus");
       const openSession = button("Open session", () => focus ? act(record.id, focus.id, "") : performAction(record.id, { op: "focus", id: record.id }), "primary open-session");
