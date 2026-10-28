@@ -422,6 +422,12 @@ pub enum DesktopMessage {
         title: String,
         body: String,
     },
+    MessagesChanged {
+        records: Vec<serde_json::Value>,
+    },
+    MessageNotification {
+        record: serde_json::Value,
+    },
     /// Desktop pushes which pane_ids have auto-yes enabled (synced to mobile)
     AutoYesPanes {
         pane_ids: Vec<String>,

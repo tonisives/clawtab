@@ -7,6 +7,86 @@ use crate::AppState;
 
 const CONTENT_DEDUP_TTL_SECONDS: u64 = 300;
 
+pub(super) async fn handle_message_push(
+    state: &AppState,
+    user: Uuid,
+    machine: Uuid,
+    record: &serde_json::Value,
+) -> Result<(), String> {
+    let id = record["id"]
+        .as_str()
+        .filter(|id| Uuid::parse_str(id).is_ok())
+        .ok_or("Invalid message ID")?;
+    let apns = state.apns.as_ref().ok_or("Mobile push is not configured")?;
+    let tokens = fetch_ios_push_tokens(state, user).await;
+    if tokens.is_empty() {
+        return Err("No mobile push devices registered".into());
+    }
+    let mut invalid = Vec::new();
+    let mut failed = false;
+    let mut delivered = false;
+    for (token_id, token) in tokens {
+        let key = (machine, id.to_string(), token_id);
+        let redis_key = format!("message_push:{machine}:{id}:{token_id}");
+        let already_sent = state
+            .machines
+            .read()
+            .await
+            .message_pushes
+            .contains_key(&key);
+        let cached = if let Some(redis) = &state.redis {
+            let mut connection = redis.clone();
+            redis::cmd("EXISTS")
+                .arg(&redis_key)
+                .query_async::<bool>(&mut connection)
+                .await
+                .unwrap_or(false)
+        } else {
+            false
+        };
+        if already_sent || cached {
+            delivered = true;
+            continue;
+        }
+        match apns
+            .send_message_notification(&token, &machine.to_string(), record)
+            .await
+        {
+            Ok(()) => {
+                delivered = true;
+                let mut hub = state.machines.write().await;
+                hub.message_pushes
+                    .retain(|_, at| at.elapsed().as_secs() < 86400);
+                hub.message_pushes.insert(key, std::time::Instant::now());
+                drop(hub);
+                if let Some(redis) = &state.redis {
+                    let mut connection = redis.clone();
+                    let _: Result<(), _> = redis::cmd("SET")
+                        .arg(&redis_key)
+                        .arg("1")
+                        .arg("EX")
+                        .arg(30 * 86400)
+                        .query_async(&mut connection)
+                        .await;
+                }
+            }
+            Err(error) if error.starts_with("invalid_token:") => invalid.push(token_id),
+            Err(error) => {
+                tracing::warn!(message_id=id, %error, "message push failed");
+                failed = true;
+            }
+        }
+    }
+    delete_invalid_tokens(state, &invalid).await;
+    if failed {
+        Err("Mobile push delivery failed; retrying".into())
+    } else if delivered {
+        Ok(())
+    } else {
+        Err("No valid mobile push devices registered".into())
+    }
+}
+
 pub(super) async fn handle_claude_questions_push(
     state: &AppState,
     user_id: Uuid,

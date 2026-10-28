@@ -1,4 +1,5 @@
 use super::{native, settings, store::Store, templates, types::*};
+mod delivery;
 use crate::{
     ipc::{self, EventSubscribers, IpcEvent},
     job_context::JobContext,
@@ -88,12 +89,20 @@ impl Service {
         let mut ticks = 0_u32;
         let mut auto_yes_panes = self.ctx.auto_yes_panes.lock().clone();
         let mut settings_error = None;
+        let mut last_todos = Value::Null;
         loop {
             tokio::select! {
                 () = tokio::time::sleep(std::time::Duration::from_secs(1)) => {},
                 () = self.template_changes.notified() => { self.push(None, false); },
             }
             ticks = ticks.wrapping_add(1);
+            if ticks.is_multiple_of(3) {
+                let todos = super::todos::snapshot();
+                if todos != last_todos {
+                    last_todos = todos.clone();
+                    native::push(json!({"type":"todos", "todos":todos}));
+                }
+            }
             let current_settings = self.ctx.settings.lock().enhanced_notifications.clone();
             match super::settings::load(&current_settings) {
                 Ok(value) => {
@@ -138,6 +147,8 @@ impl Service {
                     self.changed();
                 }
             }
+            drop(_guard);
+            self.dispatch_pending();
         }
     }
 
@@ -178,6 +189,10 @@ impl Service {
     }
 
     pub fn sync_alerts(&self, activity: &[crate::ipc::AgentActivity]) {
+        // The next activity poll retries without consuming seen alerts while busy.
+        let Ok(_guard) = self.mutation.try_lock() else {
+            return;
+        };
         let result = super::alerts::sync(
             &self.store,
             activity,
@@ -193,15 +208,6 @@ impl Service {
             Ok(changes) => {
                 for record in &changes.created {
                     self.announce(record);
-                    if self.ctx.settings.lock().notify_questions_remote {
-                        if let Some(handle) = self.ctx.relay.lock().as_ref() {
-                            handle.send_message(&clawtab_protocol::DesktopMessage::AgentAlert {
-                                pane_id: record.request.source.pane_id.clone().unwrap_or_default(),
-                                title: record.request.title.clone(),
-                                body: record.request.body.clone(),
-                            });
-                        }
-                    }
                 }
                 if changes.changed {
                     self.changed();
@@ -212,34 +218,40 @@ impl Service {
     }
 
     pub fn job_notification(&self, slug: &str, event: &str, run_id: Option<&str>) {
-        let (run, saved_source) = {
+        self.job_message(slug, event, run_id, vec!["desktop".into()], None);
+    }
+
+    pub fn job_message(
+        &self,
+        slug: &str,
+        event: &str,
+        run_id: Option<&str>,
+        channels: Vec<String>,
+        chat: Option<i64>,
+    ) {
+        let request = {
             let history = self.ctx.history.lock();
-            let run = match run_id {
-                Some(id) => history.get_by_id_bounded(id, 1).ok().flatten(),
-                None => history
-                    .get_by_job_id_summaries(slug, 1)
-                    .ok()
-                    .and_then(|runs| runs.into_iter().next()),
-            };
-            let source = run
-                .as_ref()
-                .and_then(|run| history.notification_source(&run.id).ok().flatten());
-            (run, source)
+            job_request_from_history(&history, slug, event, run_id)
         };
-        let source = saved_source
-            .or_else(|| {
-                run.as_ref()?
-                    .pane_id
-                    .as_deref()
-                    .and_then(|pane| resolve_source(pane, None).ok())
-            })
-            .unwrap_or_default();
-        let request = job_request(
-            slug,
-            event,
-            run_id.or_else(|| run.as_ref().map(|run| run.id.as_str())),
-            source,
-        );
+        self.queue_job_message(request, channels, chat);
+    }
+
+    pub(crate) fn job_message_from_history(
+        &self,
+        history: &crate::history::HistoryStore,
+        slug: &str,
+        event: &str,
+        run_id: &str,
+        channels: Vec<String>,
+        chat: Option<i64>,
+    ) {
+        let request = job_request_from_history(history, slug, event, Some(run_id));
+        self.queue_job_message(request, channels, chat);
+    }
+
+    fn queue_job_message(&self, mut request: NfnRequest, channels: Vec<String>, chat: Option<i64>) {
+        request.channels = channels;
+        request.telegram_chat_id = chat;
         match self.store.send(request, None) {
             Ok((record, true)) => self.announce(&record),
             Ok(_) => {}
@@ -271,15 +283,6 @@ impl Service {
         match self.store.send(request_for_completion(source), None) {
             Ok((record, true)) => {
                 self.announce(&record);
-                if settings.notify_agent_completion_remote {
-                    if let Some(handle) = self.ctx.relay.lock().as_ref() {
-                        handle.send_message(&clawtab_protocol::DesktopMessage::AgentAlert {
-                            pane_id: pane.into(),
-                            title: record.request.title.clone(),
-                            body: record.request.body.clone(),
-                        });
-                    }
-                }
             }
             Ok(_) => {}
             Err(error) => log::warn!("[nfn] agent completion notification failed: {error}"),
@@ -287,11 +290,11 @@ impl Service {
     }
 
     fn announce(&self, record: &NfnRecord) {
-        if !record.pending() {
+        if !record.pending() || record.ignored {
             return;
         }
         let settings = self.ctx.settings.lock().clone();
-        let enabled = local_enabled(&settings, record);
+        let enabled = record.request.channel("desktop") && local_enabled(&settings, record);
         let viewed = record
             .request
             .source
@@ -315,6 +318,7 @@ impl Service {
             );
         }
         self.broadcast();
+        self.dispatch_pending();
     }
 
     pub fn push(&self, arrival: Option<&str>, sound: bool) {
@@ -325,28 +329,43 @@ impl Service {
             .pending()
             .unwrap_or_default()
             .into_iter()
-            .filter(|record| local_enabled(&settings, record) && record.dismissed_at.is_none())
+            .filter(|record| {
+                record.request.channel("desktop")
+                    && local_enabled(&settings, record)
+                    && record.dismissed_at.is_none()
+                    && !record.ignored
+            })
             .collect();
         let count = pending.len();
         let mut records: Vec<_> = pending.into_iter().take(50).collect();
         for record in self.store.list(0).unwrap_or_default() {
-            if local_enabled(&settings, &record) && !records.iter().any(|r| r.id == record.id) {
+            if record.request.channel("desktop")
+                && local_enabled(&settings, &record)
+                && !records.iter().any(|r| r.id == record.id)
+            {
                 records.push(record);
             }
         }
+        let todos = super::todos::snapshot();
+        let has_todos = todos["items"]
+            .as_array()
+            .is_some_and(|items| !items.is_empty());
         let visible = settings.enhanced_notifications.delivery != "native"
-            && !records.is_empty()
+            && (!records.is_empty() || has_todos)
             && (settings.enhanced_notifications.focus == "independent"
                 || (platform.focused == Some(false) && platform.authorized == Some(true)));
         let auto_yes_panes: Vec<_> = self.ctx.auto_yes_panes.lock().iter().cloned().collect();
         native::push(
             json!({"type":"snapshot", "records":records, "pending_count":count, "arrival":arrival, "sound":sound,
             "settings": settings.enhanced_notifications, "templates":templates::list(), "visible":visible,
-            "platform":*platform, "auto_yes_panes":auto_yes_panes}),
+            "platform":*platform, "auto_yes_panes":auto_yes_panes, "todos":todos}),
         );
     }
 
     fn broadcast(&self) {
+        if let Some(handle) = self.ctx.relay.lock().as_ref() {
+            self.publish_messages(handle);
+        }
         let subscribers = self.subscribers.clone();
         tokio::spawn(async move {
             ipc::broadcast_event(&subscribers, &IpcEvent::NfnChanged).await;
@@ -379,6 +398,45 @@ impl Service {
 
     pub async fn execute(&self, command: NfnCommand) -> Result<Value, String> {
         match command {
+            NfnCommand::Todos => return Ok(super::todos::snapshot()),
+            NfnCommand::TodoLink { note, agents } => {
+                let _guard = self.mutation.lock().await;
+                let value = super::todos::link(note, agents)?;
+                self.changed();
+                return Ok(value);
+            }
+            NfnCommand::TodoAdd { text, group } => {
+                let _guard = self.mutation.lock().await;
+                let value = super::todos::add(&text, &group)?;
+                self.changed();
+                return Ok(value);
+            }
+            NfnCommand::TodoUpdate { id, checked } => {
+                let _guard = self.mutation.lock().await;
+                let value = super::todos::update(&id, checked)?;
+                self.changed();
+                return Ok(value);
+            }
+            NfnCommand::TodoStart { id, cwd } => {
+                let _guard = self.mutation.lock().await;
+                let value = super::todos::start(&id, &cwd)?;
+                self.changed();
+                return Ok(value);
+            }
+            NfnCommand::TodoFocus { id } => {
+                let agent = super::todos::agent(&id)?;
+                let pane = agent["pane"].as_str().ok_or("Agent has no tmux pane")?;
+                let window = tmux(&["display-message", "-p", "-t", pane, "#{window_id}"])?;
+                if agent["window_id"]
+                    .as_str()
+                    .is_some_and(|expected| expected != window)
+                {
+                    return Err("The linked agent window has closed".into());
+                }
+                let source = resolve_source(pane, None)?;
+                focus_source(&source).await?;
+                return Ok(json!({"focused":true}));
+            }
             NfnCommand::Get { id } => {
                 return serde_json::to_value(self.store.get(&id)?).map_err(|e| e.to_string())
             }
@@ -391,6 +449,7 @@ impl Service {
                 )
             }
             NfnCommand::Templates => return Ok(templates::list()),
+            NfnCommand::IgnoredAgents => return Ok(json!({"agents":self.store.ignored_agents()?})),
             NfnCommand::Info => {
                 let auto_yes_panes: Vec<_> =
                     self.ctx.auto_yes_panes.lock().iter().cloned().collect();
@@ -410,6 +469,7 @@ impl Service {
             NfnCommand::Platform { state } => {
                 *self.platform.lock() = state;
                 self.push(None, false);
+                self.dispatch_pending();
                 return Ok(json!({}));
             }
             NfnCommand::ViewedPane { pane_id, window_id } => {
@@ -541,18 +601,43 @@ impl Service {
         let operation = match &command {
             NfnCommand::Read { .. } => "read",
             NfnCommand::Dismiss { .. } => "dismiss",
+            NfnCommand::Ignore { .. } => "ignore",
             _ => "cancel",
         };
         let _guard = self.mutation.lock().await;
         let result = match command {
+            NfnCommand::Ignore { id } | NfnCommand::Unignore { id } => {
+                let records = self.store.set_ignored(&id, operation == "ignore")?;
+                json!({"records":records,"agents":self.store.ignored_agents()?})
+            }
             NfnCommand::DismissMany { ids } => {
                 if ids.len() > 10000 {
                     return Err("Select up to 10000 notifications at a time".into());
                 }
-                json!({"records":self.store.dismiss_many(&ids)?})
+                let mut records = self.store.dismiss_many(&ids)?;
+                for record in records.clone() {
+                    records.extend(self.store.supersede_previous(&record)?);
+                }
+                json!({"records":records})
             }
             NfnCommand::Send { mut request } => {
                 request.validate()?;
+                if request.channels.iter().any(|channel| channel == "telegram") {
+                    let config = self
+                        .ctx
+                        .settings
+                        .lock()
+                        .telegram
+                        .clone()
+                        .filter(|config| config.is_configured())
+                        .ok_or("Telegram is not configured")?;
+                    if request
+                        .telegram_chat_id
+                        .is_some_and(|chat| !config.chat_ids.contains(&chat))
+                    {
+                        return Err("Telegram chat is not configured".into());
+                    }
+                }
                 if let Some(pane) = request.source.pane_id.clone() {
                     let source = resolve_source(&pane, request.source.client_tty.clone())?;
                     if request
@@ -597,6 +682,9 @@ impl Service {
                     }
                 }
                 self.store.save(&mut record)?;
+                if operation == "dismiss" {
+                    self.store.supersede_previous(&record)?;
+                }
                 serde_json::to_value(record).map_err(|e| e.to_string())?
             }
             NfnCommand::Respond {
@@ -618,6 +706,7 @@ impl Service {
             focus_source(&record.request.source).await?;
         }
         let dismissed = self.store.dismiss_many(std::slice::from_ref(&record.id))?;
+        self.store.supersede_previous(record)?;
         Ok(json!({"focused":true, "record":dismissed[0]}))
     }
 
@@ -714,6 +803,11 @@ impl Service {
             return Err("Enter a reply before sending".into());
         }
         let mut record = self.store.get(id)?;
+        if !record.request.needs_response() && action_id == "acknowledge" {
+            let dismissed = self.store.dismiss_many(&[id.to_string()])?;
+            self.store.supersede_previous(&record)?;
+            return Ok(json!({"record":dismissed[0]}));
+        }
         if record
             .request
             .expires_at
@@ -882,6 +976,7 @@ impl Service {
                     responded_at: now(),
                 });
                 self.store.save(&mut record)?;
+                self.store.supersede_previous(&record)?;
             }
             Err(error) => {
                 record.status = "pending".into();
@@ -1075,6 +1170,7 @@ fn request_for_question(question: &ClaudeQuestion, dedupe_key: String) -> NfnReq
             }),
         body: question.context_lines.clone(),
         template: "agent-approval".into(),
+        data: json!({"question_id":question.question_id}),
         source,
         dedupe_key: Some(dedupe_key),
         actions: question
@@ -1091,7 +1187,7 @@ fn request_for_question(question: &ClaudeQuestion, dedupe_key: String) -> NfnReq
     }
 }
 
-fn tmux(args: &[&str]) -> Result<String, String> {
+pub(super) fn tmux(args: &[&str]) -> Result<String, String> {
     let output = std::process::Command::new("tmux")
         .args(args)
         .output()
@@ -1137,6 +1233,37 @@ fn session_resume_command(source: &NfnSource) -> Result<String, String> {
     })
 }
 
+fn job_request_from_history(
+    history: &crate::history::HistoryStore,
+    slug: &str,
+    event: &str,
+    run_id: Option<&str>,
+) -> NfnRequest {
+    let run = match run_id {
+        Some(id) => history.get_by_id_bounded(id, 1).ok().flatten(),
+        None => history
+            .get_by_job_id_summaries(slug, 1)
+            .ok()
+            .and_then(|runs| runs.into_iter().next()),
+    };
+    let source = run
+        .as_ref()
+        .and_then(|run| history.notification_source(&run.id).ok().flatten())
+        .or_else(|| {
+            run.as_ref()?
+                .pane_id
+                .as_deref()
+                .and_then(|pane| resolve_source(pane, None).ok())
+        })
+        .unwrap_or_default();
+    job_request(
+        slug,
+        event,
+        run_id.or_else(|| run.as_ref().map(|run| run.id.as_str())),
+        source,
+    )
+}
+
 fn job_request(slug: &str, event: &str, run_id: Option<&str>, mut source: NfnSource) -> NfnRequest {
     source.job_id = Some(slug.into());
     source.run_id = run_id.map(str::to_owned);
@@ -1154,14 +1281,30 @@ fn job_request(slug: &str, event: &str, run_id: Option<&str>, mut source: NfnSou
         label: "Got it".into(),
         ..Default::default()
     });
+    let kind = if event.starts_with("failed") {
+        "failed"
+    } else if matches!(event, "completed" | "finished") {
+        "completed"
+    } else {
+        "update"
+    };
+    let event_key = if kind == "update" { event } else { kind };
+    let mut body = format!("Job {slug} {event}");
+    if let Some(run_id) = run_id {
+        body.push_str(&format!("\nRun: {run_id}"));
+    }
+    if kind == "failed" {
+        body.push_str(&format!("\nRestart: cwtctl jobs restart {slug}"));
+    }
     NfnRequest {
+        kind: kind.into(),
         title: format!("{slug} {event}"),
-        body: format!("Job {slug} {event}"),
+        body,
         template: "update".into(),
         data: json!({"event":event}),
         actions,
         source,
-        dedupe_key: Some(format!("job:{}:{event}", run_id.unwrap_or("unknown"))),
+        dedupe_key: Some(format!("job:{}:{event_key}", run_id.unwrap_or("unknown"))),
         ..Default::default()
     }
 }
@@ -1307,6 +1450,9 @@ mod tests {
             ..Default::default()
         };
         let request = job_request("project/job", "failed (exit 143)", Some("run-17"), source);
+        assert_eq!(request.kind, "failed");
+        assert_eq!(request.dedupe_key.as_deref(), Some("job:run-17:failed"));
+        assert!(request.body.contains("failed (exit 143)"));
         assert_eq!(
             request.source.session_id.as_deref(),
             Some("conversation-17")

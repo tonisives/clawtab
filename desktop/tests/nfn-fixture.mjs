@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 const root = new URL("../../shared/src/nfn/", import.meta.url);
 const read = name => readFileSync(new URL(name, root), "utf8");
 const setup = String.raw`
-window.fixture = { calls: [], records: new Map(), contextCalls: 0, autoYesPanes: new Set(), heldOps: new Set(), deferred: [], surfaces: [], nativeEvents: [], settings: { delivery: "enhanced", placement: "notch", display: "primary", focus: "follow", preview_seconds: 8, hover_expand: false, sound: true, menu_bar_icon: true, position: null } };
+window.fixture = { ignoredAgents: [], todos: {items: []}, calls: [], records: new Map(), contextCalls: 0, autoYesPanes: new Set(), heldOps: new Set(), deferred: [], surfaces: [], nativeEvents: [], settings: { delivery: "enhanced", placement: "notch", display: "primary", focus: "follow", preview_seconds: 8, hover_expand: false, sound: true, menu_bar_icon: true, position: null } };
 window.webkit = { messageHandlers: { nfn: { postMessage(value) {
   if (value.native) window.fixture.nativeEvents.push(value);
   if (value.native === "surface") window.fixture.surfaces.push({ ...value, at: performance.now() });
@@ -14,6 +14,11 @@ window.webkit = { messageHandlers: { nfn: { postMessage(value) {
   fixture.calls.push(command);
   const complete = (error = null) => {
   if (error) { window.nfn.receive({ type: "response", token, error }); return; }
+  if (command.op.startsWith("todo")) {
+    if (!fixture.todoError && command.op === "todo_update") fixture.todos.items.find(item => item.id === command.id).checked = command.checked;
+    if (!fixture.todoError && command.op === "todo_add" && !fixture.todos.items.some(item => item.text === command.text && item.group === command.group)) fixture.todos.items.push({ id: "new-task", text: command.text, group: command.group, depth: 0, checked: false });
+    setTimeout(() => window.nfn.receive({ type: "response", token, error: fixture.todoError, value: command.op === "todo_focus" ? {focused:true} : fixture.todos }), 1); return;
+  }
   const record = fixture.records.get(command.id);
   let response = record || {};
   if (command.op === "save_settings") {
@@ -38,6 +43,14 @@ window.webkit = { messageHandlers: { nfn: { postMessage(value) {
   }
   if (command.op === "dismiss_many") {
     response = { records: command.ids.map(id => { const record = fixture.records.get(id); record.dismissed_at = Date.now(); record.read_at = Date.now(); return record; }) };
+  }
+  if (command.op === "ignored_agents") response = { agents: fixture.ignoredAgents };
+  if (command.op === "ignore" || command.op === "unignore") {
+    const ignored = command.op === "ignore";
+    const agent = ignored ? { id: record.id, source: record.request.source, title: record.request.title } : fixture.ignoredAgents.find(agent => agent.id === command.id);
+    if (ignored) fixture.ignoredAgents.push(agent);
+    else fixture.ignoredAgents = fixture.ignoredAgents.filter(agent => agent.id !== command.id);
+    response = { agents: fixture.ignoredAgents, records: [...fixture.records.values()].filter(record => record.request.source.pane_id === agent.source.pane_id).map(record => { record.ignored = ignored; return record; }) };
   }
   if (command.op === "respond") {
     if (fixture.responseError) {
@@ -66,23 +79,34 @@ window.webkit = { messageHandlers: { nfn: { postMessage(value) {
 } } } };
 window.fixture.record = (id, actions = 4) => ({
   id, status: "pending", read_at: null, dismissed_at: null, created_at: Date.now(),
-    request: { title: "Review the launch post", body: "The launch post is ready. Review the changes and decide how to continue.\n<img src=x onerror=window.unsafeMarkup=true>", template: "review", response_destination: "agent_message", source: { pane_id: "%test", provider: "codex", branch: "launch", cwd: "~/projects/clawtab" },
+    request: { title: "Review the launch post", body: "The launch post is ready. Review the changes and decide how to continue.\n<img src=x onerror=window.unsafeMarkup=true>", template: "review", response_destination: "agent_message", source: { pane_id: '%' + id, provider: "codex", branch: "launch", cwd: "~/projects/clawtab" },
     data: { diff: "- Previous caption\n+ New launch caption", plan: "Review the caption\nApprove publication" },
     media: [], actions: ["Approve", "Request changes", "Reject", "Later"].slice(0, actions).map((label, i) => ({ id: String(i), label, kind: "choice" })) }
 });
 window.fixture.listRecords = pendingOnly => {
-  const items = [...window.fixture.records.values()].filter(r => !pendingOnly || (["pending", "delivering"].includes(r.status) && !r.dismissed_at));
+  const items = [...window.fixture.records.values()].filter(r => !pendingOnly || (["pending", "delivering"].includes(r.status) && !r.dismissed_at && !r.ignored));
   return window.fixture.serverOrder ? items.sort((a, b) => b.created_at - a.created_at || a.id.localeCompare(b.id)) : items;
 };
-window.fixture.snapshot = (arrival = null) => ({ type: "snapshot", visible: true, preview: false, records: window.fixture.listRecords(true).slice(0,50), pending_count: window.fixture.listRecords(true).length, arrival, auto_yes_panes: [...window.fixture.autoYesPanes],
-  settings: window.fixture.settings, platform: { displays: [{id:"test-display",name:"Test display"}] }, templates: { templates: [{ id: "review", layout: [{ type: "text", field: "body" }, { type: "row", children: [{ type: "diff", field: "data.diff" }, { type: "plan", field: "data.plan" }] }, { type: "reply" }, { type: "choices" }, { type: "logs" }] }] } });
+window.fixture.snapshot = (arrival = null) => ({ todos: window.fixture.todos, type: "snapshot", visible: true, preview: false, records: window.fixture.listRecords(true).slice(0,50), pending_count: window.fixture.listRecords(true).length, arrival, auto_yes_panes: [...window.fixture.autoYesPanes],
+  settings: { ...window.fixture.settings }, platform: { displays: [{id:"test-display",name:"Test display"}] }, templates: { templates: [{ id: "review", layout: [{ type: "text", field: "body" }, { type: "row", children: [{ type: "diff", field: "data.diff" }, { type: "plan", field: "data.plan" }] }, { type: "reply" }, { type: "choices" }, { type: "logs" }] }] } });
 `;
 const ready = String.raw`
 window.fixture.records.set("first", window.fixture.record("first"));
 window.nfn.receive(window.fixture.snapshot("first"));
 `;
 const native = process.argv.includes("--native");
+// Tart's no-graphics mode marks every page hidden. These UI scenarios exercise a visible card.
+const visibility = process.argv.includes("--headless-visible")
+  ? `Object.defineProperty(document, "hidden", { configurable: true, get: () => false }); Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "visible" });\n`
+  : "";
+const todoFileIndex = process.argv.indexOf("--todo-data");
+const todoData = todoFileIndex >= 0 ? JSON.parse(readFileSync(process.argv[todoFileIndex + 1], "utf8")) : { linked: true, note: "/notes/today.md", items: [
+  { id: "release", text: "Prepare the release", group: "clawtab", depth: 0, checked: false, agent: { pane: "%42", state: "working", summary: "Checking the release artifacts" } },
+  { id: "posting", text: "Verify posting", group: "clawtab", depth: 1, checked: false, agent: { pane: "%42", state: "working" } },
+  { id: "screenshots", text: "Organize research screenshots", group: "gp", depth: 0, checked: false }
+] };
+const todoSetup = process.argv.includes("--todos") || todoFileIndex >= 0 ? `window.fixture.todos = ${JSON.stringify(todoData)}; window.nfn.receive({type:"todos",todos:window.fixture.todos});` : "";
 const fixtureSetup = native ? setup.slice(0, setup.indexOf("window.webkit =")) + setup.slice(setup.indexOf("window.fixture.record")) : setup;
 const document = read("surface.html").replace("/* NFN_CSS */", read("surface.css") + (native ? "" : "\nbody{background:#202126;padding:24px;display:flex;justify-content:center}"))
-  .replace("/* NFN_JS */", fixtureSetup + "\n" + read("surface.js") + "\n" + ready);
+  .replace("/* NFN_JS */", visibility + fixtureSetup + "\n" + read("surface.js") + "\n" + ready + "\n" + todoSetup);
 writeFileSync(process.argv[2] || fileURLToPath(new URL("./nfn-fixture.html", import.meta.url)), document);

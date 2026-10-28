@@ -114,14 +114,15 @@ jobs:
       - name: Test macOS host packaging
         run: bash ../etc/tests/package-macos-host.test.sh
 
+      - name: Test macOS updater packaging
+        run: bash ../etc/tests/package-macos-updater.test.sh
+
       - name: Build Tauri app
-        run: pnpm tauri build ${{ matrix.args }}
+        run: pnpm tauri build ${{ matrix.args }} --bundles app --config '{"bundle":{"createUpdaterArtifacts":false}}'
         env:
           CI: true
           CARGO_BUILD_JOBS: '4'
           CLAWTAB_TARGET_TRIPLE: ${{ matrix.target }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Upload unsigned app bundle
         uses: actions/upload-artifact@v4
@@ -131,16 +132,8 @@ jobs:
             desktop/src-tauri/target/*/release/bundle/macos/*.app
           retention-days: 1
 
-      - name: Upload tar.gz for updater signing
-        uses: actions/upload-artifact@v4
-        with:
-          name: updater-unsigned-${{ matrix.arch }}
-          path: |
-            desktop/src-tauri/target/*/release/bundle/macos/*.app.tar.gz
-          retention-days: 1
-
   sign-updater:
-    needs: build
+    needs: sign
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -154,10 +147,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Download unsigned tar.gz
+      - name: Download signed and notarized updater archive
         uses: actions/download-artifact@v4
         with:
-          name: updater-unsigned-${{ matrix.arch }}
+          name: updater-notarized-${{ matrix.arch }}
           path: updater
 
       - name: Sign updater artifact
@@ -316,6 +309,17 @@ jobs:
           xcrun stapler staple "${{ steps.find-app.outputs.app_path }}"
           notarize host host.zip
           xcrun stapler staple "host/ClawTab Daemon.app"
+
+      - name: Archive signed and notarized app for updater
+        run: bash etc/package-macos-updater.sh "${{ steps.find-app.outputs.app_path }}" "clawtab_${{ matrix.arch }}.app.tar.gz"
+
+      - name: Upload notarized updater archive for signing
+        uses: actions/upload-artifact@v4
+        with:
+          name: updater-notarized-${{ matrix.arch }}
+          path: clawtab_${{ matrix.arch }}.app.tar.gz
+          if-no-files-found: error
+          retention-days: 1
 
       - name: Archive standalone macOS host
         run: |

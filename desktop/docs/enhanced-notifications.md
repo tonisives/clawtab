@@ -1,4 +1,41 @@
-# Enhanced notifications
+# Messages and notifications
+
+Use `cwtctl message` for updates, questions, approvals, and completion messages. Desktop, mobile, and Telegram share a stored message ID and response. Existing `cwtctl nfn` commands and `cwtctl telegram send TEXT` remain available as aliases.
+
+```sh
+cwtctl message send "Build finished" --kind completed
+cwtctl message send "Which branch should I use?" --kind question --wait
+cwtctl message send "Ship this release?" --choice "ship=Ship" --choice "revise=Revise" --wait
+cwtctl message send "Review needed" --channel desktop --channel telegram
+cwtctl message send "Build failed" --kind failed --channel mobile
+cwtctl message list --pending
+cwtctl message reply MESSAGE_ID "Use beta"
+cwtctl message reply MESSAGE_ID --action ship
+cwtctl message dismiss MESSAGE_ID
+cwtctl message ignore MESSAGE_ID
+cwtctl message ignored-agents
+cwtctl message unignore MESSAGE_ID
+```
+
+### Desktop and mobile delivery
+
+Messages from the same agent session appear as a list in one card. The latest message supplies the choices and reply field. Handling it also closes the earlier pending messages as superseded, while keeping them in History. A failed reply keeps the group available for retry.
+
+Choose **Ignore agent** in the card's options to hide that session's messages and stop its desktop, mobile, and Telegram notifications. The preference survives daemon restarts. Open the notification list's **Ignored agents** tab and choose **Stop ignoring** to restore it. Ignoring leaves the messages pending without sending a response.
+
+Messages appear locally by default. While a message is still pending, ClawTab also sends it to mobile after 60 seconds without keyboard or mouse activity, or when the Mac locks or its screen sleeps. A message that arrives while the Mac is idle goes to mobile immediately. Reading or collapsing a card keeps it pending; answering or dismissing it stops escalation. Delivery receipts prevent repeat pushes for the same message.
+
+Set `mobile_when_idle: false` to keep automatic delivery local, or change `idle_seconds` in notification settings. Explicit `--channel mobile` sends immediately. Repeat `--channel` to include several channels; `--channel telegram` alone sends only to Telegram. Mobile push uses the signed-in account's registered iOS devices and requires a relay with push configured. Pending messages and recent history also appear in the mobile inbox. Replies made offline are saved and submitted when the originating host reconnects.
+
+### Remote message view
+
+The existing Notifications button opens the shared desktop message renderer in the web app and iOS app. Tapping an iOS message notification opens that message on its originating machine, including after a cold launch. New messages appear in a popup while another app screen is open. Status previews use the desktop timer; review cards stay open for a decision.
+
+Social-review cards keep their caption, action IDs and ordered photo/video attachments. HTTPS media loads directly. Local attachments are fetched from the authenticated host by message ID and attachment index in ranges of at most 256 KiB, with a 128 MiB limit per attachment. The remote view assembles a temporary media URL for playback and seeking, then releases it when the attachment leaves the view. Replies retain the existing offline queue.
+
+The task ring uses the selected machine's task list. On a message-specific screen it uses that message's machine. Open agent navigates to the remote session. Task source configuration stays on desktop.
+
+Telegram uses the configured chats; `--chat ID` selects one. Questions include choice buttons and accept a reply to the bot's message. The first accepted answer resolves the shared message, and buttons are removed from its Telegram copies. Terminal log streaming and typing indicators continue using their existing Telegram settings.
 
 The daemon owns the notification queue and the macOS overlay. Cards remain available while the desktop app is closed. On macOS 12 or later, cards appear below the notch on the selected display, or in a right column on displays without a notch. Settings also allow the right column on every display.
 
@@ -23,11 +60,11 @@ Following macOS Focus requires notification and Focus access for **ClawTab Daemo
 The daemon reads `~/.config/clawtab/notifications.yaml` and reloads edits within a second. The desktop app is optional. Existing preferences migrate to this file when the daemon starts.
 
 ```sh
-cwtctl nfn settings                       # Open settings in the notification surface
-cwtctl nfn settings --json                # Show the path and current values
-cwtctl nfn settings ./notifications.yaml  # Apply a YAML file
-cwtctl nfn settings --stdin < ./notifications.yaml
-cwtctl nfn settings --ui                  # Also opens the notification settings surface
+cwtctl message settings                       # Open settings in the notification surface
+cwtctl message settings --json                # Show the path and current values
+cwtctl message settings ./notifications.yaml  # Apply a YAML file
+cwtctl message settings --stdin < ./notifications.yaml
+cwtctl message settings --ui                  # Also opens the notification settings surface
 ```
 
 Applying a partial file preserves unspecified values. Invalid values and unknown keys are rejected. Direct edits that are temporarily invalid leave the running configuration unchanged.
@@ -41,6 +78,8 @@ preview_seconds: 8       # 2–120; status updates only
 hover_expand: false
 sound: true
 menu_bar_icon: true      # ClawTab Daemon's menu bar icon
+mobile_when_idle: true
+idle_seconds: 60          # 10–3600; keyboard and mouse inactivity
 position: null
 ```
 
@@ -57,7 +96,7 @@ New notifications open their card when Pending or History is visible. A card bei
 Agent prompts and job notifications enter the queue automatically. Agents and scripts can also submit JSON:
 
 ```sh
-cwtctl nfn send --stdin --wait --timeout 300 <<'JSON'
+cwtctl message send --stdin --wait --timeout 300 <<'JSON'
 {
   "title": "Review the launch post",
   "body": "The caption and video are ready for review.",
@@ -77,16 +116,16 @@ For progress reports that need no decision, send `"template": "update"` without 
 Interactive agents started from a terminal or ClawTab send an update card when they finish a turn. **Open session** returns to the originating conversation and dismisses the notification from Pending; it stays in History. The same footer action is available on other agent cards. If opening the session fails, the card stays available to retry. **Got it** dismisses the completion without sending a response. Desktop and remote agent completion notifications are enabled by default and can be changed separately in Settings → Notifications. Permission waits and errors do not count as completions, and restarting the daemon does not replay old completions. Scheduled jobs use their own finish notification settings. Job runs save the agent conversation ID and working directory while the agent is running. Failed-job cards keep an Open session action after exit; it resumes the saved conversation when the original process has ended.
 
 ```sh
-cwtctl nfn get REQUEST_ID
-cwtctl nfn wait REQUEST_ID --timeout 60
-cwtctl nfn cancel REQUEST_ID
-cwtctl nfn show
-cwtctl nfn settings
-cwtctl nfn templates list
-cwtctl nfn templates validate ./my-review.yaml
+cwtctl message get REQUEST_ID
+cwtctl message wait REQUEST_ID --timeout 60
+cwtctl message cancel REQUEST_ID
+cwtctl message show
+cwtctl message settings
+cwtctl message templates list
+cwtctl message templates validate ./my-review.yaml
 ```
 
-The CLI uses `CODEX_THREAD_ID` to find the sending Codex conversation, since shared command runners can carry another pane's `TMUX_PANE`. Managed agents use `CLAWTAB_SESSION_ID`, with the conversation checked by the daemon. Without a Codex thread, the CLI infers the pane from `CLAWTAB_SESSION_ID` or `TMUX_PANE`. An explicit `source.pane_id` takes precedence. Binary jobs should set `source.job_id` and `source.run_id`; they then use that run's log and do not inherit a terminal pane. Media supports HTTPS URLs and absolute local file paths. The native overlay streams local video in bounded chunks and releases it when the card closes. Local media is displayed by the daemon overlay; the in-app inbox supports HTTPS media.
+The CLI uses `CODEX_THREAD_ID` to find the sending Codex conversation, since shared command runners can carry another pane's `TMUX_PANE`. Managed agents use `CLAWTAB_SESSION_ID`, with the conversation checked by the daemon. Without a Codex thread, the CLI infers the pane from `CLAWTAB_SESSION_ID` or `TMUX_PANE`. An explicit `source.pane_id` takes precedence. Binary jobs should set `source.job_id` and `source.run_id`; they then use that run's log and do not inherit a terminal pane. Media supports HTTPS URLs and absolute local file paths. The native overlay streams local video in bounded chunks and releases it when the card closes. The remote message view supports local and HTTPS media.
 
 Agent card headings show the group on the left and the tmux window title in the center. The pane title, agent title, and notification title are fallbacks when the window has no name. Senders can set `source.group` and `source.agent_title` to override the displayed labels. Questions use their matched ClawTab group; other tmux notifications use the owning session. Full labels are available on hover.
 
@@ -107,9 +146,26 @@ An explicit request can supply up to 32 actions. All options appear in one horiz
 }
 ```
 
-Agent cards have a **…** menu beside their title with **Auto-yes**, Agent controls, and Dismiss. Job cards omit the agent menu. Clicking the ClawTab icon or right-clicking the bar opens inline settings; `cwtctl nfn settings` opens the same view. Questions and permission cards show a yellow Auto-yes button on its own row below the answers. Their reply composer starts collapsed; click **Reply to agent** to open it. Reply drafts and open composers survive navigation. Cards show more context in a scrollable body. Auto-yes uses the same pane-specific setting as the remote app and tmux: future prompts from that agent are automatically answered until it is turned off. Its state stays synchronized with other clients, and stale sessions cannot toggle a replacement agent.
+Agent cards have a **…** menu beside their title with **Auto-yes**, Agent controls, and Dismiss. Job cards omit the agent menu. Clicking the ClawTab icon or right-clicking the bar opens inline settings; `cwtctl message settings` opens the same view. Questions and permission cards show a yellow Auto-yes button on its own row below the answers. Their reply composer starts collapsed; click **Reply to agent** to open it. Reply drafts and open composers survive navigation. Cards show more context in a scrollable body. Auto-yes uses the same pane-specific setting as the remote app and tmux: future prompts from that agent are automatically answered until it is turned off. Its state stays synchronized with other clients, and stale sessions cannot toggle a replacement agent.
 
 Action kinds are `choice` (default), `focus`, `auto_yes`, `model`, and `plugin`. Model and plugin actions use `value` for the model or installed action ID and `parameters` for string values, such as reasoning `effort`. The **… > Agent controls** menu offers Codex model selection and available installed plugin actions without opening Details.
+
+## Tasks in the message bar
+
+The circular indicator opens a checklist grouped by ClawTab group. Its number shows remaining tasks; the ring shows completion. Add a task with its group, check completed items, or open the linked agent. Agent progress appears below each task. An agent's `done` status stays separate from the source checkbox so the controller can review the result.
+
+Link an existing Markdown checklist instead of importing a copy:
+
+```sh
+cwtctl nfn todos link /path/to/todo-today.md /path/to/agents.json
+cwtctl nfn todos list
+```
+
+The source and optional agent mapping can also be changed under **Source and agent settings**. Level-two Markdown headings define groups; indented checkboxes remain subtasks. The daemon rereads the source, mapping, and agent status files every three seconds. Adding or checking a task writes back to the same note, preserving surrounding content. Repeated additions of the same text in the same group leave one task.
+
+Agent mappings use the controller's `tasks` and `existing` arrays: `match` or `covers` associates task text, `session` identifies the group, `pane` and `window_id` identify the agent, and `status` points to its progress JSON. Subtasks share their parent's agent unless they have their own assignment.
+
+For unassigned tasks, enter a working directory under **Source and agent settings**, then choose **Start agent**. ClawTab opens a new window in that group's existing tmux session with Codex Sol 6.1 and high reasoning. It registers the agent in the linked controller mapping. Links, prompts, and new-agent status files live under the ClawTab configuration directory; the note remains authoritative across restarts.
 
 ## Custom layouts
 
@@ -153,13 +209,40 @@ Only an actively viewed pane suppresses an automatic alert. ClawTab reports the 
 
 ## Verification
 
-Run Rust tests with the repository's build guard and four workers:
+Run the message checks through the shared macOS build worker from the public checkout:
 
 ```sh
-python3 /path/to/clawtab/scripts/build-guard.py --cwd "$PWD/desktop/src-tauri" -- cargo test --no-default-features --lib nfn:: -j4
-pnpm --dir desktop build
+~/.agents/scripts/buildctl status
+~/.agents/scripts/buildctl run --cwd "$PWD/desktop" --prepare-node \
+  --output dist/message-checks=/tmp/clawtab-message-checks -- \
+  python3 ../tests/check-messages.py
 ```
 
-Run local GUI checks in Tart from the parent checkout with `python3 scripts/test-notifications-tart.py`. The runner uses the shared bmux VM queue, copies only test sources into the guest, runs renderer checks in WebKit and native keyboard, geometry, settings, and menu bar checks, then saves logs and screenshots under `artifacts/tart/`. Set `CLAWTAB_TART_RUNNER` if the shared runner is elsewhere. Unit tests and type checks can run on the host.
+The suite checks the Rust lifecycle, CLI and relay, builds the desktop frontend, checks mobile types, tests offline replies, and runs renderer and native geometry checks in the worker's Tart VM. Logs, screenshots, and measured check durations return to `/tmp/clawtab-message-checks`. Compiler parallelism stays at four workers.
+
+Run Rust tests and frontend builds through the shared macOS worker:
+
+```sh
+~/.agents/scripts/buildctl status
+~/.agents/scripts/buildctl cargo -- test --no-default-features --lib nfn:: -j4
+~/.agents/scripts/buildctl run --prepare-node -- pnpm --dir desktop build
+```
+
+Run local GUI checks in Tart from the parent checkout with `python3 scripts/test-notifications-tart.py`. The runner uses the shared bmux VM queue, copies only test sources into the guest, runs message and todo renderer checks in WebKit and native keyboard, geometry, settings, and menu bar checks, then saves logs and screenshots under `artifacts/tart/`. Set `CLAWTAB_TART_RUNNER` if the shared runner is elsewhere. Use `--public-root` to test a separate public worktree.
 
 On a disposable macOS CI desktop, generate a fixture with `node desktop/tests/nfn-fixture.mjs /tmp/clawtab-nfn-fixture.html` and run `nfn-webkit.m` with that HTML and `nfn-browser-check.js`. The renderer checks cover stable arrivals, drafts, custom layout order, duplicate clicks, log polling, and queue pagination. Use `--native` when generating the fixture for `nfn-native.m`.
+
+For the remote shared surface, submit its combined checks from the public checkout:
+
+```sh
+~/.agents/scripts/buildctl status
+~/.agents/scripts/buildctl run --cwd remote --prepare-node \
+  --output dist/mobile-message-checks=/tmp/clawtab-mobile-message-checks \
+  --output dist/mobile-message-web=/tmp/clawtab-mobile-message-web \
+  --output dist/mobile-message-ios=/tmp/clawtab-mobile-message-ios -- \
+  python3 ../tests/check-mobile-message-ui.py
+```
+
+Dependency setup starts in `remote`, which contains its package manifest and lockfile. Artifact paths start at the public repository root. The suite regenerates the shared document, checks mobile types and notification routes, runs all `nfn::` Rust tests through the desktop manifest, and exports the web and iOS bundles.
+
+`tests/serve-mobile-message-app.py` serves the returned web export with two synthetic machines and local image/video fixtures. Open its printed exact-message URL to check the production router and iframe bridge. Its decision actions remain pending. The parent `scripts/test-mobile-messages-tart.py` runner checks the same renderer and bounded media bridge in a phone-sized native WKWebView.

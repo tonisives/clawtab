@@ -9,7 +9,7 @@
   let reviewVersion = 0;
   let snapshot = {}, current = null, expanded = false, details = false, queue = false, history = false, preview = false;
   let renderedId = null, card = null, logTimer = null, collapseTimer = null, remaining = 8000, timerStarted = 0;
-  let hovering = false, focused = false, contextBusy = false, serial = 0, placement = "right";
+  let hovering = false, focused = false, contextRequest = null, serial = 0, placement = "right";
   let historyOffset = 0, historyItems = [], pendingOffset = 50, hasMoreHistory = false, loadingQueue = false;
   let completionTimer = null, navigating = false, unseenPending = 0;
   let menu = null;
@@ -18,12 +18,157 @@
   let explicitOpen = false, presented = false, hiddenByUser = false;
   let geometry = {}, layoutAnimation = null, contentAnimations = [], lastSize = "", renderedLayout = "";
   const autoYesBusy = new Set();
+  const remoteMedia = new Map();
   const selectedNotifications = new Set();
   let bulkBusy = false, queueError = "";
+  let ignoredOpen = false, ignoredAgents = [], ignoredBusy = false;
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+  let arrivalAnimations = [], arrivalTimer = null, lastArrivalId = null;
+
+  function stopArrivalAnimation() {
+    clearTimeout(arrivalTimer); arrivalTimer = null;
+    arrivalAnimations.forEach(animation => animation.cancel()); arrivalAnimations = [];
+  }
+  function animateArrival() {
+    stopArrivalAnimation();
+    if (reducedMotion.matches || geometry.reduce_motion || host.classList.contains("empty")) return;
+    for (const path of host.querySelectorAll(".brand .claw-slash path")) {
+      const animation = path.animate([
+        { strokeDashoffset: 1, opacity: 0, offset: 0 },
+        { strokeDashoffset: 1, opacity: 1, offset: .08 },
+        { strokeDashoffset: 0, opacity: 1, offset: .65 },
+        { strokeDashoffset: 0, opacity: 0, offset: 1 }
+      ], { duration: 200, easing: "ease-out" });
+      animation.pause(); arrivalAnimations.push(animation);
+    }
+    // The passive WKWebView can suspend its animation timeline; drive the slash
+    // from elapsed time just like the surface resize.
+    const started = performance.now();
+    function advance() {
+      const elapsed = Math.min(200, performance.now() - started);
+      arrivalAnimations.forEach(animation => { animation.currentTime = elapsed; });
+      if (elapsed >= 200) stopArrivalAnimation(); else arrivalTimer = setTimeout(advance, 16);
+    }
+    advance();
+  }
+  reducedMotion.addEventListener("change", () => { if (reducedMotion.matches) stopArrivalAnimation(); });
+
+  let todosOpen = false, todoData = { items: [] }, todoError = "", todoBusy = false, todoOptionsOpen = false;
+  const todoDraft = { text: "", group: "", cwd: "", note: null, agents: null };
+  function todoItems() { return todoData.items || []; }
+  function toggleTodos() {
+    if (todosOpen) { todosOpen = false; collapse(true); return; }
+    leaveSettings(); pauseTimer(); stopContext();
+    todosOpen = true; hiddenByUser = false; explicitOpen = true; expanded = true;
+    queue = false; current = null; details = false; menu = null;
+    native({ native: "presentation", active: true }); render();
+    if (!preview) call({ op: "todos" }).then(value => { todoData = value; render(); }).catch(error => { todoError = error.message; render(); });
+  }
+  async function todoAction(command) {
+    if (todoBusy) return;
+    todoBusy = true; todoError = ""; render();
+    try {
+      const result = await call(command);
+      if (result.items) todoData = result;
+      if (command.op === "todo_add") todoDraft.text = "";
+    } catch (error) { todoError = String(error.message || error); }
+    finally { todoBusy = false; render(); }
+  }
+  function todoInput(label, key, placeholder) {
+    if (todoDraft[key] == null) todoDraft[key] = todoData[key] || "";
+    const input = el("input"); input.value = todoDraft[key]; input.placeholder = placeholder;
+    input.setAttribute("aria-label", label);
+    input.addEventListener("input", () => { todoDraft[key] = input.value; });
+    return input;
+  }
+  function renderTodos() {
+    let view = host.querySelector(".todo-view");
+    const signature = JSON.stringify([todoData, todoBusy, todoError]);
+    if (view?._signature === signature) return view;
+    const scroll = view?.querySelector(".todo-items")?.scrollTop || 0;
+    const focusedKey = document.activeElement?.getAttribute("aria-label"), selection = document.activeElement?.selectionStart;
+    view?.remove(); view = el("section", "todo-view"); view._signature = signature;
+    view.setAttribute("aria-label", "Tasks");
+    const items = todoItems(), done = items.filter(item => item.checked).length;
+    const heading = el("div", "todo-heading");
+    heading.append(el("h1", "", "Tasks"), el("span", "hint", `${done} / ${items.length} complete`)); view.append(heading);
+    if (todoData.linked) {
+      const source = el("div", "hint todo-source", `Synced with ${todoData.note}`); source.title = todoData.note; view.append(source);
+    }
+    const notice = el("div", "notice", todoError || todoData.error); notice.setAttribute("role", "status"); view.append(notice);
+    const list = el("div", "todo-items");
+    let group = null;
+    const stateNames = { working: "Working", started: "Agent started", done: "Agent finished · awaiting review", blocked: "Blocked" };
+    for (const item of items) {
+      if (item.group !== group) {
+        group = item.group;
+        const groupItems = items.filter(task => task.group === group);
+        list.append(el("h2", "todo-group", `${group} · ${groupItems.filter(task => task.checked).length}/${groupItems.length}`));
+      }
+      const row = el("div", `todo-row ${item.checked ? "complete" : ""}`);
+      row.style.paddingLeft = `${12 + Math.min(item.depth, 4) * 14}px`;
+      const checkbox = el("input"); checkbox.type = "checkbox"; checkbox.checked = item.checked;
+      checkbox.disabled = todoBusy; checkbox.setAttribute("aria-label", `Complete ${item.text}`);
+      checkbox.addEventListener("change", () => todoAction({ op: "todo_update", id: item.id, checked: checkbox.checked }));
+      const body = el("div", "todo-body"); body.append(el("div", "todo-title", item.text));
+      const agent = item.agent;
+      if (agent) {
+        body.append(el("div", `todo-state ${agent.state || ""}`, item.checked ? "Complete" : stateNames[agent.state] || "Agent linked"));
+        if (agent.summary || agent.blocker) body.append(el("div", "hint todo-summary", agent.blocker || agent.summary));
+      }
+      row.append(checkbox, body);
+      if (agent?.pane) {
+        const open = button("Open agent", () => todoAction({ op: "todo_focus", id: item.id }), "utility todo-agent"); open.disabled = todoBusy; row.append(open);
+      } else if (!item.checked) {
+        const start = button("Start agent", () => {
+          if (!todoDraft.cwd.trim()) { todoOptionsOpen = true; todoError = "Enter the agent working directory below first"; render(); return; }
+          todoAction({ op: "todo_start", id: item.id, cwd: todoDraft.cwd });
+        }, "utility todo-agent"); start.disabled = todoBusy; row.append(start);
+      }
+      list.append(row);
+    }
+    if (!items.length) list.append(el("p", "hint", "Add a task or link a Markdown checklist below."));
+    view.append(list);
+    const form = el("form", "todo-add");
+    const text = todoInput("New task", "text", "Add a task"); text.required = true;
+    const groupInput = todoInput("Task group", "group", "ClawTab group / tmux session"); groupInput.required = true; groupInput.setAttribute("list", "todo-groups");
+    const groups = el("datalist"); groups.id = "todo-groups";
+    for (const name of new Set(items.map(item => item.group))) { const option = el("option"); option.value = name; groups.append(option); }
+    const add = button(todoBusy ? "Saving..." : "Add task", () => {}, "primary"); add.type = "submit"; add.disabled = todoBusy;
+    form.append(text, groupInput, groups, add);
+    form.addEventListener("submit", event => { event.preventDefault(); todoAction({ op: "todo_add", text: todoDraft.text, group: todoDraft.group }); });
+    view.append(form);
+    const options = el("details", "todo-options"); options.open = todoOptionsOpen; options.addEventListener("toggle", () => { todoOptionsOpen = options.open; }); options.append(el("summary", "hint", "Source and agent settings"));
+    options.append(el("label", "hint", "Working directory for new Codex agents"), todoInput("Agent working directory", "cwd", "/path/to/project"));
+    options.append(el("p", "hint", "Start agent opens a tmux window in the task's group using Codex Sol 6.1 with high reasoning."));
+    if (!snapshot.remote) {
+      options.append(todoInput("Markdown source path", "note", todoData.note || "/path/to/tasks.md"), todoInput("Agent mapping path", "agents", "Optional /path/to/agents.json"));
+      const link = button("Link Markdown checklist", () => todoAction({ op: "todo_link", note: todoDraft.note || "", agents: todoDraft.agents || null })); link.disabled = todoBusy; options.append(link);
+    }
+    view.append(options);
+    view._restoreFocus = () => {
+      list.scrollTop = scroll;
+      if (focusedKey) {
+        const input = [...view.querySelectorAll("input")].find(input => input.getAttribute("aria-label") === focusedKey);
+        if (input && !input.disabled) { input.focus({ preventScroll: true }); if (input.type !== "checkbox" && selection != null) input.setSelectionRange(selection, selection); }
+      }
+    };
+    return view;
+  }
+  function updateTodoRing(top) {
+    let control = top.querySelector(".todo-toggle");
+    if (!control) { control = button("", toggleTodos, "utility todo-toggle"); top.append(control); }
+    const items = todoItems(), done = items.filter(item => item.checked).length;
+    control.setAttribute("aria-label", `Tasks: ${done} of ${items.length} complete`);
+    control.setAttribute("aria-pressed", String(todosOpen)); control.title = "Tasks";
+    control.replaceChildren();
+    const ring = el("span", "todo-ring"); ring.style.setProperty("--todo-progress", `${items.length ? done / items.length * 360 : 0}deg`);
+    ring.append(el("span", "", String(items.length - done))); control.append(ring);
+  }
 
   function native(value) {
     if (window.webkit?.messageHandlers?.nfn) window.webkit.messageHandlers.nfn.postMessage(value);
+    else if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify({ nfn: value }));
     else if (window.parent !== window) window.parent.postMessage({ nfn: value }, "*");
   }
   function call(command) {
@@ -56,8 +201,34 @@
   }
   function pending(record) { return record.status === "pending" || record.status === "delivering"; }
   function hasAgent(record) { const source = record.request.source; return Boolean(source?.pane_id && (source.agent_pid || source.provider || record.question_id)); }
-  function pendingRecords(includeActions = false) { return [...records.values()].filter(r => pending(r) && !r.dismissed_at && (includeActions || !actionsInProgress.has(r.id))).sort((a, b) => a.created_at - b.created_at); }
-  function pendingCount() { return pendingRecords().length + unseenPending; }
+  function pendingRecords(includeActions = false) { return [...records.values()].filter(r => pending(r) && !r.dismissed_at && !r.ignored && (includeActions || !actionInProgress(r))).sort((a, b) => a.created_at - b.created_at); }
+  function agentKey(record) {
+    const source = record.request.source || {};
+    if (!source.pane_id && !(source.job_id && source.run_id)) return null;
+    return JSON.stringify([record.machine_id, source.pane_id, source.session_id, source.agent_pid,
+      source.agent_started_at, source.job_id, source.run_id]);
+  }
+  function messageOrder(a, b) { return a.created_at - b.created_at || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0); }
+  function actionInProgress(record) {
+    if (actionsInProgress.has(record.id)) return true;
+    const key = agentKey(record);
+    return key && [...actionsInProgress.keys()].some(id => {
+      const handled = records.get(id);
+      return handled && agentKey(handled) === key && messageOrder(record, handled) <= 0;
+    });
+  }
+  function pendingCards() {
+    const agents = new Map();
+    for (const record of pendingRecords().sort(messageOrder)) agents.set(agentKey(record) || record.id, record);
+    return [...agents.values()].sort(messageOrder);
+  }
+  function cardMessages(record) {
+    const key = agentKey(record);
+    return [...records.values()].filter(item => item.id === record.id || (key && agentKey(item) === key
+      && pending(item) && !item.dismissed_at && !item.ignored && messageOrder(item, record) < 0)).sort(messageOrder);
+  }
+  function cardSignature(record) { return JSON.stringify([cardMessages(record).map(item => [item.id, item.request]), template(record)]); }
+  function pendingCount() { return pendingCards().length + unseenPending; }
   function addPendingPage(result) {
     const before = pendingRecords(true).length;
     for (const record of result.records || []) records.set(record.id, record);
@@ -157,7 +328,8 @@
       .filter(line => !/^[>❯]?\s*\d+[.)]\s/.test(line)).join("\n");
   }
   function template(record) {
-    return snapshot.templates?.templates?.find(t => t.id === record.request.template) || { layout: [{ type: "text", field: "body" }, { type: "media" }, { type: "reply" }, { type: "logs" }] };
+    const templates = snapshot.templates_by_machine?.[record.machine_id] || snapshot.templates;
+    return templates?.templates?.find(t => t.id === record.request.template) || { layout: [{ type: "text", field: "body" }, { type: "media" }, { type: "reply" }, { type: "logs" }] };
   }
   function size() {
     const bounds = host.getBoundingClientRect(), hidden = host.classList.contains("empty");
@@ -178,7 +350,7 @@
         (Math.abs(before.width - after.width) > 1 || Math.abs(before.height - after.height) > 1)) {
       // Keep text at its final reading width while the surrounding shape grows.
       // Reflowing every animation frame makes the controls and output jump.
-      for (const node of host.querySelectorAll(":scope > .top, :scope > .card, :scope > .queue, :scope > .notification-settings, :scope > .menu-overlay")) {
+      for (const node of host.querySelectorAll(":scope > .top, :scope > .card, :scope > .queue, :scope > .notification-settings, :scope > .todo-view, :scope > .menu-overlay")) {
         node.style.width = `${after.width - (placement === "notch" ? 0 : 2)}px`;
         if (fadeContent && !node.classList.contains("top")) {
           const fade = node.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 280, delay: 60, fill: "backwards" });
@@ -218,9 +390,40 @@
   }
   new ResizeObserver(size).observe(host);
   function stopMedia() {
-    host.querySelectorAll("video").forEach(video => { video.pause(); video.removeAttribute("src"); video.load(); });
+    host.querySelectorAll("video").forEach(video => { video.pause(); if (!snapshot.remote) { video.removeAttribute("src"); video.load(); } });
+    setTimeout(cleanupRemoteMedia, 0);
   }
-  function stopContext() { clearInterval(logTimer); logTimer = null; stopMedia(); }
+  function cleanupRemoteMedia() {
+    for (const [element, state] of remoteMedia) {
+      if (element.isConnected) continue;
+      state.cancelled = true;
+      if (state.url) URL.revokeObjectURL(state.url);
+      remoteMedia.delete(element);
+    }
+  }
+  async function loadRemoteMedia(element, status, record, index) {
+    const state = { cancelled: false, url: null }; remoteMedia.set(element, state);
+    try {
+      const metadata = await call({ op: "media", id: record.id, index, offset: 0, length: 0 });
+      if (!Number.isSafeInteger(metadata.size) || metadata.size <= 0 || metadata.size > 128 * 1024 * 1024) throw new Error("Attachment is empty or exceeds 128 MiB");
+      const parts = []; let offset = 0;
+      while (offset < metadata.size) {
+        if (state.cancelled || !element.isConnected) return;
+        const chunk = await call({ op: "media", id: record.id, index, offset, length: Math.min(256 * 1024, metadata.size - offset) });
+        if (chunk.offset !== offset || chunk.size !== metadata.size) throw new Error("Attachment changed during transfer. Open it again.");
+        const bytes = Uint8Array.from(atob(chunk.data), character => character.charCodeAt(0));
+        if (!bytes.length || bytes.length > 256 * 1024 || offset + bytes.length > metadata.size) throw new Error("Invalid attachment range");
+        parts.push(bytes); offset += bytes.length;
+        status.textContent = `Loading attachment ${Math.round(offset / metadata.size * 100)}%`;
+      }
+      if (state.cancelled || !element.isConnected) return;
+      state.url = URL.createObjectURL(new Blob(parts, { type: metadata.mime }));
+      element.src = state.url; element.hidden = false; status.remove();
+    } catch (error) {
+      if (!state.cancelled && element.isConnected) status.textContent = String(error.message || error);
+    }
+  }
+  function stopContext() { clearInterval(logTimer); logTimer = null; contextRequest = null; stopMedia(); }
   function pauseTimer() {
     if (collapseTimer) { clearTimeout(collapseTimer); collapseTimer = null; remaining = Math.max(0, remaining - (performance.now() - timerStarted)); }
   }
@@ -234,7 +437,7 @@
   function collapse(keepVisible, finished = false) {
     if (!finished) reviewVersion++;
     if (typeof keepVisible !== "boolean") keepVisible = explicitOpen && !pendingCount();
-    leaveSettings();
+    leaveSettings(); todosOpen = false;
     presented = false; explicitOpen = keepVisible === true; native({ native: "presentation", active: explicitOpen });
     clearTimeout(completionTimer); pauseTimer(); stopContext(); expanded = false; details = false; queue = false; current = null; focused = false; menu = null;
     native({ native: "text_focus", active: false }); render();
@@ -246,13 +449,16 @@
     for (const [id, action] of actionsInProgress) if (!action.pending) actionsInProgress.delete(id);
   }
   function toggleBar() {
-    if (current || queue || expanded) collapse();
+    if (current || queue || expanded || todosOpen) collapse();
     else {
       resetHandledActions();
       if (pendingCount()) openLatest(); else showQueue(true);
     }
   }
   function openRecord(id) {
+    const record = records.get(id), key = record && agentKey(record);
+    if (record && pending(record) && !record.dismissed_at && !record.ignored && key) id = pendingCards().find(item => agentKey(item) === key)?.id || id;
+    todosOpen = false;
     if (actionsInProgress.has(id)) return;
     leaveSettings();
     const replyFocused = card?._reply && document.activeElement === card._reply;
@@ -262,7 +468,7 @@
   }
   function openLatest() {
     resetHandledActions();
-    const latest = pendingRecords().at(-1);
+    const latest = pendingCards().at(-1);
     if (latest) openRecord(latest.id);
     else { queueReturnId = null; collapse(true); }
   }
@@ -271,12 +477,12 @@
     const id = current, version = reviewVersion;
     navigating = true;
     try {
-      let items = pendingRecords(), index = items.findIndex(record => record.id === current);
+      let items = pendingCards(), index = items.findIndex(record => record.id === current);
       while (unseenPending > 0 && (index + step >= items.length || index + step < 0)) {
         const result = await call({ op: "list", offset: pendingOffset, pending_only: true });
         addPendingPage(result);
         if (current !== id || version !== reviewVersion || queue || settingsOpen) return;
-        items = pendingRecords(); index = items.findIndex(record => record.id === current);
+        items = pendingCards(); index = items.findIndex(record => record.id === current);
       }
       const retry = step > 0 && items.find(record => record.id !== current && retryIds.has(record.id));
       if (items.length) openRecord((retry || items[(Math.max(index, 0) + step + items.length) % items.length]).id);
@@ -292,14 +498,16 @@
     pauseTimer(); stopContext(); expanded = true; details = !details; menu = null; renderedId = null; render(); startContext();
   }
   function toggleMenu(next) {
+    if (menu === "agent") contextRequest = null;
     pauseTimer(); expanded = true; menu = menu === next ? null : next; render();
-    if (menu === "agent") refreshContext();
+    if (menu === "agent") refreshContext(); else startContext();
   }
   function showQueue(showHistory = false) {
+    todosOpen = false;
     resetHandledActions();
     leaveSettings();
     if (current) queueReturnId = current;
-    clearTimeout(completionTimer); pauseTimer(); stopContext(); expanded = true; details = false; queue = true; history = showHistory === true; current = null; renderedId = null; menu = null; selectedNotifications.clear(); queueError = ""; render();
+    clearTimeout(completionTimer); pauseTimer(); stopContext(); expanded = true; details = false; queue = true; history = showHistory === true; ignoredOpen = false; current = null; renderedId = null; menu = null; selectedNotifications.clear(); queueError = ""; render();
     if (history) loadHistory(true);
   }
   async function toggleQueue() {
@@ -323,7 +531,7 @@
   async function advanceAfter(record) {
     const version = reviewVersion;
     const next = () => {
-      const items = pendingRecords();
+      const items = pendingCards();
       return items.find(item => retryIds.has(item.id)) || items.find(item => item.created_at >= record.created_at) || items[0];
     };
     // Reload from the front when draining a page: completed actions shift server offsets.
@@ -347,7 +555,8 @@
     const record = records.get(id);
     if (!record) return;
     const version = reviewVersion, state = { pending: true };
-    actionsInProgress.set(id, state); actionErrors.delete(id); retryIds.delete(id);
+    const handled = cardMessages(record);
+    for (const item of handled) { actionsInProgress.set(item.id, state); actionErrors.delete(item.id); retryIds.delete(item.id); }
     pauseTimer();
     const response = call(command);
     if (current === id && !queue && !settingsOpen) advanceAfter(record);
@@ -355,10 +564,13 @@
       const value = await response;
       const updated = value.record || (value.id ? value : null);
       if (updated) records.set(id, updated);
+      if (updated && (!pending(updated) || updated.dismissed_at)) {
+        for (const item of cardMessages(record)) if (item.id !== id) records.set(item.id, { ...item, status: "superseded" });
+      }
       if (value.status === "resolved") drafts.delete(id);
       accept(value);
     } catch (error) {
-      actionsInProgress.delete(id);
+      for (const item of handled) { actionsInProgress.delete(item.id); if (!records.has(item.id)) records.set(item.id, item); }
       if (!records.has(id)) records.set(id, record);
       showError(error, id);
       const latest = records.get(id);
@@ -371,7 +583,15 @@
       render(); resumeTimer();
     }
   }
+  function revisionChoice(record) {
+    if (record?.request.template !== "social-review" || record.request.data?.platform !== "X") return null;
+    const actions = record.request.actions || [];
+    return actions.some(action => action.id === "post" && action.kind === "choice")
+      ? actions.find(action => action.id === "revise" && action.kind === "choice") : null;
+  }
   async function act(id, action_id, text) {
+    const revision = revisionChoice(records.get(id));
+    if (revision && (action_id === "reply" || action_id === "post" && text?.trim())) action_id = revision.id;
     const dismissOnly = records.get(id)?.request.template === "update" && action_id === "acknowledge";
     await performAction(id, dismissOnly ? { op: "dismiss", id } : { op: "respond", id, action_id, text: text || null });
   }
@@ -431,7 +651,7 @@
   function createCard(record) {
     const node = el("article", "card");
     node._wasPending = pending(record) && !record.dismissed_at;
-    node._signature = JSON.stringify([record.request, template(record)]);
+    node._signature = cardSignature(record);
     const heading = el("div", "heading"), agent = hasAgent(record), identity = sourceHeading(record);
     const title = el("h1", "", agent ? identity.title : record.request.title); title.title = title.textContent;
     if (agent) { heading.classList.add("agent-heading"); const group = el("span", "source-group", identity.group); group.title = identity.group; heading.append(group); }
@@ -444,7 +664,16 @@
     }
     node.append(heading);
     if (agent && !record.question_id && record.request.title !== identity.group && record.request.title !== identity.title) node.append(el("div", "notification-title", record.request.title));
-    const message = el("div", "message", messageText(record)); node.append(message);
+    const messages = cardMessages(record);
+    if (messages.length > 1) {
+      const thread = el("ol", "message-thread"); thread.setAttribute("aria-label", `${messages.length} messages from this agent`);
+      for (const item of messages) {
+        const entry = el("li", "message-thread-item"); entry.dataset.id = item.id;
+        entry.append(el("div", "hint", `${item.id === record.id ? "Latest · " : ""}${item.request.title}`), el("div", "message", messageText(item)));
+        thread.append(entry);
+      }
+      node._thread = thread; node.append(thread);
+    } else node.append(el("div", "message", messageText(record)));
     const layout = template(record).layout, primitives = {};
     const content = el("div", "details-content"); node._content = content;
     content.addEventListener("scroll", () => { node._followLogs = content.scrollHeight - content.scrollTop - content.clientHeight < 30; });
@@ -452,9 +681,13 @@
       const media = el("div", "media");
       record.request.media.forEach((item, index) => {
         const element = el(item.kind === "video" ? "video" : "img");
-        element.src = item.src.startsWith("/") ? `clawtab-nfn://media/${record.id}/${index}` : item.src;
-        if (item.kind === "video") { element.controls = true; element.preload = "metadata"; }
-        else { element.alt = item.alt || record.request.title; element.loading = "lazy"; }
+        if (snapshot.remote && item.src.startsWith("/")) {
+          element.hidden = true;
+          const status = el("div", "hint", "Loading attachment..."); status.setAttribute("role", "status"); media.append(status);
+          loadRemoteMedia(element, status, record, index);
+        } else element.src = item.src.startsWith("/") ? `clawtab-nfn://media/${record.id}/${index}` : item.src;
+        if (item.kind === "video") { element.controls = true; element.playsInline = true; element.preload = "metadata"; }
+        else { element.alt = item.alt || record.request.title; element.loading = snapshot.remote ? "eager" : "lazy"; }
         element.addEventListener("error", () => { element.replaceWith(el("div", "hint", `${item.kind === "video" ? "Video" : "Image"} unavailable`)); });
         media.append(element);
       }); primitives.media = media;
@@ -464,6 +697,7 @@
     for (const [index, action] of choices.filter(action => action.kind !== "focus").entries()) {
       const control = button(action.label, () => act(record.id, action.id, drafts.get(record.id) || ""), index === 0 ? "primary" : "");
       control.title = action.label;
+      control.dataset.actionId = action.id;
       actions.append(control);
     }
     const answerRow = el("div", "answer-row"); answerRow.append(actions);
@@ -475,7 +709,8 @@
     if (record.request.template !== "update" && (hasBlock(layout, "reply") || record.request.source?.pane_id)) {
       const toAgent = Boolean(record.question_id || record.request.response_destination === "agent_message");
       const reply = el("div", "reply");
-      const replyLabel = toAgent ? "Reply to agent" : "Your reply";
+      const revision = revisionChoice(record);
+      const replyLabel = revision ? "Changes to the draft" : toAgent ? "Reply to agent" : "Your reply";
       if (questionOptions) {
         const open = replyStates.get(record.id) ?? Boolean(drafts.get(record.id));
         const toggle = button(replyLabel, () => {
@@ -490,13 +725,13 @@
       row.id = "notification-reply-row"; row.hidden = Boolean(questionOptions) && !(replyStates.get(record.id) ?? Boolean(drafts.get(record.id)));
       const input = el("textarea"); input.id = "notification-reply"; input.rows = 2;
       input.setAttribute("aria-label", replyLabel);
-      input.placeholder = "Message...";
+      input.placeholder = revision ? "Describe the changes..." : "Message...";
       input.value = drafts.get(record.id) || "";
       input.addEventListener("input", () => { drafts.set(record.id, input.value); updateCard(); });
       input.addEventListener("keydown", event => { if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) { event.preventDefault(); act(record.id, "reply", input.value); } });
       node._reply = input; row.append(input);
-      const send = button("Send", () => act(record.id, "reply", input.value), "primary send");
-      send.title = "Send reply (Command + Enter)"; node._send = send; row.append(send); reply.append(row); node.append(reply);
+      const send = button(revision?.label || "Send", () => act(record.id, "reply", input.value), "primary send");
+      send.title = `${revision?.label || "Send reply"} (Command + Enter)`; node._send = send; row.append(send); reply.append(row); node.append(reply);
     }
     const notice = el("div", "notice"); notice.setAttribute("role", "status"); node._notice = notice; node.append(notice);
     const utilities = el("div", "controls");
@@ -529,16 +764,17 @@
     if (!card || !current) return;
     const record = records.get(current); if (!record) return;
     const wasPending = card._wasPending;
-    if (card._signature !== JSON.stringify([record.request, template(record)])) {
+    if (card._signature !== cardSignature(record)) {
       const scroll = card._content.scrollTop, active = document.activeElement === card._reply;
       const selection = card._reply ? [card._reply.selectionStart, card._reply.selectionEnd] : null;
-      stopMedia();
+      stopContext();
       const replacement = createCard(record); card.replaceWith(replacement); card = replacement;
       card._content.scrollTop = scroll;
       if (active && card._reply) { card._reply.focus({ preventScroll: true }); if (selection) card._reply.setSelectionRange(...selection); }
       startContext();
     }
-    const isPending = pending(record) && !record.dismissed_at;
+    const isPending = pending(record) && !record.dismissed_at && !record.ignored;
+    if (card._thread && !card._thread._positioned) { card._thread.scrollTop = card._thread.scrollHeight; card._thread._positioned = true; }
     card._wasPending = isPending;
     if (wasPending && !isPending && !preview) {
       clearTimeout(completionTimer);
@@ -552,30 +788,36 @@
     const alert = record.request.data?.event === "agent_alert";
     const busy = actionsInProgress.has(current);
     card._status.classList.toggle("alert", alert && isPending);
-    card._status.textContent = record.status === "delivering" || busy ? "Sending..." : isPending ? (alert ? "! Alert" : "") : record.status === "resolved" ? (alert ? "Recovered" : update ? "Seen" : "Sent") : record.status;
+    card._status.textContent = record.ignored ? "Ignored" : record.status === "delivering" || busy ? "Sending..." : isPending ? (alert ? "! Alert" : "") : record.status === "resolved" ? (alert ? "Recovered" : update ? "Seen" : "Sent") : record.status;
     card._options?.setAttribute("aria-expanded", String(menu === "options" || menu === "agent"));
-    for (const control of card._actions.querySelectorAll("button")) control.disabled = !isPending || busy || Boolean(record.question_id && drafts.get(record.id)?.trim());
+    const feedback = Boolean(drafts.get(record.id)?.trim());
+    for (const control of card._actions.querySelectorAll("button")) control.disabled = !isPending || busy
+      || Boolean(record.question_id && feedback) || Boolean(revisionChoice(record) && control.dataset.actionId === "post" && feedback);
     if (card._openSession) card._openSession.disabled = busy;
     if (card._send) card._send.disabled = !isPending || busy || !card._reply.value.trim();
     if (card._reply) card._reply.readOnly = !isPending || busy;
     if (actionErrors.has(current)) card._notice.textContent = actionErrors.get(current);
     else if (record.error) card._notice.textContent = record.error;
+    else if (record.ignored) card._notice.textContent = "Agent ignored";
     else if (!isPending) card._notice.textContent = record.response ? (update ? "Acknowledged" : "Reply sent") : `Request ${record.status}`;
     else card._notice.textContent = "";
     updateAutoYes();
   }
   async function refreshContext() {
-    if ((!details && menu !== "agent") || queue || settingsOpen || !current || contextBusy) return;
-    const id = current; contextBusy = true;
+    if ((!details && menu !== "agent") || queue || settingsOpen || !current || !card || contextRequest?.card === card) return;
+    const id = current, request = { card }; contextRequest = request;
+    const ownsContext = () => contextRequest === request && id === current && card === request.card
+      && (details || menu === "agent") && !queue && !settingsOpen;
     try {
       const value = await call({ op: "context", id });
-      if (id !== current || !card) return;
+      if (!ownsContext()) return;
       const changedLogs = card._logs && card._logs._raw !== value.log;
       const before = changedLogs ? host.getBoundingClientRect() : null;
       if (changedLogs) {
         stopAnimation();
         const logs = card._logs, scroller = card._content;
-        const atBottom = logs._raw == null || scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 30;
+        const mediaFirst = snapshot.remote && records.get(id)?.request.media?.length;
+        const atBottom = (!mediaFirst && logs._raw == null) || (logs._raw != null && scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 30);
         logs._raw = value.log; renderAnsi(logs, value.log || "No output yet");
         card._followLogs = atBottom;
         if (atBottom) scroller.scrollTop = scroller.scrollHeight;
@@ -597,8 +839,8 @@
         animateLayout(beforeMenu, false);
       }
       if (before) animateLayout(before, false);
-    } catch (error) { if (id === current) { if (card?._logs) card._logs.textContent = String(error.message || error); showError(error); } }
-    finally { contextBusy = false; }
+    } catch (error) { if (ownsContext()) { if (card._logs) card._logs.textContent = String(error.message || error); showError(error); } }
+    finally { if (contextRequest === request) contextRequest = null; }
   }
   function buildPlugins(parent, plugins, models, id) {
     if (!plugins.length) return;
@@ -630,7 +872,7 @@
     bulkBusy = true; queueError = ""; render();
     try {
       while (unseenPending > 0) addPendingPage(await call({ op: "list", offset: pendingOffset, pending_only: true }));
-      for (const record of pendingRecords()) selectedNotifications.add(record.id);
+      for (const record of pendingCards()) selectedNotifications.add(record.id);
     } catch (error) { queueError = String(error.message || error); }
     finally { bulkBusy = false; render(); }
   }
@@ -638,12 +880,37 @@
     if (bulkBusy || !ids.length) return;
     bulkBusy = true; queueError = ""; render();
     try {
+      const previous = ids.flatMap(id => records.has(id) ? cardMessages(records.get(id)).filter(item => item.id !== id) : []);
       const result = await call({ op: "dismiss_many", ids });
+      for (const record of previous) records.set(record.id, { ...record, status: "superseded" });
       for (const record of result.records || []) { records.set(record.id, record); selectedNotifications.delete(record.id); }
       pendingOffset = pendingRecords().length;
       historyItems = []; historyOffset = 0;
     } catch (error) { queueError = String(error.message || error); }
     finally { bulkBusy = false; render(); }
+  }
+  async function loadIgnoredAgents() {
+    ignoredBusy = true; queueError = ""; render();
+    try { ignoredAgents = (await call({ op: "ignored_agents" })).agents || []; }
+    catch (error) { queueError = String(error.message || error); }
+    finally { ignoredBusy = false; render(); }
+  }
+  async function setAgentIgnored(record, ignored) {
+    if (ignoredBusy) return;
+    ignoredBusy = true;
+    try {
+      const result = await call({ op: ignored ? "ignore" : "unignore", id: record.id });
+      for (const item of result.records || []) records.set(item.id, item);
+      if (ignored) {
+        menu = null;
+        if (current === record.id) await advanceAfter(record);
+      } else {
+        ignoredAgents = ignoredAgents.filter(agent => agent.id !== record.id);
+      }
+      queueError = "";
+    } catch (error) {
+      if (ignored) showError(error, record.id); else queueError = String(error.message || error);
+    } finally { ignoredBusy = false; render(); }
   }
   function renderQueue() {
     let list = host.querySelector(".queue");
@@ -652,21 +919,38 @@
       const segments = el("div", "segments"); segments.setAttribute("role", "tablist"); segments.setAttribute("aria-label", "Notifications");
       for (const [label, isHistory] of [["Pending", false], ["History", true]]) {
         const tab = button(label, () => {
-          if (history === isHistory) return;
+          if (history === isHistory && !ignoredOpen) return;
           list._scroll[history ? "history" : "pending"] = list._content.scrollTop;
-          history = isHistory; selectedNotifications.clear(); queueError = ""; render();
+          history = isHistory; ignoredOpen = false; selectedNotifications.clear(); queueError = ""; render();
           list._content.scrollTop = list._scroll[history ? "history" : "pending"] || 0;
           if (history) loadHistory(true);
         });
         tab.setAttribute("role", "tab"); tab.dataset.history = String(isHistory); segments.append(tab);
       }
+      const ignored = button("Ignored agents", () => { ignoredOpen = true; selectedNotifications.clear(); loadIgnoredAgents(); });
+      ignored.setAttribute("role", "tab"); ignored.dataset.ignored = "true"; segments.append(ignored);
       list._scroll = {};
       list._content = el("div", "queue-content");
       list.append(segments, list._content);
     }
-    for (const tab of list.querySelectorAll('[role="tab"]')) tab.setAttribute("aria-selected", String(tab.dataset.history === String(history)));
-    const items = history ? historyItems : pendingRecords();
-    const signature = JSON.stringify([history, items.map(record => [record.id, record.read_at, record.request.title, sourceText(record.request.source)]), [...selectedNotifications], bulkBusy, queueError, loadingQueue, hasMoreHistory, unseenPending]);
+    for (const tab of list.querySelectorAll('[role="tab"]')) tab.setAttribute("aria-selected", String(ignoredOpen ? tab.dataset.ignored === "true" : tab.dataset.history === String(history)));
+    if (ignoredOpen) {
+      const signature = JSON.stringify(["ignored", ignoredAgents, ignoredBusy, queueError]);
+      if (list.dataset.signature === signature) return list;
+      list.dataset.signature = signature; list._content.replaceChildren();
+      if (queueError) list._content.append(el("div", "notice", queueError));
+      for (const agent of ignoredAgents) {
+        const row = el("div", "queue-row ignored-agent");
+        const identity = sourceHeading({ request: { source: agent.source, title: agent.title } });
+        const label = el("div", "queue-item"); label.append(el("strong", "", identity.title), el("div", "meta", [identity.group, agent.machine_id].filter(Boolean).join(" · ")));
+        const restore = button("Stop ignoring", () => setAgentIgnored(agent, false), "utility"); restore.disabled = ignoredBusy;
+        row.append(label, restore); list._content.append(row);
+      }
+      if (!ignoredAgents.length) list._content.append(el("div", "empty-state", ignoredBusy ? "Loading..." : "No ignored agents"));
+      return list;
+    }
+    const items = history ? historyItems : pendingCards();
+    const signature = JSON.stringify([history, items.map(record => [record.id, record.read_at, record.request.title, sourceText(record.request.source), history ? [] : cardMessages(record).map(item => item.id)]), [...selectedNotifications], bulkBusy, queueError, loadingQueue, hasMoreHistory, unseenPending]);
     if (list.dataset.signature === signature) return list;
     list.dataset.signature = signature;
     const content = list._content, scroll = content.scrollTop;
@@ -693,7 +977,8 @@
         checkbox.addEventListener("change", () => { if (checkbox.checked) selectedNotifications.add(record.id); else selectedNotifications.delete(record.id); render(); }); row.append(checkbox);
       }
       const item = button("", () => { records.set(record.id, record); openRecord(record.id); }, `queue-item ${record.read_at ? "" : "unread"}`);
-      item.append(el("strong", "", record.request.title), el("div", "meta", sourceText(record.request.source))); row.append(item);
+      const messageCount = history ? 1 : cardMessages(record).length;
+      item.append(el("strong", "", record.request.title), el("div", "meta", [sourceText(record.request.source), messageCount > 1 ? `${messageCount} messages` : ""].filter(Boolean).join(" · "))); row.append(item);
       if (!history) {
         const dismiss = iconButton(`Dismiss ${record.request.title}`, "M6 6l12 12M18 6L6 18", () => dismissNotifications([record.id]), "dismiss-item");
         dismiss.disabled = bulkBusy; row.append(dismiss);
@@ -735,6 +1020,10 @@
         const controls = button("Agent controls", () => toggleMenu("agent"), "utility menu-link");
         controls.setAttribute("aria-haspopup", "dialog"); panel.append(controls);
       }
+      if (agentKey(record)) {
+        const ignore = button(record.ignored ? "Stop ignoring agent" : "Ignore agent", () => setAgentIgnored(record, !record.ignored), "utility menu-link");
+        ignore.disabled = ignoredBusy; panel.append(ignore);
+      }
       panel.append(button("Notification settings", openSettings, "utility menu-link"));
       const dismiss = button("Dismiss notification", () => performAction(record.id, { op: "dismiss", id: record.id }), "utility dismiss"); dismiss.title = "Remove this card from Pending"; panel.append(dismiss);
     } else if (menu === "agent") panel.append(el("div", "agent-controls", "Loading..."));
@@ -753,6 +1042,8 @@
     leaveSettings(); expanded = settingsReturnExpanded; render(); startContext(); resumeTimer();
   }
   function openSettings() {
+    if (snapshot.remote) return;
+    todosOpen = false;
     if (settingsOpen) return;
     hiddenByUser = false;
     settingsReturnExpanded = expanded;
@@ -785,13 +1076,15 @@
         ["hover_expand", "Expand on hover", "checkbox"],
         ["sound", "Sound", "checkbox"],
         ["menu_bar_icon", "Menu bar icon", "checkbox"],
+        ["mobile_when_idle", "Send to mobile when idle", "checkbox"],
+        ["idle_seconds", "Idle time before mobile delivery", null],
       ];
       for (const [key, title, options] of fields) {
         const row = el("label", "setting-row"), input = el(Array.isArray(options) ? "select" : "input");
         input.dataset.setting = key; input.setAttribute("aria-label", title);
         if (Array.isArray(options)) for (const [value, text] of options) { const option = el("option", "", text); option.value = value; input.append(option); }
         else if (options === "checkbox") input.type = "checkbox";
-        else { input.type = "number"; input.min = "2"; input.max = "120"; input.step = "1"; input.required = true; input.title = "Seconds before a status update collapses"; }
+        else { input.type = "number"; input.min = key === "idle_seconds" ? "10" : "2"; input.max = key === "idle_seconds" ? "3600" : "120"; input.step = "1"; input.required = true; input.title = key === "idle_seconds" ? "Seconds without keyboard or mouse activity before sending to mobile" : "Seconds before a status update collapses"; }
         input.addEventListener("change", () => {
           if (!input.checkValidity()) { view._notice.textContent = input.validationMessage; return; }
           const value = input.type === "checkbox" ? input.checked : input.type === "number" ? Number(input.value) : input.value;
@@ -816,7 +1109,7 @@
       }
       view._notice = el("div", "notice settings-notice"); view._notice.setAttribute("role", "status"); view.append(view._notice);
     }
-    const values = { delivery: "enhanced", placement: "notch", display: "primary", focus: "follow", preview_seconds: 8, hover_expand: false, sound: true, menu_bar_icon: true, ...snapshot.settings };
+    const values = { delivery: "enhanced", placement: "notch", display: "primary", focus: "follow", preview_seconds: 8, hover_expand: false, sound: true, menu_bar_icon: true, mobile_when_idle: true, idle_seconds: 60, ...snapshot.settings };
     const display = view.querySelector('[data-setting="display"]');
     const displays = [["primary", "Primary display"], ["built_in", "Built-in display"], ["pointer", "Follow pointer"], ...(snapshot.platform?.displays || []).map(item => [item.id, item.name])];
     if (!displays.some(([id]) => id === values.display)) displays.push([values.display, "Saved display"]);
@@ -841,7 +1134,7 @@
   function draggableBar(control) {
     let origin = null, dragged = false;
     control.addEventListener("pointerdown", event => {
-      if (event.button !== 0 || preview) return;
+      if (event.button !== 0 || preview || snapshot.remote) return;
       origin = { x: event.screenX, y: event.screenY, pointerId: event.pointerId }; dragged = false;
       document.addEventListener("pointermove", move);
       document.addEventListener("pointerup", finish);
@@ -871,8 +1164,9 @@
     }, true);
   }
   function render() {
+    if (reducedMotion.matches || geometry.reduce_motion) stopArrivalAnimation();
     const before = host.getBoundingClientRect();
-    const signature = JSON.stringify([current, expanded, details, queue, settingsOpen, menu, replyStates.get(current), geometry, snapshot.visible, records.get(current)?.request]);
+    const signature = JSON.stringify([current, expanded, details, queue, settingsOpen, todosOpen, menu, replyStates.get(current), geometry, snapshot.visible, records.get(current)?.request]);
     const continuingAnimation = layoutAnimation && signature === renderedLayout;
     if (!continuingAnimation) stopAnimation();
     renderedLayout = signature;
@@ -880,8 +1174,8 @@
     if (!presented && !hiddenByUser && current && records.has(current) && (snapshot.visible || explicitOpen) && !preview) {
       presented = true; native({ native: "presentation", active: true });
     }
-    if (!preview && !settingsOpen && (hiddenByUser || (!explicitOpen && !presented && (!snapshot.visible || (!current && !queue && !count))))) { host.className = "empty"; host.replaceChildren(); renderedId = null; card = null; stopContext(); size(); return; }
-    host.className = `${placement} ${expanded ? "expanded" : !current ? "pill" : ""} ${details && !settingsOpen ? "details-open" : ""} ${settingsOpen ? "settings-open" : ""} ${queue && !settingsOpen ? "queue-open" : ""} ${menu ? "menu-open" : ""}`;
+    if (!preview && !settingsOpen && !todosOpen && (hiddenByUser || (!explicitOpen && !presented && (!snapshot.visible || (!current && !queue && !count && !todoItems().length))))) { stopArrivalAnimation(); host.className = "empty"; host.replaceChildren(); renderedId = null; card = null; stopContext(); size(); return; }
+    host.className = `${placement} ${expanded ? "expanded" : !current ? "pill" : ""} ${details && !settingsOpen ? "details-open" : ""} ${settingsOpen ? "settings-open" : ""} ${queue && !settingsOpen ? "queue-open" : ""} ${menu ? "menu-open" : ""} ${todosOpen ? "todos-open" : ""}`;
     let top = host.querySelector(".top");
     if (!top) {
       top = el("div", "top"); host.prepend(top);
@@ -890,6 +1184,13 @@
       draggableBar(toggle); top.append(toggle);
       const latest = button("", openSettings, "utility brand icon-button"); latest.title = "Notification settings"; latest.setAttribute("aria-label", "Notification settings");
       const logo = el("img"); logo.src = "https://cdn.clawtab.cc/assets/app-icon.png"; logo.alt = ""; latest.append(logo); top.append(latest);
+      const slash = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      slash.setAttribute("viewBox", "0 0 28 28"); slash.setAttribute("class", "claw-slash"); slash.setAttribute("aria-hidden", "true");
+      for (const d of ["M17 3Q10 10 3 20", "M22 4Q14 13 6 24", "M26 8Q19 17 12 26"]) {
+        const path = document.createElementNS(slash.namespaceURI, "path");
+        path.setAttribute("d", d); path.setAttribute("pathLength", "1"); slash.append(path);
+      }
+      latest.append(slash);
       const controls = el("div", "top-actions");
       controls.append(iconButton("Previous notification", "M14 6l-6 6 6 6", () => navigate(-1), "nav-step previous"));
       controls.append(el("span", "count"));
@@ -898,7 +1199,8 @@
       const list = iconButton("Notification list", "M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01", toggleQueue, "list-toggle");
       top.append(list);
     }
-    const items = pendingRecords(), index = items.findIndex(record => record.id === current);
+    updateTodoRing(top);
+    const items = pendingCards(), index = items.findIndex(record => record.id === current);
     const isOpen = Boolean(current || queue || expanded), toggle = top.querySelector(".bar-toggle");
     toggle.setAttribute("aria-label", isOpen ? "Collapse notifications" : "Expand notifications"); toggle.setAttribute("aria-expanded", String(isOpen));
     toggle.title = `${isOpen ? "Collapse" : "Open"} notifications. Drag to move.`;
@@ -913,7 +1215,11 @@
     for (const step of top.querySelectorAll(".nav-step")) step.hidden = !current || count < 2 || settingsOpen;
     top.querySelector(".list-toggle").setAttribute("aria-pressed", String(queue && !settingsOpen));
     if (!settingsOpen) host.querySelector(".notification-settings")?.remove();
-    if (settingsOpen) {
+    if (!todosOpen) host.querySelector(".todo-view")?.remove();
+    if (todosOpen) {
+      host.querySelector(".card")?.remove(); host.querySelector(".queue")?.remove(); host.querySelector(".notification-settings")?.remove();
+      card = null; renderedId = null; const view = renderTodos(); if (!view.isConnected) host.append(view); view._restoreFocus?.(); view._restoreFocus = null;
+    } else if (settingsOpen) {
       host.querySelector(".card")?.remove(); host.querySelector(".queue")?.remove(); card = null; renderedId = null;
       const view = renderSettings(); if (!view.isConnected) host.append(view);
     } else if (queue) {
@@ -926,13 +1232,30 @@
       }
       updateCard();
     } else { host.querySelector(".card")?.remove(); host.querySelector(".queue")?.remove(); renderedId = null; card = null; }
-    renderMenu(); if (!continuingAnimation) animateLayout(before, !queue && !menu && !settingsOpen);
+    renderMenu(); cleanupRemoteMedia(); if (!continuingAnimation) animateLayout(before, !queue && !menu && !settingsOpen);
   }
   function receive(value) {
+    if (value.type === "todos") { todoData = value.todos; render(); return; }
     if (value.type === "response") {
       const promise = promises.get(String(value.token)); if (!promise) return;
       clearTimeout(promise.timer); promises.delete(String(value.token));
       if (value.error) promise.reject(new Error(value.error)); else promise.resolve(value.value); return;
+    }
+    if (value.type === "open_record" && typeof value.id === "string") {
+      const version = ++reviewVersion;
+      hiddenByUser = false; explicitOpen = true;
+      const open = record => {
+        if (reviewVersion !== version) return;
+        records.set(record.id, record); openRecord(record.id);
+        if (record.request.media?.length) toggleDetails();
+        else if (value.popup && record.request.template === "update") { expanded = false; render(); resumeTimer(); }
+      };
+      if (records.has(value.id)) open(records.get(value.id));
+      else call({ op: "get", id: value.id }).then(open).catch(error => {
+        if (reviewVersion !== version) return;
+        showQueue(); queueError = String(error.message || error); render();
+      });
+      return;
     }
     if (value.type === "show" || value.type === "latest") {
       resetHandledActions();
@@ -945,8 +1268,17 @@
     if (value.type === "settings") { openSettings(); return; }
     if (value.type !== "snapshot") return;
     snapshot = value; preview = Boolean(value.preview);
+    if (value.todos) todoData = value.todos;
     const incoming = new Set();
     for (const record of value.records || []) { records.set(record.id, record); incoming.add(record.id); }
+    const activeRecord = records.get(current), activeKey = activeRecord && agentKey(activeRecord);
+    if (activeRecord && pending(activeRecord) && !activeRecord.dismissed_at && !activeRecord.ignored && activeKey && !actionsInProgress.has(current)) {
+      const latest = pendingCards().find(item => agentKey(item) === activeKey);
+      if (latest && latest.id !== current) {
+        pauseTimer(); stopContext(); current = latest.id; queueReturnId = current; renderedId = null; menu = null;
+        remaining = (value.settings?.preview_seconds || 8) * 1000;
+      }
+    }
     for (const [id, action] of actionsInProgress) {
       const record = records.get(id);
       if (!action.pending && (!incoming.has(id) || !pending(record) || record.dismissed_at)) actionsInProgress.delete(id);
@@ -965,12 +1297,17 @@
       call({ op: "get", id }).then(record => { records.set(id, record); if (id === current) updateCard(); }).catch(error => showError(error, id));
     }
     if (value.arrival && records.has(value.arrival)) hiddenByUser = false;
-    if (value.arrival && records.has(value.arrival) && !actionsInProgress.has(value.arrival) && !current && !settingsOpen && !bulkBusy && (!queue || !selectedNotifications.size)) {
+    if (value.arrival && records.has(value.arrival) && !actionsInProgress.has(value.arrival) && !current && !settingsOpen && !todosOpen && !bulkBusy && (!queue || !selectedNotifications.size)) {
       clearTimeout(completionTimer); pauseTimer(); stopContext();
-      current = value.arrival; queueReturnId = current; queue = false; history = false; details = false; menu = null;
+      const arrival = records.get(value.arrival), key = agentKey(arrival);
+      current = (key && pendingCards().find(record => agentKey(record) === key)?.id) || value.arrival;
+      queueReturnId = current; queue = false; history = false; details = false; menu = null;
       remaining = (value.settings?.preview_seconds || 8) * 1000; renderedId = null;
     }
     render(); resumeTimer();
+    if (value.arrival && records.has(value.arrival) && value.arrival !== lastArrivalId) {
+      lastArrivalId = value.arrival; animateArrival();
+    }
     if (value.visible) startContext();
   }
   host.addEventListener("mouseenter", () => { hovering = true; pauseTimer(); if (snapshot.settings?.hover_expand && current && !expanded) openRecord(current); });

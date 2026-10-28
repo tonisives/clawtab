@@ -202,6 +202,22 @@ async fn notify_start(params: &MonitorParams, use_telegram: bool, use_app: bool)
     if !params.notify.start || params.is_reattach {
         return;
     }
+    let use_telegram = if use_telegram {
+        if let Some(service) = crate::nfn::service() {
+            service.job_message(
+                &params.slug,
+                "started",
+                Some(&params.run_id),
+                vec!["telegram".into()],
+                params.telegram_chat_id,
+            );
+            false
+        } else {
+            true
+        }
+    } else {
+        false
+    };
     if use_telegram {
         if let Some(ref tg) = params.telegram {
             let text = crate::telegram::format_job_status_message(
@@ -612,6 +628,22 @@ async fn notify_finish(
         return;
     }
     let status = if succeeded { "completed" } else { "failed" };
+    let use_telegram = if use_telegram && succeeded && params.notify_on_success {
+        if let Some(service) = crate::nfn::service() {
+            service.job_message(
+                &params.slug,
+                status,
+                Some(&params.run_id),
+                vec!["telegram".into()],
+                params.telegram_chat_id,
+            );
+            false
+        } else {
+            true
+        }
+    } else {
+        use_telegram
+    };
     if use_telegram && succeeded {
         if let Some(ref tg) = params.telegram {
             if params.notify_on_success {
@@ -634,7 +666,14 @@ async fn notify_finish(
         }
     }
     if use_app {
-        crate::relay::push_job_notification(&params.relay, &params.slug, status, &params.run_id);
+        let event = if succeeded {
+            status.to_string()
+        } else {
+            exit_code
+                .map(|code| format!("failed (exit {code})"))
+                .unwrap_or_else(|| "failed".into())
+        };
+        crate::relay::push_job_notification(&params.relay, &params.slug, &event, &params.run_id);
         if succeeded {
             if let Some(ref n) = params.notifier {
                 n.notify_job_run(&params.slug, status, &params.run_id);

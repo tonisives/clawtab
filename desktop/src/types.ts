@@ -181,6 +181,8 @@ export interface EnhancedNotificationSettings {
   hover_expand: boolean;
   sound: boolean;
   menu_bar_icon: boolean;
+  mobile_when_idle: boolean;
+  idle_seconds: number;
 }
 
 export type InstalledPluginSummary = {

@@ -1,4 +1,4 @@
-use super::{settings, templates, NfnCommand, NfnRequest, NfnSource};
+use super::{settings, templates, NfnAction, NfnCommand, NfnRequest, NfnSource};
 use crate::agent_session::{self, AgentIdentity, ProcessProvider};
 use crate::ipc::{self, IpcCommand, IpcResponse};
 use serde_json::{json, Value};
@@ -24,6 +24,233 @@ fn stdin() -> Result<String, String> {
     Ok(value)
 }
 
+pub async fn message(args: &[String]) -> Result<Value, String> {
+    if args.is_empty() || matches!(args[0].as_str(), "help" | "--help" | "-h") {
+        return Ok(json!({"usage":[
+            "cwtctl message send TEXT [--kind update|question|approval|completed|failed]",
+            "  [--channel desktop|mobile|telegram] [--choice [ID=]LABEL] [--wait] [--timeout SECONDS]",
+            "  [--title TITLE] [--template ID] [--chat ID] [--response-destination result|agent_message]",
+            "cwtctl message send --stdin [--wait] [--timeout SECONDS]",
+            "cwtctl message list [--pending] [--offset N]",
+            "cwtctl message get|wait|cancel|read|dismiss ID [--timeout SECONDS]",
+            "cwtctl message ignore|unignore ID",
+            "cwtctl message ignored-agents",
+            "cwtctl message reply ID [TEXT] [--action ID]",
+            "cwtctl message show|settings|templates [args]"
+        ]}));
+    }
+    match args[0].as_str() {
+        "send" => {
+            let (request, waits, timeout) = parse_message(&args[1..])?;
+            submit(request, waits, timeout).await
+        }
+        "list" => {
+            validate_flags(&args[1..], &["--pending"], &["--offset"])?;
+            let offset = flag_value(args, "--offset")?
+                .unwrap_or("0")
+                .parse()
+                .map_err(|_| "offset must be a number")?;
+            call(NfnCommand::List {
+                offset,
+                pending_only: args.iter().any(|a| a == "--pending"),
+            })
+            .await
+        }
+        "ignored-agents" => call(NfnCommand::IgnoredAgents).await,
+        "read" | "dismiss" | "ignore" | "unignore" => {
+            if args.len() != 2 {
+                return Err("Pass a message ID".into());
+            }
+            let id = args[1].clone();
+            call(match args[0].as_str() {
+                "read" => NfnCommand::Read { id },
+                "ignore" => NfnCommand::Ignore { id },
+                "unignore" => NfnCommand::Unignore { id },
+                _ => NfnCommand::Dismiss { id },
+            })
+            .await
+        }
+        "reply" => {
+            let id = args
+                .get(1)
+                .filter(|v| !v.starts_with('-'))
+                .ok_or("Pass a message ID")?
+                .clone();
+            let mut text = Vec::new();
+            let mut action_id = "reply".to_string();
+            let mut values = args[2..].iter();
+            while let Some(value) = values.next() {
+                if value == "--action" {
+                    action_id = values.next().ok_or("Pass an action ID")?.clone();
+                } else if value.starts_with('-') {
+                    return Err(format!("Unknown argument: {value}"));
+                } else {
+                    text.push(value.as_str());
+                }
+            }
+            call(NfnCommand::Respond {
+                id,
+                action_id,
+                text: (!text.is_empty()).then(|| text.join(" ")),
+            })
+            .await
+        }
+        _ => run(args).await,
+    }
+}
+
+fn parse_message(args: &[String]) -> Result<(NfnRequest, bool, Option<u64>), String> {
+    let mut text = Vec::new();
+    let mut flags: std::collections::HashMap<&str, Vec<&str>> = Default::default();
+    let mut input = false;
+    let mut waits = false;
+    let mut values = args.iter();
+    while let Some(value) = values.next() {
+        match value.as_str() {
+            "--stdin" => input = true,
+            "--wait" => waits = true,
+            "--kind"
+            | "--channel"
+            | "--choice"
+            | "--title"
+            | "--template"
+            | "--timeout"
+            | "--chat"
+            | "--response-destination" => {
+                let next = values
+                    .next()
+                    .filter(|v| !v.starts_with("--"))
+                    .ok_or_else(|| format!("Pass a value after {value}"))?;
+                if !matches!(value.as_str(), "--choice" | "--channel")
+                    && flags.contains_key(value.as_str())
+                {
+                    return Err(format!("Duplicate argument: {value}"));
+                }
+                flags.entry(value).or_default().push(next);
+            }
+            "--" => {
+                text.extend(values.map(String::as_str));
+                break;
+            }
+            value if value.starts_with('-') => return Err(format!("Unknown argument: {value}")),
+            value => text.push(value),
+        }
+    }
+    let value = |name: &str| flags.get(name).and_then(|v| v.first()).copied();
+    if input && !text.is_empty() {
+        return Err("Use text or --stdin".into());
+    }
+    let mut request = if input {
+        serde_json::from_str(&stdin()?).map_err(|e| e.to_string())?
+    } else {
+        let body = text.join(" ");
+        if body.trim().is_empty() {
+            return Err("Pass message text or --stdin".into());
+        }
+        NfnRequest {
+            title: body
+                .lines()
+                .next()
+                .unwrap_or("Message")
+                .chars()
+                .take(120)
+                .collect(),
+            body,
+            kind: "update".into(),
+            template: "update".into(),
+            ..Default::default()
+        }
+    };
+    if let Some(kind) = value("--kind") {
+        request.kind = kind.into();
+        if !input && value("--template").is_none() {
+            request.template = match kind {
+                "question" => "question",
+                "approval" => "permission",
+                _ => "update",
+            }
+            .into();
+        }
+    }
+    if let Some(title) = value("--title") {
+        request.title = title.into();
+    }
+    if let Some(template) = value("--template") {
+        request.template = template.into();
+        if value("--kind").is_none() {
+            request.kind.clear();
+        }
+    }
+    if let Some(channels) = flags.get("--channel") {
+        request.channels = channels.iter().map(|v| v.to_string()).collect();
+    }
+    if let Some(choices) = flags.get("--choice") {
+        request.actions = choices
+            .iter()
+            .enumerate()
+            .map(|(i, value)| {
+                let (id, label) = value
+                    .split_once('=')
+                    .map(|(id, label)| (id.to_string(), label))
+                    .unwrap_or_else(|| (format!("choice-{}", i + 1), *value));
+                NfnAction {
+                    id,
+                    label: label.into(),
+                    value: label.into(),
+                    ..Default::default()
+                }
+            })
+            .collect();
+        if value("--kind").is_none() {
+            request.kind = "question".into();
+            request.template = "question".into();
+        }
+    }
+    if let Some(chat) = value("--chat") {
+        request.telegram_chat_id =
+            Some(chat.parse().map_err(|_| "chat must be a numeric chat ID")?);
+        if !request.channels.iter().any(|channel| channel == "telegram") {
+            request.channels.push("telegram".into());
+        }
+    }
+    if let Some(destination) = value("--response-destination") {
+        request.response_destination = destination.into();
+    }
+    if !input && request.message_kind() == "question" && request.actions.is_empty() {
+        request.data["text_input"] = json!(true);
+    }
+    if waits && (!request.needs_response() || request.response_destination != "result") {
+        return Err(
+            "--wait requires a question or approval with response_destination: result".into(),
+        );
+    }
+    let timeout = value("--timeout")
+        .map(|v| v.parse().map_err(|_| "timeout must be seconds"))
+        .transpose()?;
+    Ok((request, waits, timeout))
+}
+
+async fn submit(
+    mut request: NfnRequest,
+    waits: bool,
+    timeout: Option<u64>,
+) -> Result<Value, String> {
+    infer_source(
+        &mut request.source,
+        std::env::var("CODEX_THREAD_ID").ok().as_deref(),
+        std::env::var("CLAWTAB_SESSION_ID").ok().as_deref(),
+        std::env::var("TMUX_PANE").ok().as_deref(),
+        agent_session::agent_identities,
+    )?;
+    request.validate()?;
+    let record = call(NfnCommand::Send { request }).await?;
+    if waits {
+        wait(record["id"].as_str().ok_or("Missing message ID")?, timeout).await
+    } else {
+        Ok(record)
+    }
+}
+
 pub async fn run(args: &[String]) -> Result<Value, String> {
     if args.is_empty() || matches!(args[0].as_str(), "help" | "--help" | "-h") {
         return Ok(json!({"usage":[
@@ -32,6 +259,8 @@ pub async fn run(args: &[String]) -> Result<Value, String> {
             "cwtctl nfn templates list",
             "cwtctl nfn templates validate [FILE | --stdin]",
             "cwtctl nfn show",
+            "cwtctl nfn todos list",
+            "cwtctl nfn todos link NOTE.md [agents.json]",
             "cwtctl nfn settings [FILE.yaml | --stdin | --json | --ui]"
         ],"response_destination":["result","agent_message"],"template_directory":templates::directory()}));
     }
@@ -43,6 +272,17 @@ pub async fn run(args: &[String]) -> Result<Value, String> {
         })
         .transpose()?;
     match args[0].as_str() {
+        "todos" => match args.get(1).map(String::as_str) {
+            None | Some("list") => call(NfnCommand::Todos).await,
+            Some("link") if (3..=4).contains(&args.len()) => {
+                call(NfnCommand::TodoLink {
+                    note: args[2].clone(),
+                    agents: args.get(3).cloned(),
+                })
+                .await
+            }
+            _ => Err("Use nfn todos list or nfn todos link NOTE.md [agents.json]".into()),
+        },
         "send" => {
             if !args.iter().any(|a| a == "--stdin") {
                 return Err("Use nfn send --stdin with a JSON request".into());
@@ -235,6 +475,85 @@ async fn wait(id: &str, timeout: Option<u64>) -> Result<Value, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn message_args(args: &[&str]) -> Result<(NfnRequest, bool, Option<u64>), String> {
+        parse_message(
+            &args
+                .iter()
+                .map(|value| value.to_string())
+                .collect::<Vec<_>>(),
+        )
+    }
+
+    #[test]
+    fn plain_messages_are_updates_and_questions_can_wait_for_text() {
+        let (update, waits, _) = message_args(&["Build finished"]).unwrap();
+        assert_eq!(update.message_kind(), "update");
+        assert_eq!(update.template, "update");
+        assert!(!waits);
+        let (question, waits, timeout) = message_args(&[
+            "Which branch?",
+            "--kind",
+            "question",
+            "--wait",
+            "--timeout",
+            "120",
+        ])
+        .unwrap();
+        assert!(question.needs_response());
+        assert_eq!(question.data["text_input"], true);
+        assert!(question.actions.is_empty());
+        assert!(waits);
+        assert_eq!(timeout, Some(120));
+    }
+
+    #[test]
+    fn choices_and_channels_share_one_question() {
+        let (request, _, _) = message_args(&[
+            "Ship?",
+            "--choice",
+            "yes=Ship",
+            "--choice",
+            "Revise",
+            "--channel",
+            "desktop",
+            "--channel",
+            "telegram",
+            "--chat",
+            "-123",
+        ])
+        .unwrap();
+        request.validate().unwrap();
+        assert_eq!(request.message_kind(), "question");
+        assert_eq!(request.actions[0].id, "yes");
+        assert_eq!(request.actions[1].id, "choice-2");
+        assert_eq!(request.channels, vec!["desktop", "telegram"]);
+        assert_eq!(request.telegram_chat_id, Some(-123));
+        assert!(message_args(&["Done", "--wait"]).is_err());
+        assert!(message_args(&[
+            "Question",
+            "--kind",
+            "question",
+            "--wait",
+            "--response-destination",
+            "agent_message"
+        ])
+        .is_err());
+    }
+
+    #[test]
+    fn message_options_are_strict_and_literal_text_can_start_with_a_dash() {
+        for args in [
+            vec!["hi", "--kind"],
+            vec!["hi", "--unknown"],
+            vec!["hi", "--kind", "update", "--kind", "question"],
+            vec!["hi", "--timeout", "soon"],
+        ] {
+            assert!(message_args(&args).is_err());
+        }
+        let (request, _, _) = message_args(&["--", "--literal", "text"]).unwrap();
+        assert_eq!(request.body, "--literal text");
+    }
 
     fn identity(pane: &str, session: &str) -> AgentIdentity {
         AgentIdentity {

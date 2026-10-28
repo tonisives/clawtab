@@ -777,11 +777,12 @@ pub async fn question_detection_loop(
             crate::notifications::mark_questions_seen(&visible_questions, &notification_state);
         }
 
-        let apns_questions = if settings_snapshot.notify_questions_remote {
-            notifiable_questions
-        } else {
-            Vec::new()
-        };
+        let apns_questions =
+            if settings_snapshot.notify_questions_remote && crate::nfn::service().is_none() {
+                notifiable_questions
+            } else {
+                Vec::new()
+            };
         send_relay_questions(
             visible_questions,
             apns_questions,

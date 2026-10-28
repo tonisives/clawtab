@@ -7,6 +7,8 @@ import { colors } from "@clawtab/shared";
 import { useNotificationStore } from "../store/notifications";
 import { useJobsStore } from "../store/jobs";
 import { useResponsive } from "../hooks/useResponsive";
+import { questionMessage, uncoveredAlerts, useMessageStore } from "../store/messages";
+import { messagePending } from "@clawtab/shared";
 
 export function NotificationsMenuButton({
   hideWhenEmpty = false,
@@ -25,8 +27,12 @@ export function NotificationsMenuButton({
   const { isSplitView } = useResponsive();
   const questions = useNotificationStore((s) => s.questions);
 
-  const alertCount = useJobsStore((s) => s.detectedProcesses.filter(process => process._agent_alert?.trim()).length);
-  const activeNotificationCount = questions.length + alertCount;
+  const records = useMessageStore(state => state.records);
+  const processes = useJobsStore(state => state.detectedProcesses);
+  const alertCount = uncoveredAlerts(records, processes).filter(process => process._agent_alert?.trim()).length;
+  const represented = new Set(questions.map(question => questionMessage(records, question)));
+  const messageCount = records.filter(record => messagePending(record) && !represented.has(record)).length;
+  const activeNotificationCount = questions.length + alertCount + messageCount;
 
   const openMenu = () => {
     if (onOpen) {

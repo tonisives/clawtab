@@ -27,6 +27,18 @@ pub async fn handle_incoming(
     event_sink: &dyn EventSink,
 ) -> Option<String> {
     let incoming: serde_json::Value = serde_json::from_str(text).ok()?;
+    if incoming["type"] == "message_delivery_receipt" {
+        if let (Some(service), Some(id), Some(status)) = (
+            crate::nfn::service(),
+            incoming["message_id"].as_str(),
+            incoming["status"].as_str(),
+        ) {
+            service
+                .mobile_receipt(id, status, incoming["error"].as_str().map(str::to_owned))
+                .await;
+        }
+        return None;
+    }
     if matches!(
         incoming["type"].as_str(),
         Some("secure_peer" | "secure_roster_result")

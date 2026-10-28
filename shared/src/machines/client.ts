@@ -412,6 +412,7 @@ export let connectMachines = (getUrl: () => Promise<string>, preferencesApi?: Pr
             "jobs_list",
             "detected_processes",
             "claude_questions",
+            "messages_changed",
             "agent_activity",
             "settings_response",
             "auto_yes_panes",

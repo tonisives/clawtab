@@ -147,10 +147,13 @@ export function EnhancedNotifications({ settings, onChange }: {
       </select></label>
       <label>Status update duration (seconds)<input type="number" min={2} max={120} value={settings.preview_seconds}
         onChange={e => { const seconds = Number(e.target.value); if (seconds >= 2 && seconds <= 120) change({ preview_seconds: seconds }) }} /></label>
+      <label>Idle time before mobile delivery (seconds)<input type="number" min={10} max={3600} value={settings.idle_seconds ?? 60}
+        onChange={e => { const seconds = Number(e.target.value); if (seconds >= 10 && seconds <= 3600) change({ idle_seconds: seconds }) }} /></label>
       <div className="nfn-options">
         <label className="checkbox-label"><input type="checkbox" checked={settings.hover_expand} onChange={e => change({ hover_expand: e.target.checked })} />Expand on hover</label>
         <label className="checkbox-label"><input type="checkbox" checked={settings.sound} onChange={e => change({ sound: e.target.checked })} />Sound</label>
         <label className="checkbox-label"><input type="checkbox" checked={settings.menu_bar_icon} onChange={e => change({ menu_bar_icon: e.target.checked })} />Menu bar icon</label>
+        <label className="checkbox-label"><input type="checkbox" checked={settings.mobile_when_idle ?? true} onChange={e => change({ mobile_when_idle: e.target.checked })} />Send pending messages to mobile when this Mac is idle, locked, or asleep</label>
       </div>
     </div>
     <span className="hint">Review and permission cards stay open until answered or closed. Status updates pause on hover.</span>

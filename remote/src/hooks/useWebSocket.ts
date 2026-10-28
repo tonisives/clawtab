@@ -13,6 +13,8 @@ import {
   sendResource,
   machineSend,
   splitResource,
+  resourceKey,
+  messagePending,
   resolveEnabledModels,
   hostModelCatalog,
   type MachineMessage,
@@ -38,6 +40,8 @@ import { dispatchAgentActionProgress } from "../lib/agentActions"
 import { useTerminalSettings } from "../store/terminalSettings"
 import { getPushToken } from "../lib/notifications"
 import type { ClientMessage } from "../types/messages"
+import { loadMessageCache, resetMessages, useMessageStore } from "../store/messages"
+import { flushMessageActions, loadMessageActions, resetMessageActions } from "../lib/messageActions"
 
 let synchronize = () => {
   let state = machineState()
@@ -60,6 +64,21 @@ let synchronize = () => {
   let questions = messages.flatMap(
     ([id, snapshot]) => scopedMessage(id, snapshot.claude_questions ?? { questions: [] }).questions,
   )
+  const messageSnapshots = messages.filter(([, snapshot]) => snapshot.messages_changed)
+  if (messageSnapshots.length) {
+    const records = messageSnapshots.flatMap(([machine, snapshot]) => (snapshot.messages_changed.records ?? []).map((record: any) => ({
+      ...record, machine_id: machine, request: { ...record.request, source: {
+        ...record.request.source,
+        pane_id: record.request.source.pane_id ? resourceKey(machine, record.request.source.pane_id) : undefined,
+        job_id: record.request.source.job_id ? resourceKey(machine, record.request.source.job_id) : undefined,
+      } },
+    })))
+    useMessageStore.getState().setRecords(records)
+    const resolved = new Set(records.filter((record: any) => record.request.data?.question_id && !messagePending(record)).map((record: any) => resourceKey(record.machine_id, record.request.data.question_id)))
+    questions = questions.filter((question: MachineMessage) => !resolved.has(question.question_id))
+  } else if (messages.length) {
+    useMessageStore.getState().setRecords([])
+  }
   jobs.setQuestionPanes(questions.map((q: MachineMessage) => q.pane_id))
   jobs.setAgentActivity(
     messages.flatMap(
@@ -95,9 +114,15 @@ export let useWebSocket = () => {
   let userId = useAuthStore((s) => s.userId)
   useEffect(() => {
     if (!authenticated) {
+      resetMessages()
+      resetMessageActions()
       terminalCache.clear()
       setWsSend(null)
       return
+    }
+    if (userId) {
+      void loadMessageCache(userId)
+      void loadMessageActions(userId).then(() => flushMessageActions()).catch(() => {})
     }
     void useTerminalSettings.getState().hydrate()
     setWsSend(sendResource)
@@ -122,6 +147,7 @@ export let useWebSocket = () => {
         ([id, generation]) => !hostConnections.has(id) || hostConnections.get(id) !== generation,
       )
       let replay = connected && (!wasConnected || hostReconnected)
+      if (replay) void flushMessageActions().catch(() => {})
       // Sending a subscription can synchronously publish a routing error. Record
       // this generation first so that notification cannot replay it recursively.
       hostConnections = nextHosts

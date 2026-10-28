@@ -45,6 +45,15 @@ telegram:
 
 ## Notifications
 
+Use the shared message command to send to Telegram:
+
+```sh
+cwtctl message send "Build finished" --kind completed --channel telegram
+cwtctl message send "Ship it?" --channel telegram --choice "yes=Ship" --choice "no=Hold" --wait
+```
+
+Repeat `--channel desktop` to also show the card locally. Telegram questions accept button choices or a reply to the bot's message, even when Agent Mode is disabled. Responses resolve the same message on desktop and mobile. `cwtctl telegram send TEXT` remains an alias. See [Messages and notifications](../desktop/docs/enhanced-notifications.md) for mobile delivery and settings.
+
 Job notifications are sent automatically when jobs complete:
 
 ```
@@ -69,11 +78,12 @@ allow notifications for the app used to display the banner. To disable local
 failure banners, set `notify_job_failures_local: false` in `settings.yaml`;
 the default is `true`.
 
-The daemon stores failure alerts in its history database before delivery. If
-Telegram is unreachable, it retries every 30 seconds and resumes pending alerts
+The daemon stores failure alerts in its message queue before delivery. If
+Telegram is unreachable, it retries after 60 seconds and resumes pending alerts
 after a daemon restart. Per-job chat routing takes precedence over the global
 chat list. Successful delivery is remembered to avoid repeated notifications
 for the same run and chat; a crash during delivery can still repeat an alert.
+Previously queued alerts in the history database finish through the older delivery queue.
 
 Toggle `Notify on job success` and `Notify on job failure` checkboxes in the Notifications section after setup.
 

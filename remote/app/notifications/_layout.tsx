@@ -35,6 +35,7 @@ export default function NotificationsLayout() {
       }}
     >
       <Stack.Screen name="index" options={listHeaderOptions} />
+      <Stack.Screen name="message/[id]" options={{ ...listHeaderOptions, title: "Message" }} />
       <Stack.Screen name="job/[name]" />
       <Stack.Screen name="process/[pane_id]" />
     </Stack>

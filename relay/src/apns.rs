@@ -1,7 +1,7 @@
 use std::io::Cursor;
 
 use a2::{
-    Client, ClientConfig, DefaultNotificationBuilder, Endpoint, NotificationBuilder,
+    Client, ClientConfig, CollapseId, DefaultNotificationBuilder, Endpoint, NotificationBuilder,
     NotificationOptions, Priority, PushType,
 };
 use serde::Serialize;
@@ -33,6 +33,14 @@ struct PayloadOption {
 struct JobPayload {
     job_id: String,
     run_id: String,
+}
+
+fn message_collapse_id(metadata: &serde_json::Value) -> Result<Option<CollapseId<'_>>, String> {
+    metadata["message_id"]
+        .as_str()
+        .map(CollapseId::new)
+        .transpose()
+        .map_err(|error| error.to_string())
 }
 
 /// Result of a single APNs send attempt.
@@ -154,6 +162,42 @@ impl ApnsClient {
             .await
     }
 
+    pub async fn send_message_notification(
+        &self,
+        token: &str,
+        machine: &str,
+        record: &serde_json::Value,
+    ) -> Result<(), String> {
+        let request = &record["request"];
+        let actions: Vec<_> = request["actions"].as_array().into_iter().flatten()
+            .filter(|action| action["kind"] == "choice").take(3)
+            .map(|action| serde_json::json!({"id":action["id"],"label":action["label"].as_str().unwrap_or("").chars().take(48).collect::<String>()})).collect();
+        let options: Vec<_> = actions.iter().enumerate().map(|(index, action)| serde_json::json!({"number":(index+1).to_string(),"label":action["label"]})).collect();
+        let kind = request["kind"]
+            .as_str()
+            .filter(|kind| !kind.is_empty())
+            .unwrap_or_else(|| match request["template"].as_str() {
+                Some("update") => "update",
+                Some("permission" | "agent-approval" | "social-review") => "approval",
+                _ => "question",
+            });
+        let custom = serde_json::json!({"event":"message","message_id":record["id"],"machine_id":machine,"kind":kind,"actions":actions,"options":options});
+        let title: String = request["title"]
+            .as_str()
+            .unwrap_or("ClawTab")
+            .chars()
+            .take(100)
+            .collect();
+        let body: String = request["body"]
+            .as_str()
+            .unwrap_or("")
+            .chars()
+            .take(300)
+            .collect();
+        self.send_status_notification(token, &title, &body, &custom)
+            .await
+    }
+
     async fn send_status_notification(
         &self,
         device_token: &str,
@@ -164,6 +208,7 @@ impl ApnsClient {
         // APNs limits the whole payload to 4 KiB, including source metadata.
         let title: String = title.chars().take(160).collect();
         let body: String = body.chars().take(600).collect();
+        let collapse_id = message_collapse_id(custom_json)?;
 
         let build_payload = || {
             let builder = DefaultNotificationBuilder::new()
@@ -171,12 +216,26 @@ impl ApnsClient {
                 .set_body(&body)
                 .set_sound("default");
 
+            let builder = if custom_json["event"] == "message"
+                && matches!(custom_json["kind"].as_str(), Some("question" | "approval"))
+            {
+                let category = match custom_json["actions"].as_array().map_or(0, Vec::len) {
+                    0 => "CLAWTAB_M0",
+                    1 => "CLAWTAB_M1",
+                    2 => "CLAWTAB_M2",
+                    _ => "CLAWTAB_M3",
+                };
+                builder.set_category(category).set_mutable_content()
+            } else {
+                builder
+            };
+
             let options_obj = NotificationOptions {
                 apns_id: None,
                 apns_expiration: None,
                 apns_priority: Some(Priority::High),
                 apns_topic: Some(&self.topic),
-                apns_collapse_id: None,
+                apns_collapse_id: collapse_id.clone(),
                 apns_push_type: Some(PushType::Alert),
             };
 
@@ -279,6 +338,41 @@ impl ApnsClient {
             }
             SendResult::BadToken => Err("invalid_token:both".to_string()),
             SendResult::Fatal(e) => Err(e),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::message_collapse_id;
+    use serde_json::json;
+
+    #[test]
+    fn collapse_id_preserves_the_message_uuid() {
+        let id = uuid::Uuid::new_v4().to_string();
+        let metadata = json!({"message_id": id});
+        assert_eq!(message_collapse_id(&metadata).unwrap().unwrap().value, id);
+    }
+
+    #[test]
+    fn collapse_id_limit_counts_utf8_bytes() {
+        for id in ["a".repeat(64), "é".repeat(32)] {
+            let metadata = json!({"message_id": id});
+            assert_eq!(message_collapse_id(&metadata).unwrap().unwrap().value, id);
+        }
+        for id in ["a".repeat(65), "é".repeat(33)] {
+            assert!(message_collapse_id(&json!({"message_id": id})).is_err());
+        }
+    }
+
+    #[test]
+    fn collapse_id_is_optional_for_legacy_metadata() {
+        for metadata in [
+            json!({}),
+            json!({"message_id": null}),
+            json!({"message_id": 7}),
+        ] {
+            assert!(message_collapse_id(&metadata).unwrap().is_none());
         }
     }
 }

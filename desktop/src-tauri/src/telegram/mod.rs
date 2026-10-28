@@ -115,6 +115,91 @@ pub async fn send_message(bot_token: &str, chat_id: i64, text: &str) -> Result<(
     Ok(())
 }
 
+pub async fn send_clawtab_message(
+    bot_token: &str,
+    chat_id: i64,
+    record: &crate::nfn::NfnRecord,
+) -> Result<Vec<i64>, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let text = if record.request.body.starts_with(&record.request.title) {
+        record.request.body.clone()
+    } else {
+        format!("{}\n\n{}", record.request.title, record.request.body)
+    };
+    let buttons: Vec<Vec<serde_json::Value>> = record.request.actions.iter().enumerate()
+        .filter(|(_, action)| action.kind == "choice")
+        .map(|(index, action)| vec![serde_json::json!({"text":action.label,"callback_data":format!("msg:{}:{index}",record.id)})]).collect();
+    let text = if record.request.needs_response() {
+        format!("{text}\n\nReply to this message to answer.")
+    } else {
+        text
+    };
+    let mut ids = Vec::new();
+    for chunk in split_message(&text) {
+        let mut payload = serde_json::json!({"chat_id":chat_id,"text":chunk});
+        if !buttons.is_empty() {
+            payload["reply_markup"] = serde_json::json!({"inline_keyboard":buttons});
+        }
+        let response = client
+            .post(format!(
+                "https://api.telegram.org/bot{bot_token}/sendMessage"
+            ))
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|e| telegram_request_error("sendMessage", &e))?;
+        let value: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|e| telegram_request_error("sendMessage response", &e))?;
+        if value["ok"] != true {
+            return Err(value["description"]
+                .as_str()
+                .unwrap_or("Telegram delivery failed")
+                .into());
+        }
+        ids.push(
+            value["result"]["message_id"]
+                .as_i64()
+                .ok_or("Telegram returned no message ID")?,
+        );
+    }
+    Ok(ids)
+}
+
+pub async fn clear_clawtab_message(
+    bot_token: &str,
+    chat_id: i64,
+    message_id: i64,
+) -> Result<(), String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let response = client.post(format!("https://api.telegram.org/bot{bot_token}/editMessageReplyMarkup"))
+        .json(&serde_json::json!({"chat_id":chat_id,"message_id":message_id,"reply_markup":{"inline_keyboard":[]}})).send().await
+        .map_err(|e| telegram_request_error("editMessageReplyMarkup", &e))?;
+    let value: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| telegram_request_error("editMessageReplyMarkup response", &e))?;
+    if value["ok"] == true
+        || value["description"]
+            .as_str()
+            .is_some_and(|text| text.contains("message is not modified"))
+    {
+        Ok(())
+    } else {
+        Err(value["description"]
+            .as_str()
+            .unwrap_or("Could not update Telegram message")
+            .into())
+    }
+}
+
 /// Send a notification to all configured chat IDs
 pub async fn notify(config: &TelegramConfig, text: &str) {
     if !config.is_configured() {

@@ -35,6 +35,7 @@ pub struct Lease {
 }
 #[derive(Default)]
 pub struct MachineHub {
+    pub message_pushes: HashMap<(Uuid, String, Uuid), Instant>,
     pub journal_pending: HashMap<String, super::journal::Pending>,
     pub hosts: HashMap<Uuid, Host>,
     pub clients: HashMap<Uuid, Client>,
@@ -354,6 +355,7 @@ pub async fn host_event(state: &AppState, machine: Uuid, connection: Uuid, text:
                 | "agent_activity"
                 | "auto_yes_panes"
                 | "pinned_items"
+                | "messages_changed"
         ) {
             hub.snapshots.insert(
                 (
@@ -416,7 +418,12 @@ pub async fn host_event(state: &AppState, machine: Uuid, connection: Uuid, text:
         if user != owner
             && matches!(
                 kind.as_str(),
-                "usage_response" | "settings_response" | "pinned_items" | "host_response"
+                "usage_response"
+                    | "settings_response"
+                    | "pinned_items"
+                    | "host_response"
+                    | "messages_changed"
+                    | "message_notification"
             )
         {
             continue;

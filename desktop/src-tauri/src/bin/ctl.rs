@@ -29,7 +29,7 @@ fn print_usage() {
     eprintln!("  setup [--relay URL] [--name NAME] [--linger | --no-service] [--replace]  Pair and install the host");
     eprintln!("  login [--provider google|apple | --email EMAIL] [--relay URL] [--no-browser]  Replace the current account");
     eprintln!("Commands (require daemon):");
-    eprintln!("  nfn <send|get|wait|cancel|templates|show|settings>  Interactive local notifications");
+    eprintln!("  message <send|list|get|wait|reply|cancel|show|settings|templates>  Messages and human input");
     eprintln!("  jobs              Manage configured jobs");
     eprintln!("  move help         Move a conversation or verify machine/client identities");
     eprintln!(
@@ -50,7 +50,6 @@ fn print_usage() {
         "  secrets insert [--yes] <key>  Prompt for and store a secret; confirms before overwrite"
     );
     eprintln!("  secrets delete [--yes] <key>          Delete a secret; confirms first");
-    eprintln!("  telegram send <message>    Send a Telegram message via configured bot");
     eprintln!();
     eprintln!("Agent:");
     eprintln!("  agent auto-yes [toggle|check] [pane_id]  Manage auto-yes for an agent pane");
@@ -202,7 +201,11 @@ async fn handle_codex_command(args: &[String]) {
     let pane_id = args
         .get(5)
         .cloned()
-        .or_else(|| env::var("CLAWTAB_SESSION_ID").or_else(|_| env::var("TMUX_PANE")).ok())
+        .or_else(|| {
+            env::var("CLAWTAB_SESSION_ID")
+                .or_else(|_| env::var("TMUX_PANE"))
+                .ok()
+        })
         .unwrap_or_else(|| {
             eprintln!("Error: pass pane_id or run this command inside tmux");
             std::process::exit(1);
@@ -326,7 +329,11 @@ async fn handle_agent_action_command(args: &[String]) {
             .skip(2)
             .find(|arg| !arg.starts_with('-'))
             .cloned()
-            .or_else(|| env::var("CLAWTAB_SESSION_ID").or_else(|_| env::var("TMUX_PANE")).ok())
+            .or_else(|| {
+                env::var("CLAWTAB_SESSION_ID")
+                    .or_else(|_| env::var("TMUX_PANE"))
+                    .ok()
+            })
             .unwrap_or_else(|| {
                 eprintln!("Error: pass pane_id or run this command inside tmux");
                 std::process::exit(1);
@@ -343,7 +350,11 @@ async fn handle_agent_action_command(args: &[String]) {
                 let explicit_pane = args.get(4).filter(|value| !value.contains('='));
                 let pane_id = explicit_pane
                     .cloned()
-                    .or_else(|| env::var("CLAWTAB_SESSION_ID").or_else(|_| env::var("TMUX_PANE")).ok())
+                    .or_else(|| {
+                        env::var("CLAWTAB_SESSION_ID")
+                            .or_else(|_| env::var("TMUX_PANE"))
+                            .ok()
+                    })
                     .unwrap_or_else(|| {
                         eprintln!("Error: pass pane_id or run this command inside tmux");
                         std::process::exit(1);
@@ -505,7 +516,11 @@ async fn handle_plugin_command(args: &[String]) {
             let explicit_pane = args.get(4).filter(|value| !value.contains('='));
             let pane_id = explicit_pane
                 .cloned()
-                .or_else(|| env::var("CLAWTAB_SESSION_ID").or_else(|_| env::var("TMUX_PANE")).ok())
+                .or_else(|| {
+                    env::var("CLAWTAB_SESSION_ID")
+                        .or_else(|_| env::var("TMUX_PANE"))
+                        .ok()
+                })
                 .unwrap_or_else(|| {
                     eprintln!("Error: pass pane_id or run this command inside tmux");
                     std::process::exit(1);
@@ -686,6 +701,31 @@ fn require_job_reference(args: &[String], command: &str) -> String {
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     let raw_args: Vec<String> = env::args().collect();
+    if raw_args
+        .get(1)
+        .is_some_and(|arg| arg == "message" || arg == "telegram")
+    {
+        let mut message_args = raw_args[2..].to_vec();
+        if raw_args[1] == "telegram" {
+            if message_args.first().map(String::as_str) != Some("send") || message_args.len() < 2 {
+                exit_error(
+                    "Usage: cwtctl telegram send TEXT (alias of message send --channel telegram)",
+                );
+            }
+            message_args = vec![
+                "send".into(),
+                "--channel".into(),
+                "telegram".into(),
+                "--".into(),
+                message_args[1..].join(" "),
+            ];
+        }
+        match clawtab_lib::nfn::cli::message(&message_args).await {
+            Ok(value) => println!("{value}"),
+            Err(error) => exit_error(&error),
+        }
+        return;
+    }
     if raw_args.get(1).is_some_and(|arg| arg == "nfn") {
         match clawtab_lib::nfn::cli::run(&raw_args[2..]).await {
             Ok(value) => println!("{}", value),
@@ -960,12 +1000,14 @@ async fn main() {
             let pane_id = if args.len() > pane_arg_index {
                 args[pane_arg_index].clone()
             } else {
-                env::var("CLAWTAB_SESSION_ID").or_else(|_| env::var("TMUX_PANE")).unwrap_or_else(|_| {
-                    eprintln!(
-                        "Error: not in a tmux pane (no $TMUX_PANE). Pass pane_id explicitly."
-                    );
-                    std::process::exit(1);
-                })
+                env::var("CLAWTAB_SESSION_ID")
+                    .or_else(|_| env::var("TMUX_PANE"))
+                    .unwrap_or_else(|_| {
+                        eprintln!(
+                            "Error: not in a tmux pane (no $TMUX_PANE). Pass pane_id explicitly."
+                        );
+                        std::process::exit(1);
+                    })
             };
             // Resolve locally - no IPC needed
             let pane_pid = resolve_tmux_pane_format(&pane_id, "#{pane_pid}");
@@ -1036,7 +1078,8 @@ async fn main() {
             }
             let settings = clawtab_lib::config::settings::AppSettings::load();
             if let Some(alert) = clawtab_lib::agent_session::session_file_size_alert(
-                info.session_file_size_bytes, settings.session_file_warning_mb,
+                info.session_file_size_bytes,
+                settings.session_file_warning_mb,
             ) {
                 println!("alert={}", alert);
             }
@@ -1098,12 +1141,14 @@ async fn main() {
                 std::process::exit(1);
             }
             let pane_id = args.get(2).cloned().unwrap_or_else(|| {
-                env::var("CLAWTAB_SESSION_ID").or_else(|_| env::var("TMUX_PANE")).unwrap_or_else(|_| {
-                    eprintln!(
-                        "Error: not in a tmux pane (no $TMUX_PANE). Pass pane_id explicitly."
-                    );
-                    std::process::exit(1);
-                })
+                env::var("CLAWTAB_SESSION_ID")
+                    .or_else(|_| env::var("TMUX_PANE"))
+                    .unwrap_or_else(|_| {
+                        eprintln!(
+                            "Error: not in a tmux pane (no $TMUX_PANE). Pass pane_id explicitly."
+                        );
+                        std::process::exit(1);
+                    })
             });
             Target::Daemon(IpcCommand::SetPinnedItem {
                 key: format!("pane:{pane_id}"),
@@ -1148,48 +1193,19 @@ async fn main() {
                 }
             }
         }
-        "telegram" => {
-            if args.len() >= 3 && args[2] == "send" {
-                if args.len() < 4 {
-                    eprintln!("Error: 'telegram send' requires a message");
-                    std::process::exit(1);
-                }
-                let message = args[3..].join(" ");
-                let settings = clawtab_lib::config::settings::AppSettings::load();
-                let tg = match settings.telegram {
-                    Some(ref t) if t.is_configured() => t,
-                    _ => {
-                        eprintln!("Error: Telegram not configured (no bot token or chat ids)");
-                        std::process::exit(1);
-                    }
-                };
-                let chat_id = tg.chat_ids[0];
-                match clawtab_lib::telegram::send_message(&tg.bot_token, chat_id, &message).await {
-                    Ok(()) => {
-                        println!("ok");
-                    }
-                    Err(e) => {
-                        eprintln!("Error: {}", e);
-                        std::process::exit(1);
-                    }
-                }
-                return;
-            } else {
-                eprintln!("Unknown telegram subcommand. Usage: telegram send <message>");
-                std::process::exit(1);
-            }
-        }
         "auto-yes" => {
             if args.len() >= 3 && args[2] == "toggle" {
                 let pane_id = if args.len() >= 4 {
                     args[3].clone()
                 } else {
-                    env::var("CLAWTAB_SESSION_ID").or_else(|_| env::var("TMUX_PANE")).unwrap_or_else(|_| {
-                        eprintln!(
+                    env::var("CLAWTAB_SESSION_ID")
+                        .or_else(|_| env::var("TMUX_PANE"))
+                        .unwrap_or_else(|_| {
+                            eprintln!(
                             "Error: not in a tmux pane (no $TMUX_PANE). Pass pane_id explicitly."
                         );
-                        std::process::exit(1);
-                    })
+                            std::process::exit(1);
+                        })
                 };
                 Target::Daemon(IpcCommand::ToggleAutoYes { pane_id })
             } else if args.len() >= 3 && args[2] == "check" {
@@ -1211,7 +1227,9 @@ async fn main() {
         Some(if args.len() >= 4 {
             args[3].clone()
         } else {
-            env::var("CLAWTAB_SESSION_ID").or_else(|_| env::var("TMUX_PANE")).unwrap_or_default()
+            env::var("CLAWTAB_SESSION_ID")
+                .or_else(|_| env::var("TMUX_PANE"))
+                .unwrap_or_default()
         })
     } else {
         None
@@ -1552,7 +1570,9 @@ fn print_terminal_status(status: &JobStatus) {
 }
 
 fn attach_to_tmux(session: &str, pane: &str) -> Result<(), String> {
-    if clawtab_lib::managed::is_managed(pane) { return clawtab_lib::managed::run_cli(&["attach".into(), pane.into()]); }
+    if clawtab_lib::managed::is_managed(pane) {
+        return clawtab_lib::managed::run_cli(&["attach".into(), pane.into()]);
+    }
     if env::var_os("TMUX").is_some() {
         let status = Command::new("tmux")
             .args(["switch-client", "-t", session])
@@ -1795,7 +1815,10 @@ async fn save_pane_display_name(pane_id: &str, display_name: Option<String>) -> 
     let title = display_name.as_deref().unwrap_or("");
     if clawtab_lib::managed::is_managed(pane_id) {
         clawtab_lib::terminal_backend::set_pane_title(pane_id, title)?;
-        return clawtab_lib::terminal_backend::set_pane_display_name(pane_id, display_name.as_deref());
+        return clawtab_lib::terminal_backend::set_pane_display_name(
+            pane_id,
+            display_name.as_deref(),
+        );
     }
     let pane_title_output = std::process::Command::new("tmux")
         .args(["select-pane", "-t", pane_id, "-T", title])
@@ -2089,12 +2112,19 @@ Do not use tools.\n\n",
 
 fn resolve_tmux_pane_format(pane_id: &str, format: &str) -> String {
     if clawtab_lib::managed::is_managed(pane_id) {
-        return clawtab_lib::terminal_backend::info(pane_id).map(|info| match format {
-            "#{pane_pid}" => info.child_pid.to_string(),
-            "#{pane_current_path}" => info.launch.cwd,
-            "#{@clawtab-display-name}" => info.launch.metadata.get("display_name").cloned().unwrap_or_default(),
-            _ => String::new(),
-        }).unwrap_or_default();
+        return clawtab_lib::terminal_backend::info(pane_id)
+            .map(|info| match format {
+                "#{pane_pid}" => info.child_pid.to_string(),
+                "#{pane_current_path}" => info.launch.cwd,
+                "#{@clawtab-display-name}" => info
+                    .launch
+                    .metadata
+                    .get("display_name")
+                    .cloned()
+                    .unwrap_or_default(),
+                _ => String::new(),
+            })
+            .unwrap_or_default();
     }
     let list_format = format!("#{{pane_id}}\x1e{}", format);
     let from_list_panes = std::process::Command::new("tmux")

@@ -28,6 +28,7 @@ pub struct Message {
     pub chat: Chat,
     pub text: Option<String>,
     pub from: Option<User>,
+    pub reply_to_message: Option<Box<Message>>,
 }
 
 #[derive(Debug, Deserialize)]

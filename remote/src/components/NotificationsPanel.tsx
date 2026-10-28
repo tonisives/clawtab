@@ -1,18 +1,15 @@
 import { useCallback, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
-import { Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
-import type { LayoutChangeEvent } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { colors, radius, spacing } from "@clawtab/shared";
+import { colors } from "@clawtab/shared";
 import { NextNotification } from "./NextNotification";
 import type { ClaudeQuestion } from "@clawtab/shared";
-import { useNotificationStore } from "../store/notifications";
-import { useJobsStore } from "../store/jobs";
 import { JobDetailPane } from "./JobDetailPane";
 import { ProcessDetailPane } from "./ProcessDetailPane";
-import { NotificationStack } from "./NotificationStack";
 import type { NotificationDetailTarget } from "./notificationTypes";
+import { MessageInbox } from "./MessageInbox";
 
 interface NotificationsPanelProps {
   mode: "popup" | "screen";
@@ -31,13 +28,8 @@ export function NotificationsPanel({
   detailTarget: controlledDetailTarget,
   onDetailTargetChange,
 }: NotificationsPanelProps) {
-  const windowSize = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const questions = useNotificationStore((s) => s.questions);
-  const alertCount = useJobsStore((s) => s.detectedProcesses.filter(process => process._agent_alert?.trim()).length);
-  const autoYesPaneIds = useNotificationStore((s) => s.autoYesPaneIds);
   const [localDetailTarget, setLocalDetailTarget] = useState<NotificationDetailTarget | null>(null);
-  const [panelHeight, setPanelHeight] = useState(0);
   const detailTarget = onDetailTargetChange !== undefined
     ? controlledDetailTarget ?? null
     : localDetailTarget;
@@ -65,44 +57,6 @@ export function NotificationsPanel({
       paneId: question.pane_id,
     });
   };
-
-  const handlePanelLayout = useCallback((event: LayoutChangeEvent) => {
-    const nextHeight = event.nativeEvent.layout.height;
-    setPanelHeight((previousHeight) => (
-      Math.abs(previousHeight - nextHeight) > 1 ? nextHeight : previousHeight
-    ));
-  }, []);
-
-  const activeQuestionCount = questions.length;
-
-  const hasContent = activeQuestionCount > 0 || alertCount > 0 || autoYesPaneIds.size > 0;
-  const nativeTop = insets.top + 58;
-  const nativeBottom = insets.bottom + 58;
-  const nativeAvailableHeight = Math.max(260, windowSize.height - nativeTop - nativeBottom - 24);
-  const estimatedScreenHeight = Math.max(0, windowSize.height - insets.top - insets.bottom);
-  const nativeScreenAvailableHeight = panelHeight > 0 ? panelHeight : estimatedScreenHeight;
-  const cardBottomInset = Platform.OS === "web" || mode !== "screen" ? 0 : insets.bottom;
-  const nativeScreenTopReserve = (activeQuestionCount > 1 ? 36 : 0)
-    + (autoYesPaneIds.size > 0
-      ? autoYesPaneIds.size > 1 ? 46 : 42
-      : 0);
-  const nativeScreenCardMinHeight = Math.min(
-    windowSize.height,
-    Math.max(
-      420,
-      nativeScreenAvailableHeight
-        - spacing.md
-        - nativeScreenTopReserve
-        - spacing.md
-        - cardBottomInset,
-    ),
-  );
-  const nativeCardMinHeight = mode === "popup"
-    ? Math.max(240, nativeAvailableHeight - 120)
-    : nativeScreenCardMinHeight;
-  // React Native exposes the safe-area inset, but not the device's hardware
-  // screen-corner radius. 44pt is the common iPhone display corner radius.
-  const cardBottomRadius = Platform.OS === "ios" && !Platform.isPad ? 44 : radius.lg;
 
   if (detailTarget) {
     return (
@@ -148,47 +102,12 @@ export function NotificationsPanel({
     );
   }
 
-  return (
-    <ScrollView
-      style={styles.scroll}
-      onLayout={handlePanelLayout}
-      contentContainerStyle={[
-        styles.content,
-        mode === "screen" && styles.screenContent,
-        mode === "screen" && Platform.OS !== "web" && styles.nativeScreenContent,
-      ]}
-    >
-      {hasContent ? (
-          <NotificationStack
-            embedded
-            cardMinHeight={Platform.OS === "web" ? undefined : nativeCardMinHeight}
-            cardBottomInset={cardBottomInset}
-            cardBottomRadius={cardBottomRadius}
-            onNavigateAway={onNavigateAway}
-            onSelectDetail={setDetailTarget}
-            maxAutoYesEntries={0}
-          />
-      ) : (
-        <Text style={styles.empty}>No pending notifications.</Text>
-      )}
-    </ScrollView>
-  );
+  return <View style={{ flex: 1, minHeight: 0, paddingBottom: mode === "screen" ? insets.bottom : 0 }}>
+    <MessageInbox onSelectDetail={setDetailTarget} onNavigateAway={onNavigateAway} />
+  </View>;
 }
 
 const styles = StyleSheet.create({
-  scroll: {
-    flex: 1,
-  },
-  content: {
-    flexGrow: 1,
-  },
-  screenContent: {
-    padding: spacing.md,
-    paddingBottom: spacing.xl,
-  },
-  nativeScreenContent: {
-    paddingBottom: spacing.md,
-  },
   detailRoot: {
     flex: 1,
     minHeight: 0,
@@ -225,10 +144,5 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 0,
   },
-  empty: {
-    padding: spacing.md,
-    color: colors.textSecondary,
-    fontSize: 12,
-    textAlign: "center",
-  },
+
 });

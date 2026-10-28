@@ -33,6 +33,18 @@ pub(super) async fn send_job_notification(
 
     let status = if success { "finished" } else { "failed" };
     let text = crate::telegram::format_job_status_message(group_name, job_id, status, exit_code);
+    if let Some(service) = crate::nfn::service() {
+        let slug = format!("{group_name}/{job_id}");
+        let event = if success {
+            "completed".into()
+        } else {
+            exit_code
+                .map(|code| format!("failed (exit {code})"))
+                .unwrap_or_else(|| "failed".into())
+        };
+        service.job_message(&slug, &event, None, vec!["telegram".into()], job_chat_id);
+        return;
+    }
     let chat_ids = resolve_chat_ids(config, job_chat_id);
 
     for chat_id in chat_ids {

@@ -268,6 +268,7 @@ test('mobile subscription replay records the connection before synchronous error
     getState: () => new Proxy({}, { get: () => noop }),
   });
   let modules = {
+    '../lib/messageActions': { loadMessageActions: async () => {}, flushMessageActions: async () => {}, resetMessageActions: noop },
     react: { useEffect: (effect) => { cleanup = effect(); }, useCallback: (callback) => callback },
     'react-native': { AppState: { addEventListener: () => ({ remove: noop }) }, Platform: { OS: 'ios' } },
     '@clawtab/shared': {
@@ -317,6 +318,7 @@ for (let platform of ['web', 'ios']) {
     let state = { connected: true, controllers: {} };
     let store = Object.assign(() => true, { getState: () => new Proxy({}, { get: () => noop }) });
     let modules = {
+      '../lib/messageActions': { loadMessageActions: async () => {}, flushMessageActions: async () => {}, resetMessageActions: noop },
       react: { useEffect: (effect) => { cleanup = effect(); }, useCallback: (callback) => callback },
       'react-native': { AppState: { currentState: 'active', addEventListener: (_, callback) => { onStateChange = callback; return { remove: noop }; } }, Platform: { OS: platform } },
       '@clawtab/shared': {
@@ -351,6 +353,7 @@ test('settings reports the named machine status when another host is online', ()
     getState: () => new Proxy({}, { get: () => noop }),
   });
   let modules = {
+    '../lib/messageActions': { loadMessageActions: async () => {}, flushMessageActions: async () => {}, resetMessageActions: noop },
     react: { useEffect: (effect) => { cleanup = effect(); }, useCallback: (callback) => callback },
     'react-native': { AppState: { addEventListener: () => ({ remove: noop }) }, Platform: { OS: 'ios' } },
     '@clawtab/shared': {
