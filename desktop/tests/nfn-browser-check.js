@@ -803,6 +803,25 @@
   assert(decisions.every(command => command.id === "thread-newest"), "only the latest message receives the decision");
 
   resetFlow();
+  const firstRun = flowRecord("job-first-run", 1), retry = flowRecord("job-retry", 2);
+  firstRun.request.source = { job_id: "journal/screenshot-inbox", run_id: "run-a" };
+  retry.request.source = { job_id: "journal/screenshot-inbox", run_id: "run-b", pane_id: "%retry", session_id: "retry-session" };
+  firstRun.request.body = "First run failed"; retry.request.body = "Retry failed";
+  const otherJob = flowRecord("other-job", 3), otherJobHost = flowRecord("other-job-host", 4);
+  otherJob.request.source = { job_id: "journal/daily-content-brief", run_id: "run-a" };
+  otherJobHost.request.source = { ...firstRun.request.source }; otherJobHost.machine_id = "another-host";
+  window.nfn.receive(window.fixture.snapshot("job-first-run"));
+  assert(title() === "job-retry" && document.querySelectorAll(".message-thread-item").length === 2, "job retries share a card and opening an earlier run selects the latest alert");
+  assert(document.querySelector(".count").textContent === "1 / 3", "job cards group across runs while different jobs and hosts remain separate");
+  const finalRun = flowRecord("job-latest", 5);
+  finalRun.request.source = { job_id: "journal/screenshot-inbox", run_id: "run-c" };
+  finalRun.request.body = "Latest run failed";
+  window.nfn.receive(window.fixture.snapshot("job-latest"));
+  assert(title() === "job-latest" && document.querySelectorAll(".message-thread-item").length === 3, "a new job run updates the existing card and keeps earlier alerts in order");
+  click("Approve"); await sleep(20);
+  assert(document.querySelector(".count").textContent === "1 / 2", "handling the latest job alert closes alerts from its earlier runs");
+
+  resetFlow();
   const sessionA = flowRecord("session-a", 1), sessionB = flowRecord("session-b", 2), otherHost = flowRecord("other-host", 3);
   sessionA.request.source = { pane_id: "%same", session_id: "a" };
   sessionB.request.source = { pane_id: "%same", session_id: "b" };

@@ -26,6 +26,33 @@ test("one agent card retains its messages in order and uses the latest message",
   assert.deepEqual(Array.from(app.cardMessages(app.records.get("new")), item => item.id), ["old", "middle", "new"]);
 });
 
+test("job alerts share one card across runs and sessions while jobs and hosts stay separate", () => {
+  const app = surface();
+  const job = { job_id: "journal/screenshot-inbox" };
+  const messages = [record("first-run", 1, { ...job, run_id: "run-a", pane_id: "%1", session_id: "a" }),
+    record("retry", 2, { ...job, run_id: "run-b", pane_id: "%2", session_id: "b", agent_started_at: 99 }),
+    record("latest", 3, job), record("other-job", 4, { job_id: "journal/daily-content-brief", run_id: "run-b" }),
+    record("other-host", 5, job, { machine_id: "other-host" })];
+  for (const item of messages) app.records.set(item.id, item);
+  assert.deepEqual(Array.from(app.pendingCards(), item => item.id), ["latest", "other-job", "other-host"]);
+  assert.deepEqual(Array.from(app.cardMessages(app.records.get("latest")), item => item.id), ["first-run", "retry", "latest"]);
+});
+
+test("acknowledging a job card closes earlier runs and leaves a newer failure pending", async () => {
+  const app = surface();
+  const source = run_id => ({ job_id: "journal/screenshot-inbox", run_id });
+  for (const item of [record("old", 1, source("run-a")), record("latest", 2, source("run-b"))]) app.records.set(item.id, item);
+  app.window.webkit = { messageHandlers: { nfn: { postMessage({ token, command }) {
+    assert.equal(command.id, "latest");
+    assert.equal(app.pendingCards().length, 0);
+    app.records.set("newer", record("newer", 3, source("run-c")));
+    app.receive({ type: "response", token, value: { ...app.records.get("latest"), status: "resolved" } });
+  } } } };
+  await app.performAction("latest", { op: "respond", id: "latest", action_id: "acknowledge" });
+  assert.equal(app.records.get("old").status, "superseded");
+  assert.deepEqual(Array.from(app.pendingCards(), item => item.id), ["newer"]);
+});
+
 test("equal-time messages use the same latest message regardless of arrival order", () => {
   for (const ids of [["burst-9", "burst-10", "burst-8"], ["burst-8", "burst-10", "burst-9"]]) {
     const app = surface();

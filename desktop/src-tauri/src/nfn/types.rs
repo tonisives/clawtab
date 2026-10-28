@@ -112,6 +112,14 @@ impl NfnSource {
             && self.job_id == other.job_id
             && self.run_id == other.run_id
     }
+
+    pub fn same_thread(&self, other: &Self) -> bool {
+        match (&self.job_id, &other.job_id) {
+            (Some(job), Some(other_job)) => job == other_job,
+            (None, None) => self.same_agent(other),
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

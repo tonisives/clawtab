@@ -286,7 +286,7 @@ impl Store {
             let mut record: NfnRecord = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
             if record.dismissed_at.is_some()
                 || (record.created_at, &record.id) > (latest.created_at, &latest.id)
-                || !latest.request.source.same_agent(&record.request.source)
+                || !latest.request.source.same_thread(&record.request.source)
             {
                 continue;
             }
@@ -451,6 +451,55 @@ mod tests {
         let before = restarted.clone();
         restarted.agent_started_at = Some(20);
         assert!(!before.same_agent(&restarted));
+    }
+
+    #[test]
+    fn handling_latest_job_message_supersedes_earlier_runs_of_only_that_job() {
+        let store = Store::from_connection(Connection::open_in_memory().unwrap()).unwrap();
+        let base = now() + 100;
+        let send = |job: &str, run: Option<&str>, pane: Option<&str>, time: i64| {
+            let request = NfnRequest {
+                source: NfnSource {
+                    job_id: Some(job.into()),
+                    run_id: run.map(str::to_owned),
+                    pane_id: pane.map(str::to_owned),
+                    ..Default::default()
+                },
+                dedupe_key: None,
+                ..request()
+            };
+            let (mut record, _) = store.send(request, None).unwrap();
+            record.created_at = time;
+            store.save(&mut record).unwrap();
+            record
+        };
+        let job = "journal/screenshot-inbox";
+        let first = send(job, Some("run-a"), Some("%1"), base);
+        let retry = send(job, Some("run-b"), Some("%2"), base + 1);
+        let latest = send(job, None, None, base + 2);
+        let newer = send(job, Some("run-c"), None, base + 3);
+        let other_job = send(
+            "journal/daily-content-brief",
+            Some("run-a"),
+            Some("%1"),
+            base,
+        );
+        let mut delivering = send(job, Some("run-a"), None, base);
+        delivering.status = "delivering".into();
+        store.save(&mut delivering).unwrap();
+        let closed = store.supersede_previous(&latest).unwrap();
+        assert_eq!(closed.len(), 2);
+        for record in [&first, &retry] {
+            let record = store.get(&record.id).unwrap();
+            assert_eq!(record.status, "superseded");
+            assert!(record.read_at.is_some());
+            assert!(record.response.is_none());
+        }
+        for record in [&latest, &newer, &other_job] {
+            assert_eq!(store.get(&record.id).unwrap().status, "pending");
+        }
+        assert_eq!(store.get(&delivering.id).unwrap().status, "delivering");
+        assert!(store.supersede_previous(&latest).unwrap().is_empty());
     }
 
     #[test]
