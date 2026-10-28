@@ -9,6 +9,13 @@
 typedef void (*NfnCallback)(const char *);
 static NfnCallback callback;
 
+@interface NfnWebView : WKWebView
+@end
+@implementation NfnWebView
+// Deliver the activating mouse-down to buttons, reply fields, and drag handles.
+- (BOOL)acceptsFirstMouse:(NSEvent *)event { return YES; }
+@end
+
 @interface NfnPanel : NSPanel
 @property BOOL textFocus;
 @end
@@ -114,7 +121,7 @@ static void emit(NSDictionary *value) {
     [configuration.userContentController addScriptMessageHandler:self name:@"nfn"];
     [configuration setURLSchemeHandler:self forURLScheme:@"clawtab-nfn"];
     configuration.mediaTypesRequiringUserActionForPlayback = WKAudiovisualMediaTypeAll;
-    self.web = [[WKWebView alloc] initWithFrame:self.panel.contentView.bounds configuration:configuration];
+    self.web = [[NfnWebView alloc] initWithFrame:self.panel.contentView.bounds configuration:configuration];
     self.web.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     self.web.navigationDelegate = self;
     [self.web setValue:@NO forKey:@"drawsBackground"];

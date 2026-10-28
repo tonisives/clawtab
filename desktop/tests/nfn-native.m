@@ -204,6 +204,27 @@ static void verifyEditing(void (^finish)(void)) {
     }];
 }
 
+static void verifyFirstClick(void (^finish)(void)) {
+    [surface releaseTextFocus];
+    [surface.web evaluateJavaScript:@"(() => { window.firstClickCount = 0; const input = document.querySelector('textarea'); input.addEventListener('pointerdown', () => window.firstClickCount++); const r = input.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()" completionHandler:^(id point, NSError *error) {
+        if (error || ![point isKindOfClass:NSArray.class] || surface.panel.isKeyWindow) { fprintf(stderr, "Could not prepare inactive reply click\n"); exit(1); }
+        CGFloat y = [point[1] doubleValue];
+        NSPoint location = [surface.web convertPoint:NSMakePoint([point[0] doubleValue], surface.web.isFlipped ? y : surface.web.bounds.size.height - y) toView:nil];
+        for (NSNumber *type in @[@(NSEventTypeLeftMouseDown), @(NSEventTypeLeftMouseUp)]) {
+            NSEvent *event = [NSEvent mouseEventWithType:type.unsignedIntegerValue location:location modifierFlags:0 timestamp:NSProcessInfo.processInfo.systemUptime windowNumber:surface.panel.windowNumber context:nil eventNumber:1 clickCount:1 pressure:type.unsignedIntegerValue == NSEventTypeLeftMouseDown ? 1 : 0];
+            if (![surface.web acceptsFirstMouse:event]) { fprintf(stderr, "Notification web view rejects the activating click\n"); exit(1); }
+            [NSApp sendEvent:event];
+        }
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 4), dispatch_get_main_queue(), ^{
+            [surface.web evaluateJavaScript:@"window.firstClickCount === 1 && document.activeElement === document.querySelector('textarea')" completionHandler:^(id received, NSError *clickError) {
+                if (clickError || ![received boolValue]) { fprintf(stderr, "First native click did not reach and focus the reply field\n"); exit(1); }
+                printf("Native first-click check passed: one mouse-down reaches and focuses the reply field from an inactive panel.\n");
+                finish();
+            }];
+        });
+    }];
+}
+
 static void sampleExpansion(NSMutableArray<NSNumber *> *widths, void (^finish)(void)) {
     [surface.web evaluateJavaScript:@"document.querySelector('#surface').getBoundingClientRect().width" completionHandler:^(id width, NSError *error) {
         if (error || ![width isKindOfClass:NSNumber.class]) { fprintf(stderr, "Could not measure the notification animation\n"); exit(1); }
@@ -314,10 +335,9 @@ int main(int argc, const char **argv) {
                             });
                             return;
                         }
-                        [surface.web evaluateJavaScript:@"document.querySelector('textarea').dispatchEvent(new PointerEvent('pointerdown',{bubbles:true})); document.querySelector('textarea').focus()" completionHandler:^(id result, NSError *focusError) {
-                            (void)result;
+                        verifyFirstClick(^{
                             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 4), dispatch_get_main_queue(), ^{
-                                if (focusError || !surface.panel.textFocus || !surface.panel.isKeyWindow) { fprintf(stderr,"Reply focus lease failed: error=%s lease=%d key=%d can-key=%d\n",focusError.localizedDescription.UTF8String,surface.panel.textFocus,surface.panel.isKeyWindow,surface.panel.canBecomeKeyWindow); exit(1); }
+                                if (!surface.panel.textFocus || !surface.panel.isKeyWindow) { fprintf(stderr,"Reply focus lease failed: lease=%d key=%d can-key=%d\n",surface.panel.textFocus,surface.panel.isKeyWindow,surface.panel.canBecomeKeyWindow); exit(1); }
                                 verifyEditing(^{
                                     clawtab_nfn_activate(previousApplication);
                                     verifyExpansion(^{
@@ -326,7 +346,7 @@ int main(int argc, const char **argv) {
                                     });
                                 });
                             });
-                        }];
+                        });
                     }];
                 });
             }];
