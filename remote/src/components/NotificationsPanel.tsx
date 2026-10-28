@@ -1,7 +1,6 @@
 import { useCallback, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { colors } from "@clawtab/shared";
 import { NextNotification } from "./NextNotification";
@@ -28,7 +27,6 @@ export function NotificationsPanel({
   detailTarget: controlledDetailTarget,
   onDetailTargetChange,
 }: NotificationsPanelProps) {
-  const insets = useSafeAreaInsets();
   const [localDetailTarget, setLocalDetailTarget] = useState<NotificationDetailTarget | null>(null);
   const detailTarget = onDetailTargetChange !== undefined
     ? controlledDetailTarget ?? null
@@ -102,7 +100,7 @@ export function NotificationsPanel({
     );
   }
 
-  return <View style={{ flex: 1, minHeight: 0, paddingBottom: mode === "screen" ? insets.bottom : 0 }}>
+  return <View style={{ flex: 1, minHeight: 0, backgroundColor: "#161616" }}>
     <MessageInbox onSelectDetail={setDetailTarget} onNavigateAway={onNavigateAway} />
   </View>;
 }

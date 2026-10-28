@@ -8,6 +8,33 @@ export function MessageSurface(props: MessageSurfaceProps) {
   latest.current = props;
   const ready = useRef(false);
   const selected = useRef<string | null>(null);
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+    let pending = 0;
+    const resize = () => {
+      cancelAnimationFrame(pending);
+      pending = requestAnimationFrame(() => {
+        const element = frame.current;
+        if (!element) return;
+        // Route transitions move the frame without a viewport resize. Keep
+        // natural flex sizing until the keyboard reduces the visible viewport.
+        const bottom = viewport.offsetTop + viewport.height;
+        element.style.maxHeight = window.innerHeight - viewport.height > 100
+          ? `${Math.max(0, bottom - element.getBoundingClientRect().top)}px` : "";
+      });
+    };
+    resize();
+    viewport.addEventListener("resize", resize);
+    viewport.addEventListener("scroll", resize);
+    window.addEventListener("resize", resize);
+    return () => {
+      cancelAnimationFrame(pending);
+      viewport.removeEventListener("resize", resize);
+      viewport.removeEventListener("scroll", resize);
+      window.removeEventListener("resize", resize);
+    };
+  }, []);
   const send = useCallback((value: unknown) => frame.current?.contentWindow?.postMessage(value, "*"), []);
   const synchronize = useCallback(() => {
     if (!ready.current) return;

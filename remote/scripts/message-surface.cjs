@@ -6,11 +6,13 @@ function messageDocument(root = path.resolve(__dirname, "../../shared/src/nfn"))
   const read = name => fs.readFileSync(path.join(root, name), "utf8");
   return read("surface.html")
     .replace("/* NFN_CSS */", read("surface.css") + `
-html,body{width:100%;height:100%;background:#161616;overflow:hidden}
+html,body{width:100%;height:var(--message-height,100%);background:#161616;overflow:hidden}
 body{display:flex;justify-content:center}
 #surface,#surface.details-open,#surface.pill{width:100%;max-width:100%;max-height:100%;border:0;border-radius:0;box-shadow:none}
-#surface{min-height:100%;--surface-max-height:100dvh}
-.queue{height:calc(100dvh - 44px)}
+#surface{height:100%;min-height:0;--surface-max-height:var(--message-height,100dvh)}
+.queue{flex:1;height:auto;padding-bottom:max(6px,var(--message-safe-bottom,env(safe-area-inset-bottom,0px)))}
+.card,.details-open .card{overflow-y:auto;padding-bottom:calc(12px + var(--message-safe-bottom,env(safe-area-inset-bottom,0px)))}
+.details-open .card>.details-content{flex:none}
 .top .brand{pointer-events:none}
 button.bar-toggle{touch-action:auto;cursor:pointer}
 button,input,select,textarea{font-size:16px}
@@ -20,7 +22,7 @@ button,input,select,textarea{font-size:16px}
 .message-thread{max-height:35dvh}
 .details-content{max-height:none}
 `)
-    .replace("/* NFN_JS */", read("surface.js"));
+    .replace("/* NFN_JS */", read("surface.js") + "\n" + fs.readFileSync(path.resolve(__dirname, "../src/lib/messageSurfaceViewport.js"), "utf8"));
 }
 
 function generate() {

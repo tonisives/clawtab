@@ -337,6 +337,9 @@ for (const variant of ["MessageSurface.web.tsx", "MessageSurface.tsx"]) {
     const dependencies = {
       react, "react/jsx-runtime": { jsx: (type, props) => ({ type, props }) },
       "react-native-webview": { default: "WebView" },
+      "react-native": { View: "View" },
+      "react-native-safe-area-context": { useSafeAreaInsets: () => ({ bottom: 34 }) },
+      "../hooks/useMessageKeyboard": { useMessageKeyboard: () => ({ host: { current: null }, overlap: 0, onLayout() {} }) },
       "../lib/messageSurfaceDocument.generated": { default: "fixture document" },
     };
     const source = ts.transpileModule(fs.readFileSync(path.resolve(base, `../components/${variant}`), "utf8"), {
@@ -346,12 +349,17 @@ for (const variant of ["MessageSurface.web.tsx", "MessageSurface.tsx"]) {
     vm.runInNewContext(source, { exports, require: name => dependencies[name], window: { addEventListener() {}, removeEventListener() {} } });
     const render = selection => {
       cursor = 0; effects.length = 0;
-      const node = exports.MessageSurface({ snapshot: { type: "snapshot" }, selection, onCommand: async () => ({}) });
+      const root = exports.MessageSurface({ snapshot: { type: "snapshot" }, selection, onCommand: async () => ({}) });
+      const node = root.type === "View" ? root.props.children : root;
       node.props.ref.current = frame;
       effects.forEach(effect => effect());
       return node;
     };
     const initial = render("mac-a::review");
+    if (!variant.includes(".web")) {
+      assert.equal(initial.props.hideKeyboardAccessoryView, true);
+      assert.equal(initial.props.contentInsetAdjustmentBehavior, "never");
+    }
     if (variant.includes(".web")) initial.props.onLoad();
     else initial.props.onMessage({ nativeEvent: { data: JSON.stringify({ nfn: { preview_ready: true } }) } });
     assert.equal(sent.at(-1).id, "mac-a::review");

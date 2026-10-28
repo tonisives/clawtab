@@ -201,7 +201,7 @@ export default function RootLayout() {
               name="notifications"
               options={{
                 animation: "slide_from_bottom",
-                presentation: "modal",
+                presentation: "fullScreenModal",
                 headerShown: false,
               }}
             />
