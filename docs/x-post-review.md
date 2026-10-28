@@ -26,6 +26,8 @@ python3 etc/x-post-review/x_post_review.py watch /absolute/path/to/returned/rece
 
 `preview` validates and prints the review payload. `review` sends the card and returns its receipt path. `watch` stays in the foreground until the user decides or the card expires after 24 hours. The caller keeps this process alive while waiting. A revised draft requires a new review. Feedback entered with Post to X also requires another review, so it cannot silently change the published text.
 
+The runner persists the message ID and draft hash, then waits for a resolved Post action. A `wait_timed_out` result never authorizes publishing, even when the CLI exits successfully. After URL verification, the runner sends a new `completed` message containing that URL. It does not patch the approval record.
+
 If the caller resumes after a decision, `publish RECEIPT` reads it from ClawTab and continues. Receipts live in `~/.local/state/clawtab/x-post-review/`; each stores the draft, review ID, submission state and verified URL. File locks serialize concurrent calls. The submission state is saved and synced before the only Post click. A verified receipt returns its original result on repeat calls.
 
 When the browser disconnects after submission, the receipt becomes `uncertain`. A process interrupted at the click remains `submitting`. Both stop another Post click. Inspect the account's existing posts, then verify the matching permalink:

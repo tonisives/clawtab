@@ -85,6 +85,12 @@ class ReviewTests(unittest.TestCase):
                 self.record['request'][field] = original
         self.assertEqual(FakeBrowser.clicks, 0)
 
+    def test_timed_out_record_with_stale_post_response_never_clicks(self):
+        self.record['wait_timed_out'] = True
+        with self.assertRaises(x.WorkflowError):
+            self.call()
+        self.assertEqual(FakeBrowser.clicks, 0)
+
     def test_feedback_and_expired_decisions_need_new_review(self):
         self.record['response']['text'] = 'change the first sentence'
         with self.assertRaises(x.WorkflowError):
@@ -195,6 +201,17 @@ class ReviewTests(unittest.TestCase):
         self.assertEqual(result['phase'], 'verified')
         self.assertIn('completion_message_error', result)
         self.assertEqual(self.call()['url'], result['url'])
+        self.assertEqual(FakeBrowser.clicks, 1)
+
+    def test_verified_post_sends_new_completed_message_with_permalink(self):
+        with patch.object(x, 'message', side_effect=[self.record, self.record,
+                          {'id': 'completion-1'}]) as message:
+            result = x.publish(self.path, browser_factory=FakeBrowser)
+        self.assertEqual(message.call_args.args, ('send', '--stdin'))
+        payload = message.call_args.kwargs['payload']
+        self.assertEqual(payload['kind'], 'completed')
+        self.assertEqual(payload['body'], result['url'])
+        self.assertEqual(payload.get('actions', []), [])
         self.assertEqual(FakeBrowser.clicks, 1)
 
 
