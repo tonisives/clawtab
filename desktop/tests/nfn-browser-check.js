@@ -106,9 +106,10 @@
   window.nfn.collapse();
   second.status = "pending";
   window.fixture.records.get("first").status = "pending";
-  const burstTime = Date.now();
+  const burstStart = Math.max(...[...window.fixture.records.values()].map(record => record.created_at)) + 1;
   for (let i = 0; i < 65; i++) {
-    const record = window.fixture.record(`burst-${i}`); record.created_at = burstTime + i;
+    const record = window.fixture.record(`burst-${i}`);
+    record.created_at = burstStart + i;
     window.fixture.records.set(record.id, record);
   }
   window.nfn.receive(window.fixture.snapshot()); window.nfn.receive({ type: "show" });

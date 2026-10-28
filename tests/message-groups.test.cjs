@@ -8,7 +8,7 @@ function surface() {
   const window = { matchMedia: () => ({ matches: true, addEventListener() {} }), addEventListener() {} };
   window.parent = window;
   const source = fs.readFileSync(require.resolve("../shared/src/nfn/surface.js"), "utf8")
-    .replace("  window.nfn = {", "  window.groups = { records, pendingCards, cardMessages, performAction, actionsInProgress }; hiddenByUser = true; render = () => {};\n  window.nfn = {");
+    .replace("  window.nfn = {", "  window.groups = { records, pendingCards, cardMessages, addPendingPage, performAction, actionsInProgress }; hiddenByUser = true; render = () => {};\n  window.nfn = {");
   vm.runInNewContext(source, {
     window, document: { getElementById: () => host, addEventListener() {} },
     ResizeObserver: class { observe() {} }, setTimeout, clearTimeout,
@@ -24,6 +24,39 @@ test("one agent card retains its messages in order and uses the latest message",
   for (const item of [record("new", 3), record("old", 1), record("middle", 2)]) app.records.set(item.id, item);
   assert.deepEqual(Array.from(app.pendingCards(), item => item.id), ["new"]);
   assert.deepEqual(Array.from(app.cardMessages(app.records.get("new")), item => item.id), ["old", "middle", "new"]);
+});
+
+test("equal-time messages use the same latest message regardless of arrival order", () => {
+  for (const ids of [["burst-9", "burst-10", "burst-8"], ["burst-8", "burst-10", "burst-9"]]) {
+    const app = surface();
+    for (const id of ids) app.records.set(id, record(id, 100));
+    assert.equal(app.pendingCards()[0].id, "burst-9");
+    assert.deepEqual(Array.from(app.cardMessages(app.pendingCards()[0]), item => item.id), ["burst-10", "burst-8", "burst-9"]);
+  }
+});
+
+test("equal-time server pages retain ID order across the page boundary", () => {
+  const app = surface();
+  const messages = Array.from({ length: 67 }, (_, i) => record(`burst-${i}`, 100, {}))
+    .sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+  app.addPendingPage({ records: messages.slice(0, 50), next_offset: 50 });
+  const selected = app.pendingCards()[49].id;
+  app.addPendingPage({ records: messages.slice(50), next_offset: 67 });
+  const cards = app.pendingCards(), index = cards.findIndex(item => item.id === selected);
+  assert.equal(index, 49);
+  assert.equal(cards[index + 1].id, messages[50].id);
+  assert.equal(cards.length, 67);
+});
+
+test("an older server page precedes the current card instead of appending after it", () => {
+  const app = surface();
+  const messages = Array.from({ length: 67 }, (_, i) => record(`page-${i}`, 100 - i, {}));
+  app.addPendingPage({ records: messages.slice(0, 50), next_offset: 50 });
+  const selected = app.pendingCards().at(-1).id;
+  app.addPendingPage({ records: messages.slice(50), next_offset: 67 });
+  const cards = app.pendingCards(), index = cards.findIndex(item => item.id === selected);
+  assert.equal(index, 66);
+  assert.equal(cards[(index + 1) % cards.length].id, "page-66");
 });
 
 test("sessions, restarted agents, different hosts, and unidentified messages remain separate", () => {
