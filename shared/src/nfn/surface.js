@@ -1296,7 +1296,9 @@
     if (value.arrival && records.has(value.arrival)) hiddenByUser = false;
     if (value.arrival && records.has(value.arrival) && !actionsInProgress.has(value.arrival) && !current && !settingsOpen && !todosOpen && !bulkBusy && (!queue || !selectedNotifications.size)) {
       clearTimeout(completionTimer); pauseTimer(); stopContext();
-      current = value.arrival; queueReturnId = current; queue = false; history = false; details = false; menu = null;
+      const arrival = records.get(value.arrival), key = agentKey(arrival);
+      current = (key && pendingCards().find(record => agentKey(record) === key)?.id) || value.arrival;
+      queueReturnId = current; queue = false; history = false; details = false; menu = null;
       remaining = (value.settings?.preview_seconds || 8) * 1000; renderedId = null;
     }
     render(); resumeTimer();

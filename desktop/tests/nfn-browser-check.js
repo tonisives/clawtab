@@ -720,6 +720,7 @@
   earlier.request.body = "First proposal"; threadLatest.request.body = "Revised proposal";
   flowRecord("another-agent", 3);
   window.nfn.receive(window.fixture.snapshot("thread-earlier"));
+  assert(title() === "thread-latest", "an older arrival opens the latest message already known for that agent");
   window.nfn.receive({ type: "open_record", id: "thread-earlier" });
   assert(document.querySelectorAll(".message-thread-item").length === 2 && title() === "thread-latest", "messages from one agent share a card with the latest actions, including links to an older message");
   assert([...document.querySelectorAll(".message-thread .message")].map(node => node.textContent).join("|") === "First proposal|Revised proposal", "the grouped card lists messages in their original order");
