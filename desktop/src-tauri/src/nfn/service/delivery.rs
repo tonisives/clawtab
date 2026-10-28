@@ -401,10 +401,8 @@ mod tests {
         assert!(mobile_due(&disabled, &platform, &record));
         record.request.channels.push("desktop".into());
         record.request.data = json!({"event":"agent_finished"});
-        let app_settings = crate::config::settings::AppSettings {
-            notify_agent_completion_remote: false,
-            ..Default::default()
-        };
+        let mut app_settings = crate::config::settings::AppSettings::default();
+        app_settings.notify_agent_completion_remote = false;
         assert!(remote_enabled(&app_settings, &record));
         record.request.channels = vec!["desktop".into()];
         assert!(!remote_enabled(&app_settings, &record));
