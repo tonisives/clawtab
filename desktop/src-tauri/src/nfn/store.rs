@@ -501,6 +501,64 @@ mod tests {
     }
 
     #[test]
+    fn concurrent_ignore_and_sends_leave_every_stored_message_ignored() {
+        for round in 0..32 {
+            let store = Store::from_connection(Connection::open_in_memory().unwrap()).unwrap();
+            let request = NfnRequest {
+                dedupe_key: None,
+                source: NfnSource {
+                    pane_id: Some("%1".into()),
+                    session_id: Some("session-a".into()),
+                    agent_pid: Some("123".into()),
+                    agent_started_at: Some(10),
+                    ..Default::default()
+                },
+                ..request()
+            };
+            let seed = store.send(request.clone(), None).unwrap().0;
+            let start = std::sync::Barrier::new(5);
+            let ids = std::thread::scope(|threads| {
+                let ignore = threads.spawn(|| {
+                    start.wait();
+                    std::thread::yield_now();
+                    store.set_ignored(&seed.id, true).unwrap();
+                });
+                let senders = (0..4)
+                    .map(|_| {
+                        threads.spawn(|| {
+                            start.wait();
+                            (0..8)
+                                .map(|_| {
+                                    let (record, created) =
+                                        store.send(request.clone(), None).unwrap();
+                                    assert!(created);
+                                    std::thread::yield_now();
+                                    record.id
+                                })
+                                .collect::<Vec<_>>()
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                ignore.join().unwrap();
+                senders
+                    .into_iter()
+                    .flat_map(|sender| sender.join().unwrap())
+                    .collect::<Vec<_>>()
+            });
+            assert_eq!(ids.len(), 32);
+            // A send may return before Ignore commits; inspect stored state after both finish.
+            for id in ids {
+                let record = store.get(&id).unwrap();
+                assert!(record.ignored, "round {round}, message {id}");
+                assert_eq!(record.status, "pending");
+                assert!(record.response.is_none());
+            }
+            assert_eq!(store.pending().unwrap().len(), 33);
+            assert_eq!(store.pending_count().unwrap(), 0);
+        }
+    }
+
+    #[test]
     fn deduplication_refreshes_ignore_when_agent_identity_changes() {
         for changed_field in ["pid", "started_at", "run_id"] {
             let store = Store::from_connection(Connection::open_in_memory().unwrap()).unwrap();
@@ -537,6 +595,8 @@ mod tests {
                 "replacement must use ignored {changed_field}"
             );
             assert_eq!(updated.request.source, replacement.source);
+            assert!(store.get(&first.id).unwrap().ignored);
+            assert_eq!(store.pending_count().unwrap(), 0);
 
             let (restored, created) = store.send(original, None).unwrap();
             assert!(!created);
