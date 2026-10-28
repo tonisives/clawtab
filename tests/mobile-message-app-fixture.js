@@ -1,8 +1,13 @@
 // Injected only by serve-mobile-message-app.py into a worker-exported app.
 (() => {
   const token = `fixture.${btoa(JSON.stringify({ exp: 4102444800, email: "fixture@example.test" }))}.fixture`;
-  localStorage.setItem("clawtab_access_token", token);
-  localStorage.setItem("clawtab_user_id", "message-ui-fixture");
+  if (new URLSearchParams(location.search).has("fixture_login")) {
+    localStorage.removeItem("clawtab_access_token");
+    localStorage.removeItem("clawtab_user_id");
+  } else {
+    localStorage.setItem("clawtab_access_token", token);
+    localStorage.setItem("clawtab_user_id", "message-ui-fixture");
+  }
   localStorage.setItem("clawtab_server_url", location.origin);
   const machines = ["mac-a", "mac-b"].map(id => ({
     id, name: id, online: true, owned: true, connection_id: id, platform: "macos",
@@ -22,7 +27,7 @@
   });
   const records = { "mac-a": [record("mac-a", "Caption from Mac A")],
     "mac-b": [record("mac-b", "Your agents, wherever you are. Review the ClawTab launch post and its media.")] };
-  const fixture = window.messageAppFixture = { calls: [], sockets: [], records };
+  const fixture = window.messageAppFixture = { calls: [], sockets: [], records, media: [] };
   class FixtureSocket {
     static CONNECTING = 0; static OPEN = 1; static CLOSING = 2; static CLOSED = 3;
     readyState = 0;
@@ -66,7 +71,11 @@
         ] }] };
         else if (command.op === "todos") result = { items: [] };
         else if (command.op === "context") result = { source: item.request.source, log: "Draft and attachments ready for review", models: [], plugins: [] };
-        else if (command.op === "media") result = await fetch(`/__message_fixture/media/${command.index}?offset=${command.offset}&length=${command.length}`).then(response => response.json());
+        else if (command.op === "media") {
+          result = await fetch(`/__message_fixture/media/${command.index}?offset=${command.offset}&length=${command.length}`).then(response => response.json());
+          fixture.media.push({ machine, index: command.index, offset: result.offset,
+            bytes: atob(result.data).length, size: result.size, eof: result.eof });
+        }
         else throw new Error("Fixture keeps decisions pending");
         reply({ type: "host_response", result });
       })().catch(error => reply({ type: "error", error: error.message }));

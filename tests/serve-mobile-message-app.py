@@ -16,6 +16,7 @@ def main():
     parser.add_argument("--image", type=Path, required=True)
     parser.add_argument("--video", type=Path, required=True)
     parser.add_argument("--port", type=int, default=1944)
+    parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--duration", type=int, default=1200)
     args = parser.parse_args()
     root = args.export.resolve()
@@ -48,18 +49,20 @@ def main():
                     data = stream.read(length)
                 self.reply(json.dumps({"mime": mime, "size": size, "offset": offset,
                     "data": base64.b64encode(data).decode(), "eof": offset + len(data) >= size}).encode(), "application/json")
+            elif url.path == "/subscription/status":
+                self.reply(b'{"subscribed":true}', "application/json")
             elif url.path.startswith(("/account/", "/billing/", "/subscription")):
                 self.reply(b"{}", "application/json")
-            elif url.path == "/" or url.path.startswith(("/notifications", "/process/", "/job/")):
+            elif url.path == "/" or url.path.startswith(("/notifications", "/process/", "/job/", "/login")):
                 self.reply(document, "text/html; charset=utf-8")
             else:
                 super().do_GET()
 
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", args.port), functools.partial(Handler, directory=str(root)))
+    server = http.server.ThreadingHTTPServer((args.host, args.port), functools.partial(Handler, directory=str(root)))
     timer = threading.Timer(args.duration, server.shutdown)
     timer.daemon = True
     timer.start()
-    print(f"Message app fixture: http://127.0.0.1:{server.server_port}/notifications/message/launch-review?machine=mac-b", flush=True)
+    print(f"Message app fixture: http://{args.host}:{server.server_port}/notifications/message/launch-review?machine=mac-b", flush=True)
     try:
         server.serve_forever()
     finally:
