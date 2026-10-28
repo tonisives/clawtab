@@ -1,4 +1,4 @@
-use super::{claude_working_status, codex_working_status, strip_ansi, DetectedAgent};
+use super::{claude_working_status, DetectedAgent};
 use crate::agent_hooks::{HookAgentState, HookPaneState, HookRuntime};
 use crate::agent_session::{ProcessProvider, ProcessSnapshot};
 use crate::ipc::AgentActivity;
@@ -137,12 +137,9 @@ impl Tracker {
 fn idle_screen(screen: &str, provider: ProcessProvider) -> bool {
     match provider {
         ProcessProvider::Claude => claude_working_status(screen) == Some(false),
-        ProcessProvider::Codex => {
-            !codex_working_status(screen)
-                && strip_ansi(screen)
-                    .lines()
-                    .any(|line| line.trim_start().starts_with('\u{203a}'))
-        }
+        // Codex can briefly hide its working indicator during an active turn.
+        // Its composer remains visible throughout; require a completion hook.
+        ProcessProvider::Codex => false,
         _ => false,
     }
 }
@@ -249,6 +246,30 @@ mod tests {
     }
 
     #[test]
+    fn codex_without_completion_hooks_never_finishes_from_screen_changes() {
+        let mut tracker = Tracker::default();
+        let process = identity("59819");
+        tracker.observe(&activity(true, false, 1), &process, None, false);
+
+        // The newsletter agent still had an active turn when its spinner vanished.
+        for (index, screen) in [
+            "OpenAI Codex\n\n\u{203a} Ask Codex to do anything",
+            "Reading newsletter\n\n\u{203a} Ask Codex to do anything",
+            "Done\n\n\u{203a} Ask Codex to do anything",
+        ]
+        .iter()
+        .enumerate()
+        {
+            assert!(!tracker.observe(
+                &activity(false, false, index as u64 + 2),
+                &process,
+                None,
+                idle_screen(screen, ProcessProvider::Codex),
+            ));
+        }
+    }
+
+    #[test]
     fn fallback_requires_an_idle_composer_and_drops_exited_or_job_panes() {
         let mut tracker = Tracker::default();
         let mut process: DetectedAgent = (
@@ -264,7 +285,7 @@ mod tests {
             0,
             80,
             24,
-            ProcessProvider::Codex,
+            ProcessProvider::Claude,
             false,
         );
         let hooks = HookRuntime::default();
@@ -285,7 +306,7 @@ mod tests {
                 &identities
             )
             .is_empty());
-        process.4 = "Done\n\n\u{203a} Ask Codex to do anything".into();
+        process.4 = "Done\n\n\u{2500}\u{2500}\u{2500}\n\u{276f} \n\u{2500}\u{2500}\u{2500}".into();
         let completed = tracker.update(
             &[process.clone()],
             &[activity(false, false, 3)],
