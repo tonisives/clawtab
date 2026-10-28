@@ -174,5 +174,5 @@ export const useNotificationStore = create<NotificationState>((set) => ({
     return { pendingAutoYes, authoritativeAutoYesPaneIds, autoYesPaneIds };
   }),
 
-  reset: () => set({ questions: [], hasDesktopQuestions: false, dismissedIds: new Map(), autoYesPaneIds: new Set(), authoritativeAutoYesPaneIds: new Set(), pendingAutoYes: new Map() }),
+  reset: () => set({ questions: [], deepLinkQuestionId: null, hasDesktopQuestions: false, dismissedIds: new Map(), autoYesPaneIds: new Set(), authoritativeAutoYesPaneIds: new Set(), pendingAutoYes: new Map() }),
 }));

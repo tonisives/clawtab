@@ -265,6 +265,7 @@ test('mobile subscription replay records the connection before synchronous error
   let state = { connected: true, selected: null, snapshots: {}, machines: [{ id: a, online: true }] };
   let store = Object.assign(() => true, {
     setState: noop,
+    getInitialState: () => ({}),
     getState: () => new Proxy({}, { get: () => noop }),
   });
   let modules = {
@@ -316,7 +317,7 @@ for (let platform of ['web', 'ios']) {
     let onStateChange, cleanup, reconnects = 0, replays = 0;
     let noop = () => {};
     let state = { connected: true, controllers: {} };
-    let store = Object.assign(() => true, { getState: () => new Proxy({}, { get: () => noop }) });
+    let store = Object.assign(() => true, { setState: noop, getInitialState: () => ({}), getState: () => new Proxy({}, { get: () => noop }) });
     let modules = {
       '../lib/messageActions': { loadMessageActions: async () => {}, flushMessageActions: async () => {}, resetMessageActions: noop },
       react: { useEffect: (effect) => { cleanup = effect(); }, useCallback: (callback) => callback },
@@ -350,6 +351,7 @@ test('settings reports the named machine status when another host is online', ()
   let state = { connected: true, selected: a, snapshots: {}, machines: [{ id: a, name: 'tonis', online: false, owned: true }, { id: b, name: 'Other host', online: true, owned: true }] };
   let store = Object.assign(() => true, {
     setState: (value) => { wsState = value; },
+    getInitialState: () => ({}),
     getState: () => new Proxy({}, { get: () => noop }),
   });
   let modules = {
