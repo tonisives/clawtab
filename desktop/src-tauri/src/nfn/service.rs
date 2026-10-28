@@ -712,7 +712,10 @@ impl Service {
 
     async fn focus_job_session(&self, record: &NfnRecord) -> Result<(), String> {
         let mut source = record.request.source.clone();
-        if let Some(pane) = record.request.data["opened_session_pane"].as_str() {
+        if let Some(pane) = record.request.data["opened_session_pane"]
+            .as_str()
+            .filter(|pane| crate::terminal_backend::pane_exists(pane))
+        {
             if matches!(
                 crate::terminal_backend::pane_process_state(pane)?,
                 crate::tmux::PaneProcessState::Running
@@ -725,7 +728,11 @@ impl Service {
                 return focus_source(&source).await;
             }
         }
-        if let Some(pane) = source.pane_id.as_deref() {
+        if let Some(pane) = source
+            .pane_id
+            .as_deref()
+            .filter(|pane| crate::terminal_backend::pane_exists(pane))
+        {
             if matches!(
                 crate::terminal_backend::pane_process_state(pane)?,
                 crate::tmux::PaneProcessState::Running
@@ -733,7 +740,7 @@ impl Service {
                 validate_source(&source)?;
                 return focus_source(&source).await;
             }
-            if source.session_id.is_none() && crate::terminal_backend::pane_exists(pane) {
+            if source.session_id.is_none() {
                 return focus_source(&source).await;
             }
         }
@@ -1202,6 +1209,7 @@ fn session_resume_command(source: &NfnSource) -> Result<String, String> {
     let session = source
         .session_id
         .as_deref()
+        .filter(|id| !id.trim().is_empty())
         .ok_or("This job has no recorded agent session")?;
     let quote = |value: &str| format!("'{}'", value.replace('\'', "'\\''"));
     let session = quote(session);
@@ -1268,7 +1276,7 @@ fn job_request(slug: &str, event: &str, run_id: Option<&str>, mut source: NfnSou
     source.job_id = Some(slug.into());
     source.run_id = run_id.map(str::to_owned);
     let mut actions = Vec::new();
-    if source.pane_id.is_some() {
+    if source.pane_id.is_some() || session_resume_command(&source).is_ok() {
         actions.push(NfnAction {
             id: "focus".into(),
             label: "Open session".into(),
@@ -1494,6 +1502,50 @@ mod tests {
         assert_eq!(
             session_resume_command(&source).unwrap(),
             "claude --resume 'session'\\''; touch /tmp/incorrect'"
+        );
+    }
+
+    #[test]
+    fn failed_jobs_can_resume_saved_sessions_without_a_terminal_pane() {
+        let source = NfnSource {
+            session_id: Some("binary-conversation".into()),
+            provider: Some("codex".into()),
+            cwd: Some("/workspace/project".into()),
+            ..Default::default()
+        };
+        let request = job_request(
+            "project/script",
+            "failed (exit 1)",
+            Some("run-script"),
+            source,
+        );
+        assert!(request.source.pane_id.is_none());
+        assert_eq!(request.actions[0].kind, "focus");
+        assert_eq!(
+            session_resume_command(&request.source).unwrap(),
+            "codex resume 'binary-conversation'"
+        );
+
+        for provider in ["shell", "unknown", "hermes"] {
+            let source = NfnSource {
+                session_id: Some("conversation".into()),
+                provider: Some(provider.into()),
+                ..Default::default()
+            };
+            let request = job_request("project/script", "failed", None, source);
+            assert_eq!(request.actions.len(), 1, "{provider}");
+            assert_eq!(request.actions[0].id, "acknowledge");
+        }
+        let source = NfnSource {
+            session_id: Some(" ".into()),
+            provider: Some("codex".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            job_request("project/script", "failed", None, source)
+                .actions
+                .len(),
+            1
         );
     }
 

@@ -28,7 +28,7 @@ function emailFromToken(token: string): string | null {
   }
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   isAuthenticated: false,
   userId: null,
   email: null,
@@ -48,7 +48,7 @@ export const useAuthStore = create<AuthState>((set) => ({
               return
             }
             await api.clearTokens()
-            await clearCache()
+            await clearCache(userId)
             terminalCache.clear()
             set({ isAuthenticated: false, userId: null, email: null, loading: false })
             return
@@ -64,7 +64,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   googleLogin: async (idToken) => {
-    await clearCache()
+    await clearCache(get().userId)
     terminalCache.clear()
     const resp = await api.googleAuth(idToken)
     trackRemoteEvent("login")
@@ -73,14 +73,14 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   passwordLogin: async (email, password) => {
     const resp = await api.passwordLogin(email, password)
-    await clearCache()
+    await clearCache(get().userId)
     terminalCache.clear()
     trackRemoteEvent("login")
     set({ isAuthenticated: true, userId: resp.user_id, email: emailFromToken(resp.access_token) })
   },
 
   appleLogin: async (idToken, displayName, email) => {
-    await clearCache()
+    await clearCache(get().userId)
     terminalCache.clear()
     const resp = await api.appleAuth(idToken, displayName, email)
     trackRemoteEvent("login")
@@ -89,14 +89,14 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   setAuth: (userId, accessToken) => {
     trackRemoteEvent("login")
-    clearCache()
+    clearCache(get().userId)
     terminalCache.clear()
     set({ isAuthenticated: true, userId, email: emailFromToken(accessToken) })
   },
 
   logout: async () => {
     await api.clearTokens()
-    await clearCache()
+    await clearCache(get().userId)
     terminalCache.clear()
     set({ isAuthenticated: false, userId: null, email: null })
   },
@@ -108,7 +108,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     } catch (error) {
       if (!api.isInvalidRefreshError(error)) return false
       await api.clearTokens()
-      await clearCache()
+      await clearCache(get().userId)
       terminalCache.clear()
       set({ isAuthenticated: false, userId: null, email: null })
       return false

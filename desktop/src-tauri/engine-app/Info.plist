@@ -26,6 +26,8 @@
     <true/>
     <key>NSFocusStatusUsageDescription</key>
     <string>ClawTab uses your Focus status to keep agent notifications quiet while you are busy.</string>
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>ClawTab jobs read saved screenshots to collect research in your private Work Journal.</string>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSPrefersDisplaySafeAreaCompatibilityMode</key>

@@ -43,6 +43,16 @@ import type { ClientMessage } from "../types/messages"
 import { loadMessageCache, resetMessages, useMessageStore } from "../store/messages"
 import { flushMessageActions, loadMessageActions, resetMessageActions } from "../lib/messageActions"
 
+let resetAccountState = () => {
+  resetMessages()
+  resetMessageActions()
+  useNotificationStore.getState().reset()
+  useJobsStore.setState(useJobsStore.getInitialState())
+  useWsStore.getState().reset()
+  terminalCache.clear()
+  setWsSend(null)
+}
+
 let synchronize = () => {
   let state = machineState()
   let selected = state.machines.find((m) => m.id === state.selected)
@@ -114,15 +124,13 @@ export let useWebSocket = () => {
   let userId = useAuthStore((s) => s.userId)
   useEffect(() => {
     if (!authenticated) {
-      resetMessages()
-      resetMessageActions()
-      terminalCache.clear()
-      setWsSend(null)
+      resetAccountState()
       return
     }
+    let active = true
     if (userId) {
       void loadMessageCache(userId)
-      void loadMessageActions(userId).then(() => flushMessageActions()).catch(() => {})
+      void loadMessageActions(userId).then(() => { if (active) return flushMessageActions() }).catch(() => {})
     }
     void useTerminalSettings.getState().hydrate()
     setWsSend(sendResource)
@@ -181,13 +189,13 @@ export let useWebSocket = () => {
       try {
         return await getWsUrl()
       } catch (error) {
-        if (isInvalidRefreshError(error)) await useAuthStore.getState().logout()
+        if (active && isInvalidRefreshError(error)) await useAuthStore.getState().logout()
         throw error
       }
     }, machineApi)
     void getPushToken()
       .then((token) =>
-        token
+        active && token
           ? registerMachinePushToken(token, Platform.OS === "ios" ? "ios" : "android")
           : undefined,
       )
@@ -214,12 +222,12 @@ export let useWebSocket = () => {
       }
     })
     return () => {
+      active = false
       appState.remove()
       unlisten()
       unsubscribe()
       stop()
-      setWsSend(null)
-      useWsStore.getState().reset()
+      resetAccountState()
     }
   }, [authenticated, userId])
   let send = useCallback((message: ClientMessage) => sendResource(message), [])

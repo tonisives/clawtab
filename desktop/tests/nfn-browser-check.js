@@ -332,6 +332,21 @@
   assert(failedJob.dismissed_at && !failedJob.response, "opening a failed job session dismisses its notice without answering an agent");
   window.nfn.collapse();
   window.fixture.records.clear();
+  const failedScript = window.fixture.record("failed-script", 0);
+  failedScript.request.template = "update";
+  failedScript.request.title = "project/script failed (exit 1)";
+  failedScript.request.source = { job_id: "project/script", run_id: "script-run", session_id: "script-conversation", provider: "codex", cwd: "/workspace/project" };
+  failedScript.request.actions = failedJob.request.actions;
+  window.fixture.records.set(failedScript.id, failedScript); window.nfn.receive(window.fixture.snapshot(failedScript.id));
+  assert(document.querySelectorAll(".controls .open-session").length === 1 && document.querySelector(".actions").textContent === "Got it", "failed script jobs offer Open session without an originating terminal pane");
+  window.fixture.focusError = "Session could not be opened";
+  click("Open session"); await sleep(30);
+  assert(!failedScript.dismissed_at && document.querySelector(".notice").textContent === window.fixture.focusError, "failed script session resumes stay available for retry");
+  window.fixture.focusError = null;
+  click("Open session"); await sleep(30);
+  assert(failedScript.dismissed_at && window.fixture.calls.some(command => command.op === "respond" && command.id === failedScript.id && command.action_id === "focus"), "a saved script session uses the resume action and dismisses after success");
+  window.nfn.collapse();
+  window.fixture.records.clear();
   const job = window.fixture.record("job", 1); job.request.template = "update"; job.request.source = { job_id: "project/fault-updates" }; job.request.title = "Job failed";
   window.fixture.records.set(job.id, job); window.nfn.receive(window.fixture.snapshot(job.id));
   assert(!document.querySelector(".options-toggle, .reply") && !document.querySelector(".status").textContent && buttons().some(button => button.textContent === "Go to job"), "job cards offer Go to job without agent options or the inert Update label");
@@ -412,7 +427,7 @@
   window.nfn.receive(window.fixture.snapshot()); await sleep(260);
   assert(document.querySelector("h1").textContent === "Still waiting" && document.querySelector(".count").textContent === "1 / 1", "an answer from another client leaves the active stack within a quarter second");
   document.querySelector('[aria-label="Notification list"]').click(); click("History"); await sleep(30);
-  [...document.querySelectorAll(".queue-item")].find(item => item.querySelector("strong").textContent === "Answered elsewhere").click(); await sleep(260);
+  [...document.querySelectorAll(".queue-item")].find(item => item.querySelector("strong").textContent.endsWith("/Answered elsewhere")).click(); await sleep(260);
   assert(document.querySelector("h1").textContent === "Answered elsewhere", "resolved cards remain readable when opened explicitly from History");
   window.nfn.collapse(); window.fixture.records.clear();
   for (let i = 0; i < 67; i++) window.fixture.records.set(`bulk-${i}`, window.fixture.record(`bulk-${i}`));
@@ -802,6 +817,6 @@
   click("Stop ignoring"); await sleep(20);
   assert(!ignoreFirst.ignored && !ignoreLatest.ignored && !document.querySelector(".ignored-agent"), "Stop ignoring restores the agent's messages and removes its saved ignore entry");
   click("Pending");
-  assert(document.querySelectorAll(".queue-item").length === 2 && document.querySelector(".queue-content").textContent.includes("2 messages"), "the restored agent returns as a single grouped card");
+  assert(document.querySelectorAll(".queue-item").length === 2 && document.querySelector(".queue-item .meta").textContent === ignoreLatest.request.body.replace(/\s+/g, " "), "the restored agent returns as a single grouped card with its latest message preview");
   return { passed: checks.length, checks };
 })()

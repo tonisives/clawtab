@@ -306,11 +306,6 @@
   function metaText(source) {
     return [source.provider, source.model, source.branch, source.cwd].filter(Boolean).join(" · ");
   }
-  function sourceText(source = {}) {
-    const provider = { codex: "Codex", claude: "Claude", hermes: "Hermes" }[source.provider] || source.provider;
-    const project = source.cwd?.replace(/\/$/, "").split("/").pop();
-    return [provider, project].filter(Boolean).join(" · ");
-  }
   function sourceHeading(record) {
     const source = record.request.source || {};
     const clean = value => typeof value === "string" ? stripAnsi(value).trim() : "";
@@ -326,6 +321,13 @@
     lines.forEach((line, index) => { if (line.endsWith("?")) question = index; });
     return (question >= 0 ? lines.slice(question) : lines.slice(-6))
       .filter(line => !/^[>❯]?\s*\d+[.)]\s/.test(line)).join("\n");
+  }
+  function queueSummary(record) {
+    const identity = sourceHeading(record);
+    return {
+      title: [identity.group, identity.title].filter(Boolean).join("/"),
+      message: (messageText(record) || stripAnsi(record.request.title).trim()).replace(/\s+/g, " ")
+    };
   }
   function template(record) {
     const templates = snapshot.templates_by_machine?.[record.machine_id] || snapshot.templates;
@@ -737,7 +739,7 @@
     const utilities = el("div", "controls");
     const detailButton = button(details ? "Hide details" : (record.request.media?.length ? "View attachment" : "Details"), toggleDetails, "utility details-toggle");
     detailButton.setAttribute("aria-expanded", String(details)); utilities.append(detailButton);
-    if (record.request.source?.pane_id) {
+    if (record.request.source?.pane_id || choices.some(action => action.kind === "focus")) {
       utilities.classList.add("session-controls");
       const focus = choices.find(action => action.kind === "focus");
       const openSession = button("Open session", () => focus ? act(record.id, focus.id, "") : performAction(record.id, { op: "focus", id: record.id }), "primary open-session");
@@ -942,7 +944,7 @@
       for (const agent of ignoredAgents) {
         const row = el("div", "queue-row ignored-agent");
         const identity = sourceHeading({ request: { source: agent.source, title: agent.title } });
-        const label = el("div", "queue-item"); label.append(el("strong", "", identity.title), el("div", "meta", [identity.group, agent.machine_id].filter(Boolean).join(" · ")));
+        const label = el("div", "queue-item"); label.append(el("strong", "", [identity.group, identity.title].filter(Boolean).join("/")), el("div", "meta", agent.machine_id));
         const restore = button("Stop ignoring", () => setAgentIgnored(agent, false), "utility"); restore.disabled = ignoredBusy;
         row.append(label, restore); list._content.append(row);
       }
@@ -950,7 +952,7 @@
       return list;
     }
     const items = history ? historyItems : pendingCards();
-    const signature = JSON.stringify([history, items.map(record => [record.id, record.read_at, record.request.title, sourceText(record.request.source), history ? [] : cardMessages(record).map(item => item.id)]), [...selectedNotifications], bulkBusy, queueError, loadingQueue, hasMoreHistory, unseenPending]);
+    const signature = JSON.stringify([history, items.map(record => [record.id, record.read_at, queueSummary(record)]), [...selectedNotifications], bulkBusy, queueError, loadingQueue, hasMoreHistory, unseenPending]);
     if (list.dataset.signature === signature) return list;
     list.dataset.signature = signature;
     const content = list._content, scroll = content.scrollTop;
@@ -970,17 +972,17 @@
     }
     if (queueError) { const notice = el("div", "notice", queueError); notice.setAttribute("role", "status"); content.append(notice); }
     for (const record of items) {
+      const summary = queueSummary(record);
       const row = el("div", "queue-row");
       if (!history) {
         const checkbox = el("input"); checkbox.type = "checkbox"; checkbox.checked = selectedNotifications.has(record.id); checkbox.disabled = bulkBusy;
-        checkbox.setAttribute("aria-label", `Select ${record.request.title}`);
+        checkbox.setAttribute("aria-label", `Select ${summary.title}`);
         checkbox.addEventListener("change", () => { if (checkbox.checked) selectedNotifications.add(record.id); else selectedNotifications.delete(record.id); render(); }); row.append(checkbox);
       }
       const item = button("", () => { records.set(record.id, record); openRecord(record.id); }, `queue-item ${record.read_at ? "" : "unread"}`);
-      const messageCount = history ? 1 : cardMessages(record).length;
-      item.append(el("strong", "", record.request.title), el("div", "meta", [sourceText(record.request.source), messageCount > 1 ? `${messageCount} messages` : ""].filter(Boolean).join(" · "))); row.append(item);
+      item.append(el("strong", "", summary.title), el("div", "meta", summary.message)); row.append(item);
       if (!history) {
-        const dismiss = iconButton(`Dismiss ${record.request.title}`, "M6 6l12 12M18 6L6 18", () => dismissNotifications([record.id]), "dismiss-item");
+        const dismiss = iconButton(`Dismiss ${summary.title}`, "M6 6l12 12M18 6L6 18", () => dismissNotifications([record.id]), "dismiss-item");
         dismiss.disabled = bulkBusy; row.append(dismiss);
       }
       content.append(row);

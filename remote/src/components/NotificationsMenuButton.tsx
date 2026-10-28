@@ -1,9 +1,10 @@
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { GlassView, isGlassEffectAPIAvailable } from "expo-glass-effect";
-import { useRouter } from "expo-router";
+import { usePathname, useRouter } from "expo-router";
 
-import { colors } from "@clawtab/shared";
+import { colors, useMachines } from "@clawtab/shared";
+import { useAuthStore } from "../store/auth";
 import { useNotificationStore } from "../store/notifications";
 import { useJobsStore } from "../store/jobs";
 import { useResponsive } from "../hooks/useResponsive";
@@ -24,7 +25,11 @@ export function NotificationsMenuButton({
   active?: boolean;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const { isSplitView } = useResponsive();
+  const authenticated = useAuthStore(state => state.isAuthenticated);
+  const authLoading = useAuthStore(state => state.loading);
+  const machines = useMachines();
   const questions = useNotificationStore((s) => s.questions);
 
   const records = useMessageStore(state => state.records);
@@ -44,7 +49,9 @@ export function NotificationsMenuButton({
     }
   };
 
-  if (hideWhenEmpty && activeNotificationCount === 0) {
+  const demo = !authenticated || (!machines.connected && machines.error === "Relay subscription required")
+    || /^\/demo(?:-|\/|$)/.test(pathname);
+  if (authLoading || demo || (hideWhenEmpty && activeNotificationCount === 0)) {
     return null;
   }
 

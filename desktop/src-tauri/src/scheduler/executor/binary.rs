@@ -8,7 +8,10 @@ use tokio::task::JoinHandle;
 
 use crate::config::jobs::Job;
 use crate::config::settings::AppSettings;
+use crate::history::HistoryStore;
 use crate::secrets::SecretsManager;
+
+use super::binary_session;
 
 const MAX_CAPTURED_OUTPUT_BYTES: usize = 1024 * 1024;
 
@@ -18,6 +21,7 @@ pub(super) async fn execute_binary_job(
     started_at: &str,
     secrets: &Arc<Mutex<SecretsManager>>,
     settings: &Arc<Mutex<AppSettings>>,
+    history: &Arc<Mutex<HistoryStore>>,
     params: &HashMap<String, String>,
     result_file: Option<&std::path::Path>,
     stream_log_path: Option<&std::path::Path>,
@@ -31,6 +35,20 @@ pub(super) async fn execute_binary_job(
         stream_log_path,
         run_id,
     );
+
+    let session = Arc::new(binary_session::Capture::new(
+        crate::nfn::NfnSource {
+            job_id: Some(job.slug.clone()),
+            run_id: Some(run_id.into()),
+            cwd: cmd
+                .as_std()
+                .get_current_dir()
+                .map(|path| path.to_string_lossy().into_owned()),
+            group: Some(crate::config::jobs::job_group(job).into()),
+            ..Default::default()
+        },
+        history.clone(),
+    ));
 
     let mut child = cmd
         .spawn()
@@ -61,13 +79,31 @@ pub(super) async fn execute_binary_job(
     let stdout_buf = Arc::new(Mutex::new(String::new()));
     let stderr_buf = Arc::new(Mutex::new(String::new()));
 
-    let stdout_task = stream_to_buf(stdout_pipe, Arc::clone(&stdout_buf), log_file.clone());
-    let stderr_task = stream_to_buf(stderr_pipe, Arc::clone(&stderr_buf), log_file.clone());
+    let stdout_task = stream_to_buf(
+        stdout_pipe,
+        Arc::clone(&stdout_buf),
+        log_file.clone(),
+        session.clone(),
+    );
+    let stderr_task = stream_to_buf(
+        stderr_pipe,
+        Arc::clone(&stderr_buf),
+        log_file.clone(),
+        session.clone(),
+    );
 
-    let status = child
-        .wait()
-        .await
-        .map_err(|e| format!("Failed to wait for process: {}", e))?;
+    let pid = child.id();
+    let mut ticks = tokio::time::interval(std::time::Duration::from_secs(2));
+    let status = loop {
+        tokio::select! {
+            status = child.wait() => break status.map_err(|e| format!("Failed to wait for process: {e}"))?,
+            _ = ticks.tick() => {
+                if let Some(pid) = pid {
+                    session.observe_process(pid);
+                }
+            }
+        }
+    };
     super::binary_runtime::unregister(&job.slug);
     let _ = stdout_task.await;
     let _ = stderr_task.await;
@@ -186,18 +222,24 @@ fn stream_to_buf<R>(
     mut pipe: R,
     buf: Arc<Mutex<String>>,
     file: Option<Arc<Mutex<std::fs::File>>>,
+    session: Arc<binary_session::Capture>,
 ) -> JoinHandle<()>
 where
     R: AsyncRead + Unpin + Send + 'static,
 {
     tokio::spawn(async move {
+        let mut session_output = binary_session::Output::new(session);
         let mut chunk = [0_u8; 8192];
         loop {
             match pipe.read(&mut chunk).await {
                 Ok(0) | Err(_) => break,
-                Ok(read) => append_chunk(&buf, file.as_deref(), &chunk[..read]),
+                Ok(read) => {
+                    session_output.push(&chunk[..read]);
+                    append_chunk(&buf, file.as_deref(), &chunk[..read]);
+                }
             }
         }
+        session_output.finish();
     })
 }
 

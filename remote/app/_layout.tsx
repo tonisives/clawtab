@@ -108,14 +108,14 @@ function useWebDarkScrollbars() {
   }, []);
 }
 
-function WebSocketProvider({ children }: { children: React.ReactNode }) {
+function WebSocketProvider({ children, userId }: { children: React.ReactNode; userId: string }) {
   useEffect(() => {
     // Reset stores to clear any stale data from a previous account
     useJobsStore.setState({ jobs: [], statuses: {}, detectedProcesses: [], agentActivity: {}, questionPaneIds: new Set(), queryDetailsHiddenPaneIds: new Set(), loaded: false, cachedLoad: false, processesLoaded: false });
     useNotificationStore.getState().reset();
 
     let active = true;
-    loadCache().then((cached) => {
+    loadCache(userId).then((cached) => {
       if (!active) return;
       if (cached) {
         useJobsStore.getState().hydrateFromCache(cached.jobs, cached.statuses);
@@ -127,7 +127,7 @@ function WebSocketProvider({ children }: { children: React.ReactNode }) {
     });
     loadPendingAnswers();
     return () => { active = false; };
-  }, []);
+  }, [userId]);
 
   useWebSocket();
   useNotifications();
@@ -196,14 +196,16 @@ export default function RootLayout() {
           <Stack.Screen name="machine-page" options={({ route }) => ({ title: (route.params as { title?: string } | undefined)?.title ?? "Machine", headerShown: true, headerTintColor: colors.text, headerStyle: { backgroundColor: colors.bg }, headerBackButtonDisplayMode: "minimal", animation: "slide_from_right" })} />
           <Stack.Screen name="job/[name]" options={{ animation: "slide_from_right" }} />
           <Stack.Screen name="process/[pane_id]" options={{ animation: "slide_from_right" }} />
-          <Stack.Screen
-            name="notifications"
-            options={{
-              animation: "slide_from_bottom",
-              presentation: "fullScreenModal",
-              headerShown: false,
-            }}
-          />
+          <Stack.Protected guard={isAuthenticated}>
+            <Stack.Screen
+              name="notifications"
+              options={{
+                animation: "slide_from_bottom",
+                presentation: "fullScreenModal",
+                headerShown: false,
+              }}
+            />
+          </Stack.Protected>
         </Stack>
         <StatusBar style="light" />
       </View>
@@ -211,12 +213,12 @@ export default function RootLayout() {
     </MachineOnboardingProvider>
   );
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated || !userId) {
     return content;
   }
 
   return (
-    <WebSocketProvider key={userId}>
+    <WebSocketProvider key={userId} userId={userId}>
       {content}
     </WebSocketProvider>
   );
