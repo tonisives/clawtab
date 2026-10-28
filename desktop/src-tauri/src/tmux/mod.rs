@@ -1,6 +1,6 @@
 use crate::debug_spawn;
 use serde::Serialize;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::process::{Command, Output};
 
 mod agent_titles;
