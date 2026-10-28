@@ -9,7 +9,7 @@
   let reviewVersion = 0;
   let snapshot = {}, current = null, expanded = false, details = false, queue = false, history = false, preview = false;
   let renderedId = null, card = null, logTimer = null, collapseTimer = null, remaining = 8000, timerStarted = 0;
-  let hovering = false, focused = false, contextBusy = false, serial = 0, placement = "right";
+  let hovering = false, focused = false, contextRequest = null, serial = 0, placement = "right";
   let historyOffset = 0, historyItems = [], pendingOffset = 50, hasMoreHistory = false, loadingQueue = false;
   let completionTimer = null, navigating = false, unseenPending = 0;
   let menu = null;
@@ -396,7 +396,7 @@
       if (!state.cancelled && element.isConnected) status.textContent = String(error.message || error);
     }
   }
-  function stopContext() { clearInterval(logTimer); logTimer = null; stopMedia(); }
+  function stopContext() { clearInterval(logTimer); logTimer = null; contextRequest = null; stopMedia(); }
   function pauseTimer() {
     if (collapseTimer) { clearTimeout(collapseTimer); collapseTimer = null; remaining = Math.max(0, remaining - (performance.now() - timerStarted)); }
   }
@@ -469,8 +469,9 @@
     pauseTimer(); stopContext(); expanded = true; details = !details; menu = null; renderedId = null; render(); startContext();
   }
   function toggleMenu(next) {
+    if (menu === "agent") contextRequest = null;
     pauseTimer(); expanded = true; menu = menu === next ? null : next; render();
-    if (menu === "agent") refreshContext();
+    if (menu === "agent") refreshContext(); else startContext();
   }
   function showQueue(showHistory = false) {
     todosOpen = false;
@@ -722,7 +723,7 @@
     if (card._signature !== JSON.stringify([record.request, template(record)])) {
       const scroll = card._content.scrollTop, active = document.activeElement === card._reply;
       const selection = card._reply ? [card._reply.selectionStart, card._reply.selectionEnd] : null;
-      stopMedia();
+      stopContext();
       const replacement = createCard(record); card.replaceWith(replacement); card = replacement;
       card._content.scrollTop = scroll;
       if (active && card._reply) { card._reply.focus({ preventScroll: true }); if (selection) card._reply.setSelectionRange(...selection); }
@@ -756,11 +757,13 @@
     updateAutoYes();
   }
   async function refreshContext() {
-    if ((!details && menu !== "agent") || queue || settingsOpen || !current || contextBusy) return;
-    const id = current; contextBusy = true;
+    if ((!details && menu !== "agent") || queue || settingsOpen || !current || !card || contextRequest?.card === card) return;
+    const id = current, request = { card }; contextRequest = request;
+    const ownsContext = () => contextRequest === request && id === current && card === request.card
+      && (details || menu === "agent") && !queue && !settingsOpen;
     try {
       const value = await call({ op: "context", id });
-      if (id !== current || !card) return;
+      if (!ownsContext()) return;
       const changedLogs = card._logs && card._logs._raw !== value.log;
       const before = changedLogs ? host.getBoundingClientRect() : null;
       if (changedLogs) {
@@ -789,8 +792,8 @@
         animateLayout(beforeMenu, false);
       }
       if (before) animateLayout(before, false);
-    } catch (error) { if (id === current) { if (card?._logs) card._logs.textContent = String(error.message || error); showError(error); } }
-    finally { contextBusy = false; }
+    } catch (error) { if (ownsContext()) { if (card._logs) card._logs.textContent = String(error.message || error); showError(error); } }
+    finally { if (contextRequest === request) contextRequest = null; }
   }
   function buildPlugins(parent, plugins, models, id) {
     if (!plugins.length) return;
