@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Build and validate the remote message surface on the shared macOS worker."""
 import json
+import hashlib
 import os
 from pathlib import Path
 import subprocess
@@ -12,11 +13,22 @@ if os.environ.get("BUILD_SERVICE_WORKER") != "1":
 root = Path(__file__).resolve().parent.parent
 results = root / "dist/mobile-message-checks"
 results.mkdir(parents=True, exist_ok=True)
+(results / "source.json").write_text(json.dumps({
+    "revision": os.environ.get("BUILD_SOURCE_REVISION"),
+    "remote_version": json.loads((root / "remote/package.json").read_text())["version"],
+    "sha256": {name: hashlib.sha256((root / name).read_bytes()).hexdigest() for name in [
+        "shared/src/nfn/surface.html", "shared/src/nfn/surface.css", "shared/src/nfn/surface.js",
+        "remote/src/lib/messageSurfaceDocument.generated.ts",
+    ]},
+}, indent=2) + "\n")
 checks = [
     ("assets", ["node", "remote/scripts/message-surface.cjs"]),
     ("types", ["pnpm", "--dir", "remote", "exec", "tsc", "--noEmit"]),
-    ("routing", ["node", "--test", "tests/mobile-message-ui.test.cjs", "tests/agent-alert-notifications.test.cjs", "tests/notification-details.test.cjs", "tests/message-actions.test.cjs"]),
+    ("routing", ["node", "--test", "tests/mobile-message-ui.test.cjs", "tests/message-groups.test.cjs", "tests/agent-alert-notifications.test.cjs", "tests/notification-details.test.cjs", "tests/message-actions.test.cjs"]),
     ("host", ["cargo", "test", "--manifest-path", "desktop/src-tauri/Cargo.toml", "--no-default-features", "--lib", "nfn::", "-j4"]),
+    ("history", ["cargo", "test", "--manifest-path", "desktop/src-tauri/Cargo.toml", "--no-default-features", "--lib", "history::notification_sources::", "-j4"]),
+    ("failure-source", ["cargo", "test", "--manifest-path", "desktop/src-tauri/Cargo.toml", "--no-default-features", "--lib", "failure_delivery_binds_the_exact_run_before_a_newer_job_can_start", "-j4"]),
+    ("cli", ["cargo", "check", "--manifest-path", "desktop/src-tauri/Cargo.toml", "--no-default-features", "--bin", "cwtctl", "-j4"]),
     ("web", ["pnpm", "--dir", "remote", "exec", "expo", "export", "--platform", "web", "--output-dir", "../dist/mobile-message-web"]),
     ("ios", ["pnpm", "--dir", "remote", "exec", "expo", "export", "--platform", "ios", "--output-dir", "../dist/mobile-message-ios"]),
 ]
