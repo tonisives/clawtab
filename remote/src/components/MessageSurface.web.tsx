@@ -17,10 +17,11 @@ export function MessageSurface(props: MessageSurfaceProps) {
       pending = requestAnimationFrame(() => {
         const element = frame.current;
         if (!element) return;
-        // An iframe has its own visual viewport, so pass the outer keyboard
-        // clearance through its actual height instead of relying on 100dvh.
+        // Route transitions move the frame without a viewport resize. Keep
+        // natural flex sizing until the keyboard reduces the visible viewport.
         const bottom = viewport.offsetTop + viewport.height;
-        element.style.maxHeight = `${Math.max(0, bottom - element.getBoundingClientRect().top)}px`;
+        element.style.maxHeight = window.innerHeight - viewport.height > 100
+          ? `${Math.max(0, bottom - element.getBoundingClientRect().top)}px` : "";
       });
     };
     resize();

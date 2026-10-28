@@ -82,7 +82,7 @@ test("native keyboard resize uses host overlap and clears stale offsets on hide/
   cleanups.forEach(cleanup => cleanup()); assert.deepEqual(Object.keys(events), []);
 });
 
-test("web host follows the outer visual viewport rather than the iframe's layout viewport", () => {
+test("web host keeps full height through route entry and follows the outer keyboard viewport", () => {
   const ts = require("../desktop/node_modules/typescript");
   const effects = [], frames = [], listeners = {}, exports = {};
   const viewport = { height: 800, offsetTop: 0,
@@ -96,16 +96,22 @@ test("web host follows the outer visual viewport rather than the iframe's layout
     "react/jsx-runtime": { jsx: (type, props) => ({ type, props }) },
     "../lib/messageSurfaceDocument.generated": { default: "fixture" },
   };
+  const window = { innerHeight: 800, visualViewport: viewport, addEventListener() {}, removeEventListener() {} };
   vm.runInNewContext(source, { exports, require: name => dependencies[name],
     requestAnimationFrame: callback => { frames.push(callback); return frames.length; }, cancelAnimationFrame() {},
-    window: { visualViewport: viewport, addEventListener() {}, removeEventListener() {} } });
+    window });
   const tree = exports.MessageSurface({ snapshot: {}, onCommand: async () => ({}) });
-  const frame = tree.props.ref.current = { style: {}, getBoundingClientRect: () => ({ top: 100 }) };
+  let top = 100;
+  const frame = tree.props.ref.current = { style: {}, getBoundingClientRect: () => ({ top }) };
   const cleanup = effects[0]();
   const flush = () => { while (frames.length) frames.shift()(); };
-  flush(); assert.equal(frame.style.maxHeight, "700px");
-  viewport.height = 450; listeners.resize(); flush(); assert.equal(frame.style.maxHeight, "350px");
-  viewport.offsetTop = 20; listeners.scroll(); flush(); assert.equal(frame.style.maxHeight, "370px");
-  viewport.height = 800; viewport.offsetTop = 0; listeners.resize(); flush(); assert.equal(frame.style.maxHeight, "700px");
+  flush(); assert.equal(frame.style.maxHeight, "");
+  top = 60; // Route entrance finishes without firing visualViewport.resize.
+  assert.equal(frame.style.maxHeight, "", "no stale initial position limits natural full height");
+  viewport.height = 450; listeners.resize(); flush(); assert.equal(frame.style.maxHeight, "390px");
+  viewport.offsetTop = 20; listeners.scroll(); flush(); assert.equal(frame.style.maxHeight, "410px");
+  viewport.height = 800; viewport.offsetTop = 0; listeners.resize(); flush(); assert.equal(frame.style.maxHeight, "");
+  window.innerHeight = viewport.height = 450; listeners.resize(); flush();
+  assert.equal(frame.style.maxHeight, "", "layout viewport resizing already constrains the frame");
   cleanup(); assert.deepEqual(Object.keys(listeners), []);
 });
