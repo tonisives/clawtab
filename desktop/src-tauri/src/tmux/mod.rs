@@ -4,6 +4,8 @@ use std::collections::{HashMap, HashSet};
 use std::process::{Command, Output};
 
 mod agent_titles;
+#[cfg(test)]
+mod auto_yes_tests;
 mod window_name;
 pub use agent_titles::sync_agent_titles;
 pub use window_name::next_ct_window_name;
@@ -65,7 +67,12 @@ pub fn auto_yes_panes_from_options() -> Result<HashSet<String>, String> {
 /// The previous window value is restored when its last auto-yes pane is removed.
 pub fn sync_auto_yes_bell_monitoring(auto_yes_panes: &HashSet<String>) -> Result<(), String> {
     let panes_output = run(
-        &["list-panes", "-a", "-F", "#{pane_id}\t#{window_id}"],
+        &[
+            "list-panes",
+            "-a",
+            "-F",
+            &format!("#{{pane_id}}\t#{{window_id}}\t#{{{AUTO_YES_PANE_OPTION}}}"),
+        ],
         "tmux::sync_auto_yes_bell_monitoring::list_panes",
     )
     .map_err(|e| format!("Failed to list tmux panes: {}", e))?;
@@ -76,34 +83,6 @@ pub fn sync_auto_yes_bell_monitoring(auto_yes_panes: &HashSet<String>) -> Result
             return Ok(());
         }
         return Err(format!("tmux error: {}", stderr.trim()));
-    }
-
-    let pane_windows: HashMap<String, String> = String::from_utf8_lossy(&panes_output.stdout)
-        .lines()
-        .filter_map(|line| {
-            line.split_once('\t')
-                .map(|(pane_id, window_id)| (pane_id.to_string(), window_id.to_string()))
-        })
-        .collect();
-    let auto_yes_windows: HashSet<String> = auto_yes_panes
-        .iter()
-        .filter_map(|pane_id| pane_windows.get(pane_id).cloned())
-        .collect();
-
-    for pane_id in pane_windows.keys() {
-        if auto_yes_panes.contains(pane_id) {
-            run(
-                &["set-option", "-pt", pane_id, AUTO_YES_PANE_OPTION, "1"],
-                "tmux::sync_auto_yes_bell_monitoring::enable_pane",
-            )
-            .map_err(|e| format!("Failed to set auto-yes pane option: {}", e))?;
-        } else {
-            run(
-                &["set-option", "-pqu", "-t", pane_id, AUTO_YES_PANE_OPTION],
-                "tmux::sync_auto_yes_bell_monitoring::disable_pane",
-            )
-            .map_err(|e| format!("Failed to clear auto-yes pane option: {}", e))?;
-        }
     }
 
     let format = format!(
@@ -122,11 +101,65 @@ pub fn sync_auto_yes_bell_monitoring(auto_yes_panes: &HashSet<String>) -> Result
         ));
     }
 
-    for line in String::from_utf8_lossy(&windows_output.stdout).lines() {
+    let updates = auto_yes_option_updates(
+        &String::from_utf8_lossy(&panes_output.stdout),
+        &String::from_utf8_lossy(&windows_output.stdout),
+        auto_yes_panes,
+    );
+    if !updates.is_empty() {
+        let args: Vec<_> = updates.iter().map(String::as_str).collect();
+        let output = run(&args, "tmux::sync_auto_yes_bell_monitoring::update")
+            .map_err(|e| format!("Failed to sync auto-yes options: {e}"))?;
+        if !output.status.success() {
+            return Err(format!(
+                "tmux error: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            ));
+        }
+    }
+    Ok(())
+}
+
+// Only send changed options, in one tmux command queue. Rewriting every pane
+// makes a toggle slower as more terminal sessions are opened.
+fn auto_yes_option_updates(
+    panes: &str,
+    windows: &str,
+    auto_yes_panes: &HashSet<String>,
+) -> Vec<String> {
+    let mut updates = Vec::new();
+    let mut append = |args: &[&str]| {
+        if !updates.is_empty() {
+            updates.push(";".into());
+        }
+        updates.extend(args.iter().map(|arg| (*arg).to_string()));
+    };
+    let mut auto_yes_windows = HashSet::new();
+    for line in panes.lines() {
+        let mut fields = line.splitn(3, '\t');
+        let (Some(pane), Some(window)) = (fields.next(), fields.next()) else {
+            continue;
+        };
+        let enabled = fields.next().unwrap_or_default();
+        if auto_yes_panes.contains(pane) {
+            auto_yes_windows.insert(window);
+            if enabled != "1" {
+                append(&["set-option", "-pt", pane, AUTO_YES_PANE_OPTION, "1"]);
+            }
+        } else if !enabled.is_empty() {
+            append(&["set-option", "-pqu", "-t", pane, AUTO_YES_PANE_OPTION]);
+        }
+    }
+
+    let mut seen_windows = HashSet::new();
+    for line in windows.lines() {
         let mut fields = line.splitn(3, '\t');
         let Some(window_id) = fields.next() else {
             continue;
         };
+        if !seen_windows.insert(window_id) {
+            continue;
+        }
         let monitor_bell = match fields.next().unwrap_or("1") {
             "0" | "off" => "off",
             _ => "on",
@@ -135,52 +168,40 @@ pub fn sync_auto_yes_bell_monitoring(auto_yes_panes: &HashSet<String>) -> Result
 
         if auto_yes_windows.contains(window_id) {
             if original.is_empty() {
-                run(
-                    &[
-                        "set-option",
-                        "-w",
-                        "-t",
-                        window_id,
-                        AUTO_YES_MONITOR_BELL_ORIGINAL,
-                        monitor_bell,
-                    ],
-                    "tmux::sync_auto_yes_bell_monitoring::remember",
-                )
-                .map_err(|e| format!("Failed to remember monitor-bell: {}", e))?;
+                append(&[
+                    "set-option",
+                    "-w",
+                    "-t",
+                    window_id,
+                    AUTO_YES_MONITOR_BELL_ORIGINAL,
+                    monitor_bell,
+                ]);
             }
-            run(
-                &["set-option", "-w", "-t", window_id, "monitor-bell", "off"],
-                "tmux::sync_auto_yes_bell_monitoring::disable",
-            )
-            .map_err(|e| format!("Failed to disable monitor-bell: {}", e))?;
+            if monitor_bell != "off" {
+                append(&["set-option", "-w", "-t", window_id, "monitor-bell", "off"]);
+            }
         } else if !original.is_empty() {
-            run(
-                &[
+            if monitor_bell != original {
+                append(&[
                     "set-option",
                     "-w",
                     "-t",
                     window_id,
                     "monitor-bell",
                     original,
-                ],
-                "tmux::sync_auto_yes_bell_monitoring::restore",
-            )
-            .map_err(|e| format!("Failed to restore monitor-bell: {}", e))?;
-            run(
-                &[
-                    "set-option",
-                    "-wqu",
-                    "-t",
-                    window_id,
-                    AUTO_YES_MONITOR_BELL_ORIGINAL,
-                ],
-                "tmux::sync_auto_yes_bell_monitoring::clear_saved",
-            )
-            .map_err(|e| format!("Failed to clear saved monitor-bell: {}", e))?;
+                ]);
+            }
+            append(&[
+                "set-option",
+                "-wqu",
+                "-t",
+                window_id,
+                AUTO_YES_MONITOR_BELL_ORIGINAL,
+            ]);
         }
     }
 
-    Ok(())
+    updates
 }
 
 pub fn list_sessions() -> Result<Vec<String>, String> {

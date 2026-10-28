@@ -735,6 +735,7 @@ async fn handle_ipc_command(
                 }
             }
 
+            ctx.hook_runtime.wake_question_detection();
             event_sink.emit_auto_yes_changed();
             IpcResponse::Ok
         }
@@ -765,6 +766,7 @@ async fn handle_ipc_command(
                 }
             }
 
+            ctx.hook_runtime.wake_question_detection();
             event_sink.emit_auto_yes_changed();
             IpcResponse::Ok
         }

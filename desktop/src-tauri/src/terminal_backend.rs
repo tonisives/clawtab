@@ -395,11 +395,17 @@ pub fn sync_auto_yes_bell_monitoring(
 ) -> Result<(), String> {
     for info in managed::list()? {
         if info.status == Status::Running {
-            metadata(
-                &info.id,
-                "auto_yes",
-                if panes.contains(&info.id) { "1" } else { "0" },
-            )?;
+            let enabled = if panes.contains(&info.id) { "1" } else { "0" };
+            if info
+                .launch
+                .metadata
+                .get("auto_yes")
+                .map(String::as_str)
+                .unwrap_or("0")
+                != enabled
+            {
+                metadata(&info.id, "auto_yes", enabled)?;
+            }
         }
     }
     let tmux = panes
