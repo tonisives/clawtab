@@ -189,6 +189,10 @@ impl Service {
     }
 
     pub fn sync_alerts(&self, activity: &[crate::ipc::AgentActivity]) {
+        // The next activity poll retries without consuming seen alerts while busy.
+        let Ok(_guard) = self.mutation.try_lock() else {
+            return;
+        };
         let result = super::alerts::sync(
             &self.store,
             activity,
