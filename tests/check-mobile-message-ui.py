@@ -24,11 +24,13 @@ results.mkdir(parents=True, exist_ok=True)
 checks = [
     ("assets", ["node", "remote/scripts/message-surface.cjs"]),
     ("types", ["pnpm", "--dir", "remote", "exec", "tsc", "--noEmit"]),
-    ("routing", ["node", "--test", "tests/mobile-message-ui.test.cjs", "tests/message-groups.test.cjs", "tests/agent-alert-notifications.test.cjs", "tests/notification-details.test.cjs", "tests/message-actions.test.cjs"]),
+    ("routing", ["node", "--test", "tests/mobile-message-ui.test.cjs", "tests/message-groups.test.cjs", "tests/agent-alert-notifications.test.cjs", "tests/notification-details.test.cjs", "tests/message-actions.test.cjs", "tests/remote-client.test.cjs", "remote/scripts/test-auto-yes.cjs"]),
     ("host", ["cargo", "test", "--manifest-path", "desktop/src-tauri/Cargo.toml", "--no-default-features", "--lib", "nfn::", "-j4"]),
     ("history", ["cargo", "test", "--manifest-path", "desktop/src-tauri/Cargo.toml", "--no-default-features", "--lib", "history::notification_sources::", "-j4"]),
     ("failure-source", ["cargo", "test", "--manifest-path", "desktop/src-tauri/Cargo.toml", "--no-default-features", "--lib", "failure_delivery_binds_the_exact_run_before_a_newer_job_can_start", "-j4"]),
     ("cli", ["cargo", "check", "--manifest-path", "desktop/src-tauri/Cargo.toml", "--no-default-features", "--bin", "cwtctl", "-j4"]),
+    ("relay", ["cargo", "test", "--manifest-path", "relay/Cargo.toml", "-j4"]),
+    ("desktop", ["pnpm", "--dir", "desktop", "build"]),
     ("web", ["pnpm", "--dir", "remote", "exec", "expo", "export", "--platform", "web", "--output-dir", "../dist/mobile-message-web"]),
     ("ios", ["pnpm", "--dir", "remote", "exec", "expo", "export", "--platform", "ios", "--output-dir", "../dist/mobile-message-ios"]),
 ]
