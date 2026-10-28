@@ -431,6 +431,12 @@ impl HookRuntime {
         self.notify.notified().await;
     }
 
+    pub fn wake_question_detection(&self) {
+        // Keep a permit when the detector is already scanning, so a toggle
+        // during that pass also gets processed before the next polling delay.
+        self.notify.notify_one();
+    }
+
     fn event_panes(&self, event: &HookEventV1) -> Vec<String> {
         if event.provider == ProcessProvider::Hermes {
             let key = event.storage_key();
@@ -469,7 +475,7 @@ impl HookRuntime {
             sessions.insert(key, event);
         }
         drop(sessions);
-        self.notify.notify_waiters();
+        self.wake_question_detection();
         true
     }
 }
@@ -1477,6 +1483,22 @@ mod tests {
     use serde_json::json;
     use std::collections::HashSet;
     use std::fs;
+
+    #[tokio::test]
+    async fn question_detection_wakeup_survives_an_active_scan_and_coalesces() {
+        use std::time::Duration;
+        let runtime = HookRuntime::default();
+        runtime.wake_question_detection();
+        runtime.clone().wake_question_detection();
+        tokio::time::timeout(Duration::from_millis(100), runtime.notified())
+            .await
+            .expect("a toggle during scanning must wake the next detector wait");
+        assert!(
+            tokio::time::timeout(Duration::from_millis(10), runtime.notified())
+                .await
+                .is_err()
+        );
+    }
 
     #[cfg(target_os = "linux")]
     #[tokio::test]

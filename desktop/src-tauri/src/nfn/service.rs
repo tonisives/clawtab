@@ -119,10 +119,20 @@ impl Service {
                     settings_error = Some(error);
                 }
             }
+            // Session discovery must not hold the action lock while checking
+            // every pending card. Re-read records after taking the lock below.
+            let invalid_sources = if ticks.is_multiple_of(10) {
+                let records = self.store.pending().unwrap_or_default();
+                tokio::task::spawn_blocking(move || invalid_pending_sources(&records))
+                    .await
+                    .unwrap_or_default()
+            } else {
+                HashSet::new()
+            };
+            let _guard = self.mutation.lock().await;
             let current_auto_yes = self.ctx.auto_yes_panes.lock().clone();
             let mut changed = current_auto_yes != auto_yes_panes;
             auto_yes_panes = current_auto_yes;
-            let _guard = self.mutation.lock().await;
             let current: HashSet<String> = self.questions.lock().iter().map(question_key).collect();
             let current_questions = self
                 .questions_ready
@@ -130,12 +140,13 @@ impl Service {
                 .then_some(&current);
             if let Ok(records) = self.store.pending() {
                 for mut record in records {
+                    let invalid_source = invalid_sources.contains(&record.id);
                     if !refresh_pending_record(
                         &mut record,
                         current_questions,
                         &auto_yes_panes,
                         now(),
-                        |source| !ticks.is_multiple_of(10) || validate_source(source).is_ok(),
+                        |_| !invalid_source,
                     ) {
                         continue;
                     }
@@ -437,6 +448,29 @@ impl Service {
     }
 
     pub async fn execute(&self, command: NfnCommand) -> Result<Value, String> {
+        let operation = match &command {
+            NfnCommand::Focus { .. } => Some("focus"),
+            NfnCommand::AutoYes { .. } => Some("auto_yes"),
+            NfnCommand::Respond { .. } => Some("respond"),
+            _ => None,
+        };
+        let started = std::time::Instant::now();
+        let result = self.execute_inner(command).await;
+        if let Some(operation) = operation {
+            log::info!(
+                "[nfn] {operation} {} in {} ms",
+                if result.is_ok() {
+                    "completed"
+                } else {
+                    "failed"
+                },
+                started.elapsed().as_millis()
+            );
+        }
+        result
+    }
+
+    async fn execute_inner(&self, command: NfnCommand) -> Result<Value, String> {
         match command {
             NfnCommand::Todos => return Ok(super::todos::snapshot()),
             NfnCommand::TodoLink { note, agents } => {
@@ -761,7 +795,10 @@ impl Service {
                 crate::tmux::PaneProcessState::Running
             ) {
                 source.pane_id = Some(pane.into());
-                let current = resolve_source(pane, source.client_tty.clone())?;
+                let current = resolve_source_identity(
+                    pane,
+                    &crate::agent_session::ProcessSnapshot::capture(),
+                )?;
                 if current.session_id.is_some() && current.session_id != source.session_id {
                     return Err("The originating agent session has changed".into());
                 }
@@ -1468,14 +1505,85 @@ pub fn resolve_source(pane: &str, client_tty: Option<String>) -> Result<NfnSourc
 }
 
 fn validate_source(source: &NfnSource) -> Result<(), String> {
-    let Some(pane) = &source.pane_id else {
-        return Ok(());
-    };
-    let current = resolve_source(pane, source.client_tty.clone())?;
-    if !same_source(source, &current) {
-        return Err("The originating agent session has changed".into());
+    SourceValidator::default().validate(source)
+}
+
+#[derive(Default)]
+struct SourceValidator {
+    snapshot: Option<crate::agent_session::ProcessSnapshot>,
+    sources: HashMap<String, Result<NfnSource, String>>,
+}
+
+impl SourceValidator {
+    fn validate(&mut self, source: &NfnSource) -> Result<(), String> {
+        let Some(pane) = &source.pane_id else {
+            return Ok(());
+        };
+        let current = self.sources.entry(pane.clone()).or_insert_with(|| {
+            let snapshot = self
+                .snapshot
+                .get_or_insert_with(crate::agent_session::ProcessSnapshot::capture);
+            resolve_source_identity(pane, snapshot)
+        });
+        let current = current.as_ref().map_err(Clone::clone)?;
+        if !same_source(source, current) {
+            return Err("The originating agent session has changed".into());
+        }
+        Ok(())
     }
-    Ok(())
+}
+
+fn resolve_source_identity(
+    pane: &str,
+    snapshot: &crate::agent_session::ProcessSnapshot,
+) -> Result<NfnSource, String> {
+    use crate::agent_session::{self, ProcessProvider};
+    let pid = crate::terminal_backend::pane_pid(pane)?;
+    let provider = agent_session::detect_process_provider(&pid, Some(snapshot));
+    let agent_pid = agent_session::provider_process_pid(&pid, snapshot);
+    let cwd = if provider == Some(ProcessProvider::Opencode) {
+        Some(crate::terminal_backend::get_pane_path(pane)?)
+    } else {
+        None
+    };
+    let session_id = match provider {
+        Some(provider) => {
+            agent_session::resolve_session_identity(&pid, provider, snapshot, cwd.as_deref())
+        }
+        None => {
+            agent_session::resolve_session_info_for_provider_with_cwd_fast(
+                &pid,
+                None,
+                Some(snapshot),
+                cwd.as_deref(),
+            )
+            .session_id
+        }
+    };
+    Ok(NfnSource {
+        pane_id: Some(pane.into()),
+        pane_pid: Some(pid.clone()),
+        process_started_at: snapshot.start_epoch_for_pid(&pid),
+        agent_started_at: agent_pid
+            .as_ref()
+            .and_then(|pid| snapshot.start_epoch_for_pid(pid)),
+        agent_pid,
+        provider: provider.map(|provider| provider.as_str().into()),
+        session_id,
+        ..Default::default()
+    })
+}
+
+fn invalid_pending_sources(records: &[NfnRecord]) -> HashSet<String> {
+    let mut validator = SourceValidator::default();
+    records
+        .iter()
+        .filter(|record| {
+            record.status == "pending" && record.question_id.is_none() && !job_notice(record)
+        })
+        .filter(|record| validator.validate(&record.request.source).is_err())
+        .map(|record| record.id.clone())
+        .collect()
 }
 
 fn same_source(source: &NfnSource, current: &NfnSource) -> bool {
@@ -1881,6 +1989,36 @@ mod tests {
         current.session_id = Some("session-2".into());
         assert!(!same_source(&source, &current));
     }
+
+    #[test]
+    fn source_checks_reuse_pane_identity_without_loading_card_metadata() {
+        let source = NfnSource {
+            pane_id: Some("%1".into()),
+            pane_pid: Some("10".into()),
+            process_started_at: Some(1),
+            agent_pid: Some("20".into()),
+            agent_started_at: Some(2),
+            provider: Some("codex".into()),
+            session_id: Some("session-1".into()),
+            ..Default::default()
+        };
+        let mut validator = SourceValidator::default();
+        validator.sources.insert("%1".into(), Ok(source.clone()));
+        for index in 0..225 {
+            let mut record_source = source.clone();
+            record_source.task = Some(format!("Historical card {index}"));
+            record_source.cwd = Some("/no-longer-mounted/worktree".into());
+            record_source.client_tty = Some("/dev/closed-terminal".into());
+            assert!(validator.validate(&record_source).is_ok());
+        }
+        let mut stale = source;
+        stale.session_id = Some("session-2".into());
+        assert!(validator.validate(&stale).is_err());
+        assert!(
+            validator.snapshot.is_none(),
+            "cached panes need no new process snapshot"
+        );
+    }
 }
 
 fn job_directory(job: &str) -> Result<std::path::PathBuf, String> {
@@ -1967,9 +2105,21 @@ async fn focus_source(source: &NfnSource) -> Result<(), String> {
     let client = select_terminal_client(&clients, source.client_tty.as_deref(), &session)
         .ok_or("No terminal is attached to tmux. Attach a terminal, then open the agent again.")?;
     let origin = terminal_app_pid(client.pid);
-    tmux(&["switch-client", "-c", client.tty, "-t", &session])?;
-    tmux(&["select-window", "-t", pane])?;
-    tmux(&["select-pane", "-t", pane])?;
+    tmux(&[
+        "switch-client",
+        "-c",
+        client.tty,
+        "-t",
+        &session,
+        ";",
+        "select-window",
+        "-t",
+        pane,
+        ";",
+        "select-pane",
+        "-t",
+        pane,
+    ])?;
     if let Some(pid) = origin {
         native::activate(pid);
     }

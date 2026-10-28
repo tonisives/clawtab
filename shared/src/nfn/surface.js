@@ -208,23 +208,27 @@
     return JSON.stringify([record.machine_id, source.pane_id, source.session_id, source.agent_pid,
       source.agent_started_at, source.job_id, source.run_id]);
   }
+  function threadKey(record) {
+    const job = record.request.source?.job_id;
+    return job ? JSON.stringify([record.machine_id, "job", job]) : agentKey(record);
+  }
   function messageOrder(a, b) { return a.created_at - b.created_at || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0); }
   function actionInProgress(record) {
     if (actionsInProgress.has(record.id)) return true;
-    const key = agentKey(record);
+    const key = threadKey(record);
     return key && [...actionsInProgress.keys()].some(id => {
       const handled = records.get(id);
-      return handled && agentKey(handled) === key && messageOrder(record, handled) <= 0;
+      return handled && threadKey(handled) === key && messageOrder(record, handled) <= 0;
     });
   }
   function pendingCards() {
-    const agents = new Map();
-    for (const record of pendingRecords().sort(messageOrder)) agents.set(agentKey(record) || record.id, record);
-    return [...agents.values()].sort(messageOrder);
+    const threads = new Map();
+    for (const record of pendingRecords().sort(messageOrder)) threads.set(threadKey(record) || record.id, record);
+    return [...threads.values()].sort(messageOrder);
   }
   function cardMessages(record) {
-    const key = agentKey(record);
-    return [...records.values()].filter(item => item.id === record.id || (key && agentKey(item) === key
+    const key = threadKey(record);
+    return [...records.values()].filter(item => item.id === record.id || (key && threadKey(item) === key
       && pending(item) && !item.dismissed_at && !item.ignored && messageOrder(item, record) < 0)).sort(messageOrder);
   }
   function cardSignature(record) { return JSON.stringify([cardMessages(record).map(item => [item.id, item.request]), template(record)]); }
@@ -463,8 +467,8 @@
     }
   }
   function openRecord(id) {
-    const record = records.get(id), key = record && agentKey(record);
-    if (record && pending(record) && !record.dismissed_at && !record.ignored && key) id = pendingCards().find(item => agentKey(item) === key)?.id || id;
+    const record = records.get(id), key = record && threadKey(record);
+    if (record && pending(record) && !record.dismissed_at && !record.ignored && key) id = pendingCards().find(item => threadKey(item) === key)?.id || id;
     todosOpen = false;
     if (actionsInProgress.has(id)) return;
     leaveSettings();
@@ -1281,9 +1285,9 @@
     if (value.todos) todoData = value.todos;
     const incoming = new Set();
     for (const record of value.records || []) { records.set(record.id, record); incoming.add(record.id); }
-    const activeRecord = records.get(current), activeKey = activeRecord && agentKey(activeRecord);
+    const activeRecord = records.get(current), activeKey = activeRecord && threadKey(activeRecord);
     if (activeRecord && pending(activeRecord) && !activeRecord.dismissed_at && !activeRecord.ignored && activeKey && !actionsInProgress.has(current)) {
-      const latest = pendingCards().find(item => agentKey(item) === activeKey);
+      const latest = pendingCards().find(item => threadKey(item) === activeKey);
       if (latest && latest.id !== current) {
         pauseTimer(); stopContext(); current = latest.id; queueReturnId = current; renderedId = null; menu = null;
         remaining = (value.settings?.preview_seconds || 8) * 1000;
@@ -1310,8 +1314,8 @@
     if (value.arrival && records.has(value.arrival)) hiddenByUser = false;
     if (value.arrival && records.has(value.arrival) && !actionsInProgress.has(value.arrival) && !current && !settingsOpen && !todosOpen && !bulkBusy && (!queue || !selectedNotifications.size)) {
       clearTimeout(completionTimer); pauseTimer(); stopContext();
-      const arrival = records.get(value.arrival), key = agentKey(arrival);
-      current = (key && pendingCards().find(record => agentKey(record) === key)?.id) || value.arrival;
+      const arrival = records.get(value.arrival), key = threadKey(arrival);
+      current = (key && pendingCards().find(record => threadKey(record) === key)?.id) || value.arrival;
       queueReturnId = current; queue = false; history = false; details = false; menu = null;
       remaining = (value.settings?.preview_seconds || 8) * 1000; renderedId = null;
     }
