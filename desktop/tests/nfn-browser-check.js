@@ -427,7 +427,7 @@
   window.nfn.receive(window.fixture.snapshot()); await sleep(260);
   assert(document.querySelector("h1").textContent === "Still waiting" && document.querySelector(".count").textContent === "1 / 1", "an answer from another client leaves the active stack within a quarter second");
   document.querySelector('[aria-label="Notification list"]').click(); click("History"); await sleep(30);
-  [...document.querySelectorAll(".queue-item")].find(item => item.querySelector("strong").textContent === "Answered elsewhere").click(); await sleep(260);
+  [...document.querySelectorAll(".queue-item")].find(item => item.querySelector("strong").textContent.endsWith("/Answered elsewhere")).click(); await sleep(260);
   assert(document.querySelector("h1").textContent === "Answered elsewhere", "resolved cards remain readable when opened explicitly from History");
   window.nfn.collapse(); window.fixture.records.clear();
   for (let i = 0; i < 67; i++) window.fixture.records.set(`bulk-${i}`, window.fixture.record(`bulk-${i}`));
@@ -817,6 +817,6 @@
   click("Stop ignoring"); await sleep(20);
   assert(!ignoreFirst.ignored && !ignoreLatest.ignored && !document.querySelector(".ignored-agent"), "Stop ignoring restores the agent's messages and removes its saved ignore entry");
   click("Pending");
-  assert(document.querySelectorAll(".queue-item").length === 2 && document.querySelector(".queue-content").textContent.includes("2 messages"), "the restored agent returns as a single grouped card");
+  assert(document.querySelectorAll(".queue-item").length === 2 && document.querySelector(".queue-item .meta").textContent === ignoreLatest.request.body.replace(/\s+/g, " "), "the restored agent returns as a single grouped card with its latest message preview");
   return { passed: checks.length, checks };
 })()
