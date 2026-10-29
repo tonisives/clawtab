@@ -726,7 +726,7 @@
       for (const item of messages) {
         const entry = el("li", "message-thread-item"); entry.dataset.id = item.id;
         const header = el("div", "message-header");
-        header.append(el("div", "hint", `${item.id === record.id ? "Latest · " : ""}${item.request.title}`), messageTimestamp(item));
+        header.append(el("div", "hint", `${item.id === record.id ? "Latest · " : ""}${item.request.title}`), relativeTimestamp(item));
         entry.append(header, el("div", "message", messageText(item)));
         thread.append(entry);
       }
