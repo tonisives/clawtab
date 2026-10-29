@@ -23,6 +23,10 @@ static NfnCallback callback;
 @end
 @implementation NfnPanel
 - (BOOL)canBecomeKeyWindow { return self.textFocus || self.keyboardFocus; }
+- (void)becomeKeyWindow {
+    [super becomeKeyWindow];
+    if (!self.canBecomeKeyWindow) [self resignKeyWindow];
+}
 - (BOOL)canBecomeMainWindow { return NO; }
 - (BOOL)performKeyEquivalent:(NSEvent *)event {
     // The daemon has no Edit menu to route these commands to WebKit.
@@ -65,6 +69,7 @@ static NfnCallback callback;
 @property NSUInteger ticks;
 @property CGFloat surfaceWidth;
 @property CGFloat surfaceHeight;
+@property CGFloat surfaceRightOffset;
 @property BOOL notchPlacement;
 @property NSString *lastGeometry;
 @property NSMutableDictionary<NSString *, NSDictionary *> *notchGeometry;
@@ -360,7 +365,8 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
     NSRect available = screen.visibleFrame;
     CGFloat overlap = notch ? topInset : 0;
     // Keep WebKit's canvas still. Only the shape inside it changes size.
-    CGFloat w = MIN(680, available.size.width - 32), h = MIN(900, available.size.height - 32);
+    CGFloat w = MIN(available.size.width - 32, MAX(680, available.size.width - 32 - (notch ? 0 : MIN(384, available.size.width / 3))));
+    CGFloat h = MIN(MAX(900, available.size.height * .8 + 32), available.size.height - 32);
     CGFloat x = notch ? [camera[@"center"] doubleValue] - w / 2 : NSMaxX(available) - w - MIN(384, available.size.width / 3);
     x = MAX(NSMinX(available) + 16, MIN(x, NSMaxX(available) - w - 16));
     CGFloat y = notch ? NSMaxY(screen.frame) - h : NSMaxY(available) - h - 12;
@@ -372,12 +378,14 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
         top = MAX(NSMinY(available) + MIN(height, h), MIN(top, NSMaxY(available)));
         x = right - w; y = top - h;
     }
+    if (!notch) x += MAX(NSMinX(available) + MIN(width, w) - (x + w), MIN(self.surfaceRightOffset, NSMaxX(available) - (x + w)));
     NSRect frame = NSMakeRect(x, y, w, h);
     if (!NSEqualRects(frame, self.panel.frame)) [self.panel setFrame:frame display:YES];
     [self updateMousePassthrough];
     NSDictionary *geometry = @{@"placement":notch ? @"notch" : @"right", @"overlap":@(overlap),
         @"notch_width":@(MAX(0, notchWidth)), @"max_width":@(w),
-        @"max_height":@(h), @"reduce_motion":@(NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion)};
+        @"max_width_e":@(MIN(w, width + NSMaxX(available) - (x + w))),
+        @"max_height":@(h), @"list_max_height":@(available.size.height * .8), @"reduce_motion":@(NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion)};
     NSString *json = [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:geometry options:NSJSONWritingSortedKeys error:nil] encoding:NSUTF8StringEncoding];
     if (self.ready && ![json isEqual:self.lastGeometry]) {
         self.lastGeometry = json;
@@ -402,6 +410,7 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
         CGFloat overlap = self.notchPlacement ? [[self notchForScreen:[self selectedScreen]][@"inset"] doubleValue] : 0;
         self.dragAnchor = NSMakePoint(NSMaxX(frame), NSMaxY(frame) - overlap);
         self.dragging = YES;
+        self.surfaceRightOffset = 0;
         self.notchPlacement = NO;
         self.lastGeometry = nil;
         [self.web evaluateJavaScript:[NSString stringWithFormat:@"window.nfn.setPlacement({placement:'right',overlap:0,max_width:%g,max_height:%g,reduce_motion:true})", self.panel.frame.size.width, self.panel.frame.size.height] completionHandler:nil];
@@ -543,6 +552,7 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
     NSString *operation = value[@"native"];
     if ([operation isEqual:@"surface"]) {
         self.surfaceWidth = [value[@"width"] doubleValue]; self.surfaceHeight = [value[@"height"] doubleValue];
+        self.surfaceRightOffset = [value[@"right_offset"] doubleValue];
         if (self.surfaceWidth < 1 || self.surfaceHeight < 1) { [self.panel orderOut:nil]; [self releaseTextFocus]; return; }
         [self positionWidth:self.surfaceWidth height:self.surfaceHeight];
         if (!self.panel.visible && (self.settingsVisible || self.notificationsVisible || [self.snapshot[@"visible"] boolValue]) && [self allowsOverlay]) [self.panel orderFrontRegardless];

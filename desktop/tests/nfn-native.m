@@ -49,6 +49,54 @@ static void saveSurfaceSnapshot(NSString *path, void (^finish)(void)) {
     }];
 }
 
+static void sendResizePointer(NSEventType type, NSPoint screenPoint) {
+    NSEvent *event = [NSEvent mouseEventWithType:type location:[surface.panel convertPointFromScreen:screenPoint] modifierFlags:0 timestamp:NSProcessInfo.processInfo.systemUptime windowNumber:surface.panel.windowNumber context:nil eventNumber:1 clickCount:1 pressure:type == NSEventTypeLeftMouseUp ? 0 : 1];
+    [NSApp sendEvent:event];
+}
+
+static void verifyResizeCorners(void (^finish)(void)) {
+    NSRect before = [surface surfaceFrame];
+    BOOL notch = surface.notchPlacement;
+    BOOL keyBefore = surface.panel.isKeyWindow;
+    pid_t foregroundBefore = NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier;
+    fprintf(stderr, "Corner start: key=%d text=%d keyboard=%d foreground=%d\n", keyBefore, surface.panel.textFocus, surface.panel.keyboardFocus, foregroundBefore);
+    NSString *script = @"(() => { const handle = document.querySelector('.resize-se'); if (!handle || handle.hidden) return null; const r = handle.getBoundingClientRect(); return [r.x+r.width/2,r.y+r.height/2]; })()";
+    [surface.web evaluateJavaScript:script completionHandler:^(id point, NSError *error) {
+        if (error || ![point isKindOfClass:NSArray.class]) { fprintf(stderr, "Bottom-right resize handle is unavailable\n"); exit(1); }
+        CGFloat y = [point[1] doubleValue];
+        NSPoint location = [surface.web convertPoint:NSMakePoint([point[0] doubleValue], surface.web.isFlipped ? y : surface.web.bounds.size.height - y) toView:nil];
+        NSPoint start = [surface.panel convertPointToScreen:location], end = NSMakePoint(start.x + 16, start.y);
+        sendResizePointer(NSEventTypeLeftMouseDown, start);
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 10), dispatch_get_main_queue(), ^{
+            sendResizePointer(NSEventTypeLeftMouseDragged, end);
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 10), dispatch_get_main_queue(), ^{
+                sendResizePointer(NSEventTypeLeftMouseUp, end);
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 10), dispatch_get_main_queue(), ^{
+                    NSRect after = [surface surfaceFrame];
+                    fprintf(stderr, "Corner end: key=%d text=%d keyboard=%d foreground=%d\n", surface.panel.isKeyWindow, surface.panel.textFocus, surface.panel.keyboardFocus, NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier);
+                    if (surface.panel.isKeyWindow != keyBefore || NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier != foregroundBefore) { fprintf(stderr, "Corner dragging changed keyboard focus or the foreground app\n"); exit(1); }
+                    CGFloat growth = notch ? 32 : 16;
+                    if (fabs(after.size.width - before.size.width - growth) > 1
+                        || fabs(NSMaxY(after) - NSMaxY(before)) > 1
+                        || fabs(NSMaxX(after) - NSMaxX(before) - 16) > 1
+                        || (!notch && fabs(NSMinX(after) - NSMinX(before)) > 1)) {
+                        fprintf(stderr, "Right corner dragging does not preserve its opposite edge\n"); exit(1);
+                    }
+                    saveSurfaceSnapshot(notch ? @"/tmp/clawtab-resize-corner-notch.png" : @"/tmp/clawtab-resize-corner-right.png", ^{
+                    [surface.web evaluateJavaScript:@"document.querySelector('.resize-se').dispatchEvent(new KeyboardEvent('keydown', {key:'ArrowLeft', bubbles:true}))" completionHandler:^(id result, NSError *restoreError) {
+                        if (restoreError) { fprintf(stderr, "Could not restore resized width\n"); exit(1); }
+                        waitForSettledSurface(0, ^{
+                            printf("Native corner resize checks passed: real bottom-right pointer drag, fixed opposite edge, top anchor, and reverse resize.\n");
+                            finish();
+                        });
+                    }];
+                    });
+                });
+            });
+        });
+    }];
+}
+
 static void verifyMenuLayout(void (^finish)(void)) {
     NSDictionary *original = surface.snapshot;
     NSMutableDictionary *snapshot = [NSJSONSerialization JSONObjectWithData:[NSJSONSerialization dataWithJSONObject:original options:0 error:nil] options:NSJSONReadingMutableContainers error:nil];
@@ -193,7 +241,7 @@ static void verifyDragging(void (^finish)(void)) {
         fprintf(stderr, "Dropped position was not saved or preserved\n"); exit(1);
     }
     if (surface.panel.isKeyWindow || NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier != foreground) {
-        fprintf(stderr, "Dragging activated the notification panel or changed the foreground app\n"); exit(1);
+        fprintf(stderr, "Dragging activated the notification panel or changed the foreground app: key=%d text=%d keyboard=%d foreground=%d expected=%d\n", surface.panel.isKeyWindow, surface.panel.textFocus, surface.panel.keyboardFocus, NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier, foreground); exit(1);
     }
     printf("Native dragging checks passed: native mouse movement and release, unchanged focus, notch detach and saved drop coordinates.\n");
     finish();
@@ -218,7 +266,7 @@ static void verifyKeyboardControl(void (^finish)(void)) {
                     if (snapshotError || !image) { fprintf(stderr,"Hint snapshot failed\n"); exit(1); }
                     NSBitmapImageRep *bitmap = [NSBitmapImageRep imageRepWithData:image.TIFFRepresentation];
                     [[bitmap representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:@"/tmp/clawtab-nfn-hints.png" atomically:YES];
-                [surface.web evaluateJavaScript:@"(() => { const badge = [...document.querySelectorAll('.keyboard-hint')].find(b => b.dataset.target === 'Details'); if (!badge) throw Error('Details hint missing'); const host = document.getElementById('surface'); for (const key of badge.textContent) host.dispatchEvent(new KeyboardEvent('keydown', {key:key.toLowerCase(),bubbles:true,cancelable:true})); return document.getElementById('surface').classList.contains('details-open'); })()" completionHandler:^(id activated, NSError *error) {
+                [surface.web evaluateJavaScript:@"(() => { const badge = [...document.querySelectorAll('.keyboard-hint')].find(b => b.dataset.target === 'Details'); if (!badge) throw Error('Details hint missing'); const host = document.getElementById('surface'); if (host.dataset.keyboardActive !== 'true' || getComputedStyle(host).outlineStyle !== 'none' || getComputedStyle(document.querySelector('.brand img')).filter !== 'none' || getComputedStyle(document.querySelector('.todo-ring')).filter !== 'none') throw Error('Active bar appearance did not follow native keyboard focus'); for (const key of badge.textContent) host.dispatchEvent(new KeyboardEvent('keydown', {key:key.toLowerCase(),bubbles:true,cancelable:true})); return document.getElementById('surface').classList.contains('details-open'); })()" completionHandler:^(id activated, NSError *error) {
                     if (error || ![activated boolValue]) { fprintf(stderr,"Typing a hint did not activate Details: %s\n", error.description.UTF8String); exit(1); }
                     [surface toggleKeyboardFocus];
                 dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 4), dispatch_get_main_queue(), ^{
@@ -402,7 +450,7 @@ int main(int argc, const char **argv) {
                         if (geometryOnly) {
                             verifyExpansion(^{
                                 printf("Native geometry checks passed: passive arrival, notch overlap, window cycling excluded, animated expansion and fixed top anchor.\n");
-                                verifyMenuLayout(^{ verifyDragging(^{ verifyPresentationLifetime(^{ verifyInlineSettings(^{ clawtab_nfn_stop(); }); }); }); });
+                                verifyResizeCorners(^{ verifyMenuLayout(^{ verifyDragging(^{ verifyPresentationLifetime(^{ verifyInlineSettings(^{ clawtab_nfn_stop(); }); }); }); }); });
                             });
                             return;
                         }
@@ -413,7 +461,7 @@ int main(int argc, const char **argv) {
                                     clawtab_nfn_activate(previousApplication);
                                     verifyExpansion(^{
                                         printf("Native checks passed: platform JSON booleans, passive panel, foreground preserved, notch overlap, window cycling excluded, reply focus, Command-A selection, animated expansion and fixed top anchor. Screenshots: /tmp/clawtab-nfn-native.png, /tmp/clawtab-nfn-expanded.png\n");
-                                        verifyMenuLayout(^{ verifyDragging(^{ verifyPresentationLifetime(^{ verifyInlineSettings(^{ clawtab_nfn_stop(); }); }); }); });
+                                        verifyResizeCorners(^{ verifyMenuLayout(^{ verifyDragging(^{ verifyPresentationLifetime(^{ verifyInlineSettings(^{ clawtab_nfn_stop(); }); }); }); }); });
                                     });
                                 }); });
                             });

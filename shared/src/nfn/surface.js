@@ -17,6 +17,7 @@
   let settingsOpen = false, settingsBusy = false, settingsReturnExpanded = false;
   let explicitOpen = false, presented = false, hiddenByUser = false;
   let geometry = {}, layoutAnimation = null, contentAnimations = [], lastSize = "", renderedLayout = "";
+  let resizedSize = null, resizing = null, resizeRightOffset = 0;
   const autoYesBusy = new Set();
   const remoteMedia = new Map();
   const selectedNotifications = new Set();
@@ -24,6 +25,7 @@
   let ignoredOpen = false, ignoredAgents = [], ignoredBusy = false;
   let settingsTab = "appearance";
   let queueQuery = "", queueCursor = null, queueCount = "";
+  let checkMode = false, savedBarView = null, queueRestore = null;
   let searchItems = [], searchOffset = 0, searchMore = false, searchBusy = false, searchVersion = 0, searchTimer = null;
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
   let arrivalAnimations = [], arrivalTimer = null, lastArrivalId = null;
@@ -256,7 +258,7 @@
     return [...records.values()].filter(item => item.id === record.id || (key && threadKey(item) === key
       && pending(item) && !item.dismissed_at && !item.ignored && messageOrder(item, record) < 0)).sort(messageOrder);
   }
-  function cardSignature(record) { return JSON.stringify([cardMessages(record).map(item => [item.id, item.created_at, item.request]), template(record)]); }
+  function cardSignature(record) { return JSON.stringify([cardMessages(record).map(item => [item.id, item.created_at, item.request]), template(record), record.details_available]); }
   function pendingCount() { return pendingCards().length + unseenPending; }
   function updateUnseenPending() {
     const incoming = new Set((snapshot.records || []).map(record => record.id));
@@ -370,9 +372,10 @@
   function size() {
     const bounds = host.getBoundingClientRect(), hidden = host.classList.contains("empty");
     const width = hidden ? 0 : bounds.width, height = hidden ? 0 : Math.ceil(bounds.height);
-    const signature = `${width}:${height}`;
+    const rightOffset = canResize() && resizedSize ? resizeRightOffset : 0;
+    const signature = `${width}:${height}:${rightOffset}`;
     if (signature === lastSize) return;
-    lastSize = signature; native({ native: "surface", width, height });
+    lastSize = signature; native({ native: "surface", width, height, right_offset: rightOffset });
   }
   function stopAnimation() {
     layoutAnimation?.cancel(); layoutAnimation = null;
@@ -471,8 +474,15 @@
     timerStarted = performance.now(); collapseTimer = setTimeout(collapse, Math.max(100, remaining));
   }
   function collapse(keepVisible, finished = false) {
+    if (!finished) {
+      if (settingsOpen) savedBarView = { kind: "settings", id: current, tab: settingsTab };
+      else if (todosOpen) savedBarView = { kind: "todos" };
+      else if (queue) savedBarView = { kind: "queue", history, ignored: ignoredOpen, query: queueQuery, cursor: queueCursor, scroll: host.querySelector(".queue-content")?.scrollTop || 0 };
+      else if (current) savedBarView = { kind: "record", id: current };
+    }
     if (!finished) reviewVersion++;
     if (typeof keepVisible !== "boolean") keepVisible = explicitOpen && !pendingCount();
+    finishResize(); resizedSize = null; resizeRightOffset = 0;
     leaveSettings(); todosOpen = false;
     presented = false; explicitOpen = keepVisible === true; native({ native: "presentation", active: explicitOpen });
     clearTimeout(completionTimer); pauseTimer(); stopContext(); expanded = false; details = false; queue = false; current = null; focused = false; menu = null;
@@ -495,8 +505,17 @@
     if (current || queue || expanded || todosOpen) collapse();
     else {
       resetHandledActions();
-      if (pendingCount()) openLatest(); else showQueue(true);
+      restoreBarView();
     }
+  }
+  function restoreBarView() {
+    const view = savedBarView;
+    if (view?.kind === "queue") { showQueue(view.history, view); return; }
+    if (view?.kind === "todos") { toggleTodos(); return; }
+    if (view?.id && records.has(view.id) && pending(records.get(view.id)) && !records.get(view.id).dismissed_at) openRecord(view.id);
+    else if (pendingCount()) openLatest();
+    else { showQueue(true); return; }
+    if (view?.kind === "settings") { settingsTab = view.tab; openSettings(); }
   }
   function openRecord(id) {
     const record = records.get(id), key = record && threadKey(record);
@@ -505,8 +524,9 @@
     if (actionsInProgress.has(id)) return;
     leaveSettings();
     const replyFocused = card?._reply && document.activeElement === card._reply;
-    clearTimeout(completionTimer); pauseTimer(); stopContext(); current = id; queueReturnId = id; expanded = true; details = false; queue = false; renderedId = null; menu = null;
+    clearTimeout(completionTimer); pauseTimer(); stopContext(); current = id; queueReturnId = id; expanded = true; details = Boolean(resizedSize?.showDetails); queue = false; renderedId = null; menu = null;
     call({ op: "read", id }).catch(error => showError(error, id)); render();
+    startContext();
     if (replyFocused && card?._reply) card._reply.focus({ preventScroll: true });
   }
   function openLatest() {
@@ -538,22 +558,28 @@
     if (!logTimer) logTimer = setInterval(refreshContext, 1000);
   }
   function toggleDetails() {
-    pauseTimer(); stopContext(); expanded = true; details = !details; menu = null; renderedId = null; render(); startContext();
+    if (records.get(current)?.details_available === false) return;
+    pauseTimer(); stopContext(); expanded = true; details = !details;
+    if (resizedSize) resizedSize.showDetails = details;
+    menu = null; renderedId = null; render(); startContext();
   }
   function toggleMenu(next) {
     if (menu === "agent") contextRequest = null;
     pauseTimer(); expanded = true; menu = menu === next ? null : next; render();
     if (menu === "agent") refreshContext(); else startContext();
   }
-  function showQueue(showHistory = false) {
+  function showQueue(showHistory = false, restore = null) {
     todosOpen = false;
     resetHandledActions();
     leaveSettings();
     if (current) queueReturnId = current;
-    clearTimeout(completionTimer); pauseTimer(); stopContext(); expanded = true; details = false; queue = true; history = showHistory === true; ignoredOpen = false; current = null; renderedId = null; menu = null; selectedNotifications.clear(); queueError = ""; render();
+    clearTimeout(completionTimer); pauseTimer(); stopContext(); expanded = true; details = false; queue = true; history = showHistory === true; ignoredOpen = Boolean(restore?.ignored); current = null; renderedId = null; menu = null; selectedNotifications.clear(); checkMode = false; queueError = "";
+    queueRestore = restore;
+    if (restore) { queueQuery = restore.query; queueCursor = restore.cursor; }
+    if (queueQuery.trim() && !ignoredOpen) scheduleSearch(restore); else render();
     queueCount = "";
-    if (!snapshot.remote && document.hasFocus()) updateQueueCursor(host.querySelector(".queue"), true);
-    if (queueQuery.trim()) scheduleSearch(); else if (history) loadHistory(true);
+    if (!snapshot.remote && document.hasFocus()) updateQueueCursor(host.querySelector(".queue"), !restore);
+    if (ignoredOpen) loadIgnoredAgents(); else if (history && !queueQuery.trim() && (!restore || !historyItems.length)) loadHistory(true);
   }
   async function toggleQueue() {
     if (settingsOpen) { showQueue(); return; }
@@ -694,6 +720,7 @@
     }
   }
   function createCard(record) {
+    if (record.details_available === false) details = false;
     const node = el("article", "card");
     node._wasPending = pending(record) && !record.dismissed_at;
     node._signature = cardSignature(record);
@@ -702,6 +729,7 @@
     if (agent) { heading.classList.add("agent-heading"); const group = el("span", "source-group", identity.group); group.title = identity.group; heading.append(group); }
     heading.append(title);
     const tools = el("div", "heading-tools"); heading.append(tools);
+    tools.append(relativeTimestamp(record));
     const status = el("span", "status"); tools.append(status); node._status = status;
     if (hasAgent(record)) {
       const options = iconButton("Notification options", "M5 12h.01M12 12h.01M19 12h.01", () => toggleMenu("options"), "options-toggle");
@@ -720,12 +748,12 @@
       for (const item of messages) {
         const entry = el("li", "message-thread-item"); entry.dataset.id = item.id;
         const header = el("div", "message-header");
-        header.append(el("div", "hint", `${item.id === record.id ? "Latest · " : ""}${item.request.title}`), messageTimestamp(item));
+        header.append(el("div", "hint", `${item.id === record.id ? "Latest · " : ""}${item.request.title}`), relativeTimestamp(item));
         entry.append(header, el("div", "message", messageText(item)));
         thread.append(entry);
       }
       node._thread = thread; node.append(thread);
-    } else node.append(messageTimestamp(record), el("div", "message", messageText(record)));
+    } else node.append(el("div", "message", messageText(record)));
     const layout = template(record).layout, primitives = {};
     const content = el("div", "details-content"); node._content = content;
     content.addEventListener("scroll", () => { node._followLogs = content.scrollHeight - content.scrollTop - content.clientHeight < 30; });
@@ -787,8 +815,10 @@
     }
     const notice = el("div", "notice"); notice.setAttribute("role", "status"); node._notice = notice; node.append(notice);
     const utilities = el("div", "controls");
-    const detailButton = button(details ? "Hide details" : (record.request.media?.length ? "View attachment" : "Details"), toggleDetails, "utility details-toggle");
-    detailButton.setAttribute("aria-expanded", String(details)); utilities.append(detailButton);
+    if (record.details_available !== false) {
+      const detailButton = button(details ? "Hide details" : (record.request.media?.length ? "View attachment" : "Details"), toggleDetails, "utility details-toggle");
+      detailButton.setAttribute("aria-expanded", String(details)); utilities.append(detailButton);
+    }
     if (!snapshot.remote && record.request.source?.browser_pane_id && record.request.source?.browser_session) {
       utilities.classList.add("session-controls");
       const openBrowser = button("Open browser", async () => {
@@ -804,7 +834,7 @@
       const focus = choices.find(action => action.kind === "focus");
       const openSession = button("Open session", () => focus ? act(record.id, focus.id, "") : performAction(record.id, { op: "focus", id: record.id }), "primary open-session");
       openSession.title = "Open the originating session"; node._openSession = openSession; utilities.append(openSession);
-    } else if (record.request.source?.job_id) {
+    } else if (record.request.source?.job_id && record.details_available !== false) {
       const openJob = button("Go to job", async () => {
         openJob.disabled = true;
         try { await call({ op: "open_job", id: record.id }); }
@@ -978,25 +1008,30 @@
   function updateQueueCursor(list, moveFocus = false) {
     const rows = [...list.querySelectorAll("[data-queue-record]")];
     let index = rows.findIndex(row => row.dataset.queueRecord === queueCursor);
-    if (index < 0) index = 0;
+    if (index < 0) index = queueCursor ? Math.min(list._cursorIndex || 0, Math.max(0, rows.length - 1)) : 0;
+    list._cursorIndex = index;
     queueCursor = rows[index]?.dataset.queueRecord || null;
     rows.forEach((row, position) => {
       row.dataset.selected = String(position === index);
       row.querySelector(".queue-number").textContent = String(Math.abs(position - index));
     });
     const mode = list.querySelector(".queue-mode");
-    if (mode) mode.textContent = `${document.activeElement === list._search ? "SEARCH" : "NORMAL"}${queueCount ? ` ${queueCount}` : ""}>`;
+    if (mode) mode.textContent = `${document.activeElement === list._search ? "SEARCH" : checkMode ? "SELECT" : "NORMAL"}${queueCount ? ` ${queueCount}` : ""}>`;
     if (moveFocus && rows[index]) {
       rows[index].querySelector(".queue-item").focus({ preventScroll: true });
       rows[index].scrollIntoView({ block: "nearest" });
     }
   }
-  function scheduleSearch() {
+  function scheduleSearch(restore = null) {
     clearTimeout(searchTimer); ++searchVersion;
     searchItems = []; searchOffset = 0; searchMore = false; searchBusy = Boolean(queueQuery.trim());
-    queueCursor = null; queueCount = ""; queueError = ""; selectedNotifications.clear();
+    queueRestore = restore; queueCursor = restore?.cursor || null; queueCount = ""; queueError = ""; selectedNotifications.clear();
     render();
     if (queueQuery.trim()) searchTimer = setTimeout(() => searchMessages(true), 150);
+  }
+  function toggleCheckMode() {
+    if (history || ignoredOpen || bulkBusy) return;
+    checkMode = !checkMode; selectedNotifications.clear(); queueCount = ""; render();
   }
   async function searchMessages(reset = false) {
     const version = searchVersion, query = queueQuery.trim(), pendingOnly = !history;
@@ -1020,7 +1055,7 @@
         const tab = button(label, () => {
           if (history === isHistory && !ignoredOpen) return;
           list._scroll[history ? "history" : "pending"] = list._content.scrollTop;
-          history = isHistory; ignoredOpen = false; queueCursor = null; selectedNotifications.clear(); queueError = "";
+          history = isHistory; ignoredOpen = false; queueCursor = null; queueRestore = null; checkMode = false; selectedNotifications.clear(); queueError = "";
           if (queueQuery.trim()) scheduleSearch(); else render();
           list._content.scrollTop = list._scroll[history ? "history" : "pending"] || 0;
           if (history && !queueQuery.trim()) loadHistory(true);
@@ -1035,7 +1070,8 @@
       list._search = el("input"); list._search.type = "search"; list._search.placeholder = "Search messages (/)";
       list._search.setAttribute("aria-label", "Search messages"); list._search.autocomplete = "off";
       list._search.addEventListener("input", () => { queueQuery = list._search.value; scheduleSearch(); if (!queueQuery.trim() && history && !historyItems.length) loadHistory(true); });
-      search.append(mode, list._search); list._searchBar = search;
+      list._checkMode = button("Select", toggleCheckMode, "utility queue-check-mode"); list._checkMode.setAttribute("aria-label", "Select messages");
+      search.append(mode, list._search, list._checkMode); list._searchBar = search;
       list._content = el("div", "queue-content");
       list.append(segments, search, list._content);
       list.addEventListener("focusin", event => {
@@ -1046,6 +1082,8 @@
       list.addEventListener("focusout", () => requestAnimationFrame(() => updateQueueCursor(list)));
     }
     list._searchBar.hidden = ignoredOpen;
+    list._checkMode.hidden = history; list._checkMode.disabled = bulkBusy;
+    list._checkMode.textContent = checkMode ? "Done" : "Select"; list._checkMode.setAttribute("aria-pressed", String(checkMode));
     if (list._search.value !== queueQuery) list._search.value = queueQuery;
     for (const tab of list.querySelectorAll('[role="tab"]')) tab.setAttribute("aria-selected", String(ignoredOpen ? tab.dataset.ignored === "true" : tab.dataset.history === String(history)));
     if (ignoredOpen) {
@@ -1064,12 +1102,12 @@
       return list;
     }
     const searching = Boolean(queueQuery.trim()), items = searching ? searchItems : history ? historyItems : pendingCards();
-    const signature = JSON.stringify([history, queueQuery, items.map(record => [record.id, record.created_at, record.read_at, queueSummary(record)]), [...selectedNotifications], bulkBusy, queueError, loadingQueue, hasMoreHistory, unseenPending, searchBusy, searchMore]);
+    const signature = JSON.stringify([history, checkMode, queueQuery, items.map(record => [record.id, record.created_at, record.read_at, queueSummary(record)]), [...selectedNotifications], bulkBusy, queueError, loadingQueue, hasMoreHistory, unseenPending, searchBusy, searchMore]);
     if (list.dataset.signature === signature) { updateQueueCursor(list); return list; }
     list.dataset.signature = signature;
     const content = list._content, scroll = content.scrollTop, rowFocused = Boolean(document.activeElement?.closest("[data-queue-record]"));
     content.replaceChildren();
-    if (!history && items.length) {
+    if (!history && checkMode && items.length) {
       const toolbar = el("div", "queue-selection");
       const label = el("label"); const selectAll = el("input"); selectAll.type = "checkbox"; selectAll.setAttribute("aria-label", "Select all notifications");
       selectAll.checked = (searching || unseenPending === 0) && items.every(record => selectedNotifications.has(record.id));
@@ -1092,7 +1130,7 @@
       const row = el("div", "queue-row");
       row.dataset.queueRecord = record.id;
       const number = el("span", "queue-number"); number.setAttribute("aria-hidden", "true"); row.append(number);
-      if (!history) {
+      if (!history && checkMode) {
         const checkbox = el("input"); checkbox.type = "checkbox"; checkbox.checked = selectedNotifications.has(record.id); checkbox.disabled = bulkBusy;
         checkbox.setAttribute("aria-label", `Select ${summary.title}`);
         checkbox.addEventListener("change", () => { if (checkbox.checked) selectedNotifications.add(record.id); else selectedNotifications.delete(record.id); render(); }); row.append(checkbox);
@@ -1260,6 +1298,8 @@
         ["H / L", "Previous / next message card."],
         ["J / K", "Next / previous list row. Prefix with a count, such as 3j."],
         ["Enter", "Open the selected message."],
+        ["V / Space", "Toggle selection mode / check the selected message."],
+        ["D", "Dismiss the selected pending message."],
         ["/", "Search the current message list. Escape returns to navigation and keeps the search."],
         ["Home / End", "First / last list row."],
         ["Escape", "Clear a count or search, close settings, or collapse the bar."],
@@ -1295,6 +1335,96 @@
     }
     return view;
   }
+  function canResize() {
+    return current && !queue && !settingsOpen && !todosOpen && !preview && !snapshot.remote;
+  }
+  function applyResizedSize() {
+    const active = canResize() && resizedSize;
+    host.classList.toggle("user-sized", Boolean(active));
+    host.style.width = active ? `${resizedSize.width}px` : "";
+    host.style.height = active ? `${resizedSize.height}px` : "";
+  }
+  function normalResizeSize() {
+    const width = host.style.width, height = host.style.height, classes = host.className;
+    const contentDisplay = card?._content.style.display;
+    host.style.width = ""; host.style.height = "";
+    host.classList.remove("user-sized", "details-open");
+    if (card) card._content.style.display = "none";
+    const bounds = host.getBoundingClientRect();
+    host.style.width = width; host.style.height = height; host.className = classes;
+    if (card) card._content.style.display = contentDisplay;
+    return { width: bounds.width, height: bounds.height };
+  }
+  function resizeTo(width, height, origin) {
+    const east = placement !== "notch" && origin.edge.includes("e");
+    const maxWidth = (east ? geometry.max_width_e : geometry.max_width) || geometry.max_width || 1000;
+    const maxHeight = geometry.max_height || 860;
+    width = Math.round(Math.max(Math.min(520, maxWidth), Math.min(width, maxWidth)));
+    height = Math.round(Math.max(Math.min(280, maxHeight), Math.min(height, maxHeight)));
+    const showDetails = records.get(current)?.details_available !== false
+      && (width > origin.normal.width + 12 || height > origin.normal.height + 12);
+    resizedSize = { width, height, showDetails };
+    if (east) resizeRightOffset = origin.rightOffset + width - origin.width;
+    expanded = true; pauseTimer(); stopAnimation(); applyResizedSize();
+    if (details !== showDetails) {
+      stopContext(); details = showDetails; menu = null; renderedId = null; render(false); startContext();
+    }
+    size();
+  }
+  function finishResize(event) {
+    if (!resizing || event && event.pointerId !== resizing.pointerId) return;
+    const { control, pointerId } = resizing; resizing = null;
+    document.removeEventListener("pointermove", moveResize);
+    document.removeEventListener("pointerup", finishResize);
+    document.removeEventListener("pointercancel", finishResize);
+    if (control.hasPointerCapture(pointerId)) control.releasePointerCapture(pointerId);
+    host.classList.remove("resizing");
+  }
+  function moveResize(event) {
+    if (!resizing || event.pointerId !== resizing.pointerId) return;
+    const { x, y, width, height, edge } = resizing;
+    const dx = event.screenX - x, dy = event.screenY - y;
+    if (!resizing.started && Math.hypot(dx, dy) < 3) return;
+    event.preventDefault();
+    resizing.started = true;
+    host.classList.add("resizing");
+    const horizontal = edge.includes("w") ? -dx : edge.includes("e") ? dx : 0;
+    resizeTo(width + horizontal * (placement === "notch" ? 2 : 1), height + (edge.includes("s") ? dy : 0), resizing);
+  }
+  function renderResizeHandles() {
+    for (const edge of ["w", "e", "s", "sw", "se"]) {
+      let control = host.querySelector(`[data-resize="${edge}"]`);
+      if (!control) {
+        control = el("div", `resize-handle resize-${edge}`); control.dataset.resize = edge;
+        control.setAttribute("role", "separator"); control.tabIndex = 0;
+        control.setAttribute("aria-label", edge.length > 1 ? "Resize message bar" : edge === "s" ? "Resize message bar height" : "Resize message bar width");
+        control.setAttribute("aria-orientation", edge === "s" ? "horizontal" : "vertical");
+        control.addEventListener("pointerdown", event => {
+          if (event.button !== 0 || !canResize()) return;
+          event.preventDefault(); event.stopPropagation(); finishResize(); stopAnimation();
+          const bounds = host.getBoundingClientRect();
+          resizing = { control, edge, pointerId: event.pointerId, x: event.screenX, y: event.screenY, width: bounds.width, height: bounds.height, normal: normalResizeSize(), rightOffset: resizeRightOffset, started: false };
+          control.setPointerCapture(event.pointerId);
+          document.addEventListener("pointermove", moveResize);
+          document.addEventListener("pointerup", finishResize);
+          document.addEventListener("pointercancel", finishResize);
+        });
+        control.addEventListener("lostpointercapture", finishResize);
+        control.addEventListener("keydown", event => {
+          const horizontal = edge.includes("w") || edge.includes("e"), vertical = edge.includes("s");
+          const dx = horizontal ? ({ ArrowLeft: -16, ArrowRight: 16 }[event.key] || 0) : 0;
+          const dy = vertical ? ({ ArrowUp: -16, ArrowDown: 16 }[event.key] || 0) : 0;
+          if (!canResize() || !dx && !dy) return;
+          event.preventDefault(); event.stopPropagation(); stopAnimation();
+          const bounds = host.getBoundingClientRect();
+          const origin = { edge, width: bounds.width, normal: normalResizeSize(), rightOffset: resizeRightOffset };
+          resizeTo(bounds.width + dx * (edge.includes("w") ? -1 : 1) * (placement === "notch" ? 2 : 1), bounds.height + dy, origin);
+        });
+        host.append(control);
+      }
+      control.hidden = !canResize();
+    }
+  }
   function draggableBar(control) {
     let origin = null, dragged = false;
     control.addEventListener("pointerdown", event => {
@@ -1308,7 +1438,7 @@
       if (!origin || event.pointerId !== origin.pointerId) return;
       const dx = event.screenX - origin.x, dy = event.screenY - origin.y;
       if (!dragged && Math.hypot(dx, dy) < 5) return;
-      if (!dragged) { control.setPointerCapture(event.pointerId); pauseTimer(); stopAnimation(); native({ native: "drag", phase: "start", dx, dy }); }
+      if (!dragged) { resizeRightOffset = 0; control.setPointerCapture(event.pointerId); pauseTimer(); stopAnimation(); native({ native: "drag", phase: "start", dx, dy }); }
       dragged = true;
     };
     const finish = () => {
@@ -1327,10 +1457,12 @@
       if (dragged) { event.preventDefault(); event.stopImmediatePropagation(); dragged = false; }
     }, true);
   }
-  function render() {
+  function render(animate = true) {
+    syncFocusAppearance();
+    if (records.get(current)?.details_available === false) details = false;
     if (reducedMotion.matches || geometry.reduce_motion) stopArrivalAnimation();
     const before = host.getBoundingClientRect();
-    const signature = JSON.stringify([current, expanded, details, queue, settingsOpen, todosOpen, menu, replyStates.get(current), geometry, snapshot.visible, records.get(current)?.request]);
+    const signature = JSON.stringify([current, expanded, details, queue, settingsOpen, todosOpen, menu, replyStates.get(current), resizedSize, geometry, snapshot.visible, records.get(current)?.request]);
     const continuingAnimation = layoutAnimation && signature === renderedLayout;
     if (!continuingAnimation) stopAnimation();
     renderedLayout = signature;
@@ -1340,6 +1472,7 @@
     }
     if (!preview && !settingsOpen && !todosOpen && (hiddenByUser || (!explicitOpen && !presented && (!snapshot.visible || (!current && !queue && !count && !todoItems().length))))) { stopArrivalAnimation(); host.className = "empty"; host.replaceChildren(); renderedId = null; card = null; stopContext(); size(); return; }
     host.className = `${placement} ${expanded ? "expanded" : !current ? "pill" : ""} ${details && !settingsOpen ? "details-open" : ""} ${settingsOpen ? "settings-open" : ""} ${queue && !settingsOpen ? "queue-open" : ""} ${menu ? "menu-open" : ""} ${todosOpen ? "todos-open" : ""}`;
+    applyResizedSize(); renderResizeHandles();
     let top = host.querySelector(".top");
     if (!top) {
       top = el("div", "top"); host.prepend(top);
@@ -1389,6 +1522,10 @@
     } else if (queue) {
       host.querySelector(".card")?.remove();
       const list = renderQueue(); if (!list.isConnected) host.append(list); card = null; renderedId = null;
+      if (queueRestore && !(ignoredOpen ? ignoredBusy : queueQuery.trim() ? searchBusy : loadingQueue)) {
+        queueCursor = queueRestore.cursor; list._content.scrollTop = queueRestore.scroll; queueRestore = null;
+        if (!ignoredOpen) updateQueueCursor(list);
+      }
     } else if (current && records.has(current)) {
       host.querySelector(".queue")?.remove();
       if (renderedId !== `${current}:${expanded}`) {
@@ -1396,14 +1533,14 @@
       }
       updateCard();
     } else { host.querySelector(".card")?.remove(); host.querySelector(".queue")?.remove(); renderedId = null; card = null; }
-    renderMenu(); cleanupRemoteMedia(); if (!continuingAnimation) animateLayout(before, !queue && !menu && !settingsOpen);
+    renderMenu(); cleanupRemoteMedia(); if (resizing || !animate) size(); else if (!continuingAnimation) animateLayout(before, !queue && !menu && !settingsOpen);
   }
   function receive(value) {
     if (value.type === "keyboard_focus") {
       if (!value.active) { hintInput = ""; return; }
       hiddenByUser = false; explicitOpen = true; native({ native: "presentation", active: true });
       if (host.classList.contains("pill") || host.classList.contains("empty") || !current && !queue && !settingsOpen && !todosOpen) {
-        if (current) openRecord(current); else if (pendingCount()) openLatest(); else showQueue(true);
+        if (current) openRecord(current); else restoreBarView();
       }
       host.tabIndex = -1; host.focus({ preventScroll: true }); render(); return;
     }
@@ -1430,8 +1567,8 @@
         records.set(record.id, record);
         if (pendingRecords(true).length > before) unseenPending = Math.max(0, unseenPending - 1);
         openRecord(record.id);
-        if (record.request.media?.length) toggleDetails();
-        else if (value.popup && record.request.template === "update") { expanded = false; render(); resumeTimer(); }
+        if (record.request.media?.length) { if (!details) toggleDetails(); }
+        else if (value.popup && record.request.template === "update" && !resizedSize) { expanded = false; render(); resumeTimer(); }
       };
       if (records.has(value.id)) open(records.get(value.id));
       else call({ op: "get", id: value.id }).then(open).catch(error => {
@@ -1488,7 +1625,7 @@
       clearTimeout(completionTimer); pauseTimer(); stopContext();
       const arrival = records.get(value.arrival), key = threadKey(arrival);
       current = (key && pendingCards().find(record => threadKey(record) === key)?.id) || value.arrival;
-      queueReturnId = current; queue = false; history = false; details = false; menu = null;
+      queueReturnId = current; queue = false; history = false; details = Boolean(resizedSize?.showDetails); menu = null;
       remaining = (value.settings?.preview_seconds || 8) * 1000; renderedId = null;
     }
     render(); resumeTimer();
@@ -1500,12 +1637,42 @@
   let hintInput = "", hintTargets = [], hintLabels = [], shortcutError = "";
   const hintOverlay = el("div", "keyboard-hints");
   hintOverlay.setAttribute("aria-hidden", "true"); document.body.append(hintOverlay);
+  function syncFocusAppearance(active = document.hasFocus()) {
+    const desktop = String(!snapshot.remote && !preview), keyboardActive = String(desktop === "true" && active);
+    if (host.dataset.desktop !== desktop) host.dataset.desktop = desktop;
+    if (host.dataset.keyboardActive !== keyboardActive) host.dataset.keyboardActive = keyboardActive;
+  }
+  function fixedHint(node) {
+    if (node.closest(".top")) {
+      if (node.matches(".brand")) return "A";
+      if (node.matches(".count,.bar-toggle")) return "S";
+      if (node.matches(".previous")) return "H";
+      if (node.matches(".next")) return "L";
+      if (node.matches(".list-toggle")) return "G";
+      if (node.matches(".todo-toggle")) return "Q";
+    }
+    if (node.dataset.history === "false") return "P";
+    if (node.dataset.history === "true") return "T";
+    if (node.dataset.ignored) return "I";
+    if (node.dataset.settingsTab) return { appearance: "E", delivery: "T", shortcuts: "Y" }[node.dataset.settingsTab];
+    if (node.matches(".queue-search input")) return "/";
+    if (node.matches(".queue-check-mode")) return "V";
+    if (node.matches(".dismiss-item")) return "D";
+    if (node.matches('.queue-row input[type="checkbox"]')) return "Space";
+    if (node.getAttribute("aria-label") === "Select all notifications") return "C";
+    if (node.matches(".dismiss-selected")) return "X";
+    return null;
+  }
   function refreshHints() {
+    syncFocusAppearance();
     if (!snapshot.settings?.keyboard_hints || snapshot.remote || preview || !document.hasFocus() || host.classList.contains("empty")) {
       hintOverlay.replaceChildren(); hintTargets = []; hintLabels = []; hintInput = ""; return;
     }
     const targets = [...host.querySelectorAll('button,input:not([type="hidden"]),textarea,select,summary,a[href],[role="button"]')].filter(node => {
       if (node.disabled || node.closest('[hidden],[inert]') || node.getAttribute("aria-disabled") === "true") return false;
+      if (node.matches(".bar-toggle") && host.querySelector(".top button.count")) return false;
+      const row = node.closest("[data-queue-record]");
+      if (row && (row.dataset.selected !== "true" || node.matches(".queue-item"))) return false;
       const r = node.getBoundingClientRect(), style = getComputedStyle(node);
       if (!r.width || !r.height || style.visibility === "hidden" || style.display === "none") return false;
       const x = Math.max(0, r.left) + Math.min(r.width, innerWidth - Math.max(0, r.left)) / 2;
@@ -1518,10 +1685,15 @@
     });
     if (targets.length !== hintTargets.length || targets.some((node,i) => node !== hintTargets[i])) {
       hintTargets = targets; hintInput = ""; hintOverlay.replaceChildren();
-      const alphabet = "ASGQWETYUIOPZXVBM", length = Math.max(1, Math.ceil(Math.log(Math.max(1, targets.length))/Math.log(alphabet.length)));
+      const alphabet = "BFMNORUWZ", fixed = targets.map(fixedHint), dynamicCount = fixed.filter(label => !label).length;
+      const length = Math.max(1, Math.ceil(Math.log(Math.max(1, dynamicCount))/Math.log(alphabet.length)));
+      let ordinal = 0;
       hintLabels = targets.map((node, index) => {
-        let label = "", value = index;
-        for (let i=0;i<length;i++) { label = alphabet[value % alphabet.length]+label; value = Math.floor(value/alphabet.length); }
+        let label = fixed[index], value = ordinal;
+        if (!label) {
+          label = ""; ++ordinal;
+          for (let i=0;i<length;i++) { label = alphabet[value % alphabet.length]+label; value = Math.floor(value/alphabet.length); }
+        }
         const badge = el("span", "keyboard-hint", label); badge.dataset.target = node.getAttribute("aria-label") || node.textContent;
         hintOverlay.append(badge); return label;
       });
@@ -1534,7 +1706,7 @@
   }
   function handleHintKey(event) {
     if (!snapshot.settings?.keyboard_hints || snapshot.remote || preview || !document.hasFocus()) return false;
-    if (event.isComposing || event.target.closest?.('input,textarea,select,[contenteditable="true"]') || event.ctrlKey || event.metaKey || event.altKey) return false;
+    if (event.isComposing || event.target.closest?.('input:not([type="checkbox"]):not([type="radio"]),textarea,select,[contenteditable="true"]') || event.ctrlKey || event.metaKey || event.altKey) return false;
     if (event.key === "Escape" && hintInput) { hintInput = ""; event.preventDefault(); refreshHints(); return true; }
     if (event.key === "Backspace" && hintInput) { hintInput = hintInput.slice(0,-1); event.preventDefault(); refreshHints(); return true; }
     if (!/^[a-z]$/i.test(event.key)) return false;
@@ -1551,7 +1723,7 @@
   function handleNavigationKey(event) {
     if (event.defaultPrevented || event.isComposing || !document.hasFocus() || event.metaKey || event.altKey || event.ctrlKey || settingsOpen || todosOpen || menu) return false;
     const list = queue && !ignoredOpen && host.querySelector(".queue");
-    const editing = event.target.closest?.('input,textarea,select,[contenteditable="true"]');
+    const editing = event.target.closest?.('input:not([type="checkbox"]):not([type="radio"]),textarea,select,[contenteditable="true"]');
     const searchInput = list && event.target === list._search;
     if (editing && !searchInput) return false;
     if (searchInput && event.key === "Escape") {
@@ -1561,6 +1733,18 @@
     if (list) {
       const rows = [...list.querySelectorAll("[data-queue-record]")];
       const index = Math.max(0, rows.findIndex(row => row.dataset.queueRecord === queueCursor));
+      if (!editing && event.key.toLowerCase() === "v" && !history) {
+        event.preventDefault(); hintInput = ""; toggleCheckMode(); updateQueueCursor(list, true); return true;
+      }
+      if (!editing && event.key === " " && checkMode && !history) {
+        event.preventDefault(); rows[index]?.querySelector('input[type="checkbox"]')?.click(); return true;
+      }
+      if (!editing && event.key.toLowerCase() === "d" && !history) {
+        event.preventDefault(); rows[index]?.querySelector(".dismiss-item")?.click(); return true;
+      }
+      if (!editing && event.key === "Escape" && checkMode) {
+        event.preventDefault(); toggleCheckMode(); return true;
+      }
       if (!editing && /^\d$/.test(event.key)) {
         event.preventDefault(); queueCount = (queueCount + event.key).slice(0, 6); hintInput = ""; updateQueueCursor(list); return true;
       }
@@ -1590,7 +1774,7 @@
     }
     return false;
   }
-  window.addEventListener("blur", () => { hintInput = ""; hintOverlay.replaceChildren(); hintTargets = []; hintLabels = []; });
+  window.addEventListener("blur", () => { syncFocusAppearance(false); hintInput = ""; hintOverlay.replaceChildren(); hintTargets = []; hintLabels = []; });
   window.addEventListener("focus", refreshHints);
   setInterval(refreshHints, 80);
   host.addEventListener("mouseenter", () => { hovering = true; pauseTimer(); if (snapshot.settings?.hover_expand && current && !expanded) openRecord(current); });
@@ -1620,7 +1804,7 @@
     geometry = next; placement = next.placement;
     host.style.setProperty("--notch-overlap", `${placement === "notch" ? next.overlap || 38 : 0}px`);
     document.body.style.justifyContent = placement === "notch" ? "center" : "flex-end";
-    for (const [key, property] of [["overlap", "--notch-overlap"], ["notch_width", "--notch-width"], ["max_width", "--surface-max-width"], ["max_height", "--surface-max-height"]]) {
+    for (const [key, property] of [["overlap", "--notch-overlap"], ["notch_width", "--notch-width"], ["max_width", "--surface-max-width"], ["max_height", "--surface-max-height"], ["list_max_height", "--surface-list-max-height"]]) {
       if (Number.isFinite(next[key])) host.style.setProperty(property, `${next[key]}px`);
     }
     render();

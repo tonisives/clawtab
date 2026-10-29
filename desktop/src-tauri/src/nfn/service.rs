@@ -449,7 +449,7 @@ impl Service {
                 || (platform.focused == Some(false) && platform.authorized == Some(true)));
         let auto_yes_panes: Vec<_> = self.ctx.auto_yes_panes.lock().iter().cloned().collect();
         native::push(
-            json!({"type":"snapshot", "records":records, "pending_count":count, "arrival":arrival, "sound":sound,
+            json!({"type":"snapshot", "records":surface_records(records), "pending_count":count, "arrival":arrival, "sound":sound,
             "settings": settings.enhanced_notifications, "templates":templates::list(), "visible":visible,
             "platform":*platform, "auto_yes_panes":auto_yes_panes, "todos":todos}),
         );
@@ -584,7 +584,7 @@ impl Service {
                 return Ok(json!({"focused":true}));
             }
             NfnCommand::Get { id } => {
-                return serde_json::to_value(self.store.get(&id)?).map_err(|e| e.to_string())
+                return Ok(surface_record(self.store.get(&id)?))
             }
             NfnCommand::List {
                 offset,
@@ -592,7 +592,7 @@ impl Service {
                 query,
             } => {
                 return Ok(
-                    json!({"records":self.store.search(offset, pending_only, &query)?,"offset":offset,"next_offset":offset+50}),
+                    json!({"records":surface_records(self.store.search(offset, pending_only, &query)?),"offset":offset,"next_offset":offset+50}),
                 )
             }
             NfnCommand::Templates => return Ok(templates::list()),
@@ -601,7 +601,7 @@ impl Service {
                 let auto_yes_panes: Vec<_> =
                     self.ctx.auto_yes_panes.lock().iter().cloned().collect();
                 return Ok(
-                    json!({"records":self.store.pending_page(0)?,"pending_count":self.store.pending_count()?,"settings":self.ctx.settings.lock().enhanced_notifications,"platform":*self.platform.lock(),"templates":templates::list(),"auto_yes_panes":auto_yes_panes}),
+                    json!({"records":surface_records(self.store.pending_page(0)?),"pending_count":self.store.pending_count()?,"settings":self.ctx.settings.lock().enhanced_notifications,"platform":*self.platform.lock(),"templates":templates::list(),"auto_yes_panes":auto_yes_panes}),
                 );
             }
             NfnCommand::Validate { yaml } => {
@@ -2334,6 +2334,22 @@ mod tests {
             "cached panes need no new process snapshot"
         );
     }
+}
+
+fn surface_record(record: NfnRecord) -> Value {
+    let job_available = record
+        .request
+        .source
+        .job_id
+        .as_deref()
+        .is_none_or(|job| job_directory(job).is_ok());
+    let mut value = json!(record);
+    value["details_available"] = json!(job_available);
+    value
+}
+
+fn surface_records(records: Vec<NfnRecord>) -> Vec<Value> {
+    records.into_iter().map(surface_record).collect()
 }
 
 fn job_directory(job: &str) -> Result<std::path::PathBuf, String> {
