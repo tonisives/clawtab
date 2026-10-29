@@ -525,6 +525,7 @@ mod tests {
                 col: 0,
             }],
             input_mode: String::new(),
+            requires_manual_answer: false,
             button_row: 0,
             matched_group: None,
             matched_job: None,

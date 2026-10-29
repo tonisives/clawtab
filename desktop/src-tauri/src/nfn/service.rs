@@ -210,7 +210,7 @@ impl Service {
         let mut seen = self.seen_questions.lock();
         seen.retain(|id| current.contains(id));
         for question in questions {
-            if auto_yes_panes.contains(&question.pane_id) {
+            if crate::questions::auto_yes_applies(question, &auto_yes_panes) {
                 continue;
             }
             let key = question_key(question);
@@ -1263,14 +1263,17 @@ fn refresh_pending_record(
     {
         record.status = "expired".into();
     } else if let Some(id) = &record.question_id {
-        // Auto-yes takes over the prompt immediately, even before the next scan.
+        // Auto-yes takes over approvals immediately, even before the next scan.
+        // Planning forms remain pending until the user answers them.
         // Session metadata can be temporarily unavailable during title changes.
-        let automatic = record
-            .request
-            .source
-            .pane_id
-            .as_ref()
-            .is_some_and(|pane| auto_yes_panes.contains(pane));
+        let manual = record.request.data["requires_manual_answer"].as_bool() == Some(true);
+        let automatic = !manual
+            && record
+                .request
+                .source
+                .pane_id
+                .as_ref()
+                .is_some_and(|pane| auto_yes_panes.contains(pane));
         if !automatic && !questions.is_some_and(|questions| !questions.contains(id)) {
             return false;
         }
@@ -1384,7 +1387,10 @@ fn request_for_question(question: &ClaudeQuestion, dedupe_key: String) -> NfnReq
             }),
         body: question.context_lines.clone(),
         template: "agent-approval".into(),
-        data: json!({"question_id":question.question_id}),
+        data: json!({
+            "question_id": question.question_id,
+            "requires_manual_answer": question.requires_manual_answer,
+        }),
         source,
         dedupe_key: Some(dedupe_key),
         actions: question
@@ -2033,6 +2039,32 @@ mod tests {
                 |_| true
             ));
             assert_eq!(record, before);
+        }
+    }
+
+    #[test]
+    fn auto_yes_keeps_planning_questions_pending_until_the_form_closes() {
+        let questions = HashSet::from(["live-prompt".into()]);
+        let auto_yes = HashSet::from(["%10".into()]);
+        for current in [None, Some(&questions)] {
+            let mut record = pending_permission();
+            record.request.data["requires_manual_answer"] = json!(true);
+            assert!(!refresh_pending_record(
+                &mut record,
+                current,
+                &auto_yes,
+                10_000,
+                |_| panic!("planning question lifetime does not depend on session metadata")
+            ));
+            assert_eq!(record.status, "pending");
+            assert!(refresh_pending_record(
+                &mut record,
+                Some(&HashSet::new()),
+                &auto_yes,
+                20_000,
+                |_| true
+            ));
+            assert_eq!(record.status, "resolved");
         }
     }
 

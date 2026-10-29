@@ -18,6 +18,7 @@ export interface NotificationHistoryItem {
   cwd: string;
   context_lines: string;
   options: { number: string; label: string }[];
+  requires_manual_answer?: boolean;
   answered: boolean;
   answered_with?: string | null;
   created_at: string;

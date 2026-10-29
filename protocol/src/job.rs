@@ -138,6 +138,8 @@ pub struct ClaudeQuestion {
     pub context_lines: String,
     pub options: Vec<QuestionOption>,
     #[serde(default)]
+    pub requires_manual_answer: bool,
+    #[serde(default)]
     pub input_mode: String,
     #[serde(default)]
     pub button_row: u16,

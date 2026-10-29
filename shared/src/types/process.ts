@@ -144,6 +144,7 @@ export interface ClaudeQuestion {
   question_id: string;
   context_lines: string;
   options: QuestionOption[];
+  requires_manual_answer?: boolean;
   input_mode?: "numbered" | "select" | "command";
   button_row?: number;
   matched_group?: string | null;

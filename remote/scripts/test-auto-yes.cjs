@@ -141,3 +141,34 @@ test('concurrent panes preserve each pending value through updates and rollback'
   await state.tick();
   assert.equal(state.store.getState().pendingAutoYes.size, 0);
 });
+
+const question = (id, manual = false) => ({
+  pane_id: pane, question_id: id, cwd: '/tmp', tmux_session: 'test', window_name: 'test',
+  context_lines: 'Question 1/2', options: [{ number: '1', label: 'Yes (Recommended)' }],
+  requires_manual_answer: manual,
+});
+
+test('planning forms stay visible through Auto Yes toggles and host snapshots', () => {
+  const state = load();
+  const questions = [question('approval'), question('planning', true)];
+  state.store.getState().setQuestions(questions);
+  state.store.getState().enableAutoYes(pane);
+  state.broadcast(['%12']);
+  assert.deepEqual(Array.from(state.store.getState().questions, q => q.question_id), ['planning']);
+  state.store.getState().setQuestions(questions);
+  assert.deepEqual(Array.from(state.store.getState().questions, q => q.question_id), ['planning']);
+});
+
+for (const method of ['hydrateQuestionsFromCache', 'injectFromNotification', 'hydrateFromHistory']) {
+  test(`planning forms survive ${method} with Auto Yes enabled`, () => {
+    const state = load(['%12']);
+    const questions = [question('approval'), question('planning', true)];
+    if (method === 'injectFromNotification') {
+      for (const q of questions) state.store.getState()[method](q);
+    } else {
+      state.store.getState()[method](questions);
+    }
+    assert.deepEqual(Array.from(state.store.getState().questions, q => q.question_id), ['planning']);
+    assert.equal(state.store.getState().questions[0].requires_manual_answer, true);
+  });
+}

@@ -407,7 +407,7 @@ pub fn notify_new_questions(
         let fresh: Vec<_> = questions
             .iter()
             .filter(|q| {
-                !yes_panes.contains(&q.pane_id)
+                !crate::questions::auto_yes_applies(q, &yes_panes)
                     && notified.notified_question_ids.insert(q.question_id.clone())
             })
             .collect();
@@ -514,5 +514,27 @@ mod tests {
         assert_eq!(*notifier.sent.lock(), ["%manual", "%automatic"]);
         notify_new_questions(&notifier, &[], &[], &state, &auto_yes);
         assert!(state.lock().notified_question_ids.is_empty());
+    }
+
+    #[test]
+    fn planning_questions_notify_while_auto_yes_is_enabled() {
+        let state = Arc::new(Mutex::new(NotificationState::new()));
+        let auto_yes = Arc::new(Mutex::new(HashSet::from(["%automatic".into()])));
+        let notifier = ReentrantNotifier {
+            state: state.clone(),
+            auto_yes: auto_yes.clone(),
+            sent: Mutex::new(vec![]),
+        };
+        let question: ClaudeQuestion = serde_json::from_value(serde_json::json!({
+            "pane_id": "%automatic", "question_id": "planning", "cwd": "/tmp",
+            "tmux_session": "test", "window_name": "test", "context_lines": "Question 1/2",
+            "options": [{ "number": "1", "label": "Yes (Recommended)" }],
+            "requires_manual_answer": true
+        }))
+        .unwrap();
+        let questions = [question];
+        notify_new_questions(&notifier, &questions, &questions, &state, &auto_yes);
+        notify_new_questions(&notifier, &questions, &questions, &state, &auto_yes);
+        assert_eq!(*notifier.sent.lock(), ["planning"]);
     }
 }

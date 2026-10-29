@@ -9,7 +9,7 @@ type NotificationState = {
   // Recently dismissed question IDs (optimistic removal) - prevents re-polling
   // from bringing them back before the desktop has consumed the answer.
   dismissedIds: Map<string, number>;
-  // Pane IDs with "yes to all" enabled - auto-answers questions with "yes"
+  // Pane IDs with Auto Yes enabled for approvals. Planning stays manual.
   autoYesPaneIds: Set<string>;
   authoritativeAutoYesPaneIds: Set<string>;
   pendingAutoYes: Map<string, boolean>;
@@ -27,6 +27,10 @@ type NotificationState = {
   finishAutoYes: (paneId: string, success: boolean) => void;
   reset: () => void;
 }
+
+const autoYesApplies = (question: Pick<ClaudeQuestion, "pane_id" | "requires_manual_answer">, panes: Set<string>) => (
+  !question.requires_manual_answer && panes.has(question.pane_id)
+);
 
 export const useNotificationStore = create<NotificationState>((set) => ({
   questions: [],
@@ -47,7 +51,7 @@ export const useNotificationStore = create<NotificationState>((set) => ({
       }
       return {
         questions: questions.filter((q) => (
-          !dismissed.has(q.question_id) && !state.autoYesPaneIds.has(q.pane_id)
+          !dismissed.has(q.question_id) && !autoYesApplies(q, state.autoYesPaneIds)
         )),
         hasDesktopQuestions: true,
       };
@@ -73,7 +77,7 @@ export const useNotificationStore = create<NotificationState>((set) => ({
         .filter((item) => (
           !item.answered
           && !existingIds.has(item.question_id)
-          && !state.autoYesPaneIds.has(item.pane_id)
+          && !autoYesApplies(item, state.autoYesPaneIds)
         ))
         .map((item) => ({
           pane_id: item.pane_id,
@@ -83,6 +87,7 @@ export const useNotificationStore = create<NotificationState>((set) => ({
           question_id: item.question_id,
           context_lines: item.context_lines,
           options: item.options,
+          requires_manual_answer: item.requires_manual_answer,
           matched_job: (item as { matched_job?: string }).matched_job ?? null,
           matched_group: (item as { matched_group?: string }).matched_group ?? null,
         }));
@@ -94,7 +99,7 @@ export const useNotificationStore = create<NotificationState>((set) => ({
 
   injectFromNotification: (question) =>
     set((state) => {
-      if (state.autoYesPaneIds.has(question.pane_id)) {
+      if (autoYesApplies(question, state.autoYesPaneIds)) {
         return state;
       }
       if (state.questions.some((q) => q.question_id === question.question_id)) {
@@ -107,7 +112,7 @@ export const useNotificationStore = create<NotificationState>((set) => ({
     set((state) => {
       if (state.hasDesktopQuestions) return state;
       return {
-        questions: questions.filter((q) => !state.autoYesPaneIds.has(q.pane_id)),
+        questions: questions.filter((q) => !autoYesApplies(q, state.autoYesPaneIds)),
       };
     }),
 
@@ -120,7 +125,7 @@ export const useNotificationStore = create<NotificationState>((set) => ({
       return {
         autoYesPaneIds: next,
         authoritativeAutoYesPaneIds,
-        questions: state.questions.filter((q) => !next.has(q.pane_id)),
+        questions: state.questions.filter((q) => !autoYesApplies(q, next)),
       };
     }),
 
@@ -143,7 +148,7 @@ export const useNotificationStore = create<NotificationState>((set) => ({
       return {
         autoYesPaneIds,
         authoritativeAutoYesPaneIds: new Set(paneIds),
-        questions: state.questions.filter((q) => !autoYesPaneIds.has(q.pane_id)),
+        questions: state.questions.filter((q) => !autoYesApplies(q, autoYesPaneIds)),
       };
     }),
 

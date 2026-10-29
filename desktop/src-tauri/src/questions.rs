@@ -186,6 +186,9 @@ pub fn parse_numbered_options(text: &str) -> Vec<QuestionOption> {
 /// Checks the last 12 non-empty lines (not just the very last) to handle trailing
 /// whitespace or invisible characters left by TUI rendering.
 fn has_interactive_prompt_indicator(text: &str) -> bool {
+    if requires_manual_answer(text) {
+        return true;
+    }
     let tail: Vec<String> = text
         .lines()
         .rev()
@@ -210,6 +213,48 @@ fn has_interactive_prompt_indicator(text: &str) -> bool {
     joined.contains("would you like to run the following command")
         || joined.contains("would you like to run this command")
         || joined.contains("yes, proceed (y)")
+}
+
+/// Codex user-input forms and plan confirmations need a deliberate answer,
+/// including when their choices happen to be Yes and No.
+fn requires_manual_answer(screen: &str) -> bool {
+    strip_ansi(screen)
+        .lines()
+        .rev()
+        .filter(|line| !line.trim().is_empty())
+        .take(12)
+        .any(|line| {
+            let lower = line.trim().to_lowercase();
+            if lower.contains("to navigate questions")
+                || lower.contains("to submit answer")
+                || lower.contains("next question")
+                || lower.contains("prev question")
+                || lower.contains("submit with unanswered questions?")
+                || lower.contains("implement this plan?")
+            {
+                return true;
+            }
+            let heading = lower.trim_start_matches(['•', '›', '>']).trim();
+            let Some(progress) = heading
+                .strip_prefix("question ")
+                .and_then(|rest| rest.split_whitespace().next())
+            else {
+                return false;
+            };
+            progress.split_once('/').is_some_and(|(current, total)| {
+                !current.is_empty()
+                    && current.bytes().all(|byte| byte.is_ascii_digit())
+                    && !total.is_empty()
+                    && total.bytes().all(|byte| byte.is_ascii_digit())
+            })
+        })
+}
+
+pub(crate) fn auto_yes_applies(
+    question: &ClaudeQuestion,
+    auto_yes_panes: &HashSet<String>,
+) -> bool {
+    !question.requires_manual_answer && auto_yes_panes.contains(&question.pane_id)
 }
 
 fn should_capture_agent_screen(provider: ProcessProvider) -> bool {
@@ -520,12 +565,20 @@ pub(crate) fn validate_live_question(
     provider: Option<&str>,
 ) -> Result<ClaudeQuestion, String> {
     let (screen, _) = crate::terminal_backend::capture_pane_visible(&question.pane_id)?;
+    validate_question_screen(question, provider, &screen)
+}
+
+fn validate_question_screen(
+    question: &ClaudeQuestion,
+    provider: Option<&str>,
+    screen: &str,
+) -> Result<ClaudeQuestion, String> {
     let (options, row) = if provider == Some("hermes") {
-        (parse_hermes_options(&screen).unwrap_or_default(), 0)
+        (parse_hermes_options(screen).unwrap_or_default(), 0)
     } else if question.input_mode == "select" {
-        parse_opencode_buttons(&screen)
+        parse_opencode_buttons(screen)
     } else {
-        (parse_numbered_options(&screen), 0)
+        (parse_numbered_options(screen), 0)
     };
     let same_options = options.len() == question.options.len()
         && options
@@ -533,7 +586,7 @@ pub(crate) fn validate_live_question(
             .zip(&question.options)
             .all(|(live, previous)| live.number == previous.number && live.label == previous.label);
     if !same_options
-        || prompt_context_key(&last_context_lines(&screen))
+        || prompt_context_key(&last_context_lines(screen))
             != prompt_context_key(&question.context_lines)
     {
         return Err("The visible agent prompt has changed. Focus the agent to review it.".into());
@@ -541,6 +594,7 @@ pub(crate) fn validate_live_question(
     let mut live = question.clone();
     live.options = options;
     live.button_row = row;
+    live.requires_manual_answer = requires_manual_answer(screen);
     Ok(live)
 }
 
@@ -669,8 +723,8 @@ pub async fn question_detection_loop(
             update_question_cache_with_hooks(&processes, &mut question_cache, &hook_runtime);
         evict_stale_cache_entries(&mut question_cache, &detected_panes, &processes);
 
-        // Keep detecting auto-yes questions internally so the responder can
-        // accept them, but never expose them as pending questions to clients.
+        // Keep automatic approvals internal. Planning questions remain visible
+        // even when Auto Yes is enabled for their pane.
         let questions: Vec<ClaudeQuestion> = question_cache
             .values()
             .map(|c| c.question.clone())
@@ -806,7 +860,7 @@ fn filter_auto_yes_questions(
 ) -> Vec<ClaudeQuestion> {
     questions
         .iter()
-        .filter(|question| !auto_yes_panes.contains(&question.pane_id))
+        .filter(|question| !auto_yes_applies(question, auto_yes_panes))
         .cloned()
         .collect()
 }
@@ -986,6 +1040,7 @@ fn update_question_cache_with_hooks(
                     ),
                     context_lines: last_context_lines(log_lines),
                     options,
+                    requires_manual_answer: requires_manual_answer(log_lines),
                     input_mode: "command".into(),
                     button_row: 0,
                     matched_group: matched_group.clone(),
@@ -1151,6 +1206,7 @@ fn try_numbered_question(
         question_id,
         context_lines: last_context_lines(log_lines),
         options,
+        requires_manual_answer: requires_manual_answer(log_lines),
         input_mode: String::new(),
         button_row: 0,
         matched_group: matched_group.clone(),
@@ -1210,6 +1266,7 @@ fn try_opencode_question(
         question_id,
         context_lines: last_context_lines(log_lines),
         options: buttons,
+        requires_manual_answer: requires_manual_answer(log_lines),
         input_mode: "select".to_string(),
         button_row: button_line_idx,
         matched_group: matched_group.clone(),
@@ -1262,9 +1319,9 @@ fn auto_answer_questions(
         questions.len()
     );
     for q in questions {
-        if !auto_yes_panes.contains(&q.pane_id) {
+        if !auto_yes_applies(q, auto_yes_panes) {
             log::debug!(
-                "[questions] pane {} not in auto-yes set, skipping",
+                "[questions] pane {} question requires a manual answer or auto-yes is off, skipping",
                 q.pane_id
             );
             continue;
@@ -1289,6 +1346,19 @@ fn auto_answer_questions(
 }
 
 fn try_send_auto_answer(q: &ClaudeQuestion, auto_answered_ids: &mut HashMap<String, u32>) {
+    if q.requires_manual_answer {
+        return;
+    }
+    let provider = (q.input_mode == "command").then_some("hermes");
+    let live = match validate_live_question(q, provider) {
+        Ok(live) if !live.requires_manual_answer => live,
+        Ok(_) => return,
+        Err(error) => {
+            log::debug!("[questions] skipping changed auto-yes prompt: {error}");
+            return;
+        }
+    };
+    let q = &live;
     let options_summary: Vec<String> = q
         .options
         .iter()
@@ -1364,14 +1434,14 @@ fn send_relay_questions(
         let yes_panes = auto_yes_panes.lock();
         questions
             .into_iter()
-            .filter(|q| !yes_panes.contains(&q.pane_id))
+            .filter(|q| !auto_yes_applies(q, &yes_panes))
             .collect()
     };
     let apns_questions: Vec<ClaudeQuestion> = {
         let yes_panes = auto_yes_panes.lock();
         apns_questions
             .into_iter()
-            .filter(|q| !yes_panes.contains(&q.pane_id))
+            .filter(|q| !auto_yes_applies(q, &yes_panes))
             .collect()
     };
     let current_ids: HashSet<String> = relay_questions
@@ -2856,6 +2926,7 @@ mod tests {
             question_id: format!("{pane_id}:question"),
             context_lines: "Question?".to_string(),
             options: Vec::new(),
+            requires_manual_answer: false,
             input_mode: "select".to_string(),
             button_row: 0,
             matched_group: None,
@@ -2873,6 +2944,72 @@ mod tests {
         assert_eq!(visible.len(), 1);
         assert_eq!(visible[0].pane_id, "%2");
         assert_eq!(questions.len(), 2);
+    }
+
+    const CODEX_PLANNING_QUESTION: &str = r#"
+Question 2/2 (1 unanswered)
+Is it acceptable for recording to begin a few seconds after the first browsing action?
+
+› 1. Yes (Recommended)
+  2. No
+  3. Type your own answer
+
+tab to add notes · arrows to navigate questions
+enter to submit answer · esc to interrupt
+"#;
+
+    #[test]
+    fn codex_planning_yes_no_stays_manual_with_auto_yes_enabled() {
+        let mut cache = std::collections::HashMap::new();
+        update_question_cache(&[agent("%1", CODEX_PLANNING_QUESTION)], &mut cache);
+        let question = &cache["%1"].question;
+        let auto_yes = HashSet::from(["%1".to_string()]);
+
+        assert_eq!(find_yes_option(&question.options).as_deref(), Some("1"));
+        assert!(question.requires_manual_answer);
+        assert!(!super::auto_yes_applies(question, &auto_yes));
+        let visible = filter_auto_yes_questions(std::slice::from_ref(question), &auto_yes);
+        assert_eq!(visible.len(), 1);
+
+        let mut answered = std::collections::HashMap::new();
+        super::auto_answer_questions(&visible, &auto_yes, &mut answered);
+        super::try_send_auto_answer(question, &mut answered);
+        assert!(answered.is_empty());
+    }
+
+    #[test]
+    fn detects_single_question_and_submit_confirmation_forms() {
+        for screen in [
+            "Choose a recording delay\n› 1. Yes (Recommended)\n  2. No\nenter to submit answer · esc to interrupt",
+            "Question 1/1\n› 1. Yes\n  2. No",
+            "Submit with unanswered questions?\n› 1. Proceed\n  2. Go back\nEnter to select",
+        ] {
+            assert!(super::requires_manual_answer(screen), "{screen}");
+            assert_eq!(parse_numbered_options(screen).len(), 2);
+        }
+        assert!(super::requires_manual_answer(&format!(
+            "\x1b[1m{CODEX_PLANNING_QUESTION}\x1b[0m"
+        )));
+    }
+
+    #[test]
+    fn codex_command_approval_keeps_auto_yes_enabled() {
+        let screen = "Would you like to run the following command?\n\n$ cargo test\n\n› 1. Yes, proceed (y)\n  2. No, and tell Codex what to do differently (esc)\n\nEsc to cancel · Tab to amend";
+        let mut cache = std::collections::HashMap::new();
+        update_question_cache(&[agent("%1", screen)], &mut cache);
+        let question = &cache["%1"].question;
+        let auto_yes = HashSet::from(["%1".to_string()]);
+
+        assert!(!question.requires_manual_answer);
+        assert!(super::auto_yes_applies(question, &auto_yes));
+        assert_eq!(find_yes_option(&question.options).as_deref(), Some("1"));
+        assert!(filter_auto_yes_questions(std::slice::from_ref(question), &auto_yes).is_empty());
+        assert!(
+            !super::validate_question_screen(question, None, screen)
+                .unwrap()
+                .requires_manual_answer
+        );
+        assert!(super::validate_question_screen(question, None, CODEX_PLANNING_QUESTION).is_err());
     }
 
     #[test]
@@ -3042,6 +3179,7 @@ $ curl -s https://boards-api.greenhouse.io/v1/boards/slack/jobs | sed -n '1,40p'
         assert_eq!(options.len(), 3);
         assert_eq!(options[0].label, "Yes, implement this plan");
         assert_eq!(options[2].label, "No, stay in Plan mode");
+        assert!(super::requires_manual_answer(text));
     }
 
     #[test]
@@ -3058,6 +3196,7 @@ $ curl -s https://boards-api.greenhouse.io/v1/boards/slack/jobs | sed -n '1,40p'
         assert_eq!(options.len(), 3);
         assert_eq!(options[0].label, "Yes, implement this plan");
         assert_eq!(options[2].label, "No, stay in Plan mode");
+        assert!(super::requires_manual_answer(text));
     }
 
     #[test]
