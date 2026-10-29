@@ -374,13 +374,13 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
         top = MAX(NSMinY(available) + MIN(height, h), MIN(top, NSMaxY(available)));
         x = right - w; y = top - h;
     }
-    if (!notch) x += MAX(NSMinX(available) + MIN(width, w) - (x + w), MIN(self.surfaceRightOffset, NSMaxX(available) - 16 - (x + w)));
+    if (!notch) x += MAX(NSMinX(available) + MIN(width, w) - (x + w), MIN(self.surfaceRightOffset, NSMaxX(available) - (x + w)));
     NSRect frame = NSMakeRect(x, y, w, h);
     if (!NSEqualRects(frame, self.panel.frame)) [self.panel setFrame:frame display:YES];
     [self updateMousePassthrough];
     NSDictionary *geometry = @{@"placement":notch ? @"notch" : @"right", @"overlap":@(overlap),
         @"notch_width":@(MAX(0, notchWidth)), @"max_width":@(w),
-        @"max_width_e":@(MIN(w, width + NSMaxX(available) - 16 - (x + w))),
+        @"max_width_e":@(MIN(w, width + NSMaxX(available) - (x + w))),
         @"max_height":@(h), @"list_max_height":@(available.size.height * .8), @"reduce_motion":@(NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion)};
     NSString *json = [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:geometry options:NSJSONWritingSortedKeys error:nil] encoding:NSUTF8StringEncoding];
     if (self.ready && ![json isEqual:self.lastGeometry]) {

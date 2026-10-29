@@ -112,6 +112,12 @@
   nav("Next"); await sleep(30);
   assert(!document.querySelector(".details-content"), "navigation keeps Details hidden after shrinking the message bar");
   nav("Previous"); await sleep(30);
+  window.fixture.records.get("first").details_available = false; window.nfn.receive(window.fixture.snapshot());
+  resizeDrag("se", 180, 200); await sleep(30);
+  assert(!document.querySelector(".details-content"), "resizing a message with unavailable details keeps the shell hidden");
+  resizeDrag("se", -180, -200);
+  window.fixture.records.get("first").details_available = true; window.nfn.receive(window.fixture.snapshot());
+
   resizeDrag("sw", -180, 200);
   await sleep(30);
   const draggedSize = surface.getBoundingClientRect();
