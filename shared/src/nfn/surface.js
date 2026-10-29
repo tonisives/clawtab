@@ -258,7 +258,7 @@
     return [...records.values()].filter(item => item.id === record.id || (key && threadKey(item) === key
       && pending(item) && !item.dismissed_at && !item.ignored && messageOrder(item, record) < 0)).sort(messageOrder);
   }
-  function cardSignature(record) { return JSON.stringify([cardMessages(record).map(item => [item.id, item.created_at, item.request]), template(record)]); }
+  function cardSignature(record) { return JSON.stringify([cardMessages(record).map(item => [item.id, item.created_at, item.request]), template(record), record.details_available]); }
   function pendingCount() { return pendingCards().length + unseenPending; }
   function updateUnseenPending() {
     const incoming = new Set((snapshot.records || []).map(record => record.id));
@@ -557,6 +557,7 @@
     if (!logTimer) logTimer = setInterval(refreshContext, 1000);
   }
   function toggleDetails() {
+    if (records.get(current)?.details_available === false) return;
     pauseTimer(); stopContext(); expanded = true; details = !details; menu = null; renderedId = null; render(); startContext();
   }
   function toggleMenu(next) {
@@ -716,6 +717,7 @@
     }
   }
   function createCard(record) {
+    if (record.details_available === false) details = false;
     const node = el("article", "card");
     node._wasPending = pending(record) && !record.dismissed_at;
     node._signature = cardSignature(record);
@@ -743,7 +745,7 @@
       for (const item of messages) {
         const entry = el("li", "message-thread-item"); entry.dataset.id = item.id;
         const header = el("div", "message-header");
-        header.append(el("div", "hint", `${item.id === record.id ? "Latest · " : ""}${item.request.title}`), messageTimestamp(item));
+        header.append(el("div", "hint", `${item.id === record.id ? "Latest · " : ""}${item.request.title}`), relativeTimestamp(item));
         entry.append(header, el("div", "message", messageText(item)));
         thread.append(entry);
       }
@@ -810,8 +812,10 @@
     }
     const notice = el("div", "notice"); notice.setAttribute("role", "status"); node._notice = notice; node.append(notice);
     const utilities = el("div", "controls");
-    const detailButton = button(details ? "Hide details" : (record.request.media?.length ? "View attachment" : "Details"), toggleDetails, "utility details-toggle");
-    detailButton.setAttribute("aria-expanded", String(details)); utilities.append(detailButton);
+    if (record.details_available !== false) {
+      const detailButton = button(details ? "Hide details" : (record.request.media?.length ? "View attachment" : "Details"), toggleDetails, "utility details-toggle");
+      detailButton.setAttribute("aria-expanded", String(details)); utilities.append(detailButton);
+    }
     if (!snapshot.remote && record.request.source?.browser_pane_id && record.request.source?.browser_session) {
       utilities.classList.add("session-controls");
       const openBrowser = button("Open browser", async () => {
@@ -827,7 +831,7 @@
       const focus = choices.find(action => action.kind === "focus");
       const openSession = button("Open session", () => focus ? act(record.id, focus.id, "") : performAction(record.id, { op: "focus", id: record.id }), "primary open-session");
       openSession.title = "Open the originating session"; node._openSession = openSession; utilities.append(openSession);
-    } else if (record.request.source?.job_id) {
+    } else if (record.request.source?.job_id && record.details_available !== false) {
       const openJob = button("Go to job", async () => {
         openJob.disabled = true;
         try { await call({ op: "open_job", id: record.id }); }
@@ -1348,6 +1352,7 @@
   function revealResizeDetails() {
     expanded = true;
     pauseTimer(); stopAnimation();
+    if (records.get(current)?.details_available === false) return;
     if (!details) { stopContext(); details = true; menu = null; renderedId = null; render(); startContext(); }
   }
   function finishResize(event) {
@@ -1443,6 +1448,7 @@
   }
   function render() {
     syncFocusAppearance();
+    if (records.get(current)?.details_available === false) details = false;
     if (reducedMotion.matches || geometry.reduce_motion) stopArrivalAnimation();
     const before = host.getBoundingClientRect();
     const signature = JSON.stringify([current, expanded, details, queue, settingsOpen, todosOpen, menu, replyStates.get(current), resizedSize, geometry, snapshot.visible, records.get(current)?.request]);

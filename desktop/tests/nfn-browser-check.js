@@ -33,6 +33,12 @@
   assert(document.querySelector('[role="switch"]'), "agent controls return to Auto-yes and the other options");
   document.querySelector('[aria-label="Close menu"]').click();
   assert(document.querySelector("#surface").getBoundingClientRect().height < 430, "first card stays compact");
+  window.fixture.records.get("first").details_available = false;
+  window.nfn.receive(window.fixture.snapshot());
+  assert(!document.querySelector(".details-toggle"), "unavailable message details stay hidden in the combined bar");
+  window.fixture.records.get("first").details_available = true;
+  window.nfn.receive(window.fixture.snapshot());
+  assert(document.querySelector(".details-toggle"), "message details return when the source makes them available");
   assert(!window.unsafeMarkup && !document.querySelector(".message img"), "request text cannot inject markup");
   const input = draft("Keep this draft");
   document.querySelector('[aria-label="Notification list"]').click();
@@ -855,6 +861,7 @@
   window.nfn.receive({ type: "open_record", id: "thread-earlier" });
   assert(document.querySelectorAll(".message-thread-item").length === 2 && title() === "thread-latest", "messages from one agent share a card with the latest actions, including links to an older message");
   assert([...document.querySelectorAll(".message-thread .message")].map(node => node.textContent).join("|") === "First proposal|Revised proposal", "the grouped card lists messages in their original order");
+  assert([...document.querySelectorAll(".message-thread time")].every(node => node.classList.contains("relative-time") && /^(jn|\d+[mhdw])$/.test(node.textContent) && node.title && node.dateTime), "earlier thread messages show relative ages and retain exact timestamps");
   assert(document.querySelector(".count").textContent === "1 / 2", "navigation counts agent cards rather than individual messages");
   const newest = flowRecord("thread-newest", 4);
   newest.request.source = { ...threadLatest.request.source }; newest.request.body = "Final proposal";
