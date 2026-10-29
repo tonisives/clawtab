@@ -23,7 +23,10 @@ static NfnCallback callback;
 @end
 @implementation NfnPanel
 - (BOOL)canBecomeKeyWindow { return self.textFocus || self.keyboardFocus; }
-- (void)makeKeyWindow { if (self.canBecomeKeyWindow) [super makeKeyWindow]; }
+- (void)becomeKeyWindow {
+    [super becomeKeyWindow];
+    if (!self.canBecomeKeyWindow) [self resignKeyWindow];
+}
 - (BOOL)canBecomeMainWindow { return NO; }
 - (BOOL)performKeyEquivalent:(NSEvent *)event {
     // The daemon has no Edit menu to route these commands to WebKit.
