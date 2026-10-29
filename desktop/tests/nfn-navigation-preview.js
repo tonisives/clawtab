@@ -16,15 +16,19 @@ async view => {
     window.fixture.records.set(record.id, record);
   });
   window.nfn.setPlacement({ placement: "right", reduce_motion: true });
+  window.fixture.settings.keyboard_hints = true;
   window.nfn.receive(window.fixture.snapshot("preview-0"));
-  document.hasFocus = () => true;
-  if (view === "list") {
+  document.hasFocus = () => view !== "passive";
+  if (view === "list" || view === "selection") {
     document.querySelector('[aria-label="Notification list"]').click();
     document.activeElement.dispatchEvent(new KeyboardEvent("keydown", { key: "j", bubbles: true }));
+    if (view === "selection") document.activeElement.dispatchEvent(new KeyboardEvent("keydown", { key: "v", bubbles: true }));
   } else {
     document.querySelector('[aria-label="Notification settings"]').click();
-    [...document.querySelectorAll("[data-settings-tab]")].find(tab => tab.dataset.settingsTab === view).click();
+    [...document.querySelectorAll("[data-settings-tab]")].find(tab => tab.dataset.settingsTab === (["active", "passive"].includes(view) ? "appearance" : view)).click();
   }
+  if (view === "active") window.nfn.receive({ type: "keyboard_focus", active: true });
+  window.dispatchEvent(new Event(view === "passive" ? "blur" : "focus"));
   await sleep(150);
   return { preview: view };
 }

@@ -360,7 +360,8 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
     NSRect available = screen.visibleFrame;
     CGFloat overlap = notch ? topInset : 0;
     // Keep WebKit's canvas still. Only the shape inside it changes size.
-    CGFloat w = MIN(680, available.size.width - 32), h = MIN(900, available.size.height - 32);
+    CGFloat w = MIN(680, available.size.width - 32);
+    CGFloat h = MIN(MAX(900, available.size.height * .8 + 32), available.size.height - 32);
     CGFloat x = notch ? [camera[@"center"] doubleValue] - w / 2 : NSMaxX(available) - w - MIN(384, available.size.width / 3);
     x = MAX(NSMinX(available) + 16, MIN(x, NSMaxX(available) - w - 16));
     CGFloat y = notch ? NSMaxY(screen.frame) - h : NSMaxY(available) - h - 12;
@@ -377,7 +378,7 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
     [self updateMousePassthrough];
     NSDictionary *geometry = @{@"placement":notch ? @"notch" : @"right", @"overlap":@(overlap),
         @"notch_width":@(MAX(0, notchWidth)), @"max_width":@(w),
-        @"max_height":@(h), @"reduce_motion":@(NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion)};
+        @"max_height":@(h), @"list_max_height":@(available.size.height * .8), @"reduce_motion":@(NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion)};
     NSString *json = [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:geometry options:NSJSONWritingSortedKeys error:nil] encoding:NSUTF8StringEncoding];
     if (self.ready && ![json isEqual:self.lastGeometry]) {
         self.lastGeometry = json;

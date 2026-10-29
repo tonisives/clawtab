@@ -16,7 +16,7 @@ node desktop/tests/nfn-fixture.mjs "$temporary/native.html" --native
 clang -fobjc-arc -fblocks desktop/tests/nfn-webkit.m -framework AppKit -framework WebKit -o "$temporary/renderer-check"
 clang -fobjc-arc -fblocks desktop/tests/nfn-native.m -framework AppKit -framework WebKit -framework Intents -framework UserNotifications -framework ApplicationServices -framework Carbon -o "$temporary/native-check"
 "$temporary/renderer-check" "$temporary/renderer.html" "$root/desktop/tests/nfn-browser-check.js" > "$results/renderer.log" 2>&1 || { cat "$results/renderer.log"; exit 1; }
-for view in list appearance shortcuts; do
+for view in list appearance shortcuts active passive selection; do
   printf '(%s)("%s")\n' "$(cat desktop/tests/nfn-navigation-preview.js)" "$view" > "$temporary/preview.js"
   "$temporary/renderer-check" "$temporary/renderer.html" "$temporary/preview.js" "$results/navigation-$view.png" > "$results/preview-$view.log" 2>&1 || { cat "$results/preview-$view.log"; exit 1; }
 done
