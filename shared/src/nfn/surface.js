@@ -201,18 +201,21 @@
     const date = new Date(record.created_at);
     const node = el("time", "message-timestamp", messageDateFormat.format(date));
     node.dateTime = date.toISOString(); node.title = date.toLocaleString();
+    updateTimestamp(node);
     return node;
   }
   function relativeTimestamp(record) {
     const node = messageTimestamp(record); node.classList.add("relative-time");
-    updateRelativeTime(node); return node;
+    updateTimestamp(node); return node;
   }
-  function updateRelativeTime(node) {
+  function updateTimestamp(node) {
     const age = Math.max(0, (Date.now() - Date.parse(node.dateTime)) / 1000);
+    node.dataset.age = age < 3600 ? "fresh" : age < 86400 ? "today" : "older";
+    if (!node.classList.contains("relative-time")) return;
     const unit = [[604800, "w"], [86400, "d"], [3600, "h"], [60, "m"]].find(([seconds]) => age >= seconds);
     node.textContent = unit ? `${Math.floor(age / unit[0])}${unit[1]}` : "jn";
   }
-  setInterval(() => host.querySelectorAll(".relative-time").forEach(updateRelativeTime), 30000);
+  setInterval(() => host.querySelectorAll(".message-timestamp").forEach(updateTimestamp), 30000);
   function iconButton(label, path, action, className = "") {
     const control = button("", action, `utility icon-button ${className}`);
     control.setAttribute("aria-label", label); control.title = label;

@@ -79,6 +79,9 @@ h1 { margin: 0; font-size: 15px; line-height: 1.35; font-weight: 600; overflow-w
 .message-header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; column-gap: 12px; }
 .message-header > :first-child { min-width: 0; flex: 1 1 150px; }
 .message-timestamp { flex: none; color: var(--muted); font-size: 11px; line-height: 1.5; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.message-timestamp[data-age="fresh"] { color: #a7c88d; }
+.message-timestamp[data-age="today"] { color: #e5c07b; }
+.message-timestamp[data-age="older"] { color: #e88b8b; }
 .card > .message-timestamp { margin-top: 4px; }
 .card > .message-timestamp + .message:not(:empty) { margin-top: 8px; }
 .message-thread .message { max-height: none; overflow: visible; margin-top: 4px; }
