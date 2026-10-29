@@ -477,7 +477,7 @@
       if (settingsOpen) savedBarView = { kind: "settings", id: current, tab: settingsTab };
       else if (todosOpen) savedBarView = { kind: "todos" };
       else if (queue) savedBarView = { kind: "queue", history, ignored: ignoredOpen, query: queueQuery, cursor: queueCursor, scroll: host.querySelector(".queue-content")?.scrollTop || 0 };
-      else if (current) savedBarView = { kind: "record", id: current, details };
+      else if (current) savedBarView = { kind: "record", id: current };
     }
     if (!finished) reviewVersion++;
     if (typeof keepVisible !== "boolean") keepVisible = explicitOpen && !pendingCount();
@@ -515,7 +515,6 @@
     else if (pendingCount()) openLatest();
     else { showQueue(true); return; }
     if (view?.kind === "settings") { settingsTab = view.tab; openSettings(); }
-    else if (view?.details) toggleDetails();
   }
   function openRecord(id) {
     const record = records.get(id), key = record && threadKey(record);
