@@ -1075,6 +1075,7 @@
   window.nfn.receive(hintSnapshot); await sleep(120);
   assert(!document.querySelector(".keyboard-hint"), "mobile surfaces omit desktop keyboard hints");
   assert(focusHost.dataset.desktop === "false" && getComputedStyle(document.querySelector(".brand img")).filter === "none", "mobile surfaces keep their colored icons without desktop focus styling");
+  if (!document.querySelector(".queue")) document.querySelector('[aria-label="Notification list"]').click();
   assert(getComputedStyle(document.querySelector(".queue")).maxHeight === "none", "desktop list height limits leave the mobile list height to its host");
   return { passed: checks.length, checks };
 })()
