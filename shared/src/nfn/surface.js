@@ -25,6 +25,7 @@
   let ignoredOpen = false, ignoredAgents = [], ignoredBusy = false;
   let settingsTab = "appearance";
   let queueQuery = "", queueCursor = null, queueCount = "";
+  let checkMode = false, savedBarView = null, queueRestore = null;
   let searchItems = [], searchOffset = 0, searchMore = false, searchBusy = false, searchVersion = 0, searchTimer = null;
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
   let arrivalAnimations = [], arrivalTimer = null, lastArrivalId = null;
@@ -473,6 +474,12 @@
     timerStarted = performance.now(); collapseTimer = setTimeout(collapse, Math.max(100, remaining));
   }
   function collapse(keepVisible, finished = false) {
+    if (!finished) {
+      if (settingsOpen) savedBarView = { kind: "settings", id: current, tab: settingsTab };
+      else if (todosOpen) savedBarView = { kind: "todos" };
+      else if (queue) savedBarView = { kind: "queue", history, ignored: ignoredOpen, query: queueQuery, cursor: queueCursor, scroll: host.querySelector(".queue-content")?.scrollTop || 0 };
+      else if (current) savedBarView = { kind: "record", id: current };
+    }
     if (!finished) reviewVersion++;
     if (typeof keepVisible !== "boolean") keepVisible = explicitOpen && !pendingCount();
     finishResize(); resizedSize = null; resizeRightOffset = 0;
@@ -498,8 +505,17 @@
     if (current || queue || expanded || todosOpen) collapse();
     else {
       resetHandledActions();
-      if (pendingCount()) openLatest(); else showQueue(true);
+      restoreBarView();
     }
+  }
+  function restoreBarView() {
+    const view = savedBarView;
+    if (view?.kind === "queue") { showQueue(view.history, view); return; }
+    if (view?.kind === "todos") { toggleTodos(); return; }
+    if (view?.id && records.has(view.id) && pending(records.get(view.id)) && !records.get(view.id).dismissed_at) openRecord(view.id);
+    else if (pendingCount()) openLatest();
+    else { showQueue(true); return; }
+    if (view?.kind === "settings") { settingsTab = view.tab; openSettings(); }
   }
   function openRecord(id) {
     const record = records.get(id), key = record && threadKey(record);
@@ -552,15 +568,18 @@
     pauseTimer(); expanded = true; menu = menu === next ? null : next; render();
     if (menu === "agent") refreshContext(); else startContext();
   }
-  function showQueue(showHistory = false) {
+  function showQueue(showHistory = false, restore = null) {
     todosOpen = false;
     resetHandledActions();
     leaveSettings();
     if (current) queueReturnId = current;
-    clearTimeout(completionTimer); pauseTimer(); stopContext(); expanded = true; details = false; queue = true; history = showHistory === true; ignoredOpen = false; current = null; renderedId = null; menu = null; selectedNotifications.clear(); queueError = ""; render();
+    clearTimeout(completionTimer); pauseTimer(); stopContext(); expanded = true; details = false; queue = true; history = showHistory === true; ignoredOpen = Boolean(restore?.ignored); current = null; renderedId = null; menu = null; selectedNotifications.clear(); checkMode = false; queueError = "";
+    queueRestore = restore;
+    if (restore) { queueQuery = restore.query; queueCursor = restore.cursor; }
+    if (queueQuery.trim() && !ignoredOpen) scheduleSearch(restore); else render();
     queueCount = "";
-    if (!snapshot.remote && document.hasFocus()) updateQueueCursor(host.querySelector(".queue"), true);
-    if (queueQuery.trim()) scheduleSearch(); else if (history) loadHistory(true);
+    if (!snapshot.remote && document.hasFocus()) updateQueueCursor(host.querySelector(".queue"), !restore);
+    if (ignoredOpen) loadIgnoredAgents(); else if (history && !queueQuery.trim() && (!restore || !historyItems.length)) loadHistory(true);
   }
   async function toggleQueue() {
     if (settingsOpen) { showQueue(); return; }
@@ -729,7 +748,7 @@
       for (const item of messages) {
         const entry = el("li", "message-thread-item"); entry.dataset.id = item.id;
         const header = el("div", "message-header");
-        header.append(el("div", "hint", `${item.id === record.id ? "Latest · " : ""}${item.request.title}`), messageTimestamp(item));
+        header.append(el("div", "hint", `${item.id === record.id ? "Latest · " : ""}${item.request.title}`), relativeTimestamp(item));
         entry.append(header, el("div", "message", messageText(item)));
         thread.append(entry);
       }
@@ -989,25 +1008,30 @@
   function updateQueueCursor(list, moveFocus = false) {
     const rows = [...list.querySelectorAll("[data-queue-record]")];
     let index = rows.findIndex(row => row.dataset.queueRecord === queueCursor);
-    if (index < 0) index = 0;
+    if (index < 0) index = queueCursor ? Math.min(list._cursorIndex || 0, Math.max(0, rows.length - 1)) : 0;
+    list._cursorIndex = index;
     queueCursor = rows[index]?.dataset.queueRecord || null;
     rows.forEach((row, position) => {
       row.dataset.selected = String(position === index);
       row.querySelector(".queue-number").textContent = String(Math.abs(position - index));
     });
     const mode = list.querySelector(".queue-mode");
-    if (mode) mode.textContent = `${document.activeElement === list._search ? "SEARCH" : "NORMAL"}${queueCount ? ` ${queueCount}` : ""}>`;
+    if (mode) mode.textContent = `${document.activeElement === list._search ? "SEARCH" : checkMode ? "SELECT" : "NORMAL"}${queueCount ? ` ${queueCount}` : ""}>`;
     if (moveFocus && rows[index]) {
       rows[index].querySelector(".queue-item").focus({ preventScroll: true });
       rows[index].scrollIntoView({ block: "nearest" });
     }
   }
-  function scheduleSearch() {
+  function scheduleSearch(restore = null) {
     clearTimeout(searchTimer); ++searchVersion;
     searchItems = []; searchOffset = 0; searchMore = false; searchBusy = Boolean(queueQuery.trim());
-    queueCursor = null; queueCount = ""; queueError = ""; selectedNotifications.clear();
+    queueRestore = restore; queueCursor = restore?.cursor || null; queueCount = ""; queueError = ""; selectedNotifications.clear();
     render();
     if (queueQuery.trim()) searchTimer = setTimeout(() => searchMessages(true), 150);
+  }
+  function toggleCheckMode() {
+    if (history || ignoredOpen || bulkBusy) return;
+    checkMode = !checkMode; selectedNotifications.clear(); queueCount = ""; render();
   }
   async function searchMessages(reset = false) {
     const version = searchVersion, query = queueQuery.trim(), pendingOnly = !history;
@@ -1031,7 +1055,7 @@
         const tab = button(label, () => {
           if (history === isHistory && !ignoredOpen) return;
           list._scroll[history ? "history" : "pending"] = list._content.scrollTop;
-          history = isHistory; ignoredOpen = false; queueCursor = null; selectedNotifications.clear(); queueError = "";
+          history = isHistory; ignoredOpen = false; queueCursor = null; queueRestore = null; checkMode = false; selectedNotifications.clear(); queueError = "";
           if (queueQuery.trim()) scheduleSearch(); else render();
           list._content.scrollTop = list._scroll[history ? "history" : "pending"] || 0;
           if (history && !queueQuery.trim()) loadHistory(true);
@@ -1046,7 +1070,8 @@
       list._search = el("input"); list._search.type = "search"; list._search.placeholder = "Search messages (/)";
       list._search.setAttribute("aria-label", "Search messages"); list._search.autocomplete = "off";
       list._search.addEventListener("input", () => { queueQuery = list._search.value; scheduleSearch(); if (!queueQuery.trim() && history && !historyItems.length) loadHistory(true); });
-      search.append(mode, list._search); list._searchBar = search;
+      list._checkMode = button("Select", toggleCheckMode, "utility queue-check-mode"); list._checkMode.setAttribute("aria-label", "Select messages");
+      search.append(mode, list._search, list._checkMode); list._searchBar = search;
       list._content = el("div", "queue-content");
       list.append(segments, search, list._content);
       list.addEventListener("focusin", event => {
@@ -1057,6 +1082,8 @@
       list.addEventListener("focusout", () => requestAnimationFrame(() => updateQueueCursor(list)));
     }
     list._searchBar.hidden = ignoredOpen;
+    list._checkMode.hidden = history; list._checkMode.disabled = bulkBusy;
+    list._checkMode.textContent = checkMode ? "Done" : "Select"; list._checkMode.setAttribute("aria-pressed", String(checkMode));
     if (list._search.value !== queueQuery) list._search.value = queueQuery;
     for (const tab of list.querySelectorAll('[role="tab"]')) tab.setAttribute("aria-selected", String(ignoredOpen ? tab.dataset.ignored === "true" : tab.dataset.history === String(history)));
     if (ignoredOpen) {
@@ -1075,12 +1102,12 @@
       return list;
     }
     const searching = Boolean(queueQuery.trim()), items = searching ? searchItems : history ? historyItems : pendingCards();
-    const signature = JSON.stringify([history, queueQuery, items.map(record => [record.id, record.created_at, record.read_at, queueSummary(record)]), [...selectedNotifications], bulkBusy, queueError, loadingQueue, hasMoreHistory, unseenPending, searchBusy, searchMore]);
+    const signature = JSON.stringify([history, checkMode, queueQuery, items.map(record => [record.id, record.created_at, record.read_at, queueSummary(record)]), [...selectedNotifications], bulkBusy, queueError, loadingQueue, hasMoreHistory, unseenPending, searchBusy, searchMore]);
     if (list.dataset.signature === signature) { updateQueueCursor(list); return list; }
     list.dataset.signature = signature;
     const content = list._content, scroll = content.scrollTop, rowFocused = Boolean(document.activeElement?.closest("[data-queue-record]"));
     content.replaceChildren();
-    if (!history && items.length) {
+    if (!history && checkMode && items.length) {
       const toolbar = el("div", "queue-selection");
       const label = el("label"); const selectAll = el("input"); selectAll.type = "checkbox"; selectAll.setAttribute("aria-label", "Select all notifications");
       selectAll.checked = (searching || unseenPending === 0) && items.every(record => selectedNotifications.has(record.id));
@@ -1103,7 +1130,7 @@
       const row = el("div", "queue-row");
       row.dataset.queueRecord = record.id;
       const number = el("span", "queue-number"); number.setAttribute("aria-hidden", "true"); row.append(number);
-      if (!history) {
+      if (!history && checkMode) {
         const checkbox = el("input"); checkbox.type = "checkbox"; checkbox.checked = selectedNotifications.has(record.id); checkbox.disabled = bulkBusy;
         checkbox.setAttribute("aria-label", `Select ${summary.title}`);
         checkbox.addEventListener("change", () => { if (checkbox.checked) selectedNotifications.add(record.id); else selectedNotifications.delete(record.id); render(); }); row.append(checkbox);
@@ -1271,6 +1298,8 @@
         ["H / L", "Previous / next message card."],
         ["J / K", "Next / previous list row. Prefix with a count, such as 3j."],
         ["Enter", "Open the selected message."],
+        ["V / Space", "Toggle selection mode / check the selected message."],
+        ["D", "Dismiss the selected pending message."],
         ["/", "Search the current message list. Escape returns to navigation and keeps the search."],
         ["Home / End", "First / last list row."],
         ["Escape", "Clear a count or search, close settings, or collapse the bar."],
@@ -1429,6 +1458,7 @@
     }, true);
   }
   function render(animate = true) {
+    syncFocusAppearance();
     if (records.get(current)?.details_available === false) details = false;
     if (reducedMotion.matches || geometry.reduce_motion) stopArrivalAnimation();
     const before = host.getBoundingClientRect();
@@ -1492,6 +1522,10 @@
     } else if (queue) {
       host.querySelector(".card")?.remove();
       const list = renderQueue(); if (!list.isConnected) host.append(list); card = null; renderedId = null;
+      if (queueRestore && !(ignoredOpen ? ignoredBusy : queueQuery.trim() ? searchBusy : loadingQueue)) {
+        queueCursor = queueRestore.cursor; list._content.scrollTop = queueRestore.scroll; queueRestore = null;
+        if (!ignoredOpen) updateQueueCursor(list);
+      }
     } else if (current && records.has(current)) {
       host.querySelector(".queue")?.remove();
       if (renderedId !== `${current}:${expanded}`) {
@@ -1506,7 +1540,7 @@
       if (!value.active) { hintInput = ""; return; }
       hiddenByUser = false; explicitOpen = true; native({ native: "presentation", active: true });
       if (host.classList.contains("pill") || host.classList.contains("empty") || !current && !queue && !settingsOpen && !todosOpen) {
-        if (current) openRecord(current); else if (pendingCount()) openLatest(); else showQueue(true);
+        if (current) openRecord(current); else restoreBarView();
       }
       host.tabIndex = -1; host.focus({ preventScroll: true }); render(); return;
     }
@@ -1603,12 +1637,42 @@
   let hintInput = "", hintTargets = [], hintLabels = [], shortcutError = "";
   const hintOverlay = el("div", "keyboard-hints");
   hintOverlay.setAttribute("aria-hidden", "true"); document.body.append(hintOverlay);
+  function syncFocusAppearance(active = document.hasFocus()) {
+    const desktop = String(!snapshot.remote && !preview), keyboardActive = String(desktop === "true" && active);
+    if (host.dataset.desktop !== desktop) host.dataset.desktop = desktop;
+    if (host.dataset.keyboardActive !== keyboardActive) host.dataset.keyboardActive = keyboardActive;
+  }
+  function fixedHint(node) {
+    if (node.closest(".top")) {
+      if (node.matches(".brand")) return "A";
+      if (node.matches(".count,.bar-toggle")) return "S";
+      if (node.matches(".previous")) return "H";
+      if (node.matches(".next")) return "L";
+      if (node.matches(".list-toggle")) return "G";
+      if (node.matches(".todo-toggle")) return "Q";
+    }
+    if (node.dataset.history === "false") return "P";
+    if (node.dataset.history === "true") return "T";
+    if (node.dataset.ignored) return "I";
+    if (node.dataset.settingsTab) return { appearance: "E", delivery: "T", shortcuts: "Y" }[node.dataset.settingsTab];
+    if (node.matches(".queue-search input")) return "/";
+    if (node.matches(".queue-check-mode")) return "V";
+    if (node.matches(".dismiss-item")) return "D";
+    if (node.matches('.queue-row input[type="checkbox"]')) return "Space";
+    if (node.getAttribute("aria-label") === "Select all notifications") return "C";
+    if (node.matches(".dismiss-selected")) return "X";
+    return null;
+  }
   function refreshHints() {
+    syncFocusAppearance();
     if (!snapshot.settings?.keyboard_hints || snapshot.remote || preview || !document.hasFocus() || host.classList.contains("empty")) {
       hintOverlay.replaceChildren(); hintTargets = []; hintLabels = []; hintInput = ""; return;
     }
     const targets = [...host.querySelectorAll('button,input:not([type="hidden"]),textarea,select,summary,a[href],[role="button"]')].filter(node => {
       if (node.disabled || node.closest('[hidden],[inert]') || node.getAttribute("aria-disabled") === "true") return false;
+      if (node.matches(".bar-toggle") && host.querySelector(".top button.count")) return false;
+      const row = node.closest("[data-queue-record]");
+      if (row && (row.dataset.selected !== "true" || node.matches(".queue-item"))) return false;
       const r = node.getBoundingClientRect(), style = getComputedStyle(node);
       if (!r.width || !r.height || style.visibility === "hidden" || style.display === "none") return false;
       const x = Math.max(0, r.left) + Math.min(r.width, innerWidth - Math.max(0, r.left)) / 2;
@@ -1621,10 +1685,15 @@
     });
     if (targets.length !== hintTargets.length || targets.some((node,i) => node !== hintTargets[i])) {
       hintTargets = targets; hintInput = ""; hintOverlay.replaceChildren();
-      const alphabet = "ASGQWETYUIOPZXVBM", length = Math.max(1, Math.ceil(Math.log(Math.max(1, targets.length))/Math.log(alphabet.length)));
+      const alphabet = "BFMNORUWZ", fixed = targets.map(fixedHint), dynamicCount = fixed.filter(label => !label).length;
+      const length = Math.max(1, Math.ceil(Math.log(Math.max(1, dynamicCount))/Math.log(alphabet.length)));
+      let ordinal = 0;
       hintLabels = targets.map((node, index) => {
-        let label = "", value = index;
-        for (let i=0;i<length;i++) { label = alphabet[value % alphabet.length]+label; value = Math.floor(value/alphabet.length); }
+        let label = fixed[index], value = ordinal;
+        if (!label) {
+          label = ""; ++ordinal;
+          for (let i=0;i<length;i++) { label = alphabet[value % alphabet.length]+label; value = Math.floor(value/alphabet.length); }
+        }
         const badge = el("span", "keyboard-hint", label); badge.dataset.target = node.getAttribute("aria-label") || node.textContent;
         hintOverlay.append(badge); return label;
       });
@@ -1637,7 +1706,7 @@
   }
   function handleHintKey(event) {
     if (!snapshot.settings?.keyboard_hints || snapshot.remote || preview || !document.hasFocus()) return false;
-    if (event.isComposing || event.target.closest?.('input,textarea,select,[contenteditable="true"]') || event.ctrlKey || event.metaKey || event.altKey) return false;
+    if (event.isComposing || event.target.closest?.('input:not([type="checkbox"]):not([type="radio"]),textarea,select,[contenteditable="true"]') || event.ctrlKey || event.metaKey || event.altKey) return false;
     if (event.key === "Escape" && hintInput) { hintInput = ""; event.preventDefault(); refreshHints(); return true; }
     if (event.key === "Backspace" && hintInput) { hintInput = hintInput.slice(0,-1); event.preventDefault(); refreshHints(); return true; }
     if (!/^[a-z]$/i.test(event.key)) return false;
@@ -1654,7 +1723,7 @@
   function handleNavigationKey(event) {
     if (event.defaultPrevented || event.isComposing || !document.hasFocus() || event.metaKey || event.altKey || event.ctrlKey || settingsOpen || todosOpen || menu) return false;
     const list = queue && !ignoredOpen && host.querySelector(".queue");
-    const editing = event.target.closest?.('input,textarea,select,[contenteditable="true"]');
+    const editing = event.target.closest?.('input:not([type="checkbox"]):not([type="radio"]),textarea,select,[contenteditable="true"]');
     const searchInput = list && event.target === list._search;
     if (editing && !searchInput) return false;
     if (searchInput && event.key === "Escape") {
@@ -1664,6 +1733,18 @@
     if (list) {
       const rows = [...list.querySelectorAll("[data-queue-record]")];
       const index = Math.max(0, rows.findIndex(row => row.dataset.queueRecord === queueCursor));
+      if (!editing && event.key.toLowerCase() === "v" && !history) {
+        event.preventDefault(); hintInput = ""; toggleCheckMode(); updateQueueCursor(list, true); return true;
+      }
+      if (!editing && event.key === " " && checkMode && !history) {
+        event.preventDefault(); rows[index]?.querySelector('input[type="checkbox"]')?.click(); return true;
+      }
+      if (!editing && event.key.toLowerCase() === "d" && !history) {
+        event.preventDefault(); rows[index]?.querySelector(".dismiss-item")?.click(); return true;
+      }
+      if (!editing && event.key === "Escape" && checkMode) {
+        event.preventDefault(); toggleCheckMode(); return true;
+      }
       if (!editing && /^\d$/.test(event.key)) {
         event.preventDefault(); queueCount = (queueCount + event.key).slice(0, 6); hintInput = ""; updateQueueCursor(list); return true;
       }
@@ -1693,7 +1774,7 @@
     }
     return false;
   }
-  window.addEventListener("blur", () => { hintInput = ""; hintOverlay.replaceChildren(); hintTargets = []; hintLabels = []; });
+  window.addEventListener("blur", () => { syncFocusAppearance(false); hintInput = ""; hintOverlay.replaceChildren(); hintTargets = []; hintLabels = []; });
   window.addEventListener("focus", refreshHints);
   setInterval(refreshHints, 80);
   host.addEventListener("mouseenter", () => { hovering = true; pauseTimer(); if (snapshot.settings?.hover_expand && current && !expanded) openRecord(current); });
@@ -1723,7 +1804,7 @@
     geometry = next; placement = next.placement;
     host.style.setProperty("--notch-overlap", `${placement === "notch" ? next.overlap || 38 : 0}px`);
     document.body.style.justifyContent = placement === "notch" ? "center" : "flex-end";
-    for (const [key, property] of [["overlap", "--notch-overlap"], ["notch_width", "--notch-width"], ["max_width", "--surface-max-width"], ["max_height", "--surface-max-height"]]) {
+    for (const [key, property] of [["overlap", "--notch-overlap"], ["notch_width", "--notch-width"], ["max_width", "--surface-max-width"], ["max_height", "--surface-max-height"], ["list_max_height", "--surface-list-max-height"]]) {
       if (Number.isFinite(next[key])) host.style.setProperty(property, `${next[key]}px`);
     }
     render();

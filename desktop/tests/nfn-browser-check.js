@@ -33,6 +33,12 @@
   assert(document.querySelector('[role="switch"]'), "agent controls return to Auto-yes and the other options");
   document.querySelector('[aria-label="Close menu"]').click();
   assert(document.querySelector("#surface").getBoundingClientRect().height < 430, "first card stays compact");
+  window.fixture.records.get("first").details_available = false;
+  window.nfn.receive(window.fixture.snapshot());
+  assert(!document.querySelector(".details-toggle"), "unavailable message details stay hidden in the combined bar");
+  window.fixture.records.get("first").details_available = true;
+  window.nfn.receive(window.fixture.snapshot());
+  assert(document.querySelector(".details-toggle"), "message details return when the source makes them available");
   assert(!window.unsafeMarkup && !document.querySelector(".message img"), "request text cannot inject markup");
   const input = draft("Keep this draft");
   document.querySelector('[aria-label="Notification list"]').click();
@@ -163,6 +169,8 @@
   }
   window.nfn.receive(window.fixture.snapshot()); window.nfn.receive({ type: "show" });
   assert(document.querySelectorAll(".queue-item").length === 50, "notification list loads a bounded page");
+  const tallListBounds = document.querySelector("#surface").getBoundingClientRect();
+  assert(tallListBounds.height > 600 && tallListBounds.height <= Math.min(innerHeight * .8, 860) + 1, "long lists expand to fit within eighty percent of the available viewport");
   const lastPageItem = document.querySelectorAll(".queue-item")[49]; lastPageItem.click(); await sleep(30);
   nav("Next"); await sleep(60);
   assert(document.querySelector(".count").textContent === "51 / 67", "next loads the next page without opening the notification list");
@@ -510,6 +518,8 @@
   for (let i = 0; i < 67; i++) window.fixture.records.set(`bulk-${i}`, window.fixture.record(`bulk-${i}`));
   window.nfn.receive(window.fixture.snapshot()); window.nfn.receive({ type: "show" }); click("Pending");
   assert(document.querySelectorAll(".queue-item").length === 50, "bulk selection starts with a paged list");
+  assert(!document.querySelector('.queue-row input[type="checkbox"]'), "list checkboxes stay hidden until selection mode is enabled");
+  document.querySelector('[aria-label="Select messages"]').click();
   document.querySelector('[aria-label="Select all notifications"]').click(); await sleep(60);
   assert(document.querySelectorAll(".queue-row input:checked").length === 67, "Select all includes pending notifications beyond the first page");
   document.querySelector(".queue-row input").click();
@@ -556,6 +566,7 @@
   window.nfn.receive(window.fixture.snapshot("from-history")); await sleep(30);
   assert(document.querySelector("h1")?.textContent === "New notification from History" && !document.querySelector(".queue"), "a new arrival opens its card from History and a late history response cannot reopen the list");
   document.querySelector('[aria-label="Notification list"]').click();
+  document.querySelector('[aria-label="Select messages"]').click();
   document.querySelector(".queue-row input").click();
   arrivalRecord("during-selection", "Arrived during bulk selection");
   window.nfn.receive(window.fixture.snapshot("during-selection"));
@@ -564,7 +575,7 @@
   arrivalRecord("after-selection", "Arrived after clearing selection");
   window.nfn.receive(window.fixture.snapshot("after-selection"));
   assert(document.querySelector("h1")?.textContent === "Arrived after clearing selection", "an unchecked list checkbox does not block new notification cards");
-  document.querySelector('[aria-label="Notification list"]').click(); document.querySelector(".queue-row input").click();
+  document.querySelector('[aria-label="Notification list"]').click(); document.querySelector('[aria-label="Select messages"]').click(); document.querySelector(".queue-row input").click();
   window.nfn.collapse();
   arrivalRecord("after-collapsed-selection", "Arrived after closing the list");
   window.nfn.receive(window.fixture.snapshot("after-collapsed-selection"));
@@ -858,6 +869,7 @@
   window.nfn.receive({ type: "open_record", id: "thread-earlier" });
   assert(document.querySelectorAll(".message-thread-item").length === 2 && title() === "thread-latest", "messages from one agent share a card with the latest actions, including links to an older message");
   assert([...document.querySelectorAll(".message-thread .message")].map(node => node.textContent).join("|") === "First proposal|Revised proposal", "the grouped card lists messages in their original order");
+  assert([...document.querySelectorAll(".message-thread time")].every(node => node.classList.contains("relative-time") && /^(jn|\d+[mhdw])$/.test(node.textContent) && node.title && node.dateTime), "earlier thread messages show relative ages and retain exact timestamps");
   assert(document.querySelector(".count").textContent === "1 / 2", "navigation counts agent cards rather than individual messages");
   const newest = flowRecord("thread-newest", 4);
   newest.request.source = { ...threadLatest.request.source }; newest.request.body = "Final proposal";
@@ -947,6 +959,12 @@
   assert(!document.querySelector(".keyboard-hint"), "keyboard hints default off");
   const originalHasFocus = document.hasFocus;
   document.hasFocus = () => true;
+  window.nfn.receive({ type: "keyboard_focus", active: true }); await sleep(100);
+  const focusHost = document.getElementById("surface"), activeShadow = getComputedStyle(focusHost).boxShadow;
+  assert(document.activeElement === focusHost && getComputedStyle(focusHost).outlineStyle === "none", "global shortcut focus has no browser outline around the bar");
+  assert(focusHost.dataset.keyboardActive === "true" && !document.querySelector(".keyboard-hint"), "active-window styling works even with button hints disabled");
+  assert(getComputedStyle(document.querySelector(".brand img")).filter === "none" && getComputedStyle(document.querySelector(".todo-ring")).filter === "none", "the focused bar colors the claw and task icons");
+  const focusBounds = focusHost.getBoundingClientRect();
   hintSnapshot.settings.keyboard_hints = true;
   window.nfn.receive(hintSnapshot); await sleep(120);
   const badges = [...document.querySelectorAll(".keyboard-hint")];
@@ -955,10 +973,15 @@
   document.hasFocus = () => false;
   window.dispatchEvent(new Event("blur")); await sleep(100);
   assert(!document.querySelector(".keyboard-hint"), "hints disappear when the bar cannot receive shortcuts");
+  assert(focusHost.dataset.keyboardActive === "false" && getComputedStyle(focusHost).boxShadow !== activeShadow, "blur removes the active-window shadow immediately");
+  assert(getComputedStyle(document.querySelector(".brand img")).filter === "grayscale(1)" && getComputedStyle(document.querySelector(".todo-ring")).filter === "grayscale(1)", "passive claw and task icons are gray");
+  const passiveBounds = focusHost.getBoundingClientRect();
+  assert(passiveBounds.width === focusBounds.width && passiveBounds.height === focusBounds.height, "focus decoration preserves bar geometry");
   document.hasFocus = () => true;
   window.dispatchEvent(new Event("focus")); await sleep(100);
   assert(document.querySelector(".keyboard-hint"), "hints return on keyboard focus without changing the preference");
-  assert(badges.every(badge => !/[HJKL]/.test(badge.textContent)), "button hints reserve H J K L for navigation");
+  assert(focusHost.dataset.keyboardActive === "true" && getComputedStyle(focusHost).boxShadow === activeShadow, "keyboard focus restores the active appearance");
+  assert(badges.every(badge => !/[JK]/.test(badge.textContent)), "button hints reserve J K for list navigation");
 
   resetFlow(); window.fixture.serverOrder = false;
   for (let i = 0; i < 8; i++) flowRecord(`vim-${i}`, i);
@@ -980,8 +1003,24 @@
   document.querySelector('[aria-label="Notification list"]').click();
   const selectedRow = () => document.querySelector('[data-queue-record][data-selected="true"]');
   assert(selectedRow().dataset.queueRecord === "vim-0", "a focused list starts with its first message selected");
+  await sleep(120);
+  const headerKeys = () => ["Notification settings", "Notification list", document.querySelector(".todo-toggle").getAttribute("aria-label"), document.querySelector(".count").textContent].map(target => [...document.querySelectorAll(".keyboard-hint")].find(badge => badge.dataset.target === target)?.textContent).join();
+  const stableHeaderKeys = headerKeys();
+  click("History"); await sleep(140);
+  assert(headerKeys() === stableHeaderKeys && stableHeaderKeys.startsWith("A,G,Q,S"), "header shortcut keys stay fixed when switching Pending to History");
+  click("Pending"); await sleep(120);
+  assert(!document.querySelector('.queue-row input[type="checkbox"]') && [...document.querySelectorAll(".keyboard-hint")].filter(badge => badge.textContent === "D").length === 1, "normal lists expose only the selected row's dismiss hint");
+  assert([...document.querySelectorAll(".queue-item")].every(item => ![...document.querySelectorAll(".keyboard-hint")].some(badge => badge.dataset.target === item.textContent)), "list rows have no letter hints because J K and Enter navigate them");
   key("3"); key("j");
   assert(selectedRow().dataset.queueRecord === "vim-3" && [...document.querySelectorAll(".queue-number")].map(node => node.textContent).join() === "3,2,1,0,1,2,3,4", "counted J jumps the displayed relative distance and updates every gutter number");
+  assert(getComputedStyle(document.activeElement).outlineStyle === "none", "J K navigation selects rows without a blue focus outline");
+  key("v"); await sleep(100);
+  assert(document.querySelectorAll('.queue-row input[type="checkbox"]').length === 8 && document.querySelector(".queue-mode").textContent === "SELECT>", "V explicitly enables checkbox selection mode");
+  assert([...document.querySelectorAll(".keyboard-hint")].filter(badge => badge.textContent === "Space").length === 1, "only the selected row shows the Space checkbox hint");
+  key(" ");
+  assert(selectedRow().querySelector("input").checked, "Space checks the selected row in selection mode");
+  key("v");
+  assert(!document.querySelector('.queue-row input[type="checkbox"]') && !document.querySelector(".dismiss-selected"), "leaving selection mode hides checkboxes and clears the selection");
   key("k");
   assert(selectedRow().dataset.queueRecord === "vim-2", "K moves to the previous row");
   key("End"); assert(selectedRow().dataset.queueRecord === "vim-7", "End selects the last loaded row");
@@ -989,6 +1028,8 @@
   assert(selectedRow().dataset.queueRecord === "vim-7", "large relative counts clamp at the list boundary");
   key("Enter"); await sleep(30);
   assert(title() === "vim-7" && !document.querySelector(".queue"), "Enter opens the selected notification");
+  document.querySelector('[aria-label="Notification list"]').click(); key("Home"); key("d"); await sleep(30);
+  assert(window.fixture.records.get("vim-0").dismissed_at && selectedRow().dataset.queueRecord === "vim-1" && !window.fixture.calls.some(command => command.op === "respond"), "D dismisses only the selected row and keeps its neighbor selected without replying");
 
   resetFlow(); window.fixture.serverOrder = true;
   for (let i = 0; i < 63; i++) flowRecord(`search-${i}`, i);
@@ -1025,9 +1066,24 @@
   window.fixture.heldOps.delete("list");
   key("Escape", document.body);
   assert(nextSearch.value === "" && document.querySelectorAll(".queue-item").length > 1, "Escape from normal mode clears the filter and restores the message list");
+  click("History"); await sleep(40);
+  key("3", document.body); key("j", document.body);
+  const restoredCursor = selectedRow().dataset.queueRecord;
+  document.querySelector(".queue-content").scrollTop = 200;
+  const restoredScroll = document.querySelector(".queue-content").scrollTop;
+  window.nfn.receive({ type: "keyboard_collapse" });
+  window.nfn.receive({ type: "keyboard_focus", active: true }); await sleep(180);
+  assert(document.querySelector('[data-history="true"]').getAttribute("aria-selected") === "true" && selectedRow().dataset.queueRecord === restoredCursor && Math.abs(document.querySelector(".queue-content").scrollTop - restoredScroll) < 2, "global shortcut reopening restores History, its selected row and scroll position");
+  const restoredSearch = document.querySelector('[aria-label="Search messages"]');
+  restoredSearch.value = "archived-match"; restoredSearch.dispatchEvent(new Event("input")); await sleep(220);
+  window.nfn.receive({ type: "keyboard_collapse" }); window.nfn.receive({ type: "keyboard_focus", active: true }); await sleep(220);
+  assert(document.querySelector('[aria-label="Search messages"]').value === "archived-match" && selectedRow().dataset.queueRecord === archivedMatch.id, "shortcut reopening also restores the list search and matching selection");
   document.hasFocus = originalHasFocus;
   hintSnapshot.remote = true;
   window.nfn.receive(hintSnapshot); await sleep(120);
   assert(!document.querySelector(".keyboard-hint"), "mobile surfaces omit desktop keyboard hints");
+  assert(focusHost.dataset.desktop === "false" && getComputedStyle(document.querySelector(".brand img")).filter === "none", "mobile surfaces keep their colored icons without desktop focus styling");
+  if (!document.querySelector(".queue")) document.querySelector('[aria-label="Notification list"]').click();
+  assert(getComputedStyle(document.querySelector(".queue")).maxHeight === "none", "desktop list height limits leave the mobile list height to its host");
   return { passed: checks.length, checks };
 })()
