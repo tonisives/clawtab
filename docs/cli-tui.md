@@ -59,7 +59,7 @@ Closing the terminal keeps its agent running by default. Add `--close-with-termi
 | `usage <provider>` | Show local quota usage for `claude`, `codex`, `antigravity`, or `zai` |
 | `secrets` / `secrets get <k>...` | Secret access |
 | `message send <text> [--kind <kind>] [--channel <channel>]` | Send an update, question, approval, completion, or failure |
-| `message list [--pending]` | List messages and their responses |
+| `message list [--pending] [--offset N] [--query TEXT]` | List messages and their responses; search terms match message content and source fields |
 | `message reply <id> [text] [--action <id>]` | Answer a question or choose an action |
 | `message get\|wait\|cancel\|read\|dismiss <id>` | Inspect a message or change its state |
 | `message show\|settings\|templates` | Open the queue or manage delivery and card layouts |

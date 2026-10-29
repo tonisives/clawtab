@@ -74,6 +74,7 @@ export function messageSurfaceController(options: Options) {
         }));
         const records = [...listed.values(), ...all().filter(record => !onlineIds.has(record.machine_id))]
           .filter(record => !command.pending_only || messagePending(record))
+          .filter(record => String(command.query || "").toLowerCase().split(/\s+/).filter(Boolean).every(term => JSON.stringify(record.request).toLowerCase().includes(term)))
           .sort((a, b) => b.created_at - a.created_at || surfaceId(a).localeCompare(surfaceId(b)));
         return { records: records.slice(offset, offset + 50).map(surfaceRecord), next_offset: offset + 50 };
       }

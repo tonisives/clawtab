@@ -94,6 +94,42 @@ impl Store {
         self.list_where("status IN ('pending', 'delivering')", 0, 2000)
     }
 
+    pub fn search(
+        &self,
+        offset: usize,
+        pending_only: bool,
+        query: &str,
+    ) -> Result<Vec<NfnRecord>, String> {
+        if query.trim().is_empty() {
+            return if pending_only {
+                self.pending_page(offset)
+            } else {
+                self.list(offset)
+            };
+        }
+        let mut clause = if pending_only {
+            "status IN ('pending','delivering') AND json_extract(record,'$.dismissed_at') IS NULL AND COALESCE(json_extract(record,'$.ignored'),0)=0".to_owned()
+        } else {
+            "1=1".to_owned()
+        };
+        let mut values: Vec<rusqlite::types::Value> = vec![(50_i64).into(), (offset as i64).into()];
+        for term in query.split_whitespace() {
+            values.push(term.to_owned().into());
+            clause.push_str(&format!(" AND EXISTS (SELECT 1 FROM json_tree(notifications.record,'$.request') WHERE type='text' AND instr(lower(atom),lower(?{}))>0)", values.len()));
+        }
+        let conn = self.conn.lock();
+        let mut statement = conn.prepare(&format!("SELECT record FROM notifications WHERE {clause} ORDER BY created_at DESC, id LIMIT ?1 OFFSET ?2")).map_err(|e| e.to_string())?;
+        let rows = statement
+            .query_map(rusqlite::params_from_iter(values), |row| {
+                row.get::<_, String>(0)
+            })
+            .map_err(|e| e.to_string())?;
+        rows.map(|row| {
+            serde_json::from_str(&row.map_err(|e| e.to_string())?).map_err(|e| e.to_string())
+        })
+        .collect()
+    }
+
     pub fn deliveries_to_close(&self) -> Result<Vec<NfnRecord>, String> {
         self.list_where(
             "(status NOT IN ('pending','delivering') OR json_extract(record,'$.dismissed_at') IS NOT NULL OR json_extract(record,'$.ignored')=1)
@@ -386,6 +422,51 @@ mod tests {
             dedupe_key: Some("draft-1".into()),
             ..Default::default()
         }
+    }
+    #[test]
+    fn search_matches_content_and_source_before_pagination_and_respects_pending_scope() {
+        let store = Store::from_connection(Connection::open_in_memory().unwrap()).unwrap();
+        let mut ids = Vec::new();
+        for index in 0..53 {
+            let (mut record, _) = store
+                .send(
+                    NfnRequest {
+                        title: format!("Message #{index}"),
+                        body: "Review 100%_ready \"caption\"".into(),
+                        source: NfnSource {
+                            cwd: Some("/projects/Clawtab".into()),
+                            ..Default::default()
+                        },
+                        dedupe_key: None,
+                        ..request()
+                    },
+                    None,
+                )
+                .unwrap();
+            record.created_at = now() + index;
+            if index == 52 {
+                record.dismissed_at = Some(now());
+            }
+            if index == 51 {
+                record.ignored = true;
+            }
+            if index == 50 {
+                record.status = "resolved".into();
+            }
+            store.save(&mut record).unwrap();
+            ids.push(record.id);
+        }
+        assert_eq!(
+            store.search(0, false, "MESSAGE #0 clawtab caption").unwrap()[0].id,
+            ids[0]
+        );
+        assert_eq!(store.search(0, false, "100%_ready").unwrap().len(), 50);
+        assert_eq!(store.search(50, false, "100%_ready").unwrap().len(), 3);
+        let pending = store.search(0, true, "clawtab").unwrap();
+        assert_eq!(pending.len(), 50);
+        assert!(pending.iter().all(|record| !ids[50..].contains(&record.id)));
+        assert!(store.search(0, true, "missing").unwrap().is_empty());
+        assert!(store.search(0, false, "' OR 1=1 --").unwrap().is_empty());
     }
     #[test]
     fn handling_latest_supersedes_only_earlier_messages_from_the_same_agent() {

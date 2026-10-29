@@ -22,6 +22,9 @@
   const selectedNotifications = new Set();
   let bulkBusy = false, queueError = "";
   let ignoredOpen = false, ignoredAgents = [], ignoredBusy = false;
+  let settingsTab = "appearance";
+  let queueQuery = "", queueCursor = null, queueCount = "";
+  let searchItems = [], searchOffset = 0, searchMore = false, searchBusy = false, searchVersion = 0, searchTimer = null;
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
   let arrivalAnimations = [], arrivalTimer = null, lastArrivalId = null;
 
@@ -200,6 +203,16 @@
     node.dateTime = date.toISOString(); node.title = date.toLocaleString();
     return node;
   }
+  function relativeTimestamp(record) {
+    const node = messageTimestamp(record); node.classList.add("relative-time");
+    updateRelativeTime(node); return node;
+  }
+  function updateRelativeTime(node) {
+    const age = Math.max(0, (Date.now() - Date.parse(node.dateTime)) / 1000);
+    const unit = [[604800, "w"], [86400, "d"], [3600, "h"], [60, "m"]].find(([seconds]) => age >= seconds);
+    node.textContent = unit ? `${Math.floor(age / unit[0])}${unit[1]}` : "jn";
+  }
+  setInterval(() => host.querySelectorAll(".relative-time").forEach(updateRelativeTime), 30000);
   function iconButton(label, path, action, className = "") {
     const control = button("", action, `utility icon-button ${className}`);
     control.setAttribute("aria-label", label); control.title = label;
@@ -529,7 +542,9 @@
     leaveSettings();
     if (current) queueReturnId = current;
     clearTimeout(completionTimer); pauseTimer(); stopContext(); expanded = true; details = false; queue = true; history = showHistory === true; ignoredOpen = false; current = null; renderedId = null; menu = null; selectedNotifications.clear(); queueError = ""; render();
-    if (history) loadHistory(true);
+    queueCount = "";
+    if (!snapshot.remote && document.hasFocus()) updateQueueCursor(host.querySelector(".queue"), true);
+    if (queueQuery.trim()) scheduleSearch(); else if (history) loadHistory(true);
   }
   async function toggleQueue() {
     if (settingsOpen) { showQueue(); return; }
@@ -922,6 +937,7 @@
       const result = await call({ op: "dismiss_many", ids });
       for (const record of previous) records.set(record.id, { ...record, status: "superseded" });
       for (const record of result.records || []) { records.set(record.id, record); selectedNotifications.delete(record.id); }
+      searchItems = searchItems.filter(record => !ids.includes(record.id));
       pendingOffset = pendingRecords().length;
       historyItems = []; historyOffset = 0;
     } catch (error) { queueError = String(error.message || error); }
@@ -950,6 +966,42 @@
       if (ignored) showError(error, record.id); else queueError = String(error.message || error);
     } finally { ignoredBusy = false; render(); }
   }
+  function updateQueueCursor(list, moveFocus = false) {
+    const rows = [...list.querySelectorAll("[data-queue-record]")];
+    let index = rows.findIndex(row => row.dataset.queueRecord === queueCursor);
+    if (index < 0) index = 0;
+    queueCursor = rows[index]?.dataset.queueRecord || null;
+    rows.forEach((row, position) => {
+      row.dataset.selected = String(position === index);
+      row.querySelector(".queue-number").textContent = String(Math.abs(position - index));
+    });
+    const mode = list.querySelector(".queue-mode");
+    if (mode) mode.textContent = `${document.activeElement === list._search ? "SEARCH" : "NORMAL"}${queueCount ? ` ${queueCount}` : ""}>`;
+    if (moveFocus && rows[index]) {
+      rows[index].querySelector(".queue-item").focus({ preventScroll: true });
+      rows[index].scrollIntoView({ block: "nearest" });
+    }
+  }
+  function scheduleSearch() {
+    clearTimeout(searchTimer); ++searchVersion;
+    searchItems = []; searchOffset = 0; searchMore = false; searchBusy = Boolean(queueQuery.trim());
+    queueCursor = null; queueCount = ""; queueError = ""; selectedNotifications.clear();
+    render();
+    if (queueQuery.trim()) searchTimer = setTimeout(() => searchMessages(true), 150);
+  }
+  async function searchMessages(reset = false) {
+    const version = searchVersion, query = queueQuery.trim(), pendingOnly = !history;
+    if (!query) return;
+    searchBusy = true; render();
+    try {
+      const offset = reset ? 0 : searchOffset;
+      const result = await call({ op: "list", offset, pending_only: pendingOnly, query });
+      if (version !== searchVersion) return;
+      searchItems = reset ? result.records || [] : [...searchItems, ...(result.records || [])];
+      searchOffset = result.next_offset || offset + 50; searchMore = result.records?.length === 50;
+    } catch (error) { if (version === searchVersion) queueError = String(error.message || error); }
+    finally { if (version === searchVersion) { searchBusy = false; render(); } }
+  }
   function renderQueue() {
     let list = host.querySelector(".queue");
     if (!list) {
@@ -959,18 +1011,33 @@
         const tab = button(label, () => {
           if (history === isHistory && !ignoredOpen) return;
           list._scroll[history ? "history" : "pending"] = list._content.scrollTop;
-          history = isHistory; ignoredOpen = false; selectedNotifications.clear(); queueError = ""; render();
+          history = isHistory; ignoredOpen = false; queueCursor = null; selectedNotifications.clear(); queueError = "";
+          if (queueQuery.trim()) scheduleSearch(); else render();
           list._content.scrollTop = list._scroll[history ? "history" : "pending"] || 0;
-          if (history) loadHistory(true);
+          if (history && !queueQuery.trim()) loadHistory(true);
         });
         tab.setAttribute("role", "tab"); tab.dataset.history = String(isHistory); segments.append(tab);
       }
-      const ignored = button("Ignored agents", () => { ignoredOpen = true; selectedNotifications.clear(); loadIgnoredAgents(); });
+      const ignored = button("Ignored agents", () => { ignoredOpen = true; ++searchVersion; clearTimeout(searchTimer); selectedNotifications.clear(); loadIgnoredAgents(); });
       ignored.setAttribute("role", "tab"); ignored.dataset.ignored = "true"; segments.append(ignored);
       list._scroll = {};
+      const search = el("div", "queue-search");
+      const mode = el("span", "queue-mode", "NORMAL>"); mode.setAttribute("aria-label", "Navigation mode");
+      list._search = el("input"); list._search.type = "search"; list._search.placeholder = "Search messages (/)";
+      list._search.setAttribute("aria-label", "Search messages"); list._search.autocomplete = "off";
+      list._search.addEventListener("input", () => { queueQuery = list._search.value; scheduleSearch(); if (!queueQuery.trim() && history && !historyItems.length) loadHistory(true); });
+      search.append(mode, list._search); list._searchBar = search;
       list._content = el("div", "queue-content");
-      list.append(segments, list._content);
+      list.append(segments, search, list._content);
+      list.addEventListener("focusin", event => {
+        const row = event.target.closest("[data-queue-record]");
+        if (row) queueCursor = row.dataset.queueRecord;
+        updateQueueCursor(list);
+      });
+      list.addEventListener("focusout", () => requestAnimationFrame(() => updateQueueCursor(list)));
     }
+    list._searchBar.hidden = ignoredOpen;
+    if (list._search.value !== queueQuery) list._search.value = queueQuery;
     for (const tab of list.querySelectorAll('[role="tab"]')) tab.setAttribute("aria-selected", String(ignoredOpen ? tab.dataset.ignored === "true" : tab.dataset.history === String(history)));
     if (ignoredOpen) {
       const signature = JSON.stringify(["ignored", ignoredAgents, ignoredBusy, queueError]);
@@ -987,19 +1054,23 @@
       if (!ignoredAgents.length) list._content.append(el("div", "empty-state", ignoredBusy ? "Loading..." : "No ignored agents"));
       return list;
     }
-    const items = history ? historyItems : pendingCards();
-    const signature = JSON.stringify([history, items.map(record => [record.id, record.created_at, record.read_at, queueSummary(record)]), [...selectedNotifications], bulkBusy, queueError, loadingQueue, hasMoreHistory, unseenPending]);
-    if (list.dataset.signature === signature) return list;
+    const searching = Boolean(queueQuery.trim()), items = searching ? searchItems : history ? historyItems : pendingCards();
+    const signature = JSON.stringify([history, queueQuery, items.map(record => [record.id, record.created_at, record.read_at, queueSummary(record)]), [...selectedNotifications], bulkBusy, queueError, loadingQueue, hasMoreHistory, unseenPending, searchBusy, searchMore]);
+    if (list.dataset.signature === signature) { updateQueueCursor(list); return list; }
     list.dataset.signature = signature;
-    const content = list._content, scroll = content.scrollTop;
+    const content = list._content, scroll = content.scrollTop, rowFocused = Boolean(document.activeElement?.closest("[data-queue-record]"));
     content.replaceChildren();
     if (!history && items.length) {
       const toolbar = el("div", "queue-selection");
       const label = el("label"); const selectAll = el("input"); selectAll.type = "checkbox"; selectAll.setAttribute("aria-label", "Select all notifications");
-      selectAll.checked = unseenPending === 0 && items.every(record => selectedNotifications.has(record.id));
+      selectAll.checked = (searching || unseenPending === 0) && items.every(record => selectedNotifications.has(record.id));
       selectAll.indeterminate = selectedNotifications.size > 0 && !selectAll.checked; selectAll.disabled = bulkBusy;
-      selectAll.addEventListener("change", () => selectAllNotifications(selectAll.checked));
-      label.append(selectAll, el("span", "", bulkBusy ? "Updating..." : "Select all")); toolbar.append(label);
+      selectAll.addEventListener("change", () => {
+        if (!searching) { selectAllNotifications(selectAll.checked); return; }
+        for (const record of items) { if (selectAll.checked) selectedNotifications.add(record.id); else selectedNotifications.delete(record.id); }
+        render();
+      });
+      label.append(selectAll, el("span", "", bulkBusy ? "Updating..." : searching ? "Select results" : "Select all")); toolbar.append(label);
       if (selectedNotifications.size) {
         const dismiss = button(`Dismiss (${selectedNotifications.size})`, () => dismissNotifications([...selectedNotifications]), "utility dismiss-selected");
         dismiss.disabled = bulkBusy; toolbar.append(dismiss);
@@ -1010,6 +1081,8 @@
     for (const record of items) {
       const summary = queueSummary(record);
       const row = el("div", "queue-row");
+      row.dataset.queueRecord = record.id;
+      const number = el("span", "queue-number"); number.setAttribute("aria-hidden", "true"); row.append(number);
       if (!history) {
         const checkbox = el("input"); checkbox.type = "checkbox"; checkbox.checked = selectedNotifications.has(record.id); checkbox.disabled = bulkBusy;
         checkbox.setAttribute("aria-label", `Select ${summary.title}`);
@@ -1017,7 +1090,7 @@
       }
       const item = button("", () => { records.set(record.id, record); openRecord(record.id); }, `queue-item ${record.read_at ? "" : "unread"}`);
       const header = el("div", "message-header");
-      header.append(el("strong", "", summary.title), messageTimestamp(record));
+      header.append(el("strong", "", summary.title), relativeTimestamp(record));
       item.append(header, el("div", "meta", summary.message)); row.append(item);
       if (!history) {
         const dismiss = iconButton(`Dismiss ${summary.title}`, "M6 6l12 12M18 6L6 18", () => dismissNotifications([record.id]), "dismiss-item");
@@ -1025,9 +1098,13 @@
       }
       content.append(row);
     }
-    if (!items.length) content.append(el("div", "empty-state", loadingQueue ? "Loading..." : history ? "No notification history" : "No pending requests"));
-    if ((history && hasMoreHistory) || (!history && unseenPending > 0)) content.append(button(loadingQueue ? "Loading..." : "Load more", () => loadHistory(), "utility"));
+    if (!items.length) content.append(el("div", "empty-state", (searching ? searchBusy : loadingQueue) ? "Loading..." : searching ? "No matching messages" : history ? "No notification history" : "No pending requests"));
+    if (searching ? searchMore : (history && hasMoreHistory) || (!history && unseenPending > 0)) {
+      const more = button((searching ? searchBusy : loadingQueue) ? "Loading..." : "Load more", () => searching ? searchMessages() : loadHistory(), "utility");
+      more.disabled = searching ? searchBusy : loadingQueue; content.append(more);
+    }
     content.scrollTop = scroll;
+    updateQueueCursor(list, rowFocused);
     return list;
   }
   async function loadHistory(reset = false) {
@@ -1106,7 +1183,22 @@
       view = el("section", "notification-settings"); view.setAttribute("aria-label", "Notification settings");
       const heading = el("div", "settings-heading");
       heading.append(el("h1", "", "Notifications"), button("Close bar", hideBar, "utility close-bar")); view.append(heading);
-      const form = el("div", "settings-fields"); view.append(form);
+      const tabs = el("div", "segments settings-tabs"); tabs.setAttribute("role", "tablist"); tabs.setAttribute("aria-label", "Settings sections");
+      const panels = new Map(); view.append(tabs);
+      for (const [id, title] of [["appearance", "Appearance"], ["delivery", "Delivery"], ["shortcuts", "Shortcuts"]]) {
+        const tab = button(title, () => { settingsTab = id; render(); });
+        tab.setAttribute("role", "tab"); tab.id = `settings-tab-${id}`; tab.dataset.settingsTab = id;
+        tab.setAttribute("aria-controls", `settings-panel-${id}`); tabs.append(tab);
+        const panel = el("div", "settings-fields"); panel.id = `settings-panel-${id}`; panel.setAttribute("role", "tabpanel");
+        panel.setAttribute("aria-labelledby", tab.id); panel.dataset.settingsPanel = id; panels.set(id, panel); view.append(panel);
+      }
+      tabs.addEventListener("keydown", event => {
+        if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+        event.preventDefault(); event.stopPropagation();
+        const buttons = [...tabs.children], index = buttons.indexOf(document.activeElement);
+        const next = event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1 : (index + (event.key === "ArrowLeft" ? -1 : 1) + buttons.length) % buttons.length;
+        buttons[next].click(); buttons[next].focus();
+      });
       const fields = [
         ["placement", "Position", [["notch", "Notch"], ["right", "Right side"], ["custom", "Custom"]]],
         ["display", "Display", []],
@@ -1122,6 +1214,8 @@
         ["idle_seconds", "Idle time before mobile delivery", null],
       ];
       for (const [key, title, options] of fields) {
+        const category = ["keyboard_hints", "focus_shortcut"].includes(key) ? "shortcuts" : ["delivery", "sound", "mobile_when_idle", "idle_seconds"].includes(key) ? "delivery" : "appearance";
+        const form = panels.get(category);
         const row = el("label", "setting-row"), input = el(Array.isArray(options) ? "select" : "input");
         input.dataset.setting = key; input.setAttribute("aria-label", title);
         if (Array.isArray(options)) for (const [value, text] of options) { const option = el("option", "", text); option.value = value; input.append(option); }
@@ -1150,8 +1244,25 @@
           form.append(position);
         }
       }
+      const help = el("dl", "shortcut-help");
+      for (const [keys, action] of [
+        ["Global focus shortcut", "Show and focus the bar; press again to collapse and return to your app."],
+        ["Option, Option", "Toggle button hints while the bar has focus."],
+        ["H / L", "Previous / next message card."],
+        ["J / K", "Next / previous list row. Prefix with a count, such as 3j."],
+        ["Enter", "Open the selected message."],
+        ["/", "Search the current message list. Escape returns to navigation and keeps the search."],
+        ["Home / End", "First / last list row."],
+        ["Escape", "Clear a count or search, close settings, or collapse the bar."],
+      ]) help.append(el("dt", "", keys), el("dd", "", action));
+      panels.get("shortcuts").append(el("p", "shortcuts-note", "Button hints and local shortcuts work while the bar has keyboard focus. The global focus shortcut works from any app."), help);
       view._notice = el("div", "notice settings-notice"); view._notice.setAttribute("role", "status"); view.append(view._notice);
     }
+    for (const tab of view.querySelectorAll("[data-settings-tab]")) {
+      const active = tab.dataset.settingsTab === settingsTab;
+      tab.setAttribute("aria-selected", String(active)); tab.tabIndex = active ? 0 : -1;
+    }
+    for (const panel of view.querySelectorAll("[data-settings-panel]")) panel.hidden = panel.dataset.settingsPanel !== settingsTab;
     if (shortcutError) view._notice.textContent = shortcutError;
     const values = { delivery: "enhanced", placement: "notch", display: "primary", focus: "follow", preview_seconds: 8, hover_expand: false, keyboard_hints: false, focus_shortcut: "Ctrl+Alt+w", sound: true, menu_bar_icon: true, mobile_when_idle: true, idle_seconds: 60, ...snapshot.settings };
     const display = view.querySelector('[data-setting="display"]');
@@ -1395,7 +1506,7 @@
     });
     if (targets.length !== hintTargets.length || targets.some((node,i) => node !== hintTargets[i])) {
       hintTargets = targets; hintInput = ""; hintOverlay.replaceChildren();
-      const alphabet = "ASGJKQWETYUIOPZXVBM", length = Math.max(1, Math.ceil(Math.log(Math.max(1, targets.length))/Math.log(alphabet.length)));
+      const alphabet = "ASGQWETYUIOPZXVBM", length = Math.max(1, Math.ceil(Math.log(Math.max(1, targets.length))/Math.log(alphabet.length)));
       hintLabels = targets.map((node, index) => {
         let label = "", value = index;
         for (let i=0;i<length;i++) { label = alphabet[value % alphabet.length]+label; value = Math.floor(value/alphabet.length); }
@@ -1411,7 +1522,7 @@
   }
   function handleHintKey(event) {
     if (!snapshot.settings?.keyboard_hints || snapshot.remote || preview || !document.hasFocus()) return false;
-    if (event.isComposing || event.target.closest('input,textarea,select,[contenteditable="true"]') || event.ctrlKey || event.metaKey || event.altKey) return false;
+    if (event.isComposing || event.target.closest?.('input,textarea,select,[contenteditable="true"]') || event.ctrlKey || event.metaKey || event.altKey) return false;
     if (event.key === "Escape" && hintInput) { hintInput = ""; event.preventDefault(); refreshHints(); return true; }
     if (event.key === "Backspace" && hintInput) { hintInput = hintInput.slice(0,-1); event.preventDefault(); refreshHints(); return true; }
     if (!/^[a-z]$/i.test(event.key)) return false;
@@ -1425,6 +1536,48 @@
     } else hintInput = hintLabels.some(label => label.startsWith(next)) ? next : "";
     refreshHints(); return true;
   }
+  function handleNavigationKey(event) {
+    if (event.defaultPrevented || event.isComposing || !document.hasFocus() || event.metaKey || event.altKey || event.ctrlKey || settingsOpen || todosOpen || menu) return false;
+    const list = queue && !ignoredOpen && host.querySelector(".queue");
+    const editing = event.target.closest?.('input,textarea,select,[contenteditable="true"]');
+    const searchInput = list && event.target === list._search;
+    if (editing && !searchInput) return false;
+    if (searchInput && event.key === "Escape") {
+      event.preventDefault(); queueCount = ""; list._search.blur(); updateQueueCursor(list, true); return true;
+    }
+    if (editing && !["ArrowDown", "ArrowUp", "Enter"].includes(event.key)) return false;
+    if (list) {
+      const rows = [...list.querySelectorAll("[data-queue-record]")];
+      const index = Math.max(0, rows.findIndex(row => row.dataset.queueRecord === queueCursor));
+      if (!editing && /^\d$/.test(event.key)) {
+        event.preventDefault(); queueCount = (queueCount + event.key).slice(0, 6); hintInput = ""; updateQueueCursor(list); return true;
+      }
+      if (!editing && event.key === "/") {
+        event.preventDefault(); queueCount = ""; hintInput = "";
+        native({ native: "text_focus", active: true }); list._search.focus(); list._search.select(); updateQueueCursor(list); return true;
+      }
+      if (event.key === "Escape" && (queueCount || queueQuery)) {
+        event.preventDefault();
+        if (queueCount) { queueCount = ""; updateQueueCursor(list); } else { queueQuery = ""; scheduleSearch(); }
+        return true;
+      }
+      if (["j", "k", "J", "K", "ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+        event.preventDefault(); hintInput = "";
+        const step = ["j", "J", "ArrowDown"].includes(event.key) ? 1 : -1;
+        const next = event.key === "Home" ? 0 : event.key === "End" ? rows.length - 1 : index + step * Number(queueCount || 1);
+        queueCursor = rows[Math.max(0, Math.min(rows.length - 1, next))]?.dataset.queueRecord || null;
+        queueCount = ""; updateQueueCursor(list, true); return true;
+      }
+      if (event.key === "Enter" && (searchInput || event.target.closest?.(".queue-item") || event.target === host || event.target === document.body || event.target === document)) {
+        event.preventDefault(); queueCount = ""; rows[index]?.querySelector(".queue-item").click(); return true;
+      }
+      queueCount = ""; updateQueueCursor(list);
+    }
+    if (!editing && current && !queue && ["h", "l", "H", "L"].includes(event.key)) {
+      event.preventDefault(); hintInput = ""; navigate(event.key.toLowerCase() === "h" ? -1 : 1); return true;
+    }
+    return false;
+  }
   window.addEventListener("blur", () => { hintInput = ""; hintOverlay.replaceChildren(); hintTargets = []; hintLabels = []; });
   window.addEventListener("focus", refreshHints);
   setInterval(refreshHints, 80);
@@ -1437,6 +1590,7 @@
     if (!focused) { native({ native: "text_focus", active: false }); resumeTimer(); }
   }));
   document.addEventListener("keydown", event => {
+    if (handleNavigationKey(event)) return;
     if (handleHintKey(event)) return;
     if (event.key === "Escape") { event.preventDefault(); if (settingsOpen) closeSettings(); else if (menu) toggleMenu(menu); else collapse(); }
     if ((event.metaKey || event.ctrlKey) && event.shiftKey && ["[", "]", "{", "}"].includes(event.key)) {

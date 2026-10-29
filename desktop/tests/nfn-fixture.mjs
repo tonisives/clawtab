@@ -73,7 +73,7 @@ window.webkit = { messageHandlers: { nfn: { postMessage(value) {
     record.dismissed_at = Date.now(); record.read_at = Date.now();
     response = { focused: true, record };
   }
-  if (command.op === "list") response = { records: fixture.listRecords(command.pending_only).slice(command.offset, command.offset + 50), next_offset: command.offset + 50 };
+  if (command.op === "list") response = { records: fixture.listRecords(command.pending_only).filter(record => (command.query || "").toLowerCase().split(/\s+/).filter(Boolean).every(term => JSON.stringify(record.request).toLowerCase().includes(term))).slice(command.offset, command.offset + 50), next_offset: command.offset + 50 };
   setTimeout(() => window.nfn.receive({ type: "response", token, value: response }), 1);
   };
   if (fixture.heldOps.has(command.op)) fixture.deferred.push({ command, complete }); else complete();

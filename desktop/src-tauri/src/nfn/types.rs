@@ -385,6 +385,8 @@ pub enum NfnCommand {
         offset: usize,
         #[serde(default)]
         pending_only: bool,
+        #[serde(default)]
+        query: String,
     },
     Cancel {
         id: String,

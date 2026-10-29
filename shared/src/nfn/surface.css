@@ -123,6 +123,12 @@ button.send { flex: none; align-self: flex-end; min-width: 54px; padding: 7px 12
 .media img, .media video { display: block; width: 100%; max-height: 320px; object-fit: contain; background: #0a0a0a; border-radius: 6px; }
 .queue { display: flex; flex-direction: column; padding: 6px; min-height: 0; height: min(420px, calc(var(--surface-max-height, 860px) - var(--notch-overlap, 0px) - 44px)); overflow: hidden; }
 .queue-content { min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.queue-search { display: flex; align-items: center; gap: 8px; margin: 0 4px 8px; }
+.queue-search input { flex: 1; width: 0; font-size: 12px; }
+.queue-mode { flex: none; min-width: 64px; color: var(--muted); font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.queue-number { flex: none; width: 24px; text-align: right; padding-right: 4px; color: var(--muted); font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums; }
+.queue-row[data-selected="true"] { background: #252529; border-radius: 6px; }
+.queue-row[data-selected="true"] .queue-number { color: #c4c9e8; }
 .segments { flex: none; display: flex; gap: 3px; padding: 3px; margin: 2px 2px 8px; background: #1c1c1e; border-radius: 8px; }
 .segments button { flex: 1; padding: 5px 12px; border: 0; color: var(--muted); background: transparent; border-radius: 5px; font-size: 12px; }
 .segments button[aria-selected="true"] { background: #38383a; color: #e4e4e4; }
@@ -145,6 +151,12 @@ select, input { min-width: 0; border: 1px solid #333; border-radius: 6px; backgr
 .settings-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .settings-heading button { font-size: 12px; border-radius: 20px; }
 .settings-fields { display: flex; flex-direction: column; gap: 12px; }
+.settings-tabs { margin: 0 0 16px; }
+.setting-row input[type="text"] { width: 190px; }
+.shortcuts-note { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.shortcut-help { display: grid; grid-template-columns: 112px 1fr; gap: 12px 16px; margin: 0; padding: 12px 0 0; border-top: 1px solid var(--line); font-size: 12px; line-height: 1.5; }
+.shortcut-help dt { color: #c4c9e8; }
+.shortcut-help dd { margin: 0; color: var(--muted); }
 .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12px; }
 .setting-row select { width: 190px; }
 .setting-row input[type="number"] { width: 80px; }

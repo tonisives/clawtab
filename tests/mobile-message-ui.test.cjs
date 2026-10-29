@@ -246,6 +246,15 @@ test("offline machines keep their cached messages available during a live list r
   assert.equal(result.records[0].id, "mac-b::same-id");
 });
 
+test("message search forwards the query and filters cached offline messages before pagination", async () => {
+  const matched = record("mac-b", "match"); matched.request.body = "Unique caption";
+  const h = harness([record("mac-a"), record("mac-b"), matched]);
+  h.options.machines = () => [{ id: "mac-a", online: true }, { id: "mac-b", online: false }];
+  const result = await h.controller.execute({ op: "list", offset: 0, pending_only: true, query: "UNIQUE caption" });
+  assert.deepEqual(Array.from(result.records, record => record.id), ["mac-b::match"]);
+  assert.equal(h.calls[0].query, "UNIQUE caption");
+});
+
 test("context keeps scoped source IDs for remote agent navigation", async () => {
   const h = harness();
   const result = await h.controller.execute({ op: "context", id: "mac-b::same-id" });

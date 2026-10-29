@@ -581,9 +581,10 @@ impl Service {
             NfnCommand::List {
                 offset,
                 pending_only,
+                query,
             } => {
                 return Ok(
-                    json!({"records":if pending_only { self.store.pending_page(offset)? } else { self.store.list(offset)? },"offset":offset,"next_offset":offset+50}),
+                    json!({"records":self.store.search(offset, pending_only, &query)?,"offset":offset,"next_offset":offset+50}),
                 )
             }
             NfnCommand::Templates => return Ok(templates::list()),

@@ -31,7 +31,7 @@ pub async fn message(args: &[String]) -> Result<Value, String> {
             "  [--channel desktop|mobile|telegram] [--choice [ID=]LABEL] [--wait] [--timeout SECONDS]",
             "  [--title TITLE] [--template ID] [--chat ID] [--response-destination result|agent_message]",
             "cwtctl message send --stdin [--wait] [--timeout SECONDS]",
-            "cwtctl message list [--pending] [--offset N]",
+            "cwtctl message list [--pending] [--offset N] [--query TEXT]",
             "cwtctl message get|wait|cancel|read|dismiss ID [--timeout SECONDS]",
             "cwtctl message ignore|unignore ID",
             "cwtctl message ignored-agents",
@@ -45,7 +45,7 @@ pub async fn message(args: &[String]) -> Result<Value, String> {
             submit(request, waits, timeout).await
         }
         "list" => {
-            validate_flags(&args[1..], &["--pending"], &["--offset"])?;
+            validate_flags(&args[1..], &["--pending"], &["--offset", "--query"])?;
             let offset = flag_value(args, "--offset")?
                 .unwrap_or("0")
                 .parse()
@@ -53,6 +53,7 @@ pub async fn message(args: &[String]) -> Result<Value, String> {
             call(NfnCommand::List {
                 offset,
                 pending_only: args.iter().any(|a| a == "--pending"),
+                query: flag_value(args, "--query")?.unwrap_or("").to_owned(),
             })
             .await
         }
