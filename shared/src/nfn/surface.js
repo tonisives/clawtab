@@ -17,6 +17,7 @@
   let settingsOpen = false, settingsBusy = false, settingsReturnExpanded = false;
   let explicitOpen = false, presented = false, hiddenByUser = false;
   let geometry = {}, layoutAnimation = null, contentAnimations = [], lastSize = "", renderedLayout = "";
+  let resizedSize = null, resizing = null;
   const autoYesBusy = new Set();
   const remoteMedia = new Map();
   const selectedNotifications = new Set();
@@ -470,6 +471,7 @@
   function collapse(keepVisible, finished = false) {
     if (!finished) reviewVersion++;
     if (typeof keepVisible !== "boolean") keepVisible = explicitOpen && !pendingCount();
+    finishResize(); resizedSize = null;
     leaveSettings(); todosOpen = false;
     presented = false; explicitOpen = keepVisible === true; native({ native: "presentation", active: explicitOpen });
     clearTimeout(completionTimer); pauseTimer(); stopContext(); expanded = false; details = false; queue = false; current = null; focused = false; menu = null;
@@ -496,8 +498,9 @@
     if (actionsInProgress.has(id)) return;
     leaveSettings();
     const replyFocused = card?._reply && document.activeElement === card._reply;
-    clearTimeout(completionTimer); pauseTimer(); stopContext(); current = id; queueReturnId = id; expanded = true; details = false; queue = false; renderedId = null; menu = null;
+    clearTimeout(completionTimer); pauseTimer(); stopContext(); current = id; queueReturnId = id; expanded = true; details = Boolean(resizedSize); queue = false; renderedId = null; menu = null;
     call({ op: "read", id }).catch(error => showError(error, id)); render();
+    startContext();
     if (replyFocused && card?._reply) card._reply.focus({ preventScroll: true });
   }
   function openLatest() {
@@ -1286,6 +1289,87 @@
     }
     return view;
   }
+  function canResize() {
+    return current && !queue && !settingsOpen && !todosOpen && !preview && !snapshot.remote;
+  }
+  function applyResizedSize() {
+    const active = canResize() && resizedSize;
+    host.classList.toggle("user-sized", Boolean(active));
+    host.style.width = active ? `${resizedSize.width}px` : "";
+    host.style.height = active ? `${resizedSize.height}px` : "";
+  }
+  function resizeTo(width, height) {
+    const maxWidth = geometry.max_width || 1000, maxHeight = geometry.max_height || 860;
+    resizedSize = {
+      width: Math.round(Math.max(Math.min(520, maxWidth), Math.min(width, maxWidth))),
+      height: Math.round(Math.max(Math.min(280, maxHeight), Math.min(height, maxHeight)))
+    };
+    applyResizedSize(); size();
+  }
+  function revealResizeDetails() {
+    expanded = true;
+    pauseTimer(); stopAnimation();
+    if (!details) { stopContext(); details = true; menu = null; renderedId = null; render(); startContext(); }
+  }
+  function finishResize(event) {
+    if (!resizing || event && event.pointerId !== resizing.pointerId) return;
+    const { control, pointerId } = resizing; resizing = null;
+    document.removeEventListener("pointermove", moveResize);
+    document.removeEventListener("pointerup", finishResize);
+    document.removeEventListener("pointercancel", finishResize);
+    if (control.hasPointerCapture(pointerId)) control.releasePointerCapture(pointerId);
+    host.classList.remove("resizing");
+  }
+  function moveResize(event) {
+    if (!resizing || event.pointerId !== resizing.pointerId) return;
+    const { x, y, width, height, edge } = resizing;
+    const dx = event.screenX - x, dy = event.screenY - y;
+    if (!resizing.started && Math.hypot(dx, dy) < 3) return;
+    event.preventDefault();
+    if (!resizing.started) {
+      resizing.started = true;
+      resizedSize = { width, height };
+      revealResizeDetails();
+    }
+    host.classList.add("resizing");
+    const horizontal = edge.includes("w") ? -dx : edge.includes("e") ? dx : 0;
+    resizeTo(width + horizontal * (placement === "notch" ? 2 : 1), height + (edge.includes("s") ? dy : 0));
+  }
+  function renderResizeHandles() {
+    for (const edge of ["w", "e", "s", "sw", "se"]) {
+      let control = host.querySelector(`[data-resize="${edge}"]`);
+      if (!control) {
+        control = el("div", `resize-handle resize-${edge}`); control.dataset.resize = edge;
+        control.setAttribute("role", "separator"); control.tabIndex = 0;
+        control.setAttribute("aria-label", edge.length > 1 ? "Resize message bar" : edge === "s" ? "Resize message bar height" : "Resize message bar width");
+        control.setAttribute("aria-orientation", edge === "s" ? "horizontal" : "vertical");
+        control.addEventListener("pointerdown", event => {
+          if (event.button !== 0 || !canResize()) return;
+          event.preventDefault(); event.stopPropagation(); finishResize(); stopAnimation();
+          const bounds = host.getBoundingClientRect();
+          resizing = { control, edge, pointerId: event.pointerId, x: event.screenX, y: event.screenY, width: bounds.width, height: bounds.height, started: false };
+          control.setPointerCapture(event.pointerId);
+          document.addEventListener("pointermove", moveResize);
+          document.addEventListener("pointerup", finishResize);
+          document.addEventListener("pointercancel", finishResize);
+        });
+        control.addEventListener("lostpointercapture", finishResize);
+        control.addEventListener("keydown", event => {
+          const horizontal = edge.includes("w") || edge.includes("e"), vertical = edge.includes("s");
+          const dx = horizontal ? ({ ArrowLeft: -16, ArrowRight: 16 }[event.key] || 0) : 0;
+          const dy = vertical ? ({ ArrowUp: -16, ArrowDown: 16 }[event.key] || 0) : 0;
+          if (!canResize() || !dx && !dy) return;
+          event.preventDefault(); event.stopPropagation(); stopAnimation();
+          const bounds = host.getBoundingClientRect();
+          resizedSize = { width: bounds.width, height: bounds.height }; revealResizeDetails();
+          resizeTo(bounds.width + dx * (edge.includes("w") ? -1 : 1) * (placement === "notch" ? 2 : 1), bounds.height + dy);
+        });
+        host.append(control);
+      }
+      // The native surface stays attached at its top and right (or notch center).
+      control.hidden = !canResize() || placement !== "notch" && edge.includes("e");
+    }
+  }
   function draggableBar(control) {
     let origin = null, dragged = false;
     control.addEventListener("pointerdown", event => {
@@ -1321,7 +1405,7 @@
   function render() {
     if (reducedMotion.matches || geometry.reduce_motion) stopArrivalAnimation();
     const before = host.getBoundingClientRect();
-    const signature = JSON.stringify([current, expanded, details, queue, settingsOpen, todosOpen, menu, replyStates.get(current), geometry, snapshot.visible, records.get(current)?.request]);
+    const signature = JSON.stringify([current, expanded, details, queue, settingsOpen, todosOpen, menu, replyStates.get(current), resizedSize, geometry, snapshot.visible, records.get(current)?.request]);
     const continuingAnimation = layoutAnimation && signature === renderedLayout;
     if (!continuingAnimation) stopAnimation();
     renderedLayout = signature;
@@ -1331,6 +1415,7 @@
     }
     if (!preview && !settingsOpen && !todosOpen && (hiddenByUser || (!explicitOpen && !presented && (!snapshot.visible || (!current && !queue && !count && !todoItems().length))))) { stopArrivalAnimation(); host.className = "empty"; host.replaceChildren(); renderedId = null; card = null; stopContext(); size(); return; }
     host.className = `${placement} ${expanded ? "expanded" : !current ? "pill" : ""} ${details && !settingsOpen ? "details-open" : ""} ${settingsOpen ? "settings-open" : ""} ${queue && !settingsOpen ? "queue-open" : ""} ${menu ? "menu-open" : ""} ${todosOpen ? "todos-open" : ""}`;
+    applyResizedSize(); renderResizeHandles();
     let top = host.querySelector(".top");
     if (!top) {
       top = el("div", "top"); host.prepend(top);
@@ -1387,7 +1472,7 @@
       }
       updateCard();
     } else { host.querySelector(".card")?.remove(); host.querySelector(".queue")?.remove(); renderedId = null; card = null; }
-    renderMenu(); cleanupRemoteMedia(); if (!continuingAnimation) animateLayout(before, !queue && !menu && !settingsOpen);
+    renderMenu(); cleanupRemoteMedia(); if (resizing) size(); else if (!continuingAnimation) animateLayout(before, !queue && !menu && !settingsOpen);
   }
   function receive(value) {
     if (value.type === "keyboard_focus") {
