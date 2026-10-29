@@ -77,6 +77,7 @@ static void verifyResizeCorners(void (^finish)(void)) {
                         || (!notch && fabs(NSMinX(after) - NSMinX(before)) > 1)) {
                         fprintf(stderr, "Right corner dragging does not preserve its opposite edge\n"); exit(1);
                     }
+                    saveSurfaceSnapshot(notch ? @"/tmp/clawtab-resize-corner-notch.png" : @"/tmp/clawtab-resize-corner-right.png", ^{
                     [surface.web evaluateJavaScript:@"document.querySelector('.resize-se').dispatchEvent(new KeyboardEvent('keydown', {key:'ArrowLeft', bubbles:true}))" completionHandler:^(id result, NSError *restoreError) {
                         if (restoreError) { fprintf(stderr, "Could not restore resized width\n"); exit(1); }
                         waitForSettledSurface(0, ^{
@@ -84,6 +85,7 @@ static void verifyResizeCorners(void (^finish)(void)) {
                             finish();
                         });
                     }];
+                    });
                 });
             });
         });
