@@ -1515,8 +1515,8 @@
         records.set(record.id, record);
         if (pendingRecords(true).length > before) unseenPending = Math.max(0, unseenPending - 1);
         openRecord(record.id);
-        if (record.request.media?.length) toggleDetails();
-        else if (value.popup && record.request.template === "update") { expanded = false; render(); resumeTimer(); }
+        if (record.request.media?.length) { if (!details) toggleDetails(); }
+        else if (value.popup && record.request.template === "update" && !resizedSize) { expanded = false; render(); resumeTimer(); }
       };
       if (records.has(value.id)) open(records.get(value.id));
       else call({ op: "get", id: value.id }).then(open).catch(error => {
@@ -1573,7 +1573,7 @@
       clearTimeout(completionTimer); pauseTimer(); stopContext();
       const arrival = records.get(value.arrival), key = threadKey(arrival);
       current = (key && pendingCards().find(record => threadKey(record) === key)?.id) || value.arrival;
-      queueReturnId = current; queue = false; history = false; details = false; menu = null;
+      queueReturnId = current; queue = false; history = false; details = Boolean(resizedSize); menu = null;
       remaining = (value.settings?.preview_seconds || 8) * 1000; renderedId = null;
     }
     render(); resumeTimer();
