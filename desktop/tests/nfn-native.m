@@ -49,28 +49,43 @@ static void saveSurfaceSnapshot(NSString *path, void (^finish)(void)) {
     }];
 }
 
+static void sendResizePointer(NSEventType type, NSPoint screenPoint) {
+    NSEvent *event = [NSEvent mouseEventWithType:type location:[surface.panel convertPointFromScreen:screenPoint] modifierFlags:0 timestamp:NSProcessInfo.processInfo.systemUptime windowNumber:surface.panel.windowNumber context:nil eventNumber:1 clickCount:1 pressure:type == NSEventTypeLeftMouseUp ? 0 : 1];
+    [NSApp sendEvent:event];
+}
+
 static void verifyResizeCorners(void (^finish)(void)) {
     NSRect before = [surface surfaceFrame];
     BOOL notch = surface.notchPlacement;
-    NSString *script = @"(() => { const handle = document.querySelector('.resize-se'); if (!handle || handle.hidden) return false; handle.dispatchEvent(new KeyboardEvent('keydown', {key:'ArrowRight', bubbles:true})); return true; })()";
-    [surface.web evaluateJavaScript:script completionHandler:^(id enabled, NSError *error) {
-        if (error || ![enabled boolValue]) { fprintf(stderr, "Bottom-right resize handle is unavailable\n"); exit(1); }
-        waitForSettledSurface(0, ^{
-            NSRect after = [surface surfaceFrame];
-            CGFloat growth = notch ? 32 : 16;
-            if (fabs(after.size.width - before.size.width - growth) > 1
-                || fabs(NSMaxY(after) - NSMaxY(before)) > 1
-                || fabs(NSMaxX(after) - NSMaxX(before) - 16) > 1
-                || (!notch && fabs(NSMinX(after) - NSMinX(before)) > 1)) {
-                fprintf(stderr, "Right corner resizing does not preserve its opposite edge\n"); exit(1);
-            }
-            [surface.web evaluateJavaScript:@"document.querySelector('.resize-se').dispatchEvent(new KeyboardEvent('keydown', {key:'ArrowLeft', bubbles:true}))" completionHandler:^(id result, NSError *restoreError) {
-                if (restoreError) { fprintf(stderr, "Could not restore resized width\n"); exit(1); }
-                waitForSettledSurface(0, ^{
-                    printf("Native corner resize checks passed: bottom-right handle, fixed opposite edge, top anchor, and reverse resize.\n");
-                    finish();
+    NSString *script = @"(() => { const handle = document.querySelector('.resize-se'); if (!handle || handle.hidden) return null; const r = handle.getBoundingClientRect(); return [r.x+r.width/2,r.y+r.height/2]; })()";
+    [surface.web evaluateJavaScript:script completionHandler:^(id point, NSError *error) {
+        if (error || ![point isKindOfClass:NSArray.class]) { fprintf(stderr, "Bottom-right resize handle is unavailable\n"); exit(1); }
+        CGFloat y = [point[1] doubleValue];
+        NSPoint location = [surface.web convertPoint:NSMakePoint([point[0] doubleValue], surface.web.isFlipped ? y : surface.web.bounds.size.height - y) toView:nil];
+        NSPoint start = [surface.panel convertPointToScreen:location], end = NSMakePoint(start.x + 16, start.y);
+        sendResizePointer(NSEventTypeLeftMouseDown, start);
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 10), dispatch_get_main_queue(), ^{
+            sendResizePointer(NSEventTypeLeftMouseDragged, end);
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 10), dispatch_get_main_queue(), ^{
+                sendResizePointer(NSEventTypeLeftMouseUp, end);
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 10), dispatch_get_main_queue(), ^{
+                    NSRect after = [surface surfaceFrame];
+                    CGFloat growth = notch ? 32 : 16;
+                    if (fabs(after.size.width - before.size.width - growth) > 1
+                        || fabs(NSMaxY(after) - NSMaxY(before)) > 1
+                        || fabs(NSMaxX(after) - NSMaxX(before) - 16) > 1
+                        || (!notch && fabs(NSMinX(after) - NSMinX(before)) > 1)) {
+                        fprintf(stderr, "Right corner dragging does not preserve its opposite edge\n"); exit(1);
+                    }
+                    [surface.web evaluateJavaScript:@"document.querySelector('.resize-se').dispatchEvent(new KeyboardEvent('keydown', {key:'ArrowLeft', bubbles:true}))" completionHandler:^(id result, NSError *restoreError) {
+                        if (restoreError) { fprintf(stderr, "Could not restore resized width\n"); exit(1); }
+                        waitForSettledSurface(0, ^{
+                            printf("Native corner resize checks passed: real bottom-right pointer drag, fixed opposite edge, top anchor, and reverse resize.\n");
+                            finish();
+                        });
+                    }];
                 });
-            }];
+            });
         });
     }];
 }
