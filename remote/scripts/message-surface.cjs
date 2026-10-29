@@ -16,7 +16,19 @@ body{display:flex;justify-content:center}
 .top .brand{pointer-events:none}
 button.bar-toggle{touch-action:auto;cursor:pointer}
 button,input,select,textarea{font-size:16px}
-.actions button,.send{min-height:40px}
+button{min-height:44px;border-radius:999px;padding:8px 16px;font-size:14px;font-weight:600}
+button.utility:not(.icon-button):not(.close):not(.nav-step):not(.menu-link):not(.reply-toggle):not(.auto-yes-switch):not(.todo-toggle){min-height:44px;padding:8px 16px;border:1px solid var(--line);background:#202020;color:var(--accent);border-radius:999px;font-size:14px;font-weight:600}
+button.utility:not(.icon-button):not(.close):not(.nav-step):not(.menu-link):not(.reply-toggle):not(.auto-yes-switch):not(.todo-toggle):hover{background:#292929}
+button.primary,.actions button,button.open-session,button.send{min-height:44px;padding:8px 16px;border-radius:999px;font-size:14px;font-weight:600;color:var(--accent);border-color:var(--accent);background:#7986cb1a}
+button.primary:hover,.actions button:hover,button.open-session:hover,button.send:hover{background:#7986cb30}
+button:active:not(:disabled){opacity:.65}
+button.bar-toggle,button.todo-toggle{min-height:0}
+button.icon-button{min-height:36px;border-radius:999px}
+button.close,button.nav-step{min-height:36px;min-width:36px;padding:4px}
+button.queue-item,button.menu-link,button.reply-toggle,button.auto-yes-switch,.segments button{border-radius:6px}
+.todo-agent{margin-top:0}
+.todo-heading,.todo-row{align-items:center}
+.todo-add{grid-template-columns:minmax(0,1fr) auto}
 .icon-button{min-height:36px}
 .message{max-height:35dvh}
 .message-thread{max-height:35dvh}

@@ -1,8 +1,8 @@
-import { useRef, type ReactNode } from "react"
+import { useEffect, useRef, type ReactNode } from "react"
 import { Platform, Pressable, ScrollView, StyleSheet, View } from "react-native"
 import { SafeAreaProvider } from "react-native-safe-area-context"
 import { Ionicons } from "@expo/vector-icons"
-import { NavigationContainer, NavigationIndependentTree, DarkTheme, useIsFocused } from "expo-router/react-navigation"
+import { NavigationContainer, NavigationIndependentTree, DarkTheme, useIsFocused, useNavigation } from "expo-router/react-navigation"
 import { createNativeStackNavigator } from "expo-router/build/react-navigation/native-stack"
 import { colors } from "@clawtab/shared"
 import { MachineNavigationProvider, type MachineModalProps, type MachineOnboardingContent } from "../../../shared/src/machines/Onboarding"
@@ -11,8 +11,14 @@ type PageParams = { id: string; title: string }
 type Routes = { root: PageParams; page: PageParams }
 let Stack = createNativeStackNavigator<Routes>()
 let Presentation = createNativeStackNavigator<{ anchor: undefined; sheet: undefined }>()
-let initialState = { index: 1, routes: [{ name: "anchor" }, { name: "sheet" }] }
-let SheetAnchor = () => <View />
+let SheetAnchor = () => {
+  let navigation = useNavigation<{ navigate: (name: "sheet") => void }>()
+  useEffect(() => {
+    let frame = requestAnimationFrame(() => navigation.navigate("sheet"))
+    return () => cancelAnimationFrame(frame)
+  }, [navigation])
+  return <View />
+}
 let SheetOverlay = ({ children }: { children: ReactNode }) => useIsFocused() ? <>{children}</> : null
 
 let SheetCloseButton = ({ title, onClose }: { title: string; onClose: () => void }) => (
@@ -22,6 +28,7 @@ let SheetCloseButton = ({ title, onClose }: { title: string; onClose: () => void
 )
 
 export let MachineNavigationModal = ({ title, children, overlay, onClose }: MachineModalProps) => {
+  let presented = useRef(false)
   let pages = useRef(new Map<string, MachineOnboardingContent>())
   let nextPage = useRef(0)
   let closeButton = () => <SheetCloseButton title={title} onClose={onClose} />
@@ -55,11 +62,15 @@ export let MachineNavigationModal = ({ title, children, overlay, onClose }: Mach
   return <View style={styles.host} pointerEvents="box-none">
     <SafeAreaProvider>
       <NavigationIndependentTree>
-        <NavigationContainer theme={DarkTheme} initialState={initialState} onStateChange={(state) => { if (state?.routes[state.index ?? 0]?.name === "anchor") onClose() }}>
+        <NavigationContainer theme={DarkTheme} onStateChange={(state) => {
+          let name = state?.routes[state.index ?? 0]?.name
+          if (name === "sheet") presented.current = true
+          else if (name === "anchor" && presented.current) onClose()
+        }}>
           {/* Present with UIKit rather than nesting native screens inside an RN Modal. */}
           <Presentation.Navigator screenOptions={{ headerShown: false, contentStyle: styles.anchor }}>
             <Presentation.Screen name="anchor" component={SheetAnchor} />
-            <Presentation.Screen name="sheet" options={{ presentation: "modal" }}>{renderSheet}</Presentation.Screen>
+            <Presentation.Screen name="sheet" options={{ presentation: "modal", animation: "slide_from_bottom" }}>{renderSheet}</Presentation.Screen>
           </Presentation.Navigator>
         </NavigationContainer>
       </NavigationIndependentTree>
