@@ -98,6 +98,14 @@
     document.dispatchEvent(new PointerEvent(cancel ? "pointercancel" : "pointerup", { pointerId: 19 }));
   };
   const normalSize = surface.getBoundingClientRect();
+  assert(!surface.querySelector('[data-resize="se"]').hidden, "right-side cards expose the bottom-right resize corner");
+  resizeDrag("se", 180, 200); await sleep(30);
+  assert(surface.offsetWidth === 700 && document.querySelector(".logs") && window.fixture.surfaces.at(-1).right_offset === 180, "bottom-right dragging grows the right edge and opens Details");
+  resizeDrag("se", -180, -200); await sleep(30);
+  assert(surface.offsetWidth === 520 && !document.querySelector(".details-content") && window.fixture.surfaces.at(-1).right_offset === 0, "shrinking back to the normal size hides Details and restores the right edge");
+  nav("Next"); await sleep(30);
+  assert(!document.querySelector(".details-content"), "navigation keeps Details hidden after shrinking the message bar");
+  nav("Previous"); await sleep(30);
   resizeDrag("sw", -180, 200);
   await sleep(30);
   const draggedSize = surface.getBoundingClientRect();

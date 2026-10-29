@@ -49,6 +49,32 @@ static void saveSurfaceSnapshot(NSString *path, void (^finish)(void)) {
     }];
 }
 
+static void verifyResizeCorners(void (^finish)(void)) {
+    NSRect before = [surface surfaceFrame];
+    BOOL notch = surface.notchPlacement;
+    NSString *script = @"(() => { const handle = document.querySelector('.resize-se'); if (!handle || handle.hidden) return false; handle.dispatchEvent(new KeyboardEvent('keydown', {key:'ArrowRight', bubbles:true})); return true; })()";
+    [surface.web evaluateJavaScript:script completionHandler:^(id enabled, NSError *error) {
+        if (error || ![enabled boolValue]) { fprintf(stderr, "Bottom-right resize handle is unavailable\n"); exit(1); }
+        waitForSettledSurface(0, ^{
+            NSRect after = [surface surfaceFrame];
+            CGFloat growth = notch ? 32 : 16;
+            if (fabs(after.size.width - before.size.width - growth) > 1
+                || fabs(NSMaxY(after) - NSMaxY(before)) > 1
+                || fabs(NSMaxX(after) - NSMaxX(before) - 16) > 1
+                || (!notch && fabs(NSMinX(after) - NSMinX(before)) > 1)) {
+                fprintf(stderr, "Right corner resizing does not preserve its opposite edge\n"); exit(1);
+            }
+            [surface.web evaluateJavaScript:@"document.querySelector('.resize-se').dispatchEvent(new KeyboardEvent('keydown', {key:'ArrowLeft', bubbles:true}))" completionHandler:^(id result, NSError *restoreError) {
+                if (restoreError) { fprintf(stderr, "Could not restore resized width\n"); exit(1); }
+                waitForSettledSurface(0, ^{
+                    printf("Native corner resize checks passed: bottom-right handle, fixed opposite edge, top anchor, and reverse resize.\n");
+                    finish();
+                });
+            }];
+        });
+    }];
+}
+
 static void verifyMenuLayout(void (^finish)(void)) {
     NSDictionary *original = surface.snapshot;
     NSMutableDictionary *snapshot = [NSJSONSerialization JSONObjectWithData:[NSJSONSerialization dataWithJSONObject:original options:0 error:nil] options:NSJSONReadingMutableContainers error:nil];
@@ -402,7 +428,7 @@ int main(int argc, const char **argv) {
                         if (geometryOnly) {
                             verifyExpansion(^{
                                 printf("Native geometry checks passed: passive arrival, notch overlap, window cycling excluded, animated expansion and fixed top anchor.\n");
-                                verifyMenuLayout(^{ verifyDragging(^{ verifyPresentationLifetime(^{ verifyInlineSettings(^{ clawtab_nfn_stop(); }); }); }); });
+                                verifyResizeCorners(^{ verifyMenuLayout(^{ verifyDragging(^{ verifyPresentationLifetime(^{ verifyInlineSettings(^{ clawtab_nfn_stop(); }); }); }); }); });
                             });
                             return;
                         }
@@ -413,7 +439,7 @@ int main(int argc, const char **argv) {
                                     clawtab_nfn_activate(previousApplication);
                                     verifyExpansion(^{
                                         printf("Native checks passed: platform JSON booleans, passive panel, foreground preserved, notch overlap, window cycling excluded, reply focus, Command-A selection, animated expansion and fixed top anchor. Screenshots: /tmp/clawtab-nfn-native.png, /tmp/clawtab-nfn-expanded.png\n");
-                                        verifyMenuLayout(^{ verifyDragging(^{ verifyPresentationLifetime(^{ verifyInlineSettings(^{ clawtab_nfn_stop(); }); }); }); });
+                                        verifyResizeCorners(^{ verifyMenuLayout(^{ verifyDragging(^{ verifyPresentationLifetime(^{ verifyInlineSettings(^{ clawtab_nfn_stop(); }); }); }); }); });
                                     });
                                 }); });
                             });

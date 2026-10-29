@@ -17,7 +17,7 @@
   let settingsOpen = false, settingsBusy = false, settingsReturnExpanded = false;
   let explicitOpen = false, presented = false, hiddenByUser = false;
   let geometry = {}, layoutAnimation = null, contentAnimations = [], lastSize = "", renderedLayout = "";
-  let resizedSize = null, resizing = null;
+  let resizedSize = null, resizing = null, resizeRightOffset = 0;
   const autoYesBusy = new Set();
   const remoteMedia = new Map();
   const selectedNotifications = new Set();
@@ -371,9 +371,10 @@
   function size() {
     const bounds = host.getBoundingClientRect(), hidden = host.classList.contains("empty");
     const width = hidden ? 0 : bounds.width, height = hidden ? 0 : Math.ceil(bounds.height);
-    const signature = `${width}:${height}`;
+    const rightOffset = canResize() && resizedSize ? resizeRightOffset : 0;
+    const signature = `${width}:${height}:${rightOffset}`;
     if (signature === lastSize) return;
-    lastSize = signature; native({ native: "surface", width, height });
+    lastSize = signature; native({ native: "surface", width, height, right_offset: rightOffset });
   }
   function stopAnimation() {
     layoutAnimation?.cancel(); layoutAnimation = null;
@@ -474,7 +475,7 @@
   function collapse(keepVisible, finished = false) {
     if (!finished) reviewVersion++;
     if (typeof keepVisible !== "boolean") keepVisible = explicitOpen && !pendingCount();
-    finishResize(); resizedSize = null;
+    finishResize(); resizedSize = null; resizeRightOffset = 0;
     leaveSettings(); todosOpen = false;
     presented = false; explicitOpen = keepVisible === true; native({ native: "presentation", active: explicitOpen });
     clearTimeout(completionTimer); pauseTimer(); stopContext(); expanded = false; details = false; queue = false; current = null; focused = false; menu = null;
@@ -507,7 +508,7 @@
     if (actionsInProgress.has(id)) return;
     leaveSettings();
     const replyFocused = card?._reply && document.activeElement === card._reply;
-    clearTimeout(completionTimer); pauseTimer(); stopContext(); current = id; queueReturnId = id; expanded = true; details = Boolean(resizedSize); queue = false; renderedId = null; menu = null;
+    clearTimeout(completionTimer); pauseTimer(); stopContext(); current = id; queueReturnId = id; expanded = true; details = Boolean(resizedSize?.showDetails); queue = false; renderedId = null; menu = null;
     call({ op: "read", id }).catch(error => showError(error, id)); render();
     startContext();
     if (replyFocused && card?._reply) card._reply.focus({ preventScroll: true });
@@ -542,7 +543,9 @@
   }
   function toggleDetails() {
     if (records.get(current)?.details_available === false) return;
-    pauseTimer(); stopContext(); expanded = true; details = !details; menu = null; renderedId = null; render(); startContext();
+    pauseTimer(); stopContext(); expanded = true; details = !details;
+    if (resizedSize) resizedSize.showDetails = details;
+    menu = null; renderedId = null; render(); startContext();
   }
   function toggleMenu(next) {
     if (menu === "agent") contextRequest = null;
@@ -1312,19 +1315,32 @@
     host.style.width = active ? `${resizedSize.width}px` : "";
     host.style.height = active ? `${resizedSize.height}px` : "";
   }
-  function resizeTo(width, height) {
-    const maxWidth = geometry.max_width || 1000, maxHeight = geometry.max_height || 860;
-    resizedSize = {
-      width: Math.round(Math.max(Math.min(520, maxWidth), Math.min(width, maxWidth))),
-      height: Math.round(Math.max(Math.min(280, maxHeight), Math.min(height, maxHeight)))
-    };
-    applyResizedSize(); size();
+  function normalResizeSize() {
+    const width = host.style.width, height = host.style.height, classes = host.className;
+    const contentDisplay = card?._content.style.display;
+    host.style.width = ""; host.style.height = "";
+    host.classList.remove("user-sized", "details-open");
+    if (card) card._content.style.display = "none";
+    const bounds = host.getBoundingClientRect();
+    host.style.width = width; host.style.height = height; host.className = classes;
+    if (card) card._content.style.display = contentDisplay;
+    return { width: bounds.width, height: bounds.height };
   }
-  function revealResizeDetails() {
-    expanded = true;
-    pauseTimer(); stopAnimation();
-    if (records.get(current)?.details_available === false) return;
-    if (!details) { stopContext(); details = true; menu = null; renderedId = null; render(); startContext(); }
+  function resizeTo(width, height, origin) {
+    const east = placement !== "notch" && origin.edge.includes("e");
+    const maxWidth = (east ? geometry.max_width_e : geometry.max_width) || geometry.max_width || 1000;
+    const maxHeight = geometry.max_height || 860;
+    width = Math.round(Math.max(Math.min(520, maxWidth), Math.min(width, maxWidth)));
+    height = Math.round(Math.max(Math.min(280, maxHeight), Math.min(height, maxHeight)));
+    const showDetails = records.get(current)?.details_available !== false
+      && (width > origin.normal.width + 12 || height > origin.normal.height + 12);
+    resizedSize = { width, height, showDetails };
+    if (east) resizeRightOffset = origin.rightOffset + width - origin.width;
+    expanded = true; pauseTimer(); stopAnimation(); applyResizedSize();
+    if (details !== showDetails) {
+      stopContext(); details = showDetails; menu = null; renderedId = null; render(false); startContext();
+    }
+    size();
   }
   function finishResize(event) {
     if (!resizing || event && event.pointerId !== resizing.pointerId) return;
@@ -1341,14 +1357,10 @@
     const dx = event.screenX - x, dy = event.screenY - y;
     if (!resizing.started && Math.hypot(dx, dy) < 3) return;
     event.preventDefault();
-    if (!resizing.started) {
-      resizing.started = true;
-      resizedSize = { width, height };
-      revealResizeDetails();
-    }
+    resizing.started = true;
     host.classList.add("resizing");
     const horizontal = edge.includes("w") ? -dx : edge.includes("e") ? dx : 0;
-    resizeTo(width + horizontal * (placement === "notch" ? 2 : 1), height + (edge.includes("s") ? dy : 0));
+    resizeTo(width + horizontal * (placement === "notch" ? 2 : 1), height + (edge.includes("s") ? dy : 0), resizing);
   }
   function renderResizeHandles() {
     for (const edge of ["w", "e", "s", "sw", "se"]) {
@@ -1362,7 +1374,7 @@
           if (event.button !== 0 || !canResize()) return;
           event.preventDefault(); event.stopPropagation(); finishResize(); stopAnimation();
           const bounds = host.getBoundingClientRect();
-          resizing = { control, edge, pointerId: event.pointerId, x: event.screenX, y: event.screenY, width: bounds.width, height: bounds.height, started: false };
+          resizing = { control, edge, pointerId: event.pointerId, x: event.screenX, y: event.screenY, width: bounds.width, height: bounds.height, normal: normalResizeSize(), rightOffset: resizeRightOffset, started: false };
           control.setPointerCapture(event.pointerId);
           document.addEventListener("pointermove", moveResize);
           document.addEventListener("pointerup", finishResize);
@@ -1376,13 +1388,12 @@
           if (!canResize() || !dx && !dy) return;
           event.preventDefault(); event.stopPropagation(); stopAnimation();
           const bounds = host.getBoundingClientRect();
-          resizedSize = { width: bounds.width, height: bounds.height }; revealResizeDetails();
-          resizeTo(bounds.width + dx * (edge.includes("w") ? -1 : 1) * (placement === "notch" ? 2 : 1), bounds.height + dy);
+          const origin = { edge, width: bounds.width, normal: normalResizeSize(), rightOffset: resizeRightOffset };
+          resizeTo(bounds.width + dx * (edge.includes("w") ? -1 : 1) * (placement === "notch" ? 2 : 1), bounds.height + dy, origin);
         });
         host.append(control);
       }
-      // The native surface stays attached at its top and right (or notch center).
-      control.hidden = !canResize() || placement !== "notch" && edge.includes("e");
+      control.hidden = !canResize();
     }
   }
   function draggableBar(control) {
@@ -1398,7 +1409,7 @@
       if (!origin || event.pointerId !== origin.pointerId) return;
       const dx = event.screenX - origin.x, dy = event.screenY - origin.y;
       if (!dragged && Math.hypot(dx, dy) < 5) return;
-      if (!dragged) { control.setPointerCapture(event.pointerId); pauseTimer(); stopAnimation(); native({ native: "drag", phase: "start", dx, dy }); }
+      if (!dragged) { resizeRightOffset = 0; control.setPointerCapture(event.pointerId); pauseTimer(); stopAnimation(); native({ native: "drag", phase: "start", dx, dy }); }
       dragged = true;
     };
     const finish = () => {
@@ -1417,7 +1428,7 @@
       if (dragged) { event.preventDefault(); event.stopImmediatePropagation(); dragged = false; }
     }, true);
   }
-  function render() {
+  function render(animate = true) {
     if (records.get(current)?.details_available === false) details = false;
     if (reducedMotion.matches || geometry.reduce_motion) stopArrivalAnimation();
     const before = host.getBoundingClientRect();
@@ -1488,7 +1499,7 @@
       }
       updateCard();
     } else { host.querySelector(".card")?.remove(); host.querySelector(".queue")?.remove(); renderedId = null; card = null; }
-    renderMenu(); cleanupRemoteMedia(); if (resizing) size(); else if (!continuingAnimation) animateLayout(before, !queue && !menu && !settingsOpen);
+    renderMenu(); cleanupRemoteMedia(); if (resizing || !animate) size(); else if (!continuingAnimation) animateLayout(before, !queue && !menu && !settingsOpen);
   }
   function receive(value) {
     if (value.type === "keyboard_focus") {
@@ -1580,7 +1591,7 @@
       clearTimeout(completionTimer); pauseTimer(); stopContext();
       const arrival = records.get(value.arrival), key = threadKey(arrival);
       current = (key && pendingCards().find(record => threadKey(record) === key)?.id) || value.arrival;
-      queueReturnId = current; queue = false; history = false; details = Boolean(resizedSize); menu = null;
+      queueReturnId = current; queue = false; history = false; details = Boolean(resizedSize?.showDetails); menu = null;
       remaining = (value.settings?.preview_seconds || 8) * 1000; renderedId = null;
     }
     render(); resumeTimer();
