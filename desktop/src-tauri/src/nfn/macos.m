@@ -360,7 +360,7 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
     NSRect available = screen.visibleFrame;
     CGFloat overlap = notch ? topInset : 0;
     // Keep WebKit's canvas still. Only the shape inside it changes size.
-    CGFloat w = MIN(680, available.size.width - 32);
+    CGFloat w = MIN(available.size.width - 32, MAX(680, available.size.width - 32 - (notch ? 0 : MIN(384, available.size.width / 3))));
     CGFloat h = MIN(MAX(900, available.size.height * .8 + 32), available.size.height - 32);
     CGFloat x = notch ? [camera[@"center"] doubleValue] - w / 2 : NSMaxX(available) - w - MIN(384, available.size.width / 3);
     x = MAX(NSMinX(available) + 16, MIN(x, NSMaxX(available) - w - 16));

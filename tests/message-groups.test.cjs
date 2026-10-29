@@ -4,19 +4,68 @@ const fs = require("node:fs");
 const vm = require("node:vm");
 
 function surface() {
-  const host = { addEventListener() {} };
+  const host = { addEventListener() {}, querySelectorAll: () => [] };
   const window = { matchMedia: () => ({ matches: true, addEventListener() {} }), addEventListener() {} };
   window.parent = window;
   const source = fs.readFileSync(require.resolve("../shared/src/nfn/surface.js"), "utf8")
-    .replace("  window.nfn = {", "  window.groups = { records, pendingCards, cardMessages, addPendingPage, performAction, actionsInProgress }; hiddenByUser = true; render = () => {};\n  window.nfn = {");
+    .replace("  window.nfn = {", "  window.groups = { records, pendingCards, cardMessages, addPendingPage, performAction, actionsInProgress, select(id) { current = id; expanded = true; }, state() { return { current, expanded }; } }; hiddenByUser = true; render = () => {};\n  window.nfn = {");
   vm.runInNewContext(source, {
-    window, document: { getElementById: () => host, addEventListener() {} },
-    ResizeObserver: class { observe() {} }, setTimeout, clearTimeout,
+    window, document: { getElementById: () => host, addEventListener() {},
+      createElement: () => ({ setAttribute() {} }), body: { append() {} } },
+    ResizeObserver: class { observe() {} }, setTimeout, clearTimeout, setInterval() {}, clearInterval() {},
   });
   return { ...window.groups, receive: window.nfn.receive, window };
 }
 const record = (id, time, source = { pane_id: "%1", session_id: "a" }, extra = {}) => ({
   id, created_at: time, status: "pending", request: { source, title: id, body: id }, ...extra,
+});
+
+test("an open completion card closes when the agent resumes, while history remains available", () => {
+  const app = surface();
+  const completion = record("finished", 1);
+  completion.request.data = { event: "agent_finished" };
+  app.records.set(completion.id, completion);
+  app.select(completion.id);
+  app.receive({ type: "snapshot", records: [{ ...completion, status: "resolved" }], pending_count: 0 });
+  assert.equal(app.state().current, null);
+  assert.equal(app.state().expanded, false);
+  assert.equal(app.pendingCards().length, 0);
+  assert.equal(app.records.get(completion.id).status, "resolved");
+
+  app.select(completion.id);
+  app.receive({ type: "snapshot", records: [{ ...completion, status: "resolved" }], pending_count: 0 });
+  assert.equal(app.state().current, completion.id, "an explicitly reopened history entry stays open");
+});
+
+test("resolving another agent's completion leaves the current card open", () => {
+  const app = surface();
+  const current = record("review", 2, { pane_id: "%2" });
+  const completion = record("finished", 1);
+  completion.request.data = { event: "agent_finished" };
+  app.records.set(current.id, current);
+  app.records.set(completion.id, completion);
+  app.select(current.id);
+  app.receive({ type: "snapshot", records: [current, { ...completion, status: "resolved" }], pending_count: 1 });
+  assert.equal(app.state().current, current.id);
+  assert.equal(app.state().expanded, true);
+});
+
+test("an open completion outside the snapshot page closes after refreshing its record", async () => {
+  const app = surface();
+  const completion = record("older-finish", 1);
+  completion.request.data = { event: "agent_finished" };
+  app.records.set(completion.id, completion);
+  app.select(completion.id);
+  app.window.webkit = { messageHandlers: { nfn: { postMessage({ token, command }) {
+    if (!command) return;
+    assert.equal(command.op, "get");
+    assert.equal(command.id, completion.id);
+    app.receive({ type: "response", token, value: { ...completion, status: "resolved" } });
+  } } } };
+  app.receive({ type: "snapshot", records: [], pending_count: 0 });
+  await Promise.resolve();
+  assert.equal(app.state().current, null);
+  assert.equal(app.pendingCards().length, 0);
 });
 
 test("one agent card retains its messages in order and uses the latest message", () => {

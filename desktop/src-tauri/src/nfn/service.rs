@@ -273,10 +273,17 @@ impl Service {
         }
     }
 
-    pub fn sync_alerts(&self, activity: &[crate::ipc::AgentActivity]) {
+    pub fn sync_activity(&self, activity: &[crate::ipc::AgentActivity]) {
         // The next activity poll retries without consuming seen alerts while busy.
         let Ok(_guard) = self.mutation.try_lock() else {
             return;
+        };
+        let mut changed = match resolve_resumed_completions(&self.store, activity) {
+            Ok(changed) => changed,
+            Err(error) => {
+                log::warn!("[nfn] completion synchronization failed: {error}");
+                false
+            }
         };
         let result = super::alerts::sync(
             &self.store,
@@ -294,11 +301,12 @@ impl Service {
                 for record in &changes.created {
                     self.announce(record);
                 }
-                if changes.changed {
-                    self.changed();
-                }
+                changed |= changes.changed;
             }
             Err(error) => log::warn!("[nfn] alert synchronization failed: {error}"),
+        }
+        if changed {
+            self.changed();
         }
     }
 
@@ -1278,6 +1286,37 @@ fn refresh_pending_record(
     true
 }
 
+fn resolve_resumed_completions(
+    store: &Store,
+    activity: &[crate::ipc::AgentActivity],
+) -> Result<bool, String> {
+    let active: HashSet<_> = activity
+        .iter()
+        .filter(|item| item.working || item.asking)
+        .map(|item| item.pane_id.as_str())
+        .collect();
+    if active.is_empty() {
+        return Ok(false);
+    }
+    let mut changed = false;
+    for mut record in store.pending()? {
+        if record.status == "pending"
+            && record.request.data["event"] == "agent_finished"
+            && record
+                .request
+                .source
+                .pane_id
+                .as_deref()
+                .is_some_and(|pane| active.contains(pane))
+        {
+            record.status = "resolved".into();
+            store.save(&mut record)?;
+            changed = true;
+        }
+    }
+    Ok(changed)
+}
+
 fn request_for_completion(source: NfnSource) -> NfnRequest {
     let name = [
         source.task.as_deref(),
@@ -2099,6 +2138,66 @@ mod tests {
         assert!(!local_enabled(&settings, &record));
         // An unread update must not deduplicate the next completion.
         assert!(store.send(request_for_completion(source), None).unwrap().1);
+    }
+
+    #[test]
+    fn resuming_an_agent_resolves_its_read_and_unread_completions_only() {
+        use crate::ipc::AgentActivity;
+
+        for (working, asking) in [(true, false), (false, true)] {
+            let directory = tempfile::tempdir().unwrap();
+            let store = Store::open(&directory.path().join("notifications.sqlite")).unwrap();
+            let source = NfnSource {
+                pane_id: Some("%13".into()),
+                session_id: Some("conversation".into()),
+                ..Default::default()
+            };
+            let mut completions = Vec::new();
+            for read_at in [None, Some(now())] {
+                let (mut record, _) = store.send(request_for_completion(source.clone()), None).unwrap();
+                record.read_at = read_at;
+                store.save(&mut record).unwrap();
+                completions.push(record);
+            }
+            let (other, _) = store.send(request_for_completion(NfnSource {
+                pane_id: Some("%14".into()),
+                ..Default::default()
+            }), None).unwrap();
+            let (update, _) = store.send(NfnRequest {
+                title: "Review this change".into(),
+                template: "update".into(),
+                source: source.clone(),
+                ..Default::default()
+            }, None).unwrap();
+            let (question, _) = store.send(NfnRequest {
+                title: "Allow this command?".into(),
+                source: source.clone(),
+                ..Default::default()
+            }, Some("live-prompt".into())).unwrap();
+            let mut activity = vec![AgentActivity {
+                pane_id: "%13".into(),
+                working: false,
+                asking: false,
+                last_action_at_ms: None,
+                alert: None,
+            }];
+            assert!(!resolve_resumed_completions(&store, &activity).unwrap());
+            assert!(!resolve_resumed_completions(&store, &[]).unwrap());
+            activity[0].working = working;
+            activity[0].asking = asking;
+            assert!(resolve_resumed_completions(&store, &activity).unwrap());
+            assert!(!resolve_resumed_completions(&store, &activity).unwrap());
+            for completion in completions {
+                let resolved = store.get(&completion.id).unwrap();
+                assert_eq!(resolved.status, "resolved");
+                assert_eq!(resolved.read_at, completion.read_at);
+            }
+            for record in [other, update, question] {
+                assert_eq!(store.get(&record.id).unwrap().status, "pending");
+            }
+            let (next_turn, _) = store.send(request_for_completion(source), None).unwrap();
+            assert!(next_turn.pending());
+        }
     }
 
     #[test]

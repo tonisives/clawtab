@@ -17,6 +17,7 @@
   let settingsOpen = false, settingsBusy = false, settingsReturnExpanded = false;
   let explicitOpen = false, presented = false, hiddenByUser = false;
   let geometry = {}, layoutAnimation = null, contentAnimations = [], lastSize = "", renderedLayout = "";
+  let resizedSize = null, resizing = null;
   const autoYesBusy = new Set();
   const remoteMedia = new Map();
   const selectedNotifications = new Set();
@@ -202,18 +203,21 @@
     const date = new Date(record.created_at);
     const node = el("time", "message-timestamp", messageDateFormat.format(date));
     node.dateTime = date.toISOString(); node.title = date.toLocaleString();
+    updateTimestamp(node);
     return node;
   }
   function relativeTimestamp(record) {
     const node = messageTimestamp(record); node.classList.add("relative-time");
-    updateRelativeTime(node); return node;
+    updateTimestamp(node); return node;
   }
-  function updateRelativeTime(node) {
+  function updateTimestamp(node) {
     const age = Math.max(0, (Date.now() - Date.parse(node.dateTime)) / 1000);
+    node.dataset.age = age < 3600 ? "fresh" : age < 86400 ? "today" : "older";
+    if (!node.classList.contains("relative-time")) return;
     const unit = [[604800, "w"], [86400, "d"], [3600, "h"], [60, "m"]].find(([seconds]) => age >= seconds);
     node.textContent = unit ? `${Math.floor(age / unit[0])}${unit[1]}` : "jn";
   }
-  setInterval(() => host.querySelectorAll(".relative-time").forEach(updateRelativeTime), 30000);
+  setInterval(() => host.querySelectorAll(".message-timestamp").forEach(updateTimestamp), 30000);
   function iconButton(label, path, action, className = "") {
     const control = button("", action, `utility icon-button ${className}`);
     control.setAttribute("aria-label", label); control.title = label;
@@ -477,6 +481,7 @@
     }
     if (!finished) reviewVersion++;
     if (typeof keepVisible !== "boolean") keepVisible = explicitOpen && !pendingCount();
+    finishResize(); resizedSize = null;
     leaveSettings(); todosOpen = false;
     presented = false; explicitOpen = keepVisible === true; native({ native: "presentation", active: explicitOpen });
     clearTimeout(completionTimer); pauseTimer(); stopContext(); expanded = false; details = false; queue = false; current = null; focused = false; menu = null;
@@ -485,6 +490,12 @@
   }
   function hideBar() {
     hiddenByUser = true; queueReturnId = null; collapse(false);
+  }
+  function closeResumedCompletion(previous) {
+    if (previous?.id !== current || !pending(previous) || previous.request.data?.event !== "agent_finished"
+      || records.get(current)?.status !== "resolved") return;
+    queueReturnId = null;
+    collapse(false);
   }
   function resetHandledActions() {
     for (const [id, action] of actionsInProgress) if (!action.pending) actionsInProgress.delete(id);
@@ -513,8 +524,9 @@
     if (actionsInProgress.has(id)) return;
     leaveSettings();
     const replyFocused = card?._reply && document.activeElement === card._reply;
-    clearTimeout(completionTimer); pauseTimer(); stopContext(); current = id; queueReturnId = id; expanded = true; details = false; queue = false; renderedId = null; menu = null;
+    clearTimeout(completionTimer); pauseTimer(); stopContext(); current = id; queueReturnId = id; expanded = true; details = Boolean(resizedSize); queue = false; renderedId = null; menu = null;
     call({ op: "read", id }).catch(error => showError(error, id)); render();
+    startContext();
     if (replyFocused && card?._reply) card._reply.focus({ preventScroll: true });
   }
   function openLatest() {
@@ -713,6 +725,7 @@
     if (agent) { heading.classList.add("agent-heading"); const group = el("span", "source-group", identity.group); group.title = identity.group; heading.append(group); }
     heading.append(title);
     const tools = el("div", "heading-tools"); heading.append(tools);
+    tools.append(relativeTimestamp(record));
     const status = el("span", "status"); tools.append(status); node._status = status;
     if (hasAgent(record)) {
       const options = iconButton("Notification options", "M5 12h.01M12 12h.01M19 12h.01", () => toggleMenu("options"), "options-toggle");
@@ -736,7 +749,7 @@
         thread.append(entry);
       }
       node._thread = thread; node.append(thread);
-    } else node.append(messageTimestamp(record), el("div", "message", messageText(record)));
+    } else node.append(el("div", "message", messageText(record)));
     const layout = template(record).layout, primitives = {};
     const content = el("div", "details-content"); node._content = content;
     content.addEventListener("scroll", () => { node._followLogs = content.scrollHeight - content.scrollTop - content.clientHeight < 30; });
@@ -1316,6 +1329,87 @@
     }
     return view;
   }
+  function canResize() {
+    return current && !queue && !settingsOpen && !todosOpen && !preview && !snapshot.remote;
+  }
+  function applyResizedSize() {
+    const active = canResize() && resizedSize;
+    host.classList.toggle("user-sized", Boolean(active));
+    host.style.width = active ? `${resizedSize.width}px` : "";
+    host.style.height = active ? `${resizedSize.height}px` : "";
+  }
+  function resizeTo(width, height) {
+    const maxWidth = geometry.max_width || 1000, maxHeight = geometry.max_height || 860;
+    resizedSize = {
+      width: Math.round(Math.max(Math.min(520, maxWidth), Math.min(width, maxWidth))),
+      height: Math.round(Math.max(Math.min(280, maxHeight), Math.min(height, maxHeight)))
+    };
+    applyResizedSize(); size();
+  }
+  function revealResizeDetails() {
+    expanded = true;
+    pauseTimer(); stopAnimation();
+    if (!details) { stopContext(); details = true; menu = null; renderedId = null; render(); startContext(); }
+  }
+  function finishResize(event) {
+    if (!resizing || event && event.pointerId !== resizing.pointerId) return;
+    const { control, pointerId } = resizing; resizing = null;
+    document.removeEventListener("pointermove", moveResize);
+    document.removeEventListener("pointerup", finishResize);
+    document.removeEventListener("pointercancel", finishResize);
+    if (control.hasPointerCapture(pointerId)) control.releasePointerCapture(pointerId);
+    host.classList.remove("resizing");
+  }
+  function moveResize(event) {
+    if (!resizing || event.pointerId !== resizing.pointerId) return;
+    const { x, y, width, height, edge } = resizing;
+    const dx = event.screenX - x, dy = event.screenY - y;
+    if (!resizing.started && Math.hypot(dx, dy) < 3) return;
+    event.preventDefault();
+    if (!resizing.started) {
+      resizing.started = true;
+      resizedSize = { width, height };
+      revealResizeDetails();
+    }
+    host.classList.add("resizing");
+    const horizontal = edge.includes("w") ? -dx : edge.includes("e") ? dx : 0;
+    resizeTo(width + horizontal * (placement === "notch" ? 2 : 1), height + (edge.includes("s") ? dy : 0));
+  }
+  function renderResizeHandles() {
+    for (const edge of ["w", "e", "s", "sw", "se"]) {
+      let control = host.querySelector(`[data-resize="${edge}"]`);
+      if (!control) {
+        control = el("div", `resize-handle resize-${edge}`); control.dataset.resize = edge;
+        control.setAttribute("role", "separator"); control.tabIndex = 0;
+        control.setAttribute("aria-label", edge.length > 1 ? "Resize message bar" : edge === "s" ? "Resize message bar height" : "Resize message bar width");
+        control.setAttribute("aria-orientation", edge === "s" ? "horizontal" : "vertical");
+        control.addEventListener("pointerdown", event => {
+          if (event.button !== 0 || !canResize()) return;
+          event.preventDefault(); event.stopPropagation(); finishResize(); stopAnimation();
+          const bounds = host.getBoundingClientRect();
+          resizing = { control, edge, pointerId: event.pointerId, x: event.screenX, y: event.screenY, width: bounds.width, height: bounds.height, started: false };
+          control.setPointerCapture(event.pointerId);
+          document.addEventListener("pointermove", moveResize);
+          document.addEventListener("pointerup", finishResize);
+          document.addEventListener("pointercancel", finishResize);
+        });
+        control.addEventListener("lostpointercapture", finishResize);
+        control.addEventListener("keydown", event => {
+          const horizontal = edge.includes("w") || edge.includes("e"), vertical = edge.includes("s");
+          const dx = horizontal ? ({ ArrowLeft: -16, ArrowRight: 16 }[event.key] || 0) : 0;
+          const dy = vertical ? ({ ArrowUp: -16, ArrowDown: 16 }[event.key] || 0) : 0;
+          if (!canResize() || !dx && !dy) return;
+          event.preventDefault(); event.stopPropagation(); stopAnimation();
+          const bounds = host.getBoundingClientRect();
+          resizedSize = { width: bounds.width, height: bounds.height }; revealResizeDetails();
+          resizeTo(bounds.width + dx * (edge.includes("w") ? -1 : 1) * (placement === "notch" ? 2 : 1), bounds.height + dy);
+        });
+        host.append(control);
+      }
+      // The native surface stays attached at its top and right (or notch center).
+      control.hidden = !canResize() || placement !== "notch" && edge.includes("e");
+    }
+  }
   function draggableBar(control) {
     let origin = null, dragged = false;
     control.addEventListener("pointerdown", event => {
@@ -1352,7 +1446,7 @@
     syncFocusAppearance();
     if (reducedMotion.matches || geometry.reduce_motion) stopArrivalAnimation();
     const before = host.getBoundingClientRect();
-    const signature = JSON.stringify([current, expanded, details, queue, settingsOpen, todosOpen, menu, replyStates.get(current), geometry, snapshot.visible, records.get(current)?.request]);
+    const signature = JSON.stringify([current, expanded, details, queue, settingsOpen, todosOpen, menu, replyStates.get(current), resizedSize, geometry, snapshot.visible, records.get(current)?.request]);
     const continuingAnimation = layoutAnimation && signature === renderedLayout;
     if (!continuingAnimation) stopAnimation();
     renderedLayout = signature;
@@ -1362,6 +1456,7 @@
     }
     if (!preview && !settingsOpen && !todosOpen && (hiddenByUser || (!explicitOpen && !presented && (!snapshot.visible || (!current && !queue && !count && !todoItems().length))))) { stopArrivalAnimation(); host.className = "empty"; host.replaceChildren(); renderedId = null; card = null; stopContext(); size(); return; }
     host.className = `${placement} ${expanded ? "expanded" : !current ? "pill" : ""} ${details && !settingsOpen ? "details-open" : ""} ${settingsOpen ? "settings-open" : ""} ${queue && !settingsOpen ? "queue-open" : ""} ${menu ? "menu-open" : ""} ${todosOpen ? "todos-open" : ""}`;
+    applyResizedSize(); renderResizeHandles();
     let top = host.querySelector(".top");
     if (!top) {
       top = el("div", "top"); host.prepend(top);
@@ -1422,7 +1517,7 @@
       }
       updateCard();
     } else { host.querySelector(".card")?.remove(); host.querySelector(".queue")?.remove(); renderedId = null; card = null; }
-    renderMenu(); cleanupRemoteMedia(); if (!continuingAnimation) animateLayout(before, !queue && !menu && !settingsOpen);
+    renderMenu(); cleanupRemoteMedia(); if (resizing) size(); else if (!continuingAnimation) animateLayout(before, !queue && !menu && !settingsOpen);
   }
   function receive(value) {
     if (value.type === "keyboard_focus") {
@@ -1456,8 +1551,8 @@
         records.set(record.id, record);
         if (pendingRecords(true).length > before) unseenPending = Math.max(0, unseenPending - 1);
         openRecord(record.id);
-        if (record.request.media?.length) toggleDetails();
-        else if (value.popup && record.request.template === "update") { expanded = false; render(); resumeTimer(); }
+        if (record.request.media?.length) { if (!details) toggleDetails(); }
+        else if (value.popup && record.request.template === "update" && !resizedSize) { expanded = false; render(); resumeTimer(); }
       };
       if (records.has(value.id)) open(records.get(value.id));
       else call({ op: "get", id: value.id }).then(open).catch(error => {
@@ -1476,6 +1571,7 @@
     }
     if (value.type === "settings") { openSettings(); return; }
     if (value.type !== "snapshot") return;
+    const previousCurrent = records.get(current);
     snapshot = value; preview = Boolean(value.preview);
     if (value.todos) todoData = value.todos;
     const incoming = new Set();
@@ -1500,10 +1596,12 @@
     for (const id of records.keys()) if (id !== current && !incoming.has(id) && !selectedNotifications.has(id) && !actionsInProgress.has(id) && !retryIds.has(id)) records.delete(id);
     updateUnseenPending();
     pendingOffset = 50;
+    closeResumedCompletion(previousCurrent);
     if (current && !incoming.has(current) && !preview) {
       const id = current;
       call({ op: "get", id }).then(record => {
-        records.set(id, record); updateUnseenPending(); render();
+        const previous = records.get(id);
+        records.set(id, record); updateUnseenPending(); closeResumedCompletion(previous); render();
       }).catch(error => showError(error, id));
     }
     if (value.arrival && records.has(value.arrival)) hiddenByUser = false;
@@ -1511,7 +1609,7 @@
       clearTimeout(completionTimer); pauseTimer(); stopContext();
       const arrival = records.get(value.arrival), key = threadKey(arrival);
       current = (key && pendingCards().find(record => threadKey(record) === key)?.id) || value.arrival;
-      queueReturnId = current; queue = false; history = false; details = false; menu = null;
+      queueReturnId = current; queue = false; history = false; details = Boolean(resizedSize); menu = null;
       remaining = (value.settings?.preview_seconds || 8) * 1000; renderedId = null;
     }
     render(); resumeTimer();
