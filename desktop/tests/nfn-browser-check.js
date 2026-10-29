@@ -108,6 +108,7 @@
   nav("Next"); await sleep(30);
   assert(surface.offsetWidth === draggedSize.width && surface.offsetHeight === draggedSize.height && document.querySelector(".logs"), "next message retains the session size and shell view");
   window.fixture.records.get("second").request.media = [{ kind: "image", src: "/tmp/resize-attachment.png" }];
+  window.nfn.receive(window.fixture.snapshot());
   window.nfn.receive({ type: "open", id: "second" }); await sleep(30);
   assert(document.querySelector(".details-content") && surface.offsetWidth === draggedSize.width, "opening an attachment keeps Details visible in a resized session");
   window.fixture.records.get("second").request.media = [];
