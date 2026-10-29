@@ -705,6 +705,7 @@
     if (agent) { heading.classList.add("agent-heading"); const group = el("span", "source-group", identity.group); group.title = identity.group; heading.append(group); }
     heading.append(title);
     const tools = el("div", "heading-tools"); heading.append(tools);
+    tools.append(relativeTimestamp(record));
     const status = el("span", "status"); tools.append(status); node._status = status;
     if (hasAgent(record)) {
       const options = iconButton("Notification options", "M5 12h.01M12 12h.01M19 12h.01", () => toggleMenu("options"), "options-toggle");
@@ -728,7 +729,7 @@
         thread.append(entry);
       }
       node._thread = thread; node.append(thread);
-    } else node.append(messageTimestamp(record), el("div", "message", messageText(record)));
+    } else node.append(el("div", "message", messageText(record)));
     const layout = template(record).layout, primitives = {};
     const content = el("div", "details-content"); node._content = content;
     content.addEventListener("scroll", () => { node._followLogs = content.scrollHeight - content.scrollTop - content.clientHeight < 30; });
