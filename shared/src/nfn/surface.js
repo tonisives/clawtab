@@ -479,6 +479,12 @@
   function hideBar() {
     hiddenByUser = true; queueReturnId = null; collapse(false);
   }
+  function closeResumedCompletion(previous) {
+    if (previous?.id !== current || !pending(previous) || previous.request.data?.event !== "agent_finished"
+      || records.get(current)?.status !== "resolved") return;
+    queueReturnId = null;
+    collapse(false);
+  }
   function resetHandledActions() {
     for (const [id, action] of actionsInProgress) if (!action.pending) actionsInProgress.delete(id);
   }
@@ -1441,6 +1447,7 @@
     }
     if (value.type === "settings") { openSettings(); return; }
     if (value.type !== "snapshot") return;
+    const previousCurrent = records.get(current);
     snapshot = value; preview = Boolean(value.preview);
     if (value.todos) todoData = value.todos;
     const incoming = new Set();
@@ -1465,10 +1472,12 @@
     for (const id of records.keys()) if (id !== current && !incoming.has(id) && !selectedNotifications.has(id) && !actionsInProgress.has(id) && !retryIds.has(id)) records.delete(id);
     updateUnseenPending();
     pendingOffset = 50;
+    closeResumedCompletion(previousCurrent);
     if (current && !incoming.has(current) && !preview) {
       const id = current;
       call({ op: "get", id }).then(record => {
-        records.set(id, record); updateUnseenPending(); render();
+        const previous = records.get(id);
+        records.set(id, record); updateUnseenPending(); closeResumedCompletion(previous); render();
       }).catch(error => showError(error, id));
     }
     if (value.arrival && records.has(value.arrival)) hiddenByUser = false;

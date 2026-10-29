@@ -754,7 +754,7 @@ pub async fn question_detection_loop(
             }
         };
         if let Some(service) = crate::nfn::service() {
-            service.sync_alerts(&activity);
+            service.sync_activity(&activity);
         }
         if activity_changed {
             event_sink.emit_agent_activity_changed(activity);
