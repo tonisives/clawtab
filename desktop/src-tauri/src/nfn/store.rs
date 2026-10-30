@@ -303,6 +303,10 @@ impl Store {
     }
 
     pub fn supersede_previous(&self, latest: &NfnRecord) -> Result<Vec<NfnRecord>, String> {
+        // Each social review owns its exact draft revisions and publication decision.
+        if latest.request.template == "social-review" {
+            return Ok(Vec::new());
+        }
         let mut conn = self.conn.lock();
         let transaction = conn.transaction().map_err(|e| e.to_string())?;
         let previous = {
@@ -321,6 +325,7 @@ impl Store {
         for raw in previous {
             let mut record: NfnRecord = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
             if record.dismissed_at.is_some()
+                || record.request.template == "social-review"
                 || (record.created_at, &record.id) > (latest.created_at, &latest.id)
                 || !latest.request.source.same_thread(&record.request.source)
             {
@@ -457,7 +462,10 @@ mod tests {
             ids.push(record.id);
         }
         assert_eq!(
-            store.search(0, false, "MESSAGE #0 clawtab caption").unwrap()[0].id,
+            store
+                .search(0, false, "MESSAGE #0 clawtab caption")
+                .unwrap()[0]
+                .id,
             ids[0]
         );
         assert_eq!(store.search(0, false, "100%_ready").unwrap().len(), 50);
@@ -474,6 +482,7 @@ mod tests {
         let base = now() + 100;
         let send = |pane: &str, session: &str, time: i64| {
             let request = NfnRequest {
+                template: "update".into(),
                 source: NfnSource {
                     pane_id: Some(pane.into()),
                     session_id: Some(session.into()),
@@ -511,6 +520,47 @@ mod tests {
     }
 
     #[test]
+    fn publication_reviews_are_not_superseded_by_agent_messages_or_other_reviews() {
+        let store = Store::from_connection(Connection::open_in_memory().unwrap()).unwrap();
+        let base = now() + 100;
+        let send = |template: &str, time: i64| {
+            let (mut record, _) = store
+                .send(
+                    NfnRequest {
+                        template: template.into(),
+                        source: NfnSource {
+                            pane_id: Some("%20".into()),
+                            session_id: Some("posting-agent".into()),
+                            ..Default::default()
+                        },
+                        dedupe_key: None,
+                        ..request()
+                    },
+                    None,
+                )
+                .unwrap();
+            record.created_at = time;
+            store.save(&mut record).unwrap();
+            record
+        };
+        let update = send("update", base);
+        let review = send("social-review", base + 1);
+        let next_review = send("social-review", base + 2);
+        assert!(store.supersede_previous(&next_review).unwrap().is_empty());
+        assert_eq!(store.get(&update.id).unwrap().status, "pending");
+        let completion = send("update", base + 3);
+        let closed = store.supersede_previous(&completion).unwrap();
+        assert_eq!(closed.len(), 1);
+        assert_eq!(closed[0].id, update.id);
+        for review in [&review, &next_review] {
+            let saved = store.get(&review.id).unwrap();
+            assert_eq!(saved.status, "pending");
+            assert!(saved.response.is_none());
+            assert!(saved.dismissed_at.is_none());
+        }
+    }
+
+    #[test]
     fn messages_without_an_agent_are_independent_and_job_runs_stay_separate() {
         let unidentified = NfnSource::default();
         assert!(!unidentified.same_agent(&unidentified));
@@ -540,6 +590,7 @@ mod tests {
         let base = now() + 100;
         let send = |job: &str, run: Option<&str>, pane: Option<&str>, time: i64| {
             let request = NfnRequest {
+                template: "update".into(),
                 source: NfnSource {
                     job_id: Some(job.into()),
                     run_id: run.map(str::to_owned),

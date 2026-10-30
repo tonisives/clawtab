@@ -1129,11 +1129,16 @@
   assert(getComputedStyle(document.querySelector(".queue")).maxHeight === "none", "desktop list height limits leave the mobile list height to its host");
   resetFlow();
   const social = flowRecord("platform-review", 1);
-  social.request = { title: "Review today's platform posts", body: "One idea, two adjusted drafts", template: "social-review", response_destination: "result", source: {},
+  social.request = { title: "Review today's platform posts", body: "One idea, two adjusted drafts", template: "social-review", response_destination: "result", source: { pane_id: "%social", session_id: "posting-agent", provider: "codex" },
     media: [{ kind: "image", src: window.fixture.reviewImage, alt: "ClawTab agent and shell side by side" }],
     data: { targets: [{ id: "x", platform: "X", account: "@totovoto", body: "A concrete experience on X.", revision: "a".repeat(64), media_indices: [0] }, { id: "youtube", platform: "YouTube", account: "tonisdev", title: "A short screen demo", body: "The portrait version has a different opening.", revision: "b".repeat(64), media_indices: [] }] },
     actions: [{ id: "decide", label: "Send platform decisions", kind: "choice" }] };
+  const socialCompletion = flowRecord("posting-finished", 2);
+  socialCompletion.request = { title: "Posting agent finished", body: "Ready for the next message", template: "update", source: { ...social.request.source }, data: { event: "agent_finished" }, actions: [] };
+  window.nfn.receive(window.fixture.snapshot(socialCompletion.id)); window.nfn.receive({ type: "open_record", id: socialCompletion.id });
+  click("Got it"); await sleep(40);
   window.nfn.receive(window.fixture.snapshot(social.id)); window.nfn.receive({type:"open_record", id:social.id}); await sleep(60);
+  assert(Boolean(document.querySelector('.social-submit')) && social.status === 'pending', "acknowledging a newer completion keeps the original publication review and its controls accessible");
   if (document.querySelector('.details-toggle')?.textContent === 'Hide details') click('Hide details');
   assert(document.querySelector('.social-account').textContent.includes('@totovoto') && Boolean(document.querySelector('.social-review .media img')), "social review shows the exact account and inline media without opening details");
   const tabs = [...document.querySelectorAll('.social-tabs button')]; tabs[1].click();
