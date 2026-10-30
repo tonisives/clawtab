@@ -42,7 +42,7 @@ export TEST_SOCKET
 CLAWTAB_PANE_INFO_HELPER="$TEST_DIR/helper" bash "$SCRIPT_DIR/../scripts/pane-border-cache.sh" "$first" 120
 tmux set-option -p -t "$first" @clawtab-agent-pane-last-action-at "$(($(date +%s) - 7200))"
 tmux resize-window -x 240
-[[ "$(tmux display-message -p -t "$first" '#{E:@clawtab-pane-info}')" == 'Title | 2h ago' ]]
+[[ "$(tmux display-message -p -t "$first" '#{E:@clawtab-pane-info}' | sed -E 's/#\[[^]]*\]//g')" == 'Title | 2h ago' ]]
 tmux resize-window -x 80
-[[ "$(tmux display-message -p -t "$first" '#{E:@clawtab-pane-info}')" == 'Title | 2h' ]]
+[[ "$(tmux display-message -p -t "$first" '#{E:@clawtab-pane-info}' | sed -E 's/#\[[^]]*\]//g')" == 'Title | 2h' ]]
 printf 'pane activity tests passed\n'
