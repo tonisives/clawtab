@@ -911,7 +911,8 @@
       }, "utility");
       openJob.title = "Show job folder in Finder"; utilities.append(openJob);
     }
-    if (utilities.classList.contains("session-controls") && actions.childElementCount === 1 && actions.firstElementChild.dataset.actionId === "acknowledge") {
+    if (actions.childElementCount === 1 && actions.firstElementChild.dataset.actionId === "acknowledge") {
+      utilities.classList.add("session-controls");
       utilities.append(actions);
     }
     node.append(utilities);
@@ -1739,6 +1740,7 @@
     if (host.dataset.keyboardActive !== keyboardActive) host.dataset.keyboardActive = keyboardActive;
   }
   function fixedHint(node) {
+    if (node.matches('.controls [data-action-id="acknowledge"]')) return "N";
     if (node.closest(".top")) {
       if (node.matches(".brand")) return "A";
       if (node.matches(".count,.bar-toggle")) return "S";
@@ -1781,7 +1783,8 @@
     });
     if (targets.length !== hintTargets.length || targets.some((node,i) => node !== hintTargets[i])) {
       hintTargets = targets; hintInput = ""; hintOverlay.replaceChildren();
-      const alphabet = "BFMNORUWZ", fixed = targets.map(fixedHint), dynamicCount = fixed.filter(label => !label).length;
+      const fixed = targets.map(fixedHint), dynamicCount = fixed.filter(label => !label).length;
+      const alphabet = [..."BFMNORUWZ"].filter(label => !fixed.includes(label)).join("");
       const length = Math.max(1, Math.ceil(Math.log(Math.max(1, dynamicCount))/Math.log(alphabet.length)));
       let ordinal = 0;
       hintLabels = targets.map((node, index) => {
