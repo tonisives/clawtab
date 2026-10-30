@@ -62,6 +62,7 @@ button.icon-button { display: flex; align-items: center; justify-content: center
 .card > .message-content { flex: 0 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 .details-open .card { display: flex; flex-direction: column; overflow: hidden; }
 .details-open .card > * { flex: none; }
+.details-open .card > .message-content { flex: 1; min-height: 0; }
 .heading { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
 .heading h1 { flex: 1; }
 .heading-tools { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }

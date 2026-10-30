@@ -17,6 +17,7 @@ static void receive(const char *raw) {
     NSDictionary *command = request[@"command"];
     if (!command) return;
     if ([command[@"op"] isEqual:@"respond"]) { fprintf(stderr,"Video checks must never submit a review decision\n"); exit(1); }
+    if (!request[@"token"]) return;
     if ([command[@"op"] isEqual:@"media"]) {
         NSUInteger offset = [command[@"offset"] unsignedIntegerValue], length = [command[@"length"] unsignedIntegerValue];
         if (![command[@"id"] isEqual:@"video-review"] || [command[@"index"] unsignedIntegerValue] != 0 || offset > clip.length || length > 256*1024) exit(1);
