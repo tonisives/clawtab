@@ -62,7 +62,7 @@ window.webkit = { messageHandlers: { nfn: { postMessage(value) {
       response = { focused: true, record };
     } else {
       record.status = "resolved";
-      record.response = { action_id: command.action_id, text: command.text };
+      record.response = { action_id: command.action_id, text: command.text, decisions: command.decisions };
     }
   }
   if (command.op === "focus" || response.focused) {
@@ -114,6 +114,7 @@ const todoData = todoFileIndex >= 0 ? JSON.parse(readFileSync(process.argv[todoF
 ] };
 const todoSetup = process.argv.includes("--todos") || todoFileIndex >= 0 ? `window.fixture.todos = ${JSON.stringify(todoData)}; window.nfn.receive({type:"todos",todos:window.fixture.todos});` : "";
 const fixtureSetup = native ? setup.slice(0, setup.indexOf("window.webkit =")) + setup.slice(setup.indexOf("window.fixture.record")) : setup;
+const reviewImage = `data:image/png;base64,${readFileSync(new URL("../../docs/readme-pics/agent-and-shell-side-by-side.png", import.meta.url)).toString("base64")}`;
 const document = read("surface.html").replace("/* NFN_CSS */", read("surface.css") + (native ? "" : "\nbody{background:#202126;padding:24px;display:flex;justify-content:center}"))
-  .replace("/* NFN_JS */", visibility + fixtureSetup + "\n" + read("surface.js") + "\n" + ready + "\n" + todoSetup);
+  .replace("/* NFN_JS */", visibility + fixtureSetup + `\nwindow.fixture.reviewImage = ${JSON.stringify(reviewImage)};\n` + read("surface.js") + "\n" + ready + "\n" + todoSetup);
 writeFileSync(process.argv[2] || fileURLToPath(new URL("./nfn-fixture.html", import.meta.url)), document);

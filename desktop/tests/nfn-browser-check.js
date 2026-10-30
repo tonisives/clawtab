@@ -204,13 +204,10 @@
   window.fixture.records.get("first").request.media = [{ kind: "video", src: "/tmp/clawtab-nfn-media-test.mp4" }];
   const mediaSnapshot = window.fixture.snapshot("first"); mediaSnapshot.templates.templates[0].layout.unshift({ type: "media" });
   window.nfn.receive(mediaSnapshot);
-  assert(!document.querySelector("video"), "first cards do not load video");
-  click("View attachment");
   const video = document.querySelector("video");
-  assert(video && video.preload === "metadata", "attachment button loads video on demand");
-  click("Hide details");
-  assert(video.paused && !video.hasAttribute("src"), "closing details releases video playback");
+  assert(video && video.controls && video.preload === "metadata", "cards show playable video attachments inline");
   window.nfn.collapse();
+  assert(video.paused && !video.hasAttribute("src"), "collapsing a card releases video playback");
   document.querySelector("#surface").dispatchEvent(new MouseEvent("mouseleave"));
   window.fixture.records.clear();
   const approval = window.fixture.record("approval", 3);
@@ -1094,5 +1091,38 @@
   assert(focusHost.dataset.desktop === "false" && getComputedStyle(document.querySelector(".brand img")).filter === "none", "mobile surfaces keep their colored icons without desktop focus styling");
   if (!document.querySelector(".queue")) document.querySelector('[aria-label="Notification list"]').click();
   assert(getComputedStyle(document.querySelector(".queue")).maxHeight === "none", "desktop list height limits leave the mobile list height to its host");
+  resetFlow();
+  const social = flowRecord("platform-review", 1);
+  social.request = { title: "Review today's platform posts", body: "One idea, two adjusted drafts", template: "social-review", response_destination: "result", source: {},
+    media: [{ kind: "image", src: window.fixture.reviewImage, alt: "ClawTab agent and shell side by side" }],
+    data: { targets: [{ id: "x", platform: "X", account: "@totovoto", body: "A concrete experience on X.", revision: "a".repeat(64), media_indices: [0] }, { id: "youtube", platform: "YouTube", account: "tonisdev", title: "A short screen demo", body: "The portrait version has a different opening.", revision: "b".repeat(64), media_indices: [] }] },
+    actions: [{ id: "decide", label: "Send platform decisions", kind: "choice" }] };
+  window.nfn.receive(window.fixture.snapshot(social.id)); window.nfn.receive({type:"open_record", id:social.id}); await sleep(60);
+  if (document.querySelector('.details-toggle')?.textContent === 'Hide details') click('Hide details');
+  assert(document.querySelector('.social-account').textContent.includes('@totovoto') && Boolean(document.querySelector('.social-review .media img')), "social review shows the exact account and inline media without opening details");
+  const tabs = [...document.querySelectorAll('.social-tabs button')]; tabs[1].click();
+  const panel = [...document.querySelectorAll('.social-platform')].find(node => !node.hidden);
+  assert(panel.textContent.includes('portrait version') && panel.textContent.includes('tonisdev'), "platform tabs show their adjusted copy and account");
+  const comment = panel.querySelector('textarea'); comment.value = 'Use a closer crop'; comment.dispatchEvent(new Event('input'));
+  assert(panel.querySelector('select').value === 'revise', "a platform comment switches only that platform to revision");
+  tabs[0].click();
+  assert(document.querySelector('.social-platform:not([hidden]) select').value === 'approve', "another platform keeps its independent approval");
+  const socialCard = document.querySelector('.card'), socialSubmit = document.querySelector('.social-submit');
+  click('Details'); await sleep(60);
+  assert(socialCard === document.querySelector('.card') && document.querySelector('.message-content').hidden && Boolean(document.querySelector('.logs')), "social Details replaces the platform reading area without rebuilding its card");
+  assert(document.querySelector('.social-submit') === socialSubmit && socialSubmit.getBoundingClientRect().bottom <= innerHeight, "platform decision submission stays visible below Details output");
+  click('Hide details');
+  assert(!document.querySelector('.message-content').hidden && document.querySelector('.social-platform textarea') && comment.value === 'Use a closer crop', "Hide details restores platform copy and its existing draft controls");
+  document.querySelector('.social-submit').click(); await sleep(40);
+  const sent = window.fixture.calls.find(command => command.op === 'respond' && command.id === social.id);
+  assert(sent.action_id === 'decide' && sent.decisions[0].revision === 'a'.repeat(64) && sent.decisions[0].decision === 'approve' && sent.decisions[1].decision === 'revise' && sent.decisions[1].comment === 'Use a closer crop', "the shared surface sends exact revision hashes and scoped decisions together");
+  resetFlow();
+  const visualReview = flowRecord("review-preview", 1); visualReview.request = JSON.parse(JSON.stringify(social.request));
+  const visualSnapshot = window.fixture.snapshot(visualReview.id); visualSnapshot.remote = false; visualSnapshot.settings.placement = "right";
+  window.nfn.receive(visualSnapshot); window.nfn.receive({ type: "open_record", id: visualReview.id }); await sleep(300);
+  const reviewScroller = document.querySelector('.social-review');
+  document.querySelector('.social-submit').scrollIntoView({ block: 'nearest' });
+  assert(document.querySelector('.social-submit').getBoundingClientRect().bottom <= document.querySelector('.card').getBoundingClientRect().bottom + 1, "platform decisions remain reachable when media fills the card");
+  reviewScroller.scrollTop = 0;
   return { passed: checks.length, checks };
 })()

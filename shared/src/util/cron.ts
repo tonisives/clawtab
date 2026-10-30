@@ -10,6 +10,7 @@ function parseField(field: string, min: number, max: number): number[] {
     const stepMatch = part.match(/^(.+)\/(\d+)$/);
     if (stepMatch) {
       const step = parseInt(stepMatch[2], 10);
+      if (step < 1) return [];
       const base = stepMatch[1] === "*" ? min : parseInt(stepMatch[1], 10);
       for (let i = base; i <= max; i += step) values.add(i);
     } else if (part === "*") {
@@ -82,11 +83,45 @@ function nextForSingle(expr: string, after: Date): Date | null {
   return null;
 }
 
-export function nextCronDate(cron: string, after: Date = new Date()): Date | null {
+function nextInTimezone(expr: string, after: Date, timeZone: string): Date | null {
+  const fields = expr.trim().split(/\s+/);
+  if (fields.length !== 5) return null;
+  const [minutes, hours, doms, months, dows] = fields.map((field, i) => parseField(field, [0, 0, 1, 1, 0][i], [59, 23, 31, 12, 6][i]));
+  let formatter: Intl.DateTimeFormat;
+  try { formatter = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }); }
+  catch { return null; }
+  const wall = (instant: number) => {
+    const parts = Object.fromEntries(formatter.formatToParts(new Date(instant)).map(part => [part.type, part.value]));
+    return Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour, +parts.minute, +parts.second);
+  };
+  const firstDay = new Date(wall(after.getTime())); firstDay.setUTCHours(0, 0, 0, 0);
+  for (let day = 0; day < 732; day++) {
+    const date = new Date(firstDay.getTime() + day * 86400000);
+    const domMatch = fields[2] === "*" || doms.includes(date.getUTCDate());
+    const dowMatch = fields[4] === "*" || dows.includes(date.getUTCDay());
+    if (!months.includes(date.getUTCMonth() + 1) || !(fields[2] !== "*" && fields[4] !== "*" ? domMatch || dowMatch : domMatch && dowMatch)) continue;
+    // Sampling both sides of the day preserves both occurrences of a repeated DST hour.
+    const offsets = new Set([-12, 0, 12, 24, 36].map(hour => {
+      const instant = date.getTime() + hour * 3600000; return wall(instant) - instant;
+    }));
+    let earliest: number | null = null;
+    for (const hour of hours) for (const minute of minutes) {
+      const desired = date.getTime() + hour * 3600000 + minute * 60000;
+      for (const offset of offsets) {
+        const instant = desired - offset;
+        if (instant > after.getTime() && wall(instant) === desired && (earliest === null || instant < earliest)) earliest = instant;
+      }
+    }
+    if (earliest !== null) return new Date(earliest);
+  }
+  return null;
+}
+
+export function nextCronDate(cron: string, after: Date = new Date(), timeZone?: string): Date | null {
   const exprs = cron.split("|").map((s) => s.trim()).filter(Boolean);
   let earliest: Date | null = null;
   for (const expr of exprs) {
-    const next = nextForSingle(expr, after);
+    const next = timeZone ? nextInTimezone(expr, after, timeZone) : nextForSingle(expr, after);
     if (next && (!earliest || next < earliest)) earliest = next;
   }
   return earliest;
@@ -136,8 +171,8 @@ function describeSingleCron(expr: string): string {
   }
   if (dow !== "*" && dom === "*" && mon === "*") {
     const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-    const dayNums = dow.split(",");
-    const dayNames = dayNums.map((d) => days[parseInt(d)] ?? d);
+    const dayNums = parseField(dow, 0, 6);
+    const dayNames = dayNums.map((d) => days[d] ?? String(d));
     const dayStr = dayNames.length === 7 ? "Daily" : dayNames.join(", ");
     if (hour !== "*" && min !== "*") return `${dayStr} at ${hour.padStart(2, "0")}:${min.padStart(2, "0")}`;
   }
@@ -167,9 +202,9 @@ export function describeCron(expr: string): string {
 }
 
 /** Full human-readable description for tooltip: description + next run time */
-export function cronTooltip(cron: string): string {
-  const desc = describeCron(cron);
-  const next = nextCronDate(cron);
+export function cronTooltip(cron: string, timeZone?: string): string {
+  const desc = describeCron(cron) + (timeZone ? ` (${timeZone})` : "");
+  const next = nextCronDate(cron, new Date(), timeZone);
   const nextStr = next ? formatNextRun(next) : "unknown";
   return `${desc}\nNext: ${nextStr}`;
 }

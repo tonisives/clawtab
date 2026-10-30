@@ -88,3 +88,15 @@ test('an in-flight result cannot enter a different account', async () => {
   assert.equal(app.records.length, 0);
   assert.equal(JSON.parse(app.storage.get('clawtab_message_actions_alice')).length, 1);
 });
+
+test('offline platform decisions retain revision and scoped comments after restart', async () => {
+  const first = harness();
+  await first.loadMessageActions('social-user');
+  const decisions = [{ target_id: 'x', revision: 'abc', decision: 'approve' }, { target_id: 'youtube', revision: 'def', decision: 'revise', comment: 'Use the portrait take' }];
+  await first.messageAction({ machine: 'host', id: 'social-1', op: 'respond', action_id: 'decide', decisions });
+  const next = harness(first.storage);
+  await next.loadMessageActions('social-user'); next.online();
+  await next.flushMessageActions();
+  assert.deepEqual(JSON.parse(JSON.stringify(next.calls[0][1].command.decisions)), decisions);
+  await next.flushMessageActions(); assert.equal(next.calls.length, 1);
+});

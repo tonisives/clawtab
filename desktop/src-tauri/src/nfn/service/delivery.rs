@@ -321,6 +321,7 @@ impl Service {
                 id: record.id,
                 action_id,
                 text,
+                decisions: None,
             }
         };
         Some(self.execute(command).await)

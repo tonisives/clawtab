@@ -4,6 +4,7 @@
   const host = document.getElementById("surface");
   const records = new Map(), drafts = new Map(), promises = new Map();
   const replyStates = new Map();
+  const socialDrafts = new Map();
   // Submitted cards stay out of this pass until the daemon confirms their state.
   const actionsInProgress = new Map(), actionErrors = new Map(), retryIds = new Set();
   let reviewVersion = 0;
@@ -258,7 +259,7 @@
     return [...records.values()].filter(item => item.id === record.id || (key && threadKey(item) === key
       && pending(item) && !item.dismissed_at && !item.ignored && messageOrder(item, record) < 0)).sort(messageOrder);
   }
-  function cardSignature(record) { return JSON.stringify([cardMessages(record).map(item => [item.id, item.created_at, item.request]), template(record), record.details_available]); }
+  function cardSignature(record) { return JSON.stringify([cardMessages(record).map(item => [item.id, item.created_at, item.request]), template(record), record.details_available, record.response]); }
   function pendingCount() { return pendingCards().length + unseenPending; }
   function updateUnseenPending() {
     const incoming = new Set((snapshot.records || []).map(record => record.id));
@@ -686,6 +687,79 @@
     }
   }
   function hasBlock(layout, kind) { return (layout || []).some(b => b.type === kind || hasBlock(b.children, kind)); }
+  function mediaView(record, indices) {
+    const media = el("div", "media");
+    for (const index of indices) {
+      const item = record.request.media?.[index];
+      if (!item) continue;
+      const element = el(item.kind === "video" ? "video" : "img");
+      if (snapshot.remote && item.src.startsWith("/")) {
+        element.hidden = true;
+        const status = el("div", "hint", "Loading attachment..."); status.setAttribute("role", "status"); media.append(status);
+        loadRemoteMedia(element, status, record, index);
+      } else element.src = item.src.startsWith("/") ? `clawtab-nfn://media/${record.id}/${index}` : item.src;
+      if (item.kind === "video") { element.controls = true; element.playsInline = true; element.preload = "metadata"; }
+      else { element.alt = item.alt || record.request.title; element.loading = "eager"; }
+      element.addEventListener("error", () => element.replaceWith(el("div", "hint", `${item.kind === "video" ? "Video" : "Image"} unavailable`)));
+      media.append(element);
+    }
+    return media;
+  }
+  function socialReview(record, node) {
+    const targets = record.request.data?.targets;
+    if (record.request.template !== "social-review" || !Array.isArray(targets)) return false;
+    let state = socialDrafts.get(record.id);
+    const revision = targets.map(target => target.revision).join(":");
+    if (!state || state.revision !== revision || record.response?.decisions) {
+      const saved = record.response?.decisions || [];
+      state = { revision, active: targets[0]?.id, decisions: targets.map(target => saved.find(item => item.target_id === target.id) || {
+        target_id: target.id, revision: target.revision, decision: "approve", comment: ""
+      }) };
+      socialDrafts.set(record.id, state);
+    }
+    const review = el("section", "social-review"), tabs = el("div", "segments social-tabs"), panels = el("div");
+    tabs.setAttribute("role", "tablist"); tabs.setAttribute("aria-label", "Platform drafts");
+    const controls = [], tabControls = [];
+    targets.forEach((target, index) => {
+      const decision = state.decisions[index];
+      const panel = el("section", "social-platform"); panel.id = `social-platform-${index}`; panel.setAttribute("role", "tabpanel");
+      const tab = button(target.platform, () => {
+        state.active = target.id;
+        for (const [i, control] of tabControls.entries()) {
+          control.setAttribute("aria-selected", String(targets[i].id === state.active));
+          panels.children[i].hidden = targets[i].id !== state.active;
+        }
+      });
+      tab.setAttribute("role", "tab"); tab.setAttribute("aria-controls", panel.id); tab.setAttribute("aria-selected", String(target.id === state.active));
+      panel.hidden = target.id !== state.active; tabControls.push(tab); tabs.append(tab);
+      panel.append(el("div", "social-account", `${target.platform} · ${target.account}`));
+      if (target.title) panel.append(el("strong", "social-title", target.title));
+      panel.append(el("div", "body social-body", target.body || ""));
+      if (target.media_indices?.length) panel.append(mediaView(record, target.media_indices));
+      const label = el("label", "social-choice", "Decision");
+      const select = el("select"); select.setAttribute("aria-label", `Decision for ${target.platform}`);
+      for (const [value, text] of [["approve", "Approve publication"], ["revise", "Request changes"], ["deny", "Deny publication"]]) {
+        const option = el("option", "", text); option.value = value; select.append(option);
+      }
+      select.value = decision.decision;
+      select.addEventListener("change", () => { decision.decision = select.value; if (select.value === "approve" && decision.comment?.trim()) { decision.decision = "revise"; select.value = "revise"; } });
+      label.append(select); panel.append(label); controls.push(select);
+      const comment = el("textarea"); comment.rows = 2; comment.value = decision.comment || "";
+      comment.setAttribute("aria-label", `Changes or comment for ${target.platform}`); comment.placeholder = "Describe changes for this platform...";
+      comment.addEventListener("input", () => { decision.comment = comment.value; if (comment.value.trim() && decision.decision === "approve") { decision.decision = "revise"; select.value = "revise"; } });
+      panel.append(comment); controls.push(comment); panels.append(panel);
+    });
+    review.append(tabs, panels);
+    const library = record.request.data?.library_url;
+    if (typeof library === "string" && library.startsWith("https://content.tonis.dev/")) {
+      const link = el("a", "social-library", "Open in content library"); link.href = library; link.target = "_blank"; link.rel = "noopener"; review.append(link);
+    }
+    const submit = button("Send platform decisions", () => performAction(record.id, {
+      op: "respond", id: record.id, action_id: "decide", decisions: state.decisions.map(item => ({ ...item, comment: item.comment?.trim() || null }))
+    }), "primary social-submit");
+    review.append(submit); controls.push(submit); node._socialControls = controls; node.append(review);
+    return true;
+  }
   function autoYesControl(record, inCard = false) {
     const row = el("div", "auto-yes");
     if (inCard) row.classList.add("answer-auto-yes"); else row.append(el("span", "", "Auto-yes"));
@@ -758,9 +832,15 @@
     const layout = template(record).layout;
     const content = el("div", "details-content"); node._content = content;
     content.addEventListener("scroll", () => { node._followLogs = content.scrollHeight - content.scrollTop - content.clientHeight < 30; });
+    const bundle = socialReview(record, node);
+    if (bundle) {
+      const review = node.querySelector(".social-review");
+      const submit = review.querySelector(".social-submit");
+      body.append(review); node.append(submit);
+    } else if (record.request.media?.length) body.append(mediaView(record, record.request.media.map((_, index) => index)));
     const actions = el("div", "actions"); node._actions = actions;
     const choices = record.request.actions || [];
-    for (const [index, action] of choices.filter(action => action.kind !== "focus").entries()) {
+    for (const [index, action] of choices.filter(action => !bundle && action.kind !== "focus").entries()) {
       const control = button(action.label, () => act(record.id, action.id, drafts.get(record.id) || ""), index === 0 ? "primary" : "");
       control.title = action.label;
       control.dataset.actionId = action.id;
@@ -772,7 +852,7 @@
     if (questionOptions) {
       node.append(autoYesControl(record, true));
     }
-    if (record.request.template !== "update" && (hasBlock(layout, "reply") || record.request.source?.pane_id)) {
+    if (!bundle && record.request.template !== "update" && (hasBlock(layout, "reply") || record.request.source?.pane_id)) {
       const toAgent = Boolean(record.question_id || record.request.response_destination === "agent_message");
       const reply = el("div", "reply");
       const revision = revisionChoice(record);
@@ -804,7 +884,7 @@
     const notice = el("div", "notice"); notice.setAttribute("role", "status"); node._notice = notice; node.append(notice);
     const utilities = el("div", "controls");
     if (record.details_available !== false) {
-      const detailButton = button(details ? "Hide details" : (record.request.media?.length ? "View attachment" : "Details"), toggleDetails, "utility details-toggle");
+      const detailButton = button(details ? "Hide details" : "Details", toggleDetails, "utility details-toggle");
       detailButton.setAttribute("aria-expanded", String(details)); node._detailsButton = detailButton; utilities.append(detailButton);
     }
     if (!snapshot.remote && record.request.source?.browser_pane_id && record.request.source?.browser_session) {
@@ -838,7 +918,7 @@
     if (!card) return;
     card._body.hidden = details;
     if (card._detailsButton) {
-      card._detailsButton.textContent = details ? "Hide details" : record.request.media?.length ? "View attachment" : "Details";
+      card._detailsButton.textContent = details ? "Hide details" : "Details";
       card._detailsButton.setAttribute("aria-expanded", String(details));
     }
     const content = card._content;
@@ -850,33 +930,17 @@
     }
     if (content.isConnected) return;
     const node = card, layout = template(record).layout, primitives = {};
-    if (hasBlock(layout, "media") && record.request.media?.length) {
-      const media = el("div", "media");
-      record.request.media.forEach((item, index) => {
-        const element = el(item.kind === "video" ? "video" : "img");
-        if (snapshot.remote && item.src.startsWith("/")) {
-          element.hidden = true;
-          const status = el("div", "hint", "Loading attachment..."); status.setAttribute("role", "status"); media.append(status);
-          loadRemoteMedia(element, status, record, index);
-        } else element.src = item.src.startsWith("/") ? `clawtab-nfn://media/${record.id}/${index}` : item.src;
-        if (item.kind === "video") { element.controls = true; element.playsInline = true; element.preload = "metadata"; }
-        else { element.alt = item.alt || record.request.title; element.loading = snapshot.remote ? "eager" : "lazy"; }
-        element.addEventListener("error", () => { element.replaceWith(el("div", "hint", `${item.kind === "video" ? "Video" : "Image"} unavailable`)); });
-        media.append(element);
-      }); primitives.media = media;
-    }
     if (hasBlock(layout, "logs")) {
       const section = el("div", "log-output");
       section.append(el("div", "block-label", "Recent output"));
       const logs = el("pre", "logs", "Loading recent output...");
       node._logs = logs; section.append(logs); primitives.logs = section;
     }
-    // The message body remains mounted behind this reading area. Details shows
-    // the output and structured attachments, without repeating the message text.
-    const detailBlocks = blocks => (blocks || []).filter(block => !["text", "choices", "reply"].includes(block.type))
+    // Keep the message and inline media mounted while Details shows the output.
+    const detailBlocks = blocks => (blocks || []).filter(block => !["text", "media", "choices", "reply"].includes(block.type))
       .map(block => block.children ? { ...block, children: detailBlocks(block.children) } : block);
     renderBlocks(detailBlocks(layout), content, record, true, primitives);
-    card._followLogs = !record.request.media?.length;
+    card._followLogs = true;
     card._body.after(content);
   }
   function updateCard() {
@@ -915,6 +979,7 @@
     if (card._openSession) card._openSession.disabled = busy;
     if (card._send) card._send.disabled = !isPending || busy || !card._reply.value.trim();
     if (card._reply) card._reply.readOnly = !isPending || busy;
+    for (const control of card._socialControls || []) control.disabled = !isPending || busy;
     if (actionErrors.has(current)) card._notice.textContent = actionErrors.get(current);
     else if (record.error) card._notice.textContent = record.error;
     else if (record.ignored) card._notice.textContent = "Agent ignored";

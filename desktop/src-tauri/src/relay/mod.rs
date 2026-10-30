@@ -620,6 +620,7 @@ fn job_to_remote(job: &Job) -> RemoteJob {
         },
         enabled: job.enabled,
         cron: job.cron.clone(),
+        cron_timezone: job.cron_timezone.clone(),
         schedule: job.schedule.clone(),
         run_once: job
             .run_once

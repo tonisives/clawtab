@@ -30,6 +30,7 @@ pub async fn message(args: &[String]) -> Result<Value, String> {
             "cwtctl message send TEXT [--kind update|question|approval|completed|failed]",
             "  [--channel desktop|mobile|telegram] [--choice [ID=]LABEL] [--wait] [--timeout SECONDS]",
             "  [--title TITLE] [--template ID] [--chat ID] [--response-destination result|agent_message]",
+            "  [--image PATH_OR_URL] [--video PATH_OR_URL] (repeat for multiple attachments)",
             "cwtctl message send --stdin [--wait] [--timeout SECONDS]",
             "cwtctl message list [--pending] [--offset N] [--query TEXT]",
             "cwtctl message get|wait|cancel|read|dismiss ID [--timeout SECONDS]",
@@ -93,6 +94,7 @@ pub async fn message(args: &[String]) -> Result<Value, String> {
                 id,
                 action_id,
                 text: (!text.is_empty()).then(|| text.join(" ")),
+                decisions: None,
             })
             .await
         }
@@ -117,13 +119,17 @@ fn parse_message(args: &[String]) -> Result<(NfnRequest, bool, Option<u64>), Str
             | "--template"
             | "--timeout"
             | "--chat"
+            | "--image"
+            | "--video"
             | "--response-destination" => {
                 let next = values
                     .next()
                     .filter(|v| !v.starts_with("--"))
                     .ok_or_else(|| format!("Pass a value after {value}"))?;
-                if !matches!(value.as_str(), "--choice" | "--channel")
-                    && flags.contains_key(value.as_str())
+                if !matches!(
+                    value.as_str(),
+                    "--choice" | "--channel" | "--image" | "--video"
+                ) && flags.contains_key(value.as_str())
                 {
                     return Err(format!("Duplicate argument: {value}"));
                 }
@@ -216,6 +222,17 @@ fn parse_message(args: &[String]) -> Result<(NfnRequest, bool, Option<u64>), Str
     }
     if let Some(destination) = value("--response-destination") {
         request.response_destination = destination.into();
+    }
+    for kind in ["image", "video"] {
+        if let Some(paths) = flags.get(format!("--{kind}").as_str()) {
+            for path in paths {
+                request.media.push(super::NfnMedia {
+                    kind: kind.into(),
+                    src: (*path).into(),
+                    alt: String::new(),
+                });
+            }
+        }
     }
     if !input && request.message_kind() == "question" && request.actions.is_empty() {
         request.data["text_input"] = json!(true);

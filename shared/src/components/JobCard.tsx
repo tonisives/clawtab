@@ -130,7 +130,7 @@ export const JobCard = memo(function JobCard({
             <View style={styles.meta}>
               <View style={styles.metaLeft}>
               {scheduled && job.enabled && !job.schedule && !job.run_once ? (() => {
-                const next = nextCronDate(job.cron);
+                const next = nextCronDate(job.cron, new Date(), job.cron_timezone || undefined);
                 return next ? <Text style={styles.nextRunText} numberOfLines={1}>{formatNextRun(next)}</Text> : null;
               })() : null}
               {lastRun ? <Text style={styles.metaText}>{lastRun}</Text> : null}
@@ -143,7 +143,7 @@ export const JobCard = memo(function JobCard({
                   </Text>
                 </Tooltip>
               ) : job.cron ? (
-                <Tooltip label={cronTooltip(job.cron)}>
+                <Tooltip label={cronTooltip(job.cron, job.cron_timezone || undefined)}>
                   <Text style={styles.cronText} numberOfLines={1}>{compactCron(job.cron)}</Text>
                 </Tooltip>
               ) : null}

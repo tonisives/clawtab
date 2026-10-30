@@ -843,7 +843,8 @@ impl Service {
                 id,
                 action_id,
                 text,
-            } => self.respond(&id, &action_id, text).await?,
+                decisions,
+            } => self.respond(&id, &action_id, text, decisions).await?,
             _ => return Err("Unsupported notification operation".into()),
         };
         self.changed();
@@ -972,6 +973,7 @@ impl Service {
         id: &str,
         action_id: &str,
         text: Option<String>,
+        decisions: Option<Vec<SocialDecision>>,
     ) -> Result<Value, String> {
         if text.as_ref().is_some_and(|text| text.len() > 32768) {
             return Err("Reply exceeds 32 KiB".into());
@@ -980,6 +982,7 @@ impl Service {
             return Err("Enter a reply before sending".into());
         }
         let mut record = self.store.get(id)?;
+        record.request.validate_decisions(decisions.as_deref())?;
         if !record.request.needs_response() && action_id == "acknowledge" {
             let dismissed = self.store.dismiss_many(&[id.to_string()])?;
             self.store.supersede_previous(&record)?;
@@ -1127,7 +1130,7 @@ impl Service {
                 .pane_id
                 .as_deref()
                 .ok_or("Agent is unavailable")?;
-            let message = format!(
+            let mut message = format!(
                 "Notification {} ({})\nDecision: {}{}",
                 record.request.title,
                 record.id,
@@ -1137,6 +1140,12 @@ impl Service {
                     .map(|text| format!("\n{text}"))
                     .unwrap_or_default()
             );
+            if let Some(decisions) = &decisions {
+                message.push_str(&format!(
+                    "\nPlatform decisions: {}",
+                    serde_json::to_string(decisions).map_err(|e| e.to_string())?
+                ));
+            }
             crate::agent_plugins::submit_notification_reply(pane, &message)
         } else {
             Ok(())
@@ -1149,6 +1158,7 @@ impl Service {
                     request_id: id.into(),
                     action_id: action_id.into(),
                     text,
+                    decisions,
                     status: "resolved".into(),
                     responded_at: now(),
                 });

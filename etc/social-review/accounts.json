@@ -1,0 +1,10 @@
+{
+  "x": {"account":"@totovoto","account_url":"https://x.com/totovoto","profile":"profile_211eba60","session":"gp","window":"win_ea8142e9","feed":"https://x.com/home"},
+  "tiktok": {"account":"@tonisdev1","account_url":"https://www.tiktok.com/@tonisdev1","profile":"profile_1654b13f","session":"ugtd","window":"tonisdev","locked":true,"feed":"https://www.tiktok.com/","listing":"https://www.tiktok.com/tiktokstudio/content"},
+  "instagram": {"account":"@tonisdev","account_url":"https://www.instagram.com/tonisdev/","profile":"profile_1654b13f","session":"ugtd","window":"tonisdev","locked":true,"feed":"https://www.instagram.com/","listing":"https://www.instagram.com/tonisdev/"},
+  "youtube": {"account":"tonisdev","account_url":"https://www.youtube.com/channel/UCpRZxWOYiBFnVNeoETjzVrg","profile":"profile_1654b13f","session":"ugtd","window":"tonisdev","locked":true,"feed":"https://www.youtube.com/shorts/","listing":"https://studio.youtube.com/channel/UCpRZxWOYiBFnVNeoETjzVrg/videos/short"},
+  "threads": {"account":"@tonisdev","account_url":"https://www.threads.com/@tonisdev","profile":"profile_1654b13f","session":"ugtd","window":"tonisdev","locked":true,"feed":"https://www.threads.com/"},
+  "linkedin": {"account":"tonis dev","account_url":"https://www.linkedin.com/in/tonis-dev-009b26446/","profile":"profile_1654b13f","session":"ugtd","window":"tonisdev","locked":true,"feed":"https://www.linkedin.com/feed/"},
+  "bluesky": {"account":"@tonisdev.bsky.social","account_url":"https://bsky.app/profile/tonisdev.bsky.social","profile":"profile_1654b13f","session":"ugtd","window":"tonisdev","locked":true,"feed":"https://bsky.app/"},
+  "mastodon": {"account":"@tonisdev@mastodon.social","account_url":"https://mastodon.social/@tonisdev","profile":"profile_1654b13f","session":"ugtd","window":"tonisdev","locked":true,"feed":"https://mastodon.social/home"}
+}

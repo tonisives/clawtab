@@ -1647,6 +1647,13 @@ fn update_job(
     if let Some(enabled) = update.enabled {
         job.enabled = enabled;
     }
+    if let Some(zone) = &update.cron_timezone {
+        if let Some(zone) = zone {
+            zone.parse::<chrono_tz::Tz>()
+                .map_err(|_| "invalid cron timezone")?;
+        }
+        job.cron_timezone = zone.clone();
+    }
     if let Some(cron) = &update.cron {
         if !cron.trim().is_empty() && crate::scheduler::parse_cron(cron).is_none() {
             return Err("invalid cron schedule".into());

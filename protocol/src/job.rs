@@ -156,6 +156,8 @@ pub struct RemoteJob {
     pub enabled: bool,
     pub cron: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cron_timezone: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub schedule: Option<CalendarSchedule>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub run_once: Option<RunOnceSchedule>,
@@ -207,6 +209,8 @@ pub struct JobUpdate {
     pub enabled: Option<bool>,
     #[serde(default)]
     pub cron: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_optional")]
+    pub cron_timezone: Option<Option<String>>,
     #[serde(default, deserialize_with = "deserialize_optional_optional")]
     pub schedule: Option<Option<CalendarSchedule>>,
     #[serde(default, deserialize_with = "deserialize_optional_optional")]
