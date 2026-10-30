@@ -1134,7 +1134,7 @@
     data: { targets: [{ id: "x", platform: "X", account: "@totovoto", body: "A concrete experience on X.", revision: "a".repeat(64), media_indices: [0] }, { id: "youtube", platform: "YouTube", account: "tonisdev", title: "A short screen demo", body: "The portrait version has a different opening.", revision: "b".repeat(64), media_indices: [] }] },
     actions: [{ id: "decide", label: "Send platform decisions", kind: "choice" }] };
   const socialCompletion = flowRecord("posting-finished", 2);
-  socialCompletion.request = { title: "Posting agent finished", body: "Ready for the next message", template: "update", source: { ...social.request.source }, data: { event: "agent_finished" }, actions: [] };
+  socialCompletion.request = { title: "Posting agent finished", body: "Ready for the next message", template: "update", source: { ...social.request.source }, data: { event: "agent_finished" }, actions: [{ id: "acknowledge", label: "Got it", kind: "choice" }] };
   window.nfn.receive(window.fixture.snapshot(socialCompletion.id)); window.nfn.receive({ type: "open_record", id: socialCompletion.id });
   click("Got it"); await sleep(40);
   window.nfn.receive(window.fixture.snapshot(social.id)); window.nfn.receive({type:"open_record", id:social.id}); await sleep(60);
