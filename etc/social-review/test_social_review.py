@@ -114,5 +114,25 @@ class SocialReviewTests(unittest.TestCase):
         browser = FakeBmux(); result = self.publish(browser)
         self.assertEqual(browser.submits, []); self.assertTrue(all(value['phase'] == 'denied' for value in result['targets'].values()))
 
+    def test_watch_reconnects_after_daemon_restart_and_uses_saved_review(self):
+        replies = [s.WorkflowError('Connection closed'), {'status': 'pending'}, {'record': self.record}]
+        with patch.object(s, 'message', side_effect=replies) as messages, patch.object(s.time, 'sleep') as sleep, patch.object(s, 'publish', return_value={'status': 'processed'}) as publish:
+            self.assertEqual(s.watch(self.path), {'status': 'processed'})
+        self.assertEqual(messages.call_count, 3)
+        self.assertTrue(all(call.args == ('wait', 'review-1', '--timeout', '60') for call in messages.call_args_list))
+        sleep.assert_called_once_with(5)
+        publish.assert_called_once_with(self.path)
+
+    def test_watch_reconnects_are_bounded(self):
+        with patch.object(s, 'message', side_effect=s.WorkflowError('Connection closed')) as messages, patch.object(s.time, 'sleep'), patch.object(s, 'publish') as publish:
+            with self.assertRaises(s.WorkflowError): s.watch(self.path)
+        self.assertEqual(messages.call_count, 12)
+        publish.assert_not_called()
+
+    def test_watch_never_retries_publication(self):
+        with patch.object(s, 'message', return_value=self.record), patch.object(s, 'publish', side_effect=s.WorkflowError('Submission interrupted')) as publish:
+            with self.assertRaises(s.WorkflowError): s.watch(self.path)
+        publish.assert_called_once_with(self.path)
+
 
 if __name__ == '__main__': unittest.main()

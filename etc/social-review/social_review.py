@@ -406,8 +406,18 @@ def reconcile(receipt_path, target_id, url=None, browser=None):
 
 def watch(receipt_path):
     receipt = read(receipt_path)
+    failures = 0
     while True:
-        result = message('wait', receipt['message_id'], '--timeout', '60'); record = result.get('record', result)
+        try:
+            result = message('wait', receipt['message_id'], '--timeout', '60')
+        except (WorkflowError, OSError, subprocess.TimeoutExpired):
+            failures += 1
+            if failures >= 12: raise
+            print('ClawTab wait interrupted; reconnecting in 5 seconds', file=sys.stderr, flush=True)
+            time.sleep(5)
+            continue
+        failures = 0
+        record = result.get('record', result)
         if record.get('wait_timed_out') or record.get('status') in ('pending', 'delivering'): continue
         if record.get('status') != 'resolved': return {'status': record.get('status'), 'receipt': str(receipt_path)}
         return publish(receipt_path)
