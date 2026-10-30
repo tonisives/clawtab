@@ -47,6 +47,11 @@
   assert(!document.querySelector(".message-content").hidden && !document.querySelector(".details-content") && document.querySelector(".card") === card, "Hide details restores the same message view immediately");
   assert(document.querySelector("textarea") === input && input.value === "Please check the newest output", "hiding Details retains the composer and draft");
   input.blur();
+  document.querySelector('.acknowledge').click();
+  const popup = document.querySelector('.acknowledge-menu');
+  assert(popup && visible(popup) && bounds(popup).right <= innerWidth, "the session action popup fits the mobile viewport");
+  document.querySelector('.acknowledge-overlay').click();
+  assert(!record.dismissed_at && document.activeElement === document.querySelector('.acknowledge'), "closing the session popup keeps the message and returns focus to Got it");
   document.querySelector('[aria-label="Notification list"]').click();
   const tabs = [...document.querySelectorAll('.segments [role="tab"]')];
   const selected = tabs.find(tab => tab.getAttribute("aria-selected") === "true");

@@ -496,6 +496,9 @@ pub enum NfnCommand {
     DismissMany {
         ids: Vec<String>,
     },
+    KillSession {
+        id: String,
+    },
     Ignore {
         id: String,
     },

@@ -771,6 +771,19 @@ impl Service {
                 let records = self.store.set_ignored(&id, operation == "ignore")?;
                 json!({"records":records,"agents":self.store.ignored_agents()?})
             }
+            NfnCommand::KillSession { id } => {
+                let record = self.store.get(&id)?;
+                let source = &record.request.source;
+                let pane = source
+                    .pane_id
+                    .as_deref()
+                    .ok_or("This message has no session")?;
+                validate_source(source)?;
+                crate::terminal_backend::kill_pane(pane)?;
+                let records = self.store.dismiss_many(&[id])?;
+                self.store.supersede_previous(&record)?;
+                serde_json::to_value(&records[0]).map_err(|error| error.to_string())?
+            }
             NfnCommand::DismissMany { ids } => {
                 if ids.len() > 10000 {
                     return Err("Select up to 10000 notifications at a time".into());

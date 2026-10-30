@@ -40,7 +40,7 @@ window.webkit = { messageHandlers: { nfn: { postMessage(value) {
   }
   if (command.op === "context") { fixture.contextCalls++; response = { source: record?.request.source, log: fixture.log || "Review ready\nWaiting for input", models: ["gpt-5.6-sol"], plugins: [] }; }
   if (command.op === "read") record.read_at = Date.now();
-  if (command.op === "dismiss") { record.dismissed_at = Date.now(); record.read_at = Date.now(); }
+  if (command.op === "dismiss" || command.op === "kill_session") { record.dismissed_at = Date.now(); record.read_at = Date.now(); }
   if (command.op === "auto_yes") {
     if (fixture.autoYesError) {
       setTimeout(() => window.nfn.receive({ type: "response", token, error: fixture.autoYesError }), 1);

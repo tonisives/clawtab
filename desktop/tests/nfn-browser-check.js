@@ -4,7 +4,8 @@
   const assert = (condition, label) => { if (!condition) throw new Error(label); checks.push(label); };
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
   const buttons = () => [...document.querySelectorAll("button")];
-  const click = text => buttons().find(button => button.textContent === text).click();
+  const keepAlive = () => document.querySelector('.acknowledge-menu [role="menuitem"]')?.click();
+  const click = text => { buttons().find(button => button.textContent === text).click(); if (text === "Got it") keepAlive(); };
   const nav = label => document.querySelector(`[aria-label="${label} notification"]`).click();
   const draft = text => { if (document.querySelector(".reply")?.hidden) document.querySelector(".reply-toggle").click(); const input = document.querySelector("textarea"); input.value = text; input.dispatchEvent(new Event("input")); return input; };
   window.nfn.setPlacement({ placement: "right", max_width: 1000, max_height: 860, reduce_motion: true });
@@ -676,7 +677,7 @@
   flowRecord("notice-a", 0, true); flowRecord("notice-b", 1, true); flowRecord("notice-c", 2, true);
   window.fixture.heldOps.add("dismiss");
   window.nfn.receive(window.fixture.snapshot("notice-c")); nav("Previous");
-  const gotIt = document.querySelector(".actions button"); gotIt.click(); gotIt.click();
+  const gotIt = document.querySelector(".actions button"); gotIt.click(); keepAlive(); gotIt.click();
   assert(title() === "notice-c" && window.fixture.deferred.length === 1, "Got it immediately shows the next card and ignores a second click on the submitted card");
   window.nfn.receive(window.fixture.snapshot());
   assert(title() === "notice-c" && document.querySelector(".count").textContent === "2 / 2", "snapshots keep a pending dismissal out of the active stack and count");
@@ -1070,6 +1071,7 @@
       assert(!notice.dismissed_at && !document.querySelector(".keyboard-hint"), "repeated Enter cannot acknowledge a card and hints may remain disabled");
     }
     actionKey("Enter");
+    keepAlive();
     await sleep(30);
     assert(notice.dismissed_at && !notice.response, `${variant}: Enter dismisses the notice without submitting a response`);
   }
@@ -1228,7 +1230,7 @@
   actionKey("Enter");
   assert(!nativeNotice.dismissed_at, "native focus loss blocks Got it even if WebKit still reports focus");
   document.hasFocus = () => false; window.nfn.receive({ type: "window_focus", active: true });
-  actionKey("Enter"); await sleep(30);
+  actionKey("Enter"); keepAlive(); await sleep(30);
   assert(nativeNotice.dismissed_at && !nativeNotice.response, "native keyboard focus enables Enter even before WebKit reports focus");
   resetFlow();
   const custom = window.fixture.record("custom-question", 1);
@@ -1252,5 +1254,17 @@
   click("Send"); await sleep(30);
   assert(window.fixture.calls.some(command => command.id === replyUpdate.id && command.op === "respond" && command.action_id === "reply" && command.text === "Check device 04 again"), "update replies send the entered text to the response handler");
   document.hasFocus = originalHasFocus;
+  resetFlow();
+  const sessionNotice = flowRecord("session-menu", 0, true);
+  window.nfn.receive(window.fixture.snapshot(sessionNotice.id));
+  document.querySelector('[data-action-id="acknowledge"]').click();
+  assert(!sessionNotice.dismissed_at && document.querySelector('.acknowledge-menu[role="menu"]'), "Got it opens session actions without dismissing the message");
+  assert(document.activeElement.textContent === "Keep session alive", "session menu focuses the non destructive action first");
+  const popup = document.querySelector('.acknowledge-menu').getBoundingClientRect(), frame = document.querySelector('#surface').getBoundingClientRect();
+  assert(popup.left >= frame.left && popup.right <= frame.right && popup.top >= frame.top && popup.bottom <= frame.bottom, "session popup fits inside the message surface");
+  document.activeElement.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+  assert(document.activeElement.textContent === "Kill session", "arrow keys select the session kill action");
+  document.activeElement.click(); await sleep(30);
+  assert(sessionNotice.dismissed_at && window.fixture.calls.some(command => command.op === "kill_session" && command.id === sessionNotice.id), "Kill session sends a separate host command and dismisses the message");
   return { passed: checks.length, checks };
 })()

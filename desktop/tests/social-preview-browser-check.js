@@ -113,7 +113,8 @@
   const retainedRow = () => document.querySelector('[data-queue-record="retained-review"] .queue-item');
   assert(retainedRow(), "an undecided social review remains a separate Pending entry beside an update from the same agent");
   document.querySelector('[data-queue-record="other-agent-update"] .queue-item').click();
-  document.querySelector('[data-action-id="acknowledge"]').click(); await sleep(80);
+  document.querySelector('[data-action-id="acknowledge"]').click();
+  document.querySelector('.acknowledge-menu [role="menuitem"]')?.click(); await sleep(80);
   document.querySelector('[aria-label="Notification list"]').click(); retainedRow().click(); await sleep(50);
   assert(document.querySelector(".x-post") && document.querySelector(".social-feedback textarea").value === unsent.value && !fixture.calls.some(call => call.id === retained.id && ["respond", "dismiss", "dismiss_many", "cancel"].includes(call.op)), "leaving the review and acknowledging another message never submits or dismisses the post");
   if (!mobile) {

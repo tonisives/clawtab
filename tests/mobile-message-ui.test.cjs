@@ -199,6 +199,20 @@ function harness(records = [record("mac-a"), record("mac-b")]) {
   return { controller: messageSurfaceController(options), calls, opened, options };
 }
 
+test("killing a message session targets its owning host and updates the dismissed record", async () => {
+  const h = harness();
+  const calls = [], updates = [];
+  h.options.host = async (machine, command) => {
+    calls.push({ machine, ...command });
+    return record(machine, command.id, { dismissed_at: 99 });
+  };
+  h.options.update = value => updates.push(value);
+  const result = await h.controller.execute({ op: "kill_session", id: "mac-b::same-id" });
+  assert.deepEqual(calls, [{ machine: "mac-b", op: "kill_session", id: "same-id" }]);
+  assert.equal(result.dismissed_at, 99);
+  assert.equal(updates[0].machine_id, "mac-b");
+});
+
 test("surface replies target the owning machine and preserve social action and text", async () => {
   const h = harness();
   const result = await h.controller.execute({ op: "respond", id: "mac-b::same-id", action_id: "approve", text: "Final caption" });

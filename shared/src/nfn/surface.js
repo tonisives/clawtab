@@ -587,8 +587,10 @@
     menu = null; render(false); startContext();
   }
   function toggleMenu(next) {
+    const closingAcknowledgement = menu === "acknowledge" && next === menu;
     if (menu === "agent") contextRequest = null;
     pauseTimer(); expanded = true; menu = menu === next ? null : next; render();
+    if (closingAcknowledgement) card?.querySelector("[aria-haspopup=menu]")?.focus({ preventScroll: true });
     if (menu === "agent") refreshContext(); else startContext();
   }
   function showQueue(showHistory = false, restore = null) {
@@ -676,6 +678,11 @@
       state.pending = false;
       render(); resumeTimer();
     }
+  }
+  function acknowledge(record) {
+    if (actionsInProgress.has(record.id)) return;
+    if (record.request.source?.pane_id) toggleMenu("acknowledge");
+    else performAction(record.id, { op: "dismiss", id: record.id });
   }
   function revisionChoice(record) {
     if (record?.request.template !== "social-review" || record.request.data?.platform !== "X") return null;
@@ -1012,7 +1019,7 @@
     const actions = el("div", "actions"); node._actions = actions;
     const choices = record.request.actions || [];
     for (const [index, action] of choices.filter(action => !bundle && action.kind !== "focus").entries()) {
-      const control = button(action.label, () => act(record.id, action.id, drafts.get(record.id) || ""), index === 0 ? "primary" : "");
+      const control = button(action.label, () => action.id === "acknowledge" ? acknowledge(record) : act(record.id, action.id, drafts.get(record.id) || ""), index === 0 ? "primary" : "");
       control.title = action.label;
       control.dataset.actionId = action.id;
       actions.append(control);
@@ -1098,8 +1105,12 @@
     const footerActions = el("div", "footer-actions");
     if (actions.parentElement === utilities) footerActions.append(actions);
     else {
-      const acknowledge = button("Got it", () => performAction(record.id, { op: "dismiss", id: record.id }), "primary acknowledge");
-      node._acknowledge = acknowledge; footerActions.append(acknowledge);
+      const control = button("Got it", () => acknowledge(record), "primary acknowledge");
+      node._acknowledge = control; footerActions.append(control);
+    }
+    const ack = footerActions.querySelector(".acknowledge, [data-action-id=acknowledge]");
+    if (ack && record.request.source?.pane_id) {
+      ack.setAttribute("aria-haspopup", "menu"); ack.setAttribute("aria-expanded", "false");
     }
     if (replyToggle) footerActions.append(replyToggle);
     utilities.append(footerActions);
@@ -1164,6 +1175,7 @@
     const busy = actionsInProgress.has(current);
     card._status.classList.toggle("alert", alert && isPending);
     card._status.textContent = record.ignored ? "Ignored" : record.status === "delivering" || busy ? "Sending..." : isPending ? (alert ? "! Alert" : "") : record.status === "resolved" ? (alert ? "Recovered" : update ? "Seen" : "Sent") : record.status;
+    card.querySelector("[aria-haspopup=menu]")?.setAttribute("aria-expanded", String(menu === "acknowledge"));
     card._options?.setAttribute("aria-expanded", String(menu === "options" || menu === "agent"));
     const feedback = Boolean(drafts.get(record.id)?.trim());
     for (const control of card._actions.querySelectorAll("button")) control.disabled = !isPending || busy
@@ -1463,7 +1475,20 @@
     if (menu === "agent") { const back = button("‹", () => toggleMenu("options"), "utility nav-step"); back.setAttribute("aria-label", "Back to options"); heading.append(back); }
     heading.append(el("span", "", menu === "agent" ? "Agent controls" : "Options"));
     const close = button("×", () => toggleMenu(menu), "utility close"); close.setAttribute("aria-label", "Close menu"); heading.append(close); panel.append(heading);
-    if (menu === "options") {
+    if (menu === "acknowledge") {
+      overlay.classList.add("acknowledge-overlay"); panel.classList.add("acknowledge-menu");
+      panel.setAttribute("role", "menu"); panel.setAttribute("aria-label", "Session actions"); heading.remove();
+      for (const [label, op] of [["Keep session alive", "dismiss"], ["Kill session", "kill_session"]]) {
+        const action = button(label, () => performAction(record.id, { op, id: record.id }), `utility session-action${op === "kill_session" ? " destructive" : ""}`);
+        action.setAttribute("role", "menuitem"); panel.append(action);
+      }
+      panel.addEventListener("keydown", event => {
+        if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+        event.preventDefault();
+        const items = [...panel.querySelectorAll("[role=menuitem]")], index = items.indexOf(document.activeElement);
+        items[event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : (index + (event.key === "ArrowUp" ? -1 : 1) + items.length) % items.length].focus();
+      });
+    } else if (menu === "options") {
       if (hasAgent(record)) {
         panel.append(autoYesControl(record));
         const controls = button("Agent controls", () => toggleMenu("agent"), "utility menu-link");
@@ -1478,6 +1503,7 @@
     } else if (menu === "agent") panel.append(el("div", "agent-controls", "Loading..."));
     const notice = el("div", "notice menu-notice"); notice.setAttribute("role", "status"); panel.append(notice);
     overlay.append(panel); overlay.addEventListener("click", event => { if (event.target === overlay) toggleMenu(menu); }); host.append(overlay);
+    if (menu === "acknowledge") panel.querySelector("[role=menuitem]").focus({ preventScroll: true });
     updateAutoYes();
   }
   function leaveSettings() {
