@@ -19,8 +19,8 @@ body{display:flex;justify-content:center}
 button.bar-toggle{touch-action:auto;cursor:pointer}
 button,input,select,textarea{font-size:16px}
 button{min-height:44px;border-radius:999px;padding:8px 16px;font-size:14px;font-weight:600}
-button.utility:not(.icon-button):not(.close):not(.nav-step):not(.menu-link):not(.reply-toggle):not(.auto-yes-switch):not(.todo-toggle):not([role="tab"]){min-height:44px;padding:8px 16px;border:1px solid var(--line);background:#202020;color:var(--accent);border-radius:999px;font-size:14px;font-weight:600}
-button.utility:not(.icon-button):not(.close):not(.nav-step):not(.menu-link):not(.reply-toggle):not(.auto-yes-switch):not(.todo-toggle):not([role="tab"]):hover{background:#292929}
+button.utility:not(.icon-button):not(.close):not(.nav-step):not(.menu-link):not(.session-action):not(.reply-toggle):not(.auto-yes-switch):not(.todo-toggle):not([role="tab"]){min-height:44px;padding:8px 16px;border:1px solid var(--line);background:#202020;color:var(--accent);border-radius:999px;font-size:14px;font-weight:600}
+button.utility:not(.icon-button):not(.close):not(.nav-step):not(.menu-link):not(.session-action):not(.reply-toggle):not(.auto-yes-switch):not(.todo-toggle):not([role="tab"]):hover{background:#292929}
 button.primary,.actions button,button.open-session,button.send{min-height:44px;padding:8px 16px;border-radius:999px;font-size:14px;font-weight:600;color:var(--accent);border-color:var(--accent);background:#7986cb1a}
 button.primary:hover,.actions button:hover,button.open-session:hover,button.send:hover{background:#7986cb30}
 button:active:not(:disabled){opacity:.65}

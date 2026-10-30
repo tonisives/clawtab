@@ -1266,5 +1266,10 @@
   assert(document.activeElement.textContent === "Kill session", "arrow keys select the session kill action");
   document.activeElement.click(); await sleep(30);
   assert(sessionNotice.dismissed_at && window.fixture.calls.some(command => command.op === "kill_session" && command.id === sessionNotice.id), "Kill session sends a separate host command and dismisses the message");
+  resetFlow();
+  const menuPreview = flowRecord("Session actions", 0, true);
+  window.fixture.records.set(menuPreview.id, menuPreview); window.nfn.receive(window.fixture.snapshot(menuPreview.id));
+  document.querySelector('[data-action-id="acknowledge"]').click();
+  await sleep(100);
   return { passed: checks.length, checks };
 })()
