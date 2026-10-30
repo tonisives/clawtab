@@ -9,6 +9,7 @@ cwtctl message send "Ship this release?" --choice "ship=Ship" --choice "revise=R
 cwtctl message send "Review needed" --channel desktop --channel telegram
 cwtctl message send "Build failed" --kind failed --channel mobile
 cwtctl message list --pending
+cwtctl message focus MESSAGE_ID
 cwtctl message reply MESSAGE_ID "Use beta"
 cwtctl message reply MESSAGE_ID --action ship
 cwtctl message dismiss MESSAGE_ID
@@ -115,6 +116,8 @@ JSON
 
 `send` returns the persisted request, including its ID. `--wait` returns the final record and response. A wait timeout returns `wait_timed_out: true` and leaves the request pending. Set `expires_at` to a Unix timestamp in milliseconds to expire the request itself.
 
+Use `cwtctl message focus MESSAGE_ID` to bring its card forward in the macOS desktop message bar with keyboard focus. Agents can use the ID returned by `send`, or find it with `message list --query TEXT`. This also opens messages in History. Messages from the same conversation share a card with the latest actions.
+
 For progress reports that need no decision, send `"template": "update"` without `--wait`. Update cards show **Got it** at the bottom right, including cards without a session link. With keyboard hints enabled, **N** activates Got it on every card. It dismisses the notification without submitting a result or checking the agent session. Use question or permission templates when the workflow needs an answer. Sending a notification alone does not pause an agent; the workflow must wait for and consume its response.
 
 Interactive agents started from a terminal or ClawTab send an update card when they finish a turn. **Open session** returns to the originating conversation and dismisses the notification from Pending; it stays in History. The same footer action is available on other agent cards. If opening the session fails, the card stays available to retry. **Got it** dismisses the completion without sending a response. Desktop and remote agent completion notifications are enabled by default and can be changed separately in Settings → Notifications. Permission waits and errors do not count as completions, and restarting the daemon does not replay old completions. Scheduled jobs use their own finish notification settings. Job runs save the agent conversation ID and working directory while the agent is running. Failed-job cards keep an Open session action after exit; it resumes the saved conversation when the original process has ended.
@@ -128,6 +131,7 @@ cwtctl message get REQUEST_ID
 cwtctl message wait REQUEST_ID --timeout 60
 cwtctl message cancel REQUEST_ID
 cwtctl message show
+cwtctl message focus REQUEST_ID
 cwtctl message settings
 cwtctl message templates list
 cwtctl message templates validate ./my-review.yaml

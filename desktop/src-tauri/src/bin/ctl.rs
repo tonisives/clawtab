@@ -29,7 +29,7 @@ fn print_usage() {
     eprintln!("  setup [--relay URL] [--name NAME] [--linger | --no-service] [--replace]  Pair and install the host");
     eprintln!("  login [--provider google|apple | --email EMAIL] [--relay URL] [--no-browser]  Replace the current account");
     eprintln!("Commands (require daemon):");
-    eprintln!("  message <send|list|get|wait|reply|cancel|show|settings|templates>  Messages and human input");
+    eprintln!("  message <send|list|get|wait|reply|cancel|focus|show|settings|templates>  Messages and human input");
     eprintln!("  jobs              Manage configured jobs");
     eprintln!("  move help         Move a conversation or verify machine/client identities");
     eprintln!(
