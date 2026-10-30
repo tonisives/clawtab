@@ -145,6 +145,12 @@ pub fn parse_numbered_options(text: &str) -> Vec<QuestionOption> {
                 }
             }
         }
+        // A composer below printed options means that menu is transcript text.
+        if line.trim_start().starts_with(['›', '❯']) {
+            groups.clear();
+            current_group.clear();
+            continue;
+        }
         // Only break the group on lines that look like real content (not
         // description lines, separators, or blanks between numbered options).
         // Description lines are indented text under an option, separator lines
@@ -626,8 +632,10 @@ fn validate_question_screen(
             .iter()
             .zip(&question.options)
             .all(|(live, previous)| live.number == previous.number && live.label == previous.label);
+    // Detection trims the capture; compare the same context without shifting
+    // mouse-button coordinates in the full live screen.
     if !same_options
-        || prompt_context_key(&last_context_lines(screen))
+        || prompt_context_key(&last_context_lines(screen.trim()))
             != prompt_context_key(&question.context_lines)
     {
         return Err("The visible agent prompt has changed. Focus the agent to review it.".into());
@@ -3064,6 +3072,39 @@ threadId: 01a17f59-5961-7c31-9e33-08bb2706bf46
   2. Cancel  Cancel this tool call
 enter to submit | esc to cancel
 "#;
+
+    #[test]
+    fn live_mcp_permission_validation_ignores_terminal_bottom_padding() {
+        let history = "Earlier agent output\n".repeat(35);
+        let screen = format!("{history}{CODEX_MCP_PERMISSION}{}", "\n".repeat(14));
+        let mut process = agent("%6", "");
+        process.12 = ProcessProvider::Codex;
+        record_pane_capture(&mut process, &screen, 77);
+        let mut cache = std::collections::HashMap::new();
+        update_question_cache(&[process], &mut cache);
+        let question = &cache["%6"].question;
+
+        let live = super::validate_question_screen(question, None, &screen).unwrap();
+        assert!(!live.requires_manual_answer);
+        assert_eq!(find_yes_option(&live.options).as_deref(), Some("1"));
+        assert!(super::validate_question_screen(
+            question,
+            None,
+            &screen.replace("01a17f59", "01a18a1f"),
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn printed_permission_options_above_a_live_composer_are_not_a_prompt() {
+        for composer in ["›", "› 1", "› Continue", "❯ Continue"] {
+            let screen = format!("{CODEX_MCP_PERMISSION}\n{composer}\nVim: Insert");
+            assert!(parse_numbered_options(&screen).is_empty(), "{composer}");
+            let mut cache = std::collections::HashMap::new();
+            update_question_cache(&[agent("%1", &screen)], &mut cache);
+            assert!(cache.is_empty());
+        }
+    }
 
     #[test]
     fn codex_mcp_permissions_keep_auto_yes_enabled() {

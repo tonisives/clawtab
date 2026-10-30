@@ -816,8 +816,8 @@ pub fn send_keys_to_tui_pane_freetext(
 }
 
 /// Capture the full visible area of a pane with ANSI escape sequences preserved.
-/// Returns (text, pane_height). Uses `-J` to avoid trailing whitespace trimming
-/// so line count matches pane height exactly.
+/// Returns (text, pane_height). Uses `-N` to preserve rows and trailing spaces,
+/// matching the batched question detector's capture.
 pub fn capture_pane_visible(pane_id: &str) -> Result<(String, u16), String> {
     let dim_output = run(
         &["display", "-t", pane_id, "-p", "#{pane_height}"],
@@ -840,7 +840,7 @@ pub fn capture_pane_visible(pane_id: &str) -> Result<(String, u16), String> {
             pane_id,
             "-p",
             "-e",
-            "-J",
+            "-N",
             "-S",
             "0",
             "-E",
