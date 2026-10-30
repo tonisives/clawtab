@@ -989,6 +989,25 @@
   assert(focusHost.dataset.keyboardActive === "true" && getComputedStyle(focusHost).boxShadow === activeShadow, "keyboard focus restores the active appearance");
   assert(badges.every(badge => !/[JK]/.test(badge.textContent)), "button hints reserve J K for list navigation");
 
+  const actionKey = (key, target = document.getElementById("surface"), modifiers = {}) => {
+    const event = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...modifiers }); target.dispatchEvent(event); return event;
+  };
+  const hintReply = document.querySelector("textarea"); hintReply.value = "Draft for keyboard shortcuts"; hintReply.dispatchEvent(new Event("input")); await sleep(100);
+  const actionHints = () => [...document.querySelectorAll(".keyboard-hint")];
+  assert(actionHints().find(badge => badge.dataset.target === "Open session")?.textContent === "O" && actionHints().find(badge => badge.dataset.target === "Details")?.textContent === "D", "main card actions use descriptive fixed O and D hints");
+  assert(actionHints().find(badge => badge.dataset.target === "Reply to agent")?.textContent === "R" && actionHints().find(badge => badge.dataset.target === "Send")?.textContent === "Cmd+Enter", "reply and send hints match their fixed shortcuts");
+  const beforePrimary = window.fixture.calls.filter(command => command.op === "respond").length;
+  assert(!actionKey("Enter").defaultPrevented && window.fixture.calls.filter(command => command.op === "respond").length === beforePrimary, "Enter never submits an arbitrary primary answer");
+  actionKey("d"); await sleep(30);
+  assert(document.querySelector("#surface").classList.contains("details-open"), "D opens the current message Details");
+  actionKey("d"); actionKey("r");
+  const shortcutReply = document.querySelector("textarea");
+  assert(document.activeElement === shortcutReply, "R focuses the reply composer");
+  assert(["o", "d", "r", "Enter"].every(key => !actionKey(key, shortcutReply).defaultPrevented), "main-action shortcuts leave ordinary reply typing and newlines alone");
+  shortcutReply.value = "Reply through the static shortcut"; shortcutReply.dispatchEvent(new Event("input"));
+  actionKey("Enter", shortcutReply, { metaKey: true }); await sleep(30);
+  assert(window.fixture.calls.filter(command => command.op === "respond").length === beforePrimary + 1 && window.fixture.calls.find(command => command.op === "respond")?.text === "Reply through the static shortcut", "Command Enter sends one reply without double dispatch");
+
   for (const [variant, source, available] of [
     ["standalone", { provider: "codex", task: "Codex (terminal unknown)" }, true],
     ["job", { job_id: "recording-consumer" }, true],
@@ -1010,13 +1029,32 @@
       const bounds = ack.getBoundingClientRect(), footer = ack.closest(".controls").getBoundingClientRect();
       assert(Math.abs(bounds.right - footer.right) < 1 && Math.abs(bounds.top + bounds.height / 2 - footer.top - footer.height / 2 - 7) < 1, `${variant}: Got it stays at the right of the bottom bar`);
       const hints = [...document.querySelectorAll(".keyboard-hint")];
-      assert(hints.find(badge => badge.dataset.target === "Got it")?.textContent === "N" && new Set(hints.map(badge => badge.textContent)).size === hints.length, `${variant}: Got it keeps the N shortcut without duplicate hints`);
+      assert(hints.find(badge => badge.dataset.target === "Got it")?.textContent === "Enter" && new Set(hints.map(badge => badge.textContent)).size === hints.length, `${variant}: Got it keeps the Enter shortcut without duplicate hints`);
+      if (document.querySelector(".open-session")) assert(hints.find(badge => ["Open session", "Open browser"].includes(badge.dataset.target))?.textContent === "O", `${variant}: session and browser actions keep O`);
     };
     checkFooter();
     if (available) { click("Details"); await sleep(100); checkFooter(); }
-    document.getElementById("surface").dispatchEvent(new KeyboardEvent("keydown", { key: "n", bubbles: true, cancelable: true }));
+    document.hasFocus = () => false;
+    actionKey("Enter");
+    assert(!notice.dismissed_at, `${variant}: Enter cannot dismiss an unfocused bar`);
+    document.hasFocus = () => true;
+    if (variant === "browser") {
+      state.settings.keyboard_hints = false; window.nfn.receive(state); await sleep(100);
+      actionKey("o"); await sleep(30);
+      assert(window.fixture.calls.some(command => command.op === "open_browser" && command.id === notice.id) && !document.querySelector(".keyboard-hint"), "O opens the browser session even with hints disabled");
+    } else if (variant === "session") {
+      window.fixture.focusError = "Session is not attached";
+      actionKey("o"); await sleep(30);
+      assert(window.fixture.calls.some(command => command.op === "focus" && command.id === notice.id) && !notice.dismissed_at, "O opens the session and preserves the card if opening fails");
+      window.fixture.focusError = null;
+    } else if (variant === "summary") {
+      state.settings.keyboard_hints = false; window.nfn.receive(state); await sleep(100);
+      actionKey("Enter", document.getElementById("surface"), { repeat: true });
+      assert(!notice.dismissed_at && !document.querySelector(".keyboard-hint"), "repeated Enter cannot acknowledge a card and hints may remain disabled");
+    }
+    actionKey("Enter");
     await sleep(30);
-    assert(notice.dismissed_at && !notice.response, `${variant}: N dismisses the notice without submitting a response`);
+    assert(notice.dismissed_at && !notice.response, `${variant}: Enter dismisses the notice without submitting a response`);
   }
 
   resetFlow(); window.fixture.serverOrder = false;

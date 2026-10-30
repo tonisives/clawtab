@@ -1393,7 +1393,10 @@
         ["Option, Option", "Toggle button hints while the bar has focus."],
         ["H / L", "Previous / next message card."],
         ["J / K", "Next / previous list row. Prefix with a count, such as 3j."],
-        ["Enter", "Open the selected message."],
+        ["Enter", "Got it on a message card; open the selected message in a list."],
+        ["O", "Open the message's session or browser."],
+        ["D / R", "Show Details / reply to the agent."],
+        ["Command + Enter", "Send the reply."],
         ["V / Space", "Toggle selection mode / check the selected message."],
         ["D", "Dismiss the selected pending message."],
         ["/", "Search the current message list. Escape returns to navigation and keeps the search."],
@@ -1740,7 +1743,11 @@
     if (host.dataset.keyboardActive !== keyboardActive) host.dataset.keyboardActive = keyboardActive;
   }
   function fixedHint(node) {
-    if (node.matches('.controls [data-action-id="acknowledge"]')) return "N";
+    if (node.matches('.card [data-action-id="acknowledge"]')) return "Enter";
+    if (node.matches(".open-session")) return "O";
+    if (node.matches(".details-toggle")) return "D";
+    if (node.matches(".reply-toggle") || node.matches(".reply textarea") && !node.closest(".reply").querySelector(".reply-toggle")) return "R";
+    if (node.matches(".send")) return "Cmd+Enter";
     if (node.closest(".top")) {
       if (node.matches(".brand")) return "A";
       if (node.matches(".count,.bar-toggle")) return "S";
@@ -1761,22 +1768,25 @@
     if (node.matches(".dismiss-selected")) return "X";
     return null;
   }
+  function availableShortcutTarget(node) {
+    if (node.disabled || node.closest('[hidden],[inert]') || node.getAttribute("aria-disabled") === "true") return false;
+    const r = node.getBoundingClientRect(), style = getComputedStyle(node);
+    if (!r.width || !r.height || style.visibility === "hidden" || style.display === "none") return false;
+    const x = Math.max(0, r.left) + Math.min(r.width, innerWidth - Math.max(0, r.left)) / 2;
+    const y = Math.max(0, r.top) + Math.min(r.height, innerHeight - Math.max(0, r.top)) / 2;
+    const hit = document.elementFromPoint(x, y);
+    return hit === node || node.contains(hit);
+  }
   function refreshHints() {
     syncFocusAppearance();
     if (!snapshot.settings?.keyboard_hints || snapshot.remote || preview || !document.hasFocus() || host.classList.contains("empty")) {
       hintOverlay.replaceChildren(); hintTargets = []; hintLabels = []; hintInput = ""; return;
     }
     const targets = [...host.querySelectorAll('button,input:not([type="hidden"]),textarea,select,summary,a[href],[role="button"]')].filter(node => {
-      if (node.disabled || node.closest('[hidden],[inert]') || node.getAttribute("aria-disabled") === "true") return false;
       if (node.matches(".bar-toggle") && host.querySelector(".top button.count")) return false;
       const row = node.closest("[data-queue-record]");
       if (row && (row.dataset.selected !== "true" || node.matches(".queue-item"))) return false;
-      const r = node.getBoundingClientRect(), style = getComputedStyle(node);
-      if (!r.width || !r.height || style.visibility === "hidden" || style.display === "none") return false;
-      const x = Math.max(0, r.left) + Math.min(r.width, innerWidth - Math.max(0, r.left)) / 2;
-      const y = Math.max(0, r.top) + Math.min(r.height, innerHeight - Math.max(0, r.top)) / 2;
-      const hit = document.elementFromPoint(x, y);
-      return hit === node || node.contains(hit);
+      return availableShortcutTarget(node);
     }).sort((a,b) => {
       const x = a.getBoundingClientRect(), y = b.getBoundingClientRect();
       return Math.abs(x.top-y.top) > 8 ? x.top-y.top : x.left-y.left;
@@ -1784,7 +1794,7 @@
     if (targets.length !== hintTargets.length || targets.some((node,i) => node !== hintTargets[i])) {
       hintTargets = targets; hintInput = ""; hintOverlay.replaceChildren();
       const fixed = targets.map(fixedHint), dynamicCount = fixed.filter(label => !label).length;
-      const alphabet = [..."BFMNORUWZ"].filter(label => !fixed.includes(label)).join("");
+      const alphabet = [..."BFMNUWZ"].filter(label => !fixed.includes(label)).join("");
       const length = Math.max(1, Math.ceil(Math.log(Math.max(1, dynamicCount))/Math.log(alphabet.length)));
       let ordinal = 0;
       hintLabels = targets.map((node, index) => {
@@ -1811,13 +1821,35 @@
     if (!/^[a-z]$/i.test(event.key)) return false;
     event.preventDefault(); if (event.repeat) return true;
     refreshHints(); const next = hintInput + event.key.toUpperCase();
-    const index = hintLabels.findIndex(label => label === next);
+    const index = hintLabels.findIndex(label => /^[A-Z]+$/.test(label) && label === next);
     if (index >= 0 && hintTargets[index]?.isConnected) {
       const target = hintTargets[index]; hintInput = "";
       if (target.matches('input:not([type="checkbox"]):not([type="radio"]),textarea,select')) { native({ native: "text_focus", active: true }); target.focus(); }
       else target.click();
-    } else hintInput = hintLabels.some(label => label.startsWith(next)) ? next : "";
+    } else hintInput = hintLabels.some(label => /^[A-Z]+$/.test(label) && label.startsWith(next)) ? next : "";
     refreshHints(); return true;
+  }
+  function handleCardShortcut(event) {
+    if (event.defaultPrevented || event.isComposing || snapshot.remote || preview || !document.hasFocus()
+      || !card || queue || settingsOpen || todosOpen || menu || event.altKey) return false;
+    const editing = event.target.closest?.('input,textarea,select,[contenteditable="true"]');
+    const send = event.key === "Enter" && (event.metaKey || event.ctrlKey) && !event.shiftKey;
+    if (!send && (editing || event.metaKey || event.ctrlKey)) return false;
+    let selector;
+    if (send) selector = ".send";
+    else if (event.key === "Enter" && !event.shiftKey) {
+      if (event.target.closest?.('button,a[href],summary,[role="button"]') && !event.target.matches('[data-action-id="acknowledge"]')) return false;
+      selector = '[data-action-id="acknowledge"]';
+    } else selector = { o: ".open-session", d: ".details-toggle", r: ".reply textarea,.reply-toggle" }[event.key.toLowerCase()];
+    if (!selector) return false;
+    const targets = [...card.querySelectorAll(selector)], target = targets.find(node => node.matches("textarea") && availableShortcutTarget(node)) || targets.find(availableShortcutTarget);
+    if (!target) return false;
+    event.preventDefault(); hintInput = "";
+    if (!event.repeat) {
+      if (target.matches("textarea")) { native({ native: "text_focus", active: true }); target.focus({ preventScroll: true }); }
+      else target.click();
+    }
+    return true;
   }
   function handleNavigationKey(event) {
     if (event.defaultPrevented || event.isComposing || !document.hasFocus() || event.metaKey || event.altKey || event.ctrlKey || settingsOpen || todosOpen || menu) return false;
@@ -1885,6 +1917,7 @@
     if (!focused) { native({ native: "text_focus", active: false }); resumeTimer(); }
   }));
   document.addEventListener("keydown", event => {
+    if (handleCardShortcut(event)) return;
     if (handleNavigationKey(event)) return;
     if (handleHintKey(event)) return;
     if (event.key === "Escape") { event.preventDefault(); if (settingsOpen) closeSettings(); else if (menu) toggleMenu(menu); else collapse(); }
