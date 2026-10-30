@@ -1198,5 +1198,15 @@
   document.querySelector('.social-submit').scrollIntoView({ block: 'nearest' });
   assert(document.querySelector('.social-submit').getBoundingClientRect().bottom <= document.querySelector('.card').getBoundingClientRect().bottom + 1, "platform decisions remain reachable when media fills the card");
   reviewScroller.scrollTop = 0;
+  resetFlow();
+  const nativeNotice = flowRecord("native-shortcut", 1, true);
+  window.nfn.receive(window.fixture.snapshot(nativeNotice.id));
+  document.hasFocus = () => true; window.nfn.receive({ type: "window_focus", active: false });
+  actionKey("Enter");
+  assert(!nativeNotice.dismissed_at, "native focus loss blocks Got it even if WebKit still reports focus");
+  document.hasFocus = () => false; window.nfn.receive({ type: "window_focus", active: true });
+  actionKey("Enter"); await sleep(30);
+  assert(nativeNotice.dismissed_at && !nativeNotice.response, "native keyboard focus enables Enter even before WebKit reports focus");
+  document.hasFocus = originalHasFocus;
   return { passed: checks.length, checks };
 })()

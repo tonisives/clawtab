@@ -1836,7 +1836,7 @@
     refreshHints(); return true;
   }
   function handleCardShortcut(event) {
-    if (event.defaultPrevented || event.isComposing || snapshot.remote || preview || !document.hasFocus()
+    if (event.defaultPrevented || event.isComposing || snapshot.remote || preview || !hasWindowFocus()
       || !card || queue || settingsOpen || todosOpen || menu || event.altKey) return false;
     const editing = event.target.closest?.('input,textarea,select,[contenteditable="true"]');
     const send = event.key === "Enter" && (event.metaKey || event.ctrlKey) && !event.shiftKey;
