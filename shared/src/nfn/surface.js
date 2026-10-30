@@ -911,6 +911,9 @@
       }, "utility");
       openJob.title = "Show job folder in Finder"; utilities.append(openJob);
     }
+    if (utilities.classList.contains("session-controls") && actions.childElementCount === 1 && actions.firstElementChild.dataset.actionId === "acknowledge") {
+      utilities.append(actions);
+    }
     node.append(utilities);
     return node;
   }

@@ -93,7 +93,7 @@ button.reply-toggle { padding: 0; font-size: 12px; }
 .reply-toggle::before { content: "›"; display: inline-block; margin-right: 6px; }
 .reply-toggle[aria-expanded="true"]::before { transform: rotate(90deg); }
 .answer-row { display: flex; align-items: center; gap: 10px; margin-top: 12px; min-width: 0; }
-.answer-row:has(.actions:empty) { display: none; }
+.answer-row:empty, .answer-row:has(.actions:empty) { display: none; }
 .actions { display: flex; flex: 1; min-width: 0; gap: 8px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; }
 .actions::-webkit-scrollbar { display: none; }
 .actions:empty { display: none; }
@@ -110,6 +110,7 @@ button.send { flex: none; align-self: flex-end; min-width: 54px; padding: 7px 12
 .controls.session-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); padding-top: 14px; }
 .session-controls .details-toggle { justify-self: start; max-width: 100%; white-space: normal; text-align: left; }
 .session-controls .open-session { grid-column: 2; }
+.session-controls .actions { grid-column: 3; justify-content: flex-end; }
 .notice { font-size: 12px; line-height: 1.45; margin-top: 8px; white-space: pre-wrap; overflow-wrap: anywhere; color: #ff9f0a; }
 .notice:empty { display: none; }
 .details-open .card > .details-content { flex: 1; min-height: 0; }
