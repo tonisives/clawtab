@@ -95,6 +95,27 @@
     const response = fixture.calls.find(call => call.op === "respond" && call.id === id);
     assert(response?.decisions[0].decision === expected && !response.decisions[0].comment, `${expected} sends an explicit decision without feedback`);
   }
+  const retained = post("retained-review"); retained.request.data.targets[0].body += "\n\nA longer draft to review while scrolling.".repeat(24);
+  open(retained.id); await sleep(50);
+  const retainedBody = document.querySelector(".message-content"); retainedBody.scrollTop = retainedBody.scrollHeight;
+  retainedBody.dispatchEvent(new Event("scroll")); window.nfn.outsideClick();
+  assert(retainedBody.scrollTop > 0 && retained.status === "pending" && !retained.dismissed_at, "scrolling or clicking outside an undecided review leaves the draft pending");
+  document.querySelector('[aria-label="Request changes for x"]').click();
+  const unsent = document.querySelector(".social-feedback textarea"); unsent.value = "Keep this unsent feedback while I check other messages."; unsent.dispatchEvent(new Event("input"));
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  window.nfn.receive({ ...fixture.snapshot(), remote: mobile });
+  document.querySelector('[aria-label="Expand notifications"]').click(); await sleep(50);
+  assert(document.querySelector(".x-post") && document.querySelector(".social-feedback textarea").value === unsent.value && retained.status === "pending", "closing and reopening restores the undecided post and its unsent feedback");
+  const other = fixture.record("other-agent-update", 1); other.created_at = retained.created_at + 100;
+  other.request = { ...other.request, title: "Agent update", template: "update", source: { ...retained.request.source }, data: { event: "agent_finished" }, actions: [{ id: "acknowledge", label: "Got it", kind: "choice" }] };
+  fixture.records.set(other.id, other); window.nfn.receive({ ...fixture.snapshot(), remote: mobile });
+  document.querySelector('[aria-label="Notification list"]').click();
+  const retainedRow = () => document.querySelector('[data-queue-record="retained-review"] .queue-item');
+  assert(retainedRow(), "an undecided social review remains a separate Pending entry beside an update from the same agent");
+  document.querySelector('[data-queue-record="other-agent-update"] .queue-item').click();
+  document.querySelector('[data-action-id="acknowledge"]').click(); await sleep(80);
+  document.querySelector('[aria-label="Notification list"]').click(); retainedRow().click(); await sleep(50);
+  assert(document.querySelector(".x-post") && document.querySelector(".social-feedback textarea").value === unsent.value && !fixture.calls.some(call => call.id === retained.id && ["respond", "dismiss", "dismiss_many", "cancel"].includes(call.op)), "leaving the review and acknowledging another message never submits or dismisses the post");
   if (!mobile) {
     const limited = post("short-screen"); limited.request.data.targets[0].body = "Review this post on a shorter screen.\n".repeat(30);
     window.nfn.setPlacement({ placement: "right", max_width: 1000, max_height: 360, reduce_motion: true });
