@@ -1132,7 +1132,11 @@ impl Service {
             } else {
                 crate::terminal_backend::send_keys_to_tui_pane(pane, &action.value)
             }
-        } else if record.request.response_destination == "agent_message" {
+        } else if record.request.response_destination == "agent_message"
+            || (action_id == "reply"
+                && record.request.template == "update"
+                && record.request.source.pane_id.is_some())
+        {
             let pane = record
                 .request
                 .source

@@ -24,7 +24,7 @@
   const autoYes = document.querySelector(".auto-yes-button");
   const autoStyle = getComputedStyle(autoYes);
   assert(autoStyle.borderRadius === "999px" && autoStyle.borderTopWidth === "1px" && autoYes.offsetHeight >= 44, "Yes all keeps its rounded orange action style and touch target");
-  click("Reply to agent");
+  click("Reply");
   assert(!document.querySelector(".reply-row").hidden && document.activeElement === input && document.querySelector(".card") === card, "the first Reply press reveals and focuses the existing field synchronously");
   assert(!surface.getAnimations().length && !card.getAnimations().length, "opening Reply has no delayed reveal or fade");
   input.value = "Please check the newest output"; input.dispatchEvent(new Event("input"));

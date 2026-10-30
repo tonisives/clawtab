@@ -6,7 +6,7 @@
   const buttons = () => [...document.querySelectorAll("button")];
   const click = text => buttons().find(button => button.textContent === text).click();
   const nav = label => document.querySelector(`[aria-label="${label} notification"]`).click();
-  const draft = text => { const input = document.querySelector("textarea"); input.value = text; input.dispatchEvent(new Event("input")); return input; };
+  const draft = text => { if (document.querySelector(".reply")?.hidden) document.querySelector(".reply-toggle").click(); const input = document.querySelector("textarea"); input.value = text; input.dispatchEvent(new Event("input")); return input; };
   window.nfn.setPlacement({ placement: "right", max_width: 1000, max_height: 860, reduce_motion: true });
   window.nfn.collapse();
   window.fixture.calls.length = 0; window.fixture.contextCalls = 0;
@@ -15,6 +15,10 @@
   window.nfn.receive(window.fixture.snapshot("first"));
   document.querySelector("#surface").dispatchEvent(new MouseEvent("mouseenter"));
   assert(document.querySelectorAll(".actions button").length === 4, "all answer choices are available in one scrolling row");
+  assert(document.querySelector(".controls .reply-toggle")?.textContent === "Reply" && document.querySelector(".reply").hidden, "Reply starts collapsed in the bottom controls");
+  const closedReplyHeight = document.querySelector("#surface").offsetHeight;
+  click("Reply");
+  assert(!document.querySelector(".reply").hidden && document.activeElement === document.querySelector("textarea") && document.querySelector("#surface").offsetHeight > closedReplyHeight, "Reply grows the card and focuses its text field");
   assert(document.querySelector(".reply-label").textContent === "Reply to agent" && document.querySelector(".send").textContent === "Send", "reply field and Send are visible on the first card");
   assert(!document.querySelector(".resize-sw").hidden, "new message cards expose resize handles before manual expansion");
   assert(!document.querySelector(".logs, .details-content, select") && window.fixture.contextCalls === 0, "first card has no logs, settings, or background log polling");
@@ -239,12 +243,12 @@
   assert(document.querySelector("#surface").offsetWidth === 520 && contextView.clientHeight === 210 && contextView.scrollHeight > contextView.clientHeight && getComputedStyle(contextView).overflowY === "auto", "larger cards show more context and let the full request scroll");
   approval.request.body = shortContext; window.nfn.receive(window.fixture.snapshot());
   assert(document.querySelector(".reply-row").hidden && document.querySelector(".reply-toggle").getAttribute("aria-expanded") === "false", "questions with answer options start with the reply composer collapsed");
-  click("Reply to agent"); await sleep(30);
+  click("Reply"); await sleep(30);
   assert(!document.querySelector(".reply-row").hidden && document.activeElement === document.querySelector("textarea") && !document.querySelector(".card").getAnimations().length && !document.querySelector("#surface").getAnimations().length, "Reply to agent opens and focuses the composer on the first press without an entrance animation");
   draft("Please clarify before continuing");
   document.querySelector('[aria-label="Notification list"]').click(); document.querySelector('[aria-label="Notification list"]').click(); await sleep(30);
   assert(!document.querySelector(".reply-row").hidden && document.querySelector("textarea").value === "Please clarify before continuing", "an open reply draft survives leaving and returning to the card");
-  draft(""); click("Reply to agent");
+  draft(""); click("Reply");
   assert(document.querySelector(".reply-row").hidden, "the reply composer can be collapsed again");
   assert(document.querySelector('.card > .answer-auto-yes [role="switch"]'), "questions show Auto-yes on a separate line below the answer options");
   document.querySelector('[aria-label="Notification options"]').click();
@@ -325,7 +329,7 @@
   window.fixture.records.set(update.id, update);
   const timedUpdate = window.fixture.snapshot(update.id); timedUpdate.settings.preview_seconds = .05;
   window.nfn.receive(timedUpdate);
-  assert(document.querySelector(".status").textContent === "" && !document.querySelector(".reply, .auto-yes") && document.querySelector(".actions button").textContent === "Got it", "status updates read as notices without asking for instructions");
+  assert(document.querySelector(".status").textContent === "" && document.querySelector(".reply").hidden && !document.querySelector(".auto-yes") && document.querySelector(".actions button").textContent === "Got it", "status updates read as notices without asking for instructions");
   await sleep(180);
   assert(document.querySelector("#surface").classList.contains("pill"), "only status updates collapse on the preview timer");
   document.querySelector('[aria-label="Expand notifications"]').click(); await sleep(30); window.nfn.outsideClick(); await sleep(180);
@@ -392,7 +396,7 @@
   const alertSnapshot = window.fixture.snapshot(alert.id); alertSnapshot.settings.preview_seconds = .05;
   window.nfn.receive(alertSnapshot);
   assert(document.querySelector(".status.alert").textContent === "! Alert" && getComputedStyle(document.querySelector(".status.alert")).color === "rgb(255, 135, 0)", "agent failures display an orange alert marker");
-  assert(!document.querySelector(".reply, .auto-yes") && document.querySelector(".message").textContent === alert.request.body, "failure notices show the full error without approval controls");
+  assert(document.querySelector(".reply").hidden && !document.querySelector(".auto-yes") && document.querySelector(".message").textContent === alert.request.body, "failure notices show the full error without approval controls");
   await sleep(180);
   assert(Boolean(document.querySelector(".card")), "agent alerts stay open until dismissed or recovered");
   click("Open session"); await sleep(30);
@@ -1005,7 +1009,7 @@
   const hintReply = document.querySelector("textarea"); hintReply.value = "Draft for keyboard shortcuts"; hintReply.dispatchEvent(new Event("input")); await sleep(100);
   const actionHints = () => [...document.querySelectorAll(".keyboard-hint")];
   assert(actionHints().find(badge => badge.dataset.target === "Open session")?.textContent === "O" && actionHints().find(badge => badge.dataset.target === "Details")?.textContent === "D", "main card actions use descriptive fixed O and D hints");
-  assert(actionHints().find(badge => badge.dataset.target === "Reply to agent")?.textContent === "R" && actionHints().find(badge => badge.dataset.target === "Send")?.textContent === "Cmd+Enter", "reply and send hints match their fixed shortcuts");
+  assert(actionHints().find(badge => badge.dataset.target === "Reply")?.textContent === "R" && actionHints().find(badge => badge.dataset.target === "Send")?.textContent === "Cmd+Enter", "reply and send hints match their fixed shortcuts");
   const beforePrimary = window.fixture.calls.filter(command => command.op === "respond").length;
   assert(!actionKey("Enter").defaultPrevented && window.fixture.calls.filter(command => command.op === "respond").length === beforePrimary, "Enter never submits an arbitrary primary answer");
   actionKey("d"); await sleep(30);

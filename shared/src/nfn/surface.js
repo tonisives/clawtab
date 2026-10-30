@@ -582,7 +582,8 @@
   function toggleDetails() {
     if (records.get(current)?.details_available === false) return;
     pauseTimer(); stopContext(true); expanded = true; details = !details;
-    if (resizedSize) resizedSize.showDetails = details;
+    if (details) { if (resizedSize) resizedSize.showDetails = true; }
+    else { finishResize(); resizedSize = null; resizeRightOffset = 0; }
     menu = null; render(false); startContext();
   }
   function toggleMenu(next) {
@@ -999,25 +1000,26 @@
     if (questionOptions) {
       node.append(autoYesControl(record, true));
     }
-    if (!bundle && record.request.template !== "update" && (hasBlock(layout, "reply") || record.request.source?.pane_id)) {
+    let replyToggle = null;
+    if (!bundle && (record.request.source?.pane_id || record.request.template !== "update" && hasBlock(layout, "reply"))) {
       const toAgent = Boolean(record.question_id || record.request.response_destination === "agent_message");
       const reply = el("div", "reply");
       const revision = revisionChoice(record);
       const replyLabel = revision ? "Changes to the draft" : toAgent ? "Reply to agent" : "Your reply";
-      if (questionOptions) {
-        const open = replyStates.get(record.id) ?? Boolean(drafts.get(record.id));
-        const toggle = button(replyLabel, () => {
-          const next = !(replyStates.get(record.id) ?? Boolean(drafts.get(record.id)));
-          replyStates.set(record.id, next); pauseTimer(); expanded = true;
-          row.hidden = !next; toggle.setAttribute("aria-expanded", String(next)); render(false);
-          if (next) { native({ native: "text_focus", active: true }); input.focus({ preventScroll: true }); }
-        }, "utility reply-toggle");
-        toggle.setAttribute("aria-expanded", String(open)); toggle.setAttribute("aria-controls", "notification-reply-row"); reply.append(toggle);
-      } else {
-        const label = el("label", "reply-label", replyLabel); label.htmlFor = "notification-reply"; reply.append(label);
-      }
+      const open = replyStates.get(record.id) ?? Boolean(drafts.get(record.id));
+      const toggle = button("Reply", () => {
+        const next = !(replyStates.get(record.id) ?? Boolean(drafts.get(record.id)));
+        replyStates.set(record.id, next); pauseTimer(); expanded = true;
+        reply.hidden = !next; row.hidden = !next; toggle.setAttribute("aria-expanded", String(next));
+        if (resizedSize && next) resizedSize.height = Math.min(geometry.max_height || 860, resizedSize.height + reply.scrollHeight);
+        render(false);
+        if (next) { native({ native: "text_focus", active: true }); input.focus({ preventScroll: true }); }
+      }, "utility reply-toggle");
+      toggle.setAttribute("aria-expanded", String(open)); toggle.setAttribute("aria-controls", "notification-reply-row");
+      replyToggle = toggle; reply.hidden = !open;
+      const label = el("label", "reply-label", replyLabel); label.htmlFor = "notification-reply"; reply.append(label);
       const row = el("div", "reply-row");
-      row.id = "notification-reply-row"; row.hidden = Boolean(questionOptions) && !(replyStates.get(record.id) ?? Boolean(drafts.get(record.id)));
+      row.id = "notification-reply-row"; row.hidden = !open;
       const input = el("textarea"); input.id = "notification-reply"; input.rows = 2;
       input.setAttribute("aria-label", replyLabel);
       input.placeholder = revision ? "Describe the changes..." : "Message...";
@@ -1062,6 +1064,7 @@
       utilities.classList.add("session-controls");
       utilities.append(actions);
     }
+    if (replyToggle) utilities.append(replyToggle);
     node.append(utilities);
     return node;
   }
@@ -1900,7 +1903,7 @@
     if (node.matches('.card [data-action-id="acknowledge"]')) return "Enter";
     if (node.matches(".open-session")) return "O";
     if (node.matches(".details-toggle")) return "D";
-    if (node.matches(".reply-toggle") || node.matches(".reply textarea") && !node.closest(".reply").querySelector(".reply-toggle")) return "R";
+    if (node.matches(".reply-toggle")) return "R";
     if (node.matches(".send")) return "Cmd+Enter";
     if (node.closest(".top")) {
       if (node.matches(".brand")) return "A";
