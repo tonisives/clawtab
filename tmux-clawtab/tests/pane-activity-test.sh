@@ -45,4 +45,4 @@ tmux resize-window -x 240
 [[ "$(tmux display-message -p -t "$first" '#{E:@clawtab-pane-info}')" == 'Title | 2h ago' ]]
 tmux resize-window -x 80
 [[ "$(tmux display-message -p -t "$first" '#{E:@clawtab-pane-info}')" == 'Title | 2h' ]]
-printf 'pane activity tests passed\n' 
+printf 'pane activity tests passed\n'
