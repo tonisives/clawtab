@@ -75,6 +75,32 @@ test("one agent card retains its messages in order and uses the latest message",
   assert.deepEqual(Array.from(app.cardMessages(app.records.get("new")), item => item.id), ["old", "middle", "new"]);
 });
 
+test("publication reviews keep their own controls after newer agent messages and reviews", () => {
+  const app = surface();
+  const review = record("review", 1), nextReview = record("next-review", 3);
+  for (const item of [review, nextReview]) item.request.template = "social-review";
+  for (const item of [review, record("finished", 2), nextReview]) app.records.set(item.id, item);
+  assert.deepEqual(Array.from(app.pendingCards(), item => item.id), ["review", "finished", "next-review"]);
+  assert.deepEqual(Array.from(app.cardMessages(review), item => item.id), ["review"]);
+  assert.deepEqual(Array.from(app.cardMessages(nextReview), item => item.id), ["next-review"]);
+});
+
+test("handling a completion or another review leaves the original publication decision pending", async () => {
+  for (const template of ["update", "social-review"]) {
+    const app = surface();
+    const review = record("review", 1), latest = record("latest", 2);
+    review.request.template = "social-review"; latest.request.template = template;
+    for (const item of [review, latest]) app.records.set(item.id, item);
+    app.window.webkit = { messageHandlers: { nfn: { postMessage({ token }) {
+      assert.deepEqual(Array.from(app.pendingCards(), item => item.id), ["review"]);
+      app.receive({ type: "response", token, value: { ...latest, status: "resolved" } });
+    } } } };
+    await app.performAction("latest", { op: "dismiss", id: "latest" });
+    assert.equal(app.records.get("review").status, "pending");
+    assert.deepEqual(Array.from(app.pendingCards(), item => item.id), ["review"]);
+  }
+});
+
 test("job alerts share one card across runs and sessions while jobs and hosts stay separate", () => {
   const app = surface();
   const job = { job_id: "journal/screenshot-inbox" };

@@ -3,7 +3,8 @@ import { ModelManager } from "./Models"
 import { hostModelCatalog, resolveEnabledModels } from "../util/agentModels"
 import { ConnectMachine } from "./Connect"
 import { colors } from "../theme/colors"
-import { useState, useRef } from "react"
+import { useState, useRef, type ReactNode } from "react"
+import { SegmentedControl } from "../components/SegmentedControl"
 import { MachineIcon, machineAppearance, MachineAppearanceButton } from "./Appearance"
 import { View, Text, Pressable, TextInput, ScrollView, StyleSheet, Platform } from "react-native"
 import {
@@ -23,6 +24,7 @@ type Props = {
   managementSection?: string
   machineType?: "personal" | "rented"
   presentation?: "compact" | "panel"
+  machineListAction?: ReactNode
   showConnectionStatus?: boolean
   onOpenAccount?: () => void
   localMachineId?: string
@@ -30,7 +32,7 @@ type Props = {
   approvePairing: (code: string) => Promise<unknown>
   localRequest?: (request: MachineMessage) => Promise<MachineMessage>
 }
-export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, localMachineId, presentation = "compact", showConnectionStatus = true, machineType, managementSection }: Props) => {
+export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, localMachineId, presentation = "compact", showConnectionStatus = true, machineType, managementSection, machineListAction }: Props) => {
   let styles = presentation === "panel" ? desktopStyles : compactStyles
   let state = useMachines()
   let [tab, setTab] = useState(managementSection ?? "agents")
@@ -250,7 +252,7 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
       selectMachine(null)
       setRemoveConfirm(false)
     })
-  let openTab = (value: string) => () => {
+  let openTab = (value: string) => {
     setTab(value)
     setOutput(null)
   }
@@ -272,7 +274,7 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
     Number(b.online) - Number(a.online) || a.name.localeCompare(b.name),
   )
   let machineChoices = (
-    <View style={styles.row}>
+    <View style={[styles.row, styles.machineRow]}>
       {machines.map((m) => {
         let appearance = machineAppearance(m, state.machineAppearance, state.machines)
         return (
@@ -299,6 +301,7 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
           </View>
         </Pressable>
       )})}
+      {machineListAction}
     </View>
   )
   return (
@@ -356,33 +359,10 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
           </View> : null}
           {(Platform.OS === "web" || presentation === "compact") && <>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabsScroll}>
-          <View style={styles.tabs} accessibilityRole="tablist" accessibilityLabel="Machine controls">
-            {[
-              "agents",
-              "jobs",
-              "repositories",
-              ...(localRequest ? ["transfers"] : []),
-              "models",
-              "access",
-              ...(presentation === "compact" && machineType !== "rented" ? ["pair"] : []),
-            ].map((value) => (
-              <Pressable
-                accessibilityRole="tab"
-                key={value}
-                onPress={openTab(value)}
-                accessibilityState={{ selected: tab === value }}
-                aria-pressed={tab === value}
-                style={[styles.tabButton, tab === value && styles.activeTabButton]}
-              >
-                <View style={styles.labelRow}>
-                  <Text style={[styles.tabText, tab === value && styles.activeTabText]}>
-                    {value === "pair" ? "Add machine" : value[0].toUpperCase() + value.slice(1)}
-                    {presentation === "compact" && tab === value ? " · selected" : ""}
-                  </Text>
-                </View>
-              </Pressable>
-            ))}
-          </View>
+          <SegmentedControl label="Machine controls" value={tab} onChange={openTab} options={[
+            "agents", "jobs", "repositories", ...(localRequest ? ["transfers"] : []), "models", "access",
+            ...(presentation === "compact" && machineType !== "rented" ? ["pair"] : []),
+          ].map((value) => ({ value, label: value === "pair" ? "Add machine" : value[0].toUpperCase() + value.slice(1) }))} />
           </ScrollView>
           </>}
           {(Platform.OS === "web" || presentation === "compact" || managementSection) && <>
@@ -397,7 +377,7 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
                     ? (presentation === "panel" ? "Select a machine above" : "Select a machine below") + " to manage its " + tab + "."
                     : machineType === "rented" ? "Your rented boxes will appear here once connected." : "No machines are paired with this account yet. Add a machine to manage its " + tab + "."}
               </Text>
-              {presentation === "compact" && state.connected && !visibleMachines.length && machineType !== "rented" && <Pressable accessibilityRole="button" onPress={openTab("pair")} style={styles.button}>
+              {presentation === "compact" && state.connected && !visibleMachines.length && machineType !== "rented" && <Pressable accessibilityRole="button" onPress={() => openTab("pair")} style={styles.button}>
                 <Text style={styles.text}>Pair your first machine</Text>
               </Pressable>}
             </>
@@ -758,12 +738,8 @@ let createStyles = (desktop: boolean) => StyleSheet.create({
   panelBody: { paddingRight: Platform.OS === "web" ? 8 : 0 },
   body: { maxHeight: 440, paddingRight: 8 },
   row: { flexDirection: "row", flexWrap: "wrap", gap: 6, paddingVertical: 4 },
+  machineRow: { alignItems: "center" },
   tabsScroll: { flexGrow: 0, marginVertical: 8 },
-  tabs: { flexDirection: "row", alignItems: "center", backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 999, padding: Platform.OS === "web" ? 2 : 4 },
-  tabButton: { justifyContent: "center", alignItems: "center", minHeight: Platform.OS === "web" ? 28 : 38, paddingHorizontal: Platform.OS === "web" ? 10 : 12, paddingVertical: Platform.OS === "web" ? 2 : 7, borderRadius: 999 },
-  activeTabButton: { backgroundColor: colors.accent },
-  tabText: { color: colors.textSecondary, fontSize: 12, fontWeight: "600" },
-  activeTabText: { color: "#ffffff" },
   title: { color: desktop ? colors.text : "#fff", fontWeight: "600", marginTop: 18, marginBottom: 8 },
   text: { color: desktop ? colors.text : "#e5e7eb", fontSize: 13 },
   detail: { color: desktop ? colors.textSecondary : "#b6bbc5", fontSize: 12 },

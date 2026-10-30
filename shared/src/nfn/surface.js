@@ -238,6 +238,7 @@
       source.agent_started_at, source.job_id, source.run_id]);
   }
   function threadKey(record) {
+    if (record.request.template === "social-review") return JSON.stringify([record.machine_id, "review", record.id]);
     const job = record.request.source?.job_id;
     return job ? JSON.stringify([record.machine_id, "job", job]) : agentKey(record);
   }

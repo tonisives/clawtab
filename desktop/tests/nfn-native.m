@@ -13,6 +13,8 @@ static NSUInteger attempts;
 static pid_t previousApplication;
 static BOOL positionSaved;
 static NSUInteger hintToggles;
+static NSDictionary *focusRecord;
+static NSMutableArray<NSString *> *focusOperations;
 
 static void verifyIdleSignals(void) {
     [surface powerChanged:[NSNotification notificationWithName:NSWorkspaceScreensDidSleepNotification object:nil]];
@@ -281,6 +283,40 @@ static void verifyDragging(void (^finish)(void)) {
     finish();
 }
 
+static void verifyMessageFocus(void (^finish)(void)) {
+    clawtab_nfn_activate(previousApplication);
+    NSString *setup = @"window.nfn.collapse(); const record = window.fixture.record('cli-focus'); record.status = 'resolved'; record.dismissed_at = Date.now(); record.request.title = 'Focused history message'; JSON.stringify(record);";
+    [surface.web evaluateJavaScript:setup completionHandler:^(id result, NSError *error) {
+        if (error || ![result isKindOfClass:NSString.class]) { fprintf(stderr, "Could not prepare message focus fixture\n"); exit(1); }
+        focusRecord = [NSJSONSerialization JSONObjectWithData:[result dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
+        focusOperations = [NSMutableArray array];
+        NSDictionary *record = @{@"id":@"cli-focus", @"request":@{@"media":@[@{@"src":@"/tmp/focus-attachment.png"}]}};
+        NSDictionary *event = @{@"type":@"open_record", @"id":@"cli-focus", @"record":record, @"focus":@YES};
+        [surface push:event];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 4), dispatch_get_main_queue(), ^{
+            [surface push:event];
+            [surface push:surface.snapshot];
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 4), dispatch_get_main_queue(), ^{
+                NSString *check = @"document.querySelector('h1')?.textContent === 'Focused history message' && document.activeElement === document.querySelector('#surface')";
+                [surface.web evaluateJavaScript:check completionHandler:^(id opened, NSError *checkError) {
+                    NSSet *allowed = [NSSet setWithArray:@[@"get", @"read", @"context"]];
+                    BOOL inspected = [focusOperations containsObject:@"get"] && [[NSSet setWithArray:focusOperations] isSubsetOfSet:allowed];
+                    if (checkError || ![opened boolValue] || !inspected || !surface.panel.isKeyWindow || !surface.panel.keyboardFocus || !surface.notificationsVisible || ![surface.media[@"/cli-focus/0"] isEqual:@"/tmp/focus-attachment.png"]) {
+                        fprintf(stderr, "CLI message focus did not retain the history card, keyboard focus, or attachment\n"); exit(1);
+                    }
+                    [surface toggleKeyboardFocus];
+                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 4), dispatch_get_main_queue(), ^{
+                        if (surface.panel.isKeyWindow || surface.panel.keyboardFocus) { fprintf(stderr, "Focused message did not release keyboard focus\n"); exit(1); }
+                        printf("Message focus checks passed: history lookup, repeated focus, keyboard entry and exit, attachment retained across snapshots, no response or dismissal.\n");
+                        [surface push:@{@"type":@"latest"}];
+                        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 4), dispatch_get_main_queue(), finish);
+                    });
+                }];
+            });
+        });
+    }];
+}
+
 static void verifyKeyboardControl(void (^finish)(void)) {
     clawtab_nfn_activate(previousApplication);
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 4), dispatch_get_main_queue(), ^{
@@ -307,7 +343,7 @@ static void verifyKeyboardControl(void (^finish)(void)) {
                     if (surface.panel.keyboardFocus || surface.panel.isKeyWindow) { fprintf(stderr,"Second hotkey did not release panel\n"); exit(1); }
                     printf("Keyboard control checks passed: focus entry, field blur lease, double Option, and second-press exit.\n");
                     [surface push:@{@"type":@"latest"}];
-                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 4), dispatch_get_main_queue(), finish);
+                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 4), dispatch_get_main_queue(), ^{ verifyMessageFocus(finish); });
                 });
                 }];
                 }];
@@ -427,6 +463,10 @@ static void bridge(const char *raw) {
     }
     if (!value[@"token"]) return;
     NSDictionary *result = @{};
+    if ([value[@"command"][@"id"] isEqual:@"cli-focus"]) {
+        [focusOperations addObject:operation];
+        if ([operation isEqual:@"get"] || [operation isEqual:@"read"]) result = focusRecord;
+    }
     if ([operation isEqual:@"save_settings"]) { hintToggles++; NSMutableDictionary *settings = [surface.settings mutableCopy]; [settings addEntriesFromDictionary:value[@"command"][@"patch"]]; result = @{@"settings":settings}; }
     if ([operation isEqual:@"context"]) result = @{@"log":@"Review ready\nWaiting for a decision",@"models":@[],@"plugins":@[],@"source":@{}};
     clawtab_nfn_push([[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:@{@"type":@"response",@"token":value[@"token"],@"value":result} options:0 error:nil] encoding:NSUTF8StringEncoding].UTF8String);

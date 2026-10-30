@@ -79,6 +79,7 @@ static const CGFloat shadowInset = 64, shadowBottom = 80;
 @property NfnPanel *panel;
 @property NfnWebView *web;
 @property NSDictionary *snapshot;
+@property NSDictionary *openedRecord;
 @property NSDictionary *settings;
 @property NSMutableDictionary<NSString *, NSString *> *media;
 @property NSHashTable *stoppedTasks;
@@ -121,6 +122,7 @@ static const CGFloat shadowInset = 64, shadowBottom = 80;
 @property BOOL screenLocked;
 @property NSDictionary *pendingPresentation;
 - (void)toggleKeyboardFocus;
+- (void)beginKeyboardFocus;
 - (void)endKeyboardFocus:(BOOL)restore;
 @end
 
@@ -547,8 +549,12 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
 
 - (void)toggleKeyboardFocus {
     if (self.panel.isKeyWindow) { [self push:@{@"type":@"keyboard_collapse"}]; [self endKeyboardFocus:YES]; return; }
+    [self beginKeyboardFocus];
+}
+
+- (void)beginKeyboardFocus {
     if (self.screenLocked || self.screenSleeping) return;
-    self.previousApplication = NSWorkspace.sharedWorkspace.frontmostApplication;
+    if (!self.panel.keyboardFocus) self.previousApplication = NSWorkspace.sharedWorkspace.frontmostApplication;
     self.panel.keyboardFocus = YES;
     self.notificationsVisible = YES;
     [self push:@{@"type":@"keyboard_focus",@"active":@YES}];
@@ -577,9 +583,14 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
         self.settingsVisible = YES;
         if (!self.ready) self.pendingPresentation = value;
     }
-    if ([value[@"type"] isEqual:@"show"] || [value[@"type"] isEqual:@"latest"]) {
+    BOOL opensRecord = [value[@"type"] isEqual:@"open_record"];
+    if ([value[@"type"] isEqual:@"show"] || [value[@"type"] isEqual:@"latest"] || opensRecord) {
         self.notificationsVisible = YES;
         if (!self.ready) self.pendingPresentation = value;
+    }
+    if (opensRecord && [value[@"record"] isKindOfClass:NSDictionary.class]) {
+        self.openedRecord = value[@"record"];
+        [self registerMedia:self.openedRecord];
     }
     if ([value[@"type"] isEqual:@"snapshot"]) {
         self.snapshot = value;
@@ -589,12 +600,10 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
         [self positionWidth:self.surfaceWidth height:self.surfaceHeight];
         [self.media removeAllObjects];
         for (NSDictionary *record in value[@"records"]) {
-            NSArray *media = record[@"request"][@"media"];
-            for (NSUInteger i=0; i<media.count; i++) {
-                NSString *src = media[i][@"src"];
-                if ([src hasPrefix:@"/"]) self.media[[NSString stringWithFormat:@"/%@/%lu",record[@"id"],(unsigned long)i]] = src;
-            }
+            if ([record[@"id"] isEqual:self.openedRecord[@"id"]]) self.openedRecord = record;
+            [self registerMedia:record];
         }
+        [self registerMedia:self.openedRecord];
         [self requestFocusIfNeeded];
         if (!self.settingsVisible && !self.notificationsVisible && (![value[@"visible"] boolValue] || ![self allowsOverlay])) { [self.panel orderOut:nil]; [self releaseTextFocus]; }
         if ([value[@"sound"] boolValue] && [value[@"visible"] boolValue] && [self allowsOverlay]) {
@@ -604,7 +613,18 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
     if (!self.ready) return;
     NSData *data = [NSJSONSerialization dataWithJSONObject:value options:0 error:nil];
     NSString *json = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-    [self.web evaluateJavaScript:[NSString stringWithFormat:@"window.nfn.receive(%@)", json] completionHandler:nil];
+    [self.web evaluateJavaScript:[NSString stringWithFormat:@"window.nfn.receive(%@)", json] completionHandler:^(id result, NSError *error) {
+        (void)result;
+        if (!error && opensRecord && [value[@"focus"] boolValue]) [self beginKeyboardFocus];
+    }];
+}
+
+- (void)registerMedia:(NSDictionary *)record {
+    NSArray *media = record[@"request"][@"media"];
+    for (NSUInteger i=0; i<media.count; i++) {
+        NSString *src = media[i][@"src"];
+        if ([src hasPrefix:@"/"]) self.media[[NSString stringWithFormat:@"/%@/%lu",record[@"id"],(unsigned long)i]] = src;
+    }
 }
 
 - (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {

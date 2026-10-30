@@ -629,6 +629,15 @@ impl Service {
                 viewed.insert(window_id, (pane_id, now()));
                 return Ok(json!({}));
             }
+            NfnCommand::Reveal { id } => {
+                let record = surface_record(self.store.get(&id)?);
+                if !cfg!(target_os = "macos") {
+                    return Err("Message focus requires the macOS desktop message bar".into());
+                }
+                self.push(None, false);
+                native::push(json!({"type":"open_record", "id":id, "record":record, "focus":true}));
+                return Ok(json!({"id":id,"focused":true}));
+            }
             NfnCommand::Show => {
                 self.push(None, false);
                 native::push(json!({"type":"show"}));

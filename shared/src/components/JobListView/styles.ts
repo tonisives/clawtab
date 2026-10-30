@@ -238,37 +238,6 @@ export const styles = StyleSheet.create({
     marginBottom: spacing.lg,
     zIndex: 10,
   },
-  compactSegment: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 999,
-    padding: 4,
-  },
-  compactSegmentButton: {
-    flex: 1,
-    minHeight: 38,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 4,
-    borderRadius: 999,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  compactSegmentButtonActive: {
-    backgroundColor: colors.accent,
-  },
-  compactSegmentText: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  compactSegmentTextActive: {
-    color: "#ffffff",
-  },
   sortControl: {
     marginLeft: "auto",
   },
