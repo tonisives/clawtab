@@ -19,6 +19,7 @@
   let explicitOpen = false, presented = false, hiddenByUser = false;
   let geometry = {}, layoutAnimation = null, contentAnimations = [], lastSize = "", renderedLayout = "";
   let resizedSize = null, resizing = null, resizeRightOffset = 0;
+  let nativeWindowFocus = null;
   const autoYesBusy = new Set();
   const remoteMedia = new Map();
   const selectedNotifications = new Set();
@@ -374,9 +375,10 @@
     const bounds = host.getBoundingClientRect(), hidden = host.classList.contains("empty");
     const width = hidden ? 0 : bounds.width, height = hidden ? 0 : Math.ceil(bounds.height);
     const rightOffset = canResize() && resizedSize ? resizeRightOffset : 0;
-    const signature = `${width}:${height}:${rightOffset}`;
+    const resizable = Boolean(canResize());
+    const signature = `${width}:${height}:${rightOffset}:${resizable}`;
     if (signature === lastSize) return;
-    lastSize = signature; native({ native: "surface", width, height, right_offset: rightOffset });
+    lastSize = signature; native({ native: "surface", width, height, right_offset: rightOffset, resizable });
   }
   function stopAnimation() {
     layoutAnimation?.cancel(); layoutAnimation = null;
@@ -579,7 +581,7 @@
     if (restore) { queueQuery = restore.query; queueCursor = restore.cursor; }
     if (queueQuery.trim() && !ignoredOpen) scheduleSearch(restore); else render();
     queueCount = "";
-    if (!snapshot.remote && document.hasFocus()) updateQueueCursor(host.querySelector(".queue"), !restore);
+    if (!snapshot.remote && hasWindowFocus()) updateQueueCursor(host.querySelector(".queue"), !restore);
     if (ignoredOpen) loadIgnoredAgents(); else if (history && !queueQuery.trim() && (!restore || !historyItems.length)) loadHistory(true);
   }
   async function toggleQueue() {
@@ -1635,6 +1637,9 @@
     renderMenu(); cleanupRemoteMedia(); if (resizing || !animate) size(); else if (!continuingAnimation) animateLayout(before, !queue && !menu && !settingsOpen);
   }
   function receive(value) {
+    if (value.type === "window_focus") {
+      nativeWindowFocus = Boolean(value.active); refreshHints(); return;
+    }
     if (value.type === "hide" && snapshot.remote) { hideBar(); return; }
     if (value.type === "keyboard_focus") {
       if (!value.active) { hintInput = ""; return; }
@@ -1737,7 +1742,8 @@
   let hintInput = "", hintTargets = [], hintLabels = [], shortcutError = "";
   const hintOverlay = el("div", "keyboard-hints");
   hintOverlay.setAttribute("aria-hidden", "true"); document.body.append(hintOverlay);
-  function syncFocusAppearance(active = document.hasFocus()) {
+  function hasWindowFocus() { return nativeWindowFocus ?? document.hasFocus(); }
+  function syncFocusAppearance(active = hasWindowFocus()) {
     const desktop = String(!snapshot.remote && !preview), keyboardActive = String(desktop === "true" && active);
     if (host.dataset.desktop !== desktop) host.dataset.desktop = desktop;
     if (host.dataset.keyboardActive !== keyboardActive) host.dataset.keyboardActive = keyboardActive;
@@ -1779,7 +1785,7 @@
   }
   function refreshHints() {
     syncFocusAppearance();
-    if (!snapshot.settings?.keyboard_hints || snapshot.remote || preview || !document.hasFocus() || host.classList.contains("empty")) {
+    if (!snapshot.settings?.keyboard_hints || snapshot.remote || preview || !hasWindowFocus() || host.classList.contains("empty")) {
       hintOverlay.replaceChildren(); hintTargets = []; hintLabels = []; hintInput = ""; return;
     }
     const targets = [...host.querySelectorAll('button,input:not([type="hidden"]),textarea,select,summary,a[href],[role="button"]')].filter(node => {
@@ -1814,7 +1820,7 @@
     });
   }
   function handleHintKey(event) {
-    if (!snapshot.settings?.keyboard_hints || snapshot.remote || preview || !document.hasFocus()) return false;
+    if (!snapshot.settings?.keyboard_hints || snapshot.remote || preview || !hasWindowFocus()) return false;
     if (event.isComposing || event.target.closest?.('input:not([type="checkbox"]):not([type="radio"]),textarea,select,[contenteditable="true"]') || event.ctrlKey || event.metaKey || event.altKey) return false;
     if (event.key === "Escape" && hintInput) { hintInput = ""; event.preventDefault(); refreshHints(); return true; }
     if (event.key === "Backspace" && hintInput) { hintInput = hintInput.slice(0,-1); event.preventDefault(); refreshHints(); return true; }
@@ -1852,7 +1858,7 @@
     return true;
   }
   function handleNavigationKey(event) {
-    if (event.defaultPrevented || event.isComposing || !document.hasFocus() || event.metaKey || event.altKey || event.ctrlKey || settingsOpen || todosOpen || menu) return false;
+    if (event.defaultPrevented || event.isComposing || !hasWindowFocus() || event.metaKey || event.altKey || event.ctrlKey || settingsOpen || todosOpen || menu) return false;
     const list = queue && !ignoredOpen && host.querySelector(".queue");
     const editing = event.target.closest?.('input:not([type="checkbox"]):not([type="radio"]),textarea,select,[contenteditable="true"]');
     const searchInput = list && event.target === list._search;
@@ -1905,7 +1911,7 @@
     }
     return false;
   }
-  window.addEventListener("blur", () => { syncFocusAppearance(false); hintInput = ""; hintOverlay.replaceChildren(); hintTargets = []; hintLabels = []; });
+  window.addEventListener("blur", () => { syncFocusAppearance(nativeWindowFocus ?? false); hintInput = ""; hintOverlay.replaceChildren(); hintTargets = []; hintLabels = []; });
   window.addEventListener("focus", refreshHints);
   setInterval(refreshHints, 80);
   host.addEventListener("mouseenter", () => { hovering = true; pauseTimer(); if (snapshot.settings?.hover_expand && current && !expanded) openRecord(current); });
@@ -1936,8 +1942,8 @@
     geometry = next; placement = next.placement;
     host.style.setProperty("--notch-overlap", `${placement === "notch" ? next.overlap || 38 : 0}px`);
     document.body.style.justifyContent = placement === "notch" ? "center" : "flex-end";
-    for (const [key, property] of [["overlap", "--notch-overlap"], ["notch_width", "--notch-width"], ["max_width", "--surface-max-width"], ["max_height", "--surface-max-height"], ["list_max_height", "--surface-list-max-height"]]) {
-      if (Number.isFinite(next[key])) host.style.setProperty(property, `${next[key]}px`);
+    for (const [key, property] of [["overlap", "--notch-overlap"], ["notch_width", "--notch-width"], ["max_width", "--surface-max-width"], ["max_height", "--surface-max-height"], ["list_max_height", "--surface-list-max-height"], ["shadow_inset", "--surface-shadow-inset"], ["shadow_bottom", "--surface-shadow-bottom"]]) {
+      if (Number.isFinite(next[key])) (key.startsWith("shadow_") ? document.body : host).style.setProperty(property, `${next[key]}px`);
     }
     render();
   } };

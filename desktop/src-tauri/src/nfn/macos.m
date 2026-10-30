@@ -9,17 +9,32 @@
 
 typedef void (*NfnCallback)(const char *);
 static NfnCallback callback;
+static const CGFloat shadowInset = 40, shadowBottom = 48;
 
 @interface NfnWebView : WKWebView
+@property NSTrackingArea *resizeTracking;
+@property NSCursor *(^resizeCursor)(NSEvent *);
 @end
 @implementation NfnWebView
 // Deliver the activating mouse-down to buttons, reply fields, and drag handles.
 - (BOOL)acceptsFirstMouse:(NSEvent *)event { return YES; }
+- (void)updateTrackingAreas {
+    [super updateTrackingAreas];
+    if (self.resizeTracking) [self removeTrackingArea:self.resizeTracking];
+    self.resizeTracking = [[NSTrackingArea alloc] initWithRect:NSZeroRect options:NSTrackingCursorUpdate | NSTrackingMouseMoved | NSTrackingActiveAlways | NSTrackingInVisibleRect owner:self userInfo:nil];
+    [self addTrackingArea:self.resizeTracking];
+}
+- (void)cursorUpdate:(NSEvent *)event {
+    NSCursor *cursor = self.resizeCursor ? self.resizeCursor(event) : nil;
+    if (cursor) [cursor set]; else [super cursorUpdate:event];
+}
 @end
 
 @interface NfnPanel : NSPanel
 @property BOOL textFocus;
 @property BOOL keyboardFocus;
+@property NSCursor *(^resizeCursor)(NSEvent *);
+@property NSCursor *dragResizeCursor;
 @end
 @implementation NfnPanel
 - (BOOL)canBecomeKeyWindow { return self.textFocus || self.keyboardFocus; }
@@ -28,6 +43,16 @@ static NfnCallback callback;
     if (!self.canBecomeKeyWindow) [self resignKeyWindow];
 }
 - (BOOL)canBecomeMainWindow { return NO; }
+- (void)sendEvent:(NSEvent *)event {
+    BOOL pointer = event.type == NSEventTypeMouseMoved || event.type == NSEventTypeLeftMouseDown
+        || event.type == NSEventTypeLeftMouseDragged || event.type == NSEventTypeLeftMouseUp;
+    NSCursor *cursor = pointer && self.resizeCursor ? self.resizeCursor(event) : nil;
+    if (event.type == NSEventTypeLeftMouseDown) self.dragResizeCursor = cursor;
+    cursor = self.dragResizeCursor ?: cursor;
+    [super sendEvent:event];
+    if (pointer && cursor) [cursor set];
+    if (event.type == NSEventTypeLeftMouseUp) self.dragResizeCursor = nil;
+}
 - (BOOL)performKeyEquivalent:(NSEvent *)event {
     // The daemon has no Edit menu to route these commands to WebKit.
     NSEventModifierFlags modifiers = event.modifierFlags & (NSEventModifierFlagCommand | NSEventModifierFlagControl | NSEventModifierFlagOption | NSEventModifierFlagShift);
@@ -44,7 +69,7 @@ static NfnCallback callback;
 
 @interface NfnSurface : NSObject <WKScriptMessageHandler, WKNavigationDelegate, WKURLSchemeHandler>
 @property NfnPanel *panel;
-@property WKWebView *web;
+@property NfnWebView *web;
 @property NSDictionary *snapshot;
 @property NSDictionary *settings;
 @property NSMutableDictionary<NSString *, NSString *> *media;
@@ -70,6 +95,8 @@ static NfnCallback callback;
 @property CGFloat surfaceWidth;
 @property CGFloat surfaceHeight;
 @property CGFloat surfaceRightOffset;
+@property BOOL surfaceResizable;
+@property NSNumber *lastWindowFocus;
 @property BOOL notchPlacement;
 @property NSString *lastGeometry;
 @property NSMutableDictionary<NSString *, NSDictionary *> *notchGeometry;
@@ -147,6 +174,8 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
     [self.panel.contentView addSubview:self.web];
     [self.web loadHTMLString:html baseURL:[NSURL URLWithString:@"clawtab-nfn://surface/"]];
     __weak NfnSurface *weakSelf = self;
+    self.web.resizeCursor = ^NSCursor *(NSEvent *event) { return [weakSelf resizeCursorForEvent:event]; };
+    self.panel.resizeCursor = self.web.resizeCursor;
     self.timer = [NSTimer scheduledTimerWithTimeInterval:2 repeats:YES block:^(NSTimer *timer) {
         NfnSurface *self = weakSelf;
         if (!self) { [timer invalidate]; return; }
@@ -199,6 +228,8 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
         return event;
     }];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(screensChanged:) name:NSApplicationDidChangeScreenParametersNotification object:nil];
+    for (NSString *name in @[NSWindowDidBecomeKeyNotification, NSWindowDidResignKeyNotification])
+        [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(windowFocusChanged:) name:name object:self.panel];
     [NSWorkspace.sharedWorkspace.notificationCenter addObserver:self selector:@selector(screensChanged:) name:NSWorkspaceActiveSpaceDidChangeNotification object:nil];
     [NSWorkspace.sharedWorkspace.notificationCenter addObserver:self selector:@selector(activationChanged:) name:NSWorkspaceDidActivateApplicationNotification object:nil];
     for (NSString *name in @[NSWorkspaceScreensDidSleepNotification, NSWorkspaceWillSleepNotification, NSWorkspaceScreensDidWakeNotification, NSWorkspaceDidWakeNotification])
@@ -219,6 +250,12 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
     NSRunningApplication *app = notification.userInfo[NSWorkspaceApplicationKey];
     if (app.processIdentifier != NSProcessInfo.processInfo.processIdentifier) [self endKeyboardFocus:NO];
     [self publishPlatform];
+}
+- (void)windowFocusChanged:(NSNotification *)notification {
+    NSNumber *active = @(self.panel.isKeyWindow && self.panel.canBecomeKeyWindow);
+    if ([active isEqual:self.lastWindowFocus]) return;
+    self.lastWindowFocus = active;
+    [self push:@{@"type":@"window_focus", @"active":active}];
 }
 - (void)powerChanged:(NSNotification *)notification {
     self.screenSleeping = [notification.name isEqual:NSWorkspaceScreensDidSleepNotification] || [notification.name isEqual:NSWorkspaceWillSleepNotification];
@@ -365,26 +402,27 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
     NSRect available = screen.visibleFrame;
     CGFloat overlap = notch ? topInset : 0;
     // Keep WebKit's canvas still. Only the shape inside it changes size.
-    CGFloat w = MIN(available.size.width - 32, MAX(680, available.size.width - 32 - (notch ? 0 : MIN(384, available.size.width / 3))));
-    CGFloat h = MIN(MAX(900, available.size.height * .8 + 32), available.size.height - 32);
+    CGFloat w = MIN(available.size.width - shadowInset * 2, MAX(680, available.size.width - 32 - (notch ? 0 : MIN(384, available.size.width / 3))));
+    CGFloat h = MIN(MAX(900, available.size.height * .8 + 32), available.size.height - shadowBottom - 12);
     CGFloat x = notch ? [camera[@"center"] doubleValue] - w / 2 : NSMaxX(available) - w - MIN(384, available.size.width / 3);
-    x = MAX(NSMinX(available) + 16, MIN(x, NSMaxX(available) - w - 16));
+    x = MAX(NSMinX(available) + shadowInset, MIN(x, NSMaxX(available) - w - shadowInset));
     CGFloat y = notch ? NSMaxY(screen.frame) - h : NSMaxY(available) - h - 12;
     if ([self.settings[@"placement"] isEqual:@"custom"] && [self.settings[@"position"] isKindOfClass:NSDictionary.class]) {
         NSDictionary *position = self.settings[@"position"];
         CGFloat right = NSMaxX(available) - [position[@"right"] doubleValue];
         CGFloat top = NSMaxY(available) - [position[@"top"] doubleValue];
-        right = MAX(NSMinX(available) + MIN(width, w), MIN(right, NSMaxX(available)));
-        top = MAX(NSMinY(available) + MIN(height, h), MIN(top, NSMaxY(available)));
+        right = MAX(NSMinX(available) + shadowInset + MIN(width, w), MIN(right, NSMaxX(available) - shadowInset));
+        top = MAX(NSMinY(available) + shadowBottom + MIN(height, h), MIN(top, NSMaxY(available)));
         x = right - w; y = top - h;
     }
-    if (!notch) x += MAX(NSMinX(available) + MIN(width, w) - (x + w), MIN(self.surfaceRightOffset, NSMaxX(available) - (x + w)));
-    NSRect frame = NSMakeRect(x, y, w, h);
+    if (!notch) x += MAX(NSMinX(available) + shadowInset + MIN(width, w) - (x + w), MIN(self.surfaceRightOffset, NSMaxX(available) - shadowInset - (x + w)));
+    NSRect frame = NSMakeRect(x - shadowInset, y - shadowBottom, w + shadowInset * 2, h + shadowBottom);
     if (!NSEqualRects(frame, self.panel.frame)) [self.panel setFrame:frame display:YES];
     [self updateMousePassthrough];
     NSDictionary *geometry = @{@"placement":notch ? @"notch" : @"right", @"overlap":@(overlap),
         @"notch_width":@(MAX(0, notchWidth)), @"max_width":@(w),
-        @"max_width_e":@(MIN(w, width + NSMaxX(available) - (x + w))),
+        @"shadow_inset":@(shadowInset), @"shadow_bottom":@(shadowBottom),
+        @"max_width_e":@(MIN(w, width + NSMaxX(available) - shadowInset - (x + w))),
         @"max_height":@(h), @"list_max_height":@(available.size.height * .8), @"reduce_motion":@(NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion)};
     NSString *json = [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:geometry options:NSJSONWritingSortedKeys error:nil] encoding:NSUTF8StringEncoding];
     if (self.ready && ![json isEqual:self.lastGeometry]) {
@@ -413,11 +451,11 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
         self.surfaceRightOffset = 0;
         self.notchPlacement = NO;
         self.lastGeometry = nil;
-        [self.web evaluateJavaScript:[NSString stringWithFormat:@"window.nfn.setPlacement({placement:'right',overlap:0,max_width:%g,max_height:%g,reduce_motion:true})", self.panel.frame.size.width, self.panel.frame.size.height] completionHandler:nil];
+        [self.web evaluateJavaScript:[NSString stringWithFormat:@"window.nfn.setPlacement({placement:'right',overlap:0,max_width:%g,max_height:%g,shadow_inset:%g,shadow_bottom:%g,reduce_motion:true})", self.panel.frame.size.width - shadowInset * 2, self.panel.frame.size.height - shadowBottom, shadowInset, shadowBottom] completionHandler:nil];
         [self drag:@{@"phase":@"move", @"dx":value[@"dx"] ?: @0, @"dy":value[@"dy"] ?: @0}];
     } else if ([phase isEqual:@"move"] && self.dragging) {
         NSRect frame = self.panel.frame;
-        frame.origin.x = self.dragAnchor.x + [value[@"dx"] doubleValue] - frame.size.width;
+        frame.origin.x = self.dragAnchor.x + [value[@"dx"] doubleValue] + shadowInset - frame.size.width;
         frame.origin.y = self.dragAnchor.y - [value[@"dy"] doubleValue] - frame.size.height;
         [self.panel setFrameOrigin:frame.origin];
         self.panel.ignoresMouseEvents = NO;
@@ -427,7 +465,7 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
         for (NSScreen *candidate in NSScreen.screens) if (NSPointInRect(NSEvent.mouseLocation, candidate.frame)) { screen = candidate; break; }
         screen = screen ?: self.panel.screen ?: [self selectedScreen];
         NSRect available = screen.visibleFrame;
-        NSDictionary *position = @{@"right":@(MAX(0, NSMaxX(available) - NSMaxX(self.panel.frame))), @"top":@(MAX(0, NSMaxY(available) - NSMaxY(self.panel.frame)))};
+        NSDictionary *position = @{@"right":@(MAX(0, NSMaxX(available) - (NSMaxX(self.panel.frame) - shadowInset))), @"top":@(MAX(0, NSMaxY(available) - NSMaxY(self.panel.frame)))};
         NSString *display = [screen.deviceDescription[@"NSScreenNumber"] stringValue];
         NSMutableDictionary *settings = [self.settings mutableCopy];
         settings[@"placement"] = @"custom"; settings[@"position"] = position; settings[@"display"] = display;
@@ -439,9 +477,26 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
 
 - (NSRect)surfaceFrame {
     NSRect frame = self.panel.frame;
-    CGFloat width = MIN(self.surfaceWidth, frame.size.width), height = MIN(self.surfaceHeight, frame.size.height);
-    CGFloat x = self.notchPlacement ? NSMidX(frame) - width / 2 : NSMaxX(frame) - width;
+    CGFloat width = MIN(self.surfaceWidth, frame.size.width - shadowInset * 2), height = MIN(self.surfaceHeight, frame.size.height - shadowBottom);
+    CGFloat x = self.notchPlacement ? NSMidX(frame) - width / 2 : NSMaxX(frame) - shadowInset - width;
     return NSMakeRect(x, NSMaxY(frame) - height, width, height);
+}
+
+- (NSCursor *)resizeCursorForEvent:(NSEvent *)event {
+    if (!self.surfaceResizable || self.dragging) return nil;
+    NSRect frame = [self surfaceFrame];
+    NSPoint point = [self.panel convertPointToScreen:event.locationInWindow];
+    if (!NSPointInRect(point, frame)) return nil;
+    CGFloat left = point.x - NSMinX(frame), right = NSMaxX(frame) - point.x, bottom = point.y - NSMinY(frame);
+    BOOL corner = bottom < 24 && (left < 24 || right < 24);
+    CGFloat overlap = self.notchPlacement ? [[self notchForScreen:[self selectedScreen]][@"inset"] doubleValue] : 0;
+    if (!corner && bottom >= 8 && (MIN(left, right) >= 8 || point.y > NSMaxY(frame) - overlap)) return nil;
+    if (@available(macOS 15.0, *)) {
+        NSCursorFrameResizePosition position = corner ? (left < 24 ? NSCursorFrameResizePositionBottomLeft : NSCursorFrameResizePositionBottomRight)
+            : bottom < 8 ? NSCursorFrameResizePositionBottom : left < 8 ? NSCursorFrameResizePositionLeft : NSCursorFrameResizePositionRight;
+        return [NSCursor frameResizeCursorFromPosition:position inDirections:NSCursorFrameResizeDirectionsAll];
+    }
+    return bottom < 8 && !corner ? NSCursor.resizeUpDownCursor : NSCursor.resizeLeftRightCursor;
 }
 
 - (void)updateMousePassthrough {
@@ -540,6 +595,7 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
 
 - (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {
     self.ready = YES;
+    [self windowFocusChanged:nil];
     [self push:@{@"type":@"shortcut_status",@"error":self.shortcutError ?: @""}];
     if (self.snapshot) [self push:self.snapshot];
     if (self.pendingPresentation) { NSDictionary *value = self.pendingPresentation; self.pendingPresentation = nil; [self push:value]; }
@@ -553,6 +609,7 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
     if ([operation isEqual:@"surface"]) {
         self.surfaceWidth = [value[@"width"] doubleValue]; self.surfaceHeight = [value[@"height"] doubleValue];
         self.surfaceRightOffset = [value[@"right_offset"] doubleValue];
+        self.surfaceResizable = [value[@"resizable"] boolValue];
         if (self.surfaceWidth < 1 || self.surfaceHeight < 1) { [self.panel orderOut:nil]; [self releaseTextFocus]; return; }
         [self positionWidth:self.surfaceWidth height:self.surfaceHeight];
         if (!self.panel.visible && (self.settingsVisible || self.notificationsVisible || [self.snapshot[@"visible"] boolValue]) && [self allowsOverlay]) [self.panel orderFrontRegardless];

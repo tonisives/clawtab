@@ -104,6 +104,7 @@
   };
   const normalSize = surface.getBoundingClientRect();
   assert(!surface.querySelector('[data-resize="se"]').hidden, "right-side cards expose the bottom-right resize corner");
+  assert(getComputedStyle(surface.querySelector('[data-resize="se"]')).cursor === "nwse-resize" && window.fixture.surfaces.at(-1).resizable === true, "expanded cards advertise their resize cursor and native resize capability");
   resizeDrag("se", 180, 200); await sleep(30);
   assert(surface.offsetWidth === 700 && document.querySelector(".logs") && window.fixture.surfaces.at(-1).right_offset === 180, "bottom-right dragging grows the right edge and opens Details");
   resizeDrag("se", -180, -200); await sleep(30);
@@ -1152,6 +1153,11 @@
   restoredSearch.value = "archived-match"; restoredSearch.dispatchEvent(new Event("input")); await sleep(220);
   window.nfn.receive({ type: "keyboard_collapse" }); window.nfn.receive({ type: "keyboard_focus", active: true }); await sleep(220);
   assert(document.querySelector('[aria-label="Search messages"]').value === "archived-match" && selectedRow().dataset.queueRecord === archivedMatch.id, "shortcut reopening also restores the list search and matching selection");
+  document.hasFocus = () => false;
+  window.nfn.receive({ type: "window_focus", active: true }); await sleep(100);
+  assert(focusHost.dataset.keyboardActive === "true" && getComputedStyle(document.querySelector(".brand img")).filter === "none" && getComputedStyle(document.querySelector(".todo-ring")).filter === "none", "native keyboard focus colors the title bar even when WebKit reports no document focus");
+  window.nfn.receive({ type: "window_focus", active: false }); await sleep(100);
+  assert(focusHost.dataset.keyboardActive === "false" && !document.querySelector(".keyboard-hint"), "native focus loss clears active decoration and keyboard hints");
   document.hasFocus = originalHasFocus;
   hintSnapshot.remote = true;
   window.nfn.receive(hintSnapshot); await sleep(120);
