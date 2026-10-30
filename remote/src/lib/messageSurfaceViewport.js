@@ -5,7 +5,6 @@
   let scheduled = false;
   const editable = element => element?.matches?.("textarea,input,select,[contenteditable='true']");
   function layout() {
-    scheduled = false;
     const viewport = window.visualViewport;
     const height = Math.min(innerHeight, viewport?.height ?? innerHeight);
     const keyboard = nativeKeyboard || innerHeight - height > 100;
@@ -18,12 +17,16 @@
     target.scrollIntoView({ block: "nearest", inline: "nearest" });
   }
   function schedule() {
-    if (!scheduled) { scheduled = true; requestAnimationFrame(layout); }
+    if (!scheduled) {
+      scheduled = true;
+      requestAnimationFrame(() => { scheduled = false; layout(); });
+    }
   }
   window.nfnMobile = {
     setInsets(bottom, keyboard) {
       safeBottom = Math.max(0, bottom);
       nativeKeyboard = keyboard;
+      layout();
       schedule();
     },
   };

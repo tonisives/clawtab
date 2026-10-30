@@ -117,7 +117,7 @@ test("arrival tracking initializes hosts independently and ignores replayed hist
   assert.equal(tracker.observe([a, b, fresh], snapshots), fresh);
 });
 
-test("the popup animates new records while preserving its current message", () => {
+test("the warm popup presents new records while preserving its current message", () => {
   const states = [], effects = [];
   let cursor = 0, changed = false, records = [], snapshots = {}, pathname = "/";
   const inbox = Symbol("MessageInbox");
@@ -159,20 +159,21 @@ test("the popup animates new records while preserving its current message", () =
     } while (changed);
     return tree?.props.children.find(child => child.type === inbox)?.props ?? null;
   };
-  assert.equal(render(), null);
+  assert.equal(render().active, false);
   const old = record("mac-a", "old");
   records = [old]; snapshots = { "mac-a": { messages_changed: { records } } };
-  assert.equal(render(), null);
+  assert.equal(render().active, false);
   const first = record("mac-a", "first"); records = [old, first];
   assert.equal(render().arrival, "mac-a::first");
+  assert.equal(render().active, true);
   const second = record("mac-a", "second"); records = [old, first, second];
   const popup = render();
   assert.equal(popup.selection, "mac-a::first");
   assert.equal(popup.arrival, "mac-a::second");
   pathname = "/notifications/message/first";
-  assert.equal(render(), null);
+  assert.equal(render().active, false);
   pathname = "/";
-  assert.equal(render(), null);
+  assert.equal(render().active, false);
 });
 
 function harness(records = [record("mac-a"), record("mac-b")]) {

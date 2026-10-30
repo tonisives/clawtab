@@ -27,7 +27,9 @@ function viewport() {
 
 test("mobile safe-area space disappears during keyboard use and returns after dismissal", () => {
   const v = viewport();
-  v.window.nfnMobile.setInsets(34, false); v.flush();
+  v.window.nfnMobile.setInsets(34, false);
+  assert.equal(v.properties["--message-safe-bottom"], "34px", "the native inset applies before the next animation frame");
+  v.flush();
   assert.equal(v.properties["--message-safe-bottom"], "34px");
   v.window.nfnMobile.setInsets(34, true); v.context.innerHeight = 460;
   v.window.visualViewport.height = 460; v.flush();
