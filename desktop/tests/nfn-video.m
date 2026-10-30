@@ -29,7 +29,7 @@ static void receive(const char *raw) {
 }
 
 static void finishChecks(void) {
-    NSString *script = @"const v=document.querySelector('video'), src=v.src, poster=v.poster, body=document.querySelector('.message-content'); const time=v.currentTime; if(v.paused||v.error||time<.2)throw Error('The native Play button did not advance the video'); document.querySelector('.details-toggle').click(); await new Promise(r=>setTimeout(r,150)); if(v.paused||v.src!==src||v.poster!==poster||document.querySelector('video')!==v||body.hidden||!body.contains(document.querySelector('.details-content')))throw Error('Details interrupted or replaced the post/video'); document.querySelector('.details-toggle').click(); const width=v.getBoundingClientRect().width; for(let i=0;i<4;i++)document.querySelector('.resize-e').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',shiftKey:true,bubbles:true})); await new Promise(r=>setTimeout(r,150)); if(document.querySelector('.logs')||body.hidden||v.src!==src||v.paused||v.getBoundingClientRect().width<=width)throw Error('Resizing failed to retain and enlarge the playing post'); v.pause(); return {passed:6,src:src.slice(0,5),poster:poster.length,width:v.videoWidth,height:v.videoHeight,currentTime:v.currentTime};";
+    NSString *script = @"const v=document.querySelector('video'), src=v.src, poster=v.poster, body=document.querySelector('.message-content'); const time=v.currentTime; if(!window.nativePlayClick?.trusted||v.paused||v.error||time<.2)throw Error('The native Play button did not advance the video: '+JSON.stringify({click:window.nativePlayClick,paused:v.paused,currentTime:time,error:v.error?.message,playError:document.querySelector('.media-play')?.title,readyState:v.readyState})); document.querySelector('.details-toggle').click(); await new Promise(r=>setTimeout(r,150)); if(v.paused||v.src!==src||v.poster!==poster||document.querySelector('video')!==v||body.hidden||!body.contains(document.querySelector('.details-content')))throw Error('Details interrupted or replaced the post/video'); document.querySelector('.details-toggle').click(); const width=v.getBoundingClientRect().width; for(let i=0;i<4;i++)document.querySelector('.resize-e').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',shiftKey:true,bubbles:true})); await new Promise(r=>setTimeout(r,150)); if(document.querySelector('.logs')||body.hidden||v.src!==src||v.paused||v.getBoundingClientRect().width<=width)throw Error('Resizing failed to retain and enlarge the playing post'); v.pause(); return {passed:7,trustedClick:window.nativePlayClick.trusted,src:src.slice(0,5),poster:poster.length,width:v.videoWidth,height:v.videoHeight,currentTime:v.currentTime};";
     [surface.web callAsyncJavaScript:script arguments:@{} inFrame:nil inContentWorld:WKContentWorld.pageWorld completionHandler:^(id result, NSError *error) {
         if (error) { fprintf(stderr,"%s\n",error.description.UTF8String); exit(1); }
         NSData *data = [NSJSONSerialization dataWithJSONObject:result options:0 error:nil];
@@ -48,10 +48,15 @@ static void clickPlay(NSArray *point) {
     NSPoint local = NSMakePoint([point[0] doubleValue],surface.web.isFlipped ? y : surface.web.bounds.size.height-y);
     NSPoint position = [surface.panel convertPointToScreen:[surface.web convertPoint:local toView:nil]];
     CGPoint global = CGPointMake(position.x,NSScreen.screens.firstObject.frame.size.height-position.y);
-    CGEventRef down = CGEventCreateMouseEvent(NULL,kCGEventLeftMouseDown,global,kCGMouseButtonLeft);
-    CGEventRef up = CGEventCreateMouseEvent(NULL,kCGEventLeftMouseUp,global,kCGMouseButtonLeft);
-    CGEventPost(kCGHIDEventTap,down); CGEventPost(kCGHIDEventTap,up); CFRelease(down); CFRelease(up);
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC),dispatch_get_main_queue(),^{ finishChecks(); });
+    CGEventRef move = CGEventCreateMouseEvent(NULL,kCGEventMouseMoved,global,kCGMouseButtonLeft);
+    CGEventPost(kCGHIDEventTap,move); CFRelease(move);
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC/4),dispatch_get_main_queue(),^{
+        if (surface.panel.ignoresMouseEvents) { fprintf(stderr,"Native pointer hover did not enter the video panel\n"); exit(1); }
+        CGEventRef down = CGEventCreateMouseEvent(NULL,kCGEventLeftMouseDown,global,kCGMouseButtonLeft);
+        CGEventRef up = CGEventCreateMouseEvent(NULL,kCGEventLeftMouseUp,global,kCGMouseButtonLeft);
+        CGEventPost(kCGHIDEventTap,down); CGEventPost(kCGHIDEventTap,up); CFRelease(down); CFRelease(up);
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC),dispatch_get_main_queue(),^{ finishChecks(); });
+    });
 }
 
 int main(int argc,const char **argv) {
@@ -76,7 +81,7 @@ int main(int argc,const char **argv) {
                 }];
                 return;
             }
-            [surface.web evaluateJavaScript:@"(()=>{const v=document.querySelector('video'),p=document.querySelector('.media-play');if(!v||v.readyState<2||!v.poster||!v.src.startsWith('blob:')||p.disabled)return null; const r=p.getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2];})()" completionHandler:^(id point, NSError *error) {
+            [surface.web evaluateJavaScript:@"(()=>{const v=document.querySelector('video'),p=document.querySelector('.media-play');if(!v||v.readyState<2||!v.poster||!v.src.startsWith('blob:')||p.disabled||document.getElementById('surface').getAnimations().length)return null; window.nativePlayClick=null; p.addEventListener('click',e=>window.nativePlayClick={trusted:e.isTrusted},{once:true}); const r=p.getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2];})()" completionHandler:^(id point, NSError *error) {
                 if (error || ![point isKindOfClass:NSArray.class]) return;
                 [timer invalidate]; clickPlay(point);
             }];
