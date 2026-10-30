@@ -808,7 +808,7 @@
     identity.append(el("strong", "social-name", name), el("span", "social-account", handle));
     const media = target.media_indices?.length ? mediaView(record, target.media_indices) : null;
     header.append(avatar, identity);
-    if (!shortVideo || !media) header.append(socialBrand(platform));
+    if (!shortVideo || !media) header.append(socialBrand(known ? platform : target.platform));
     const caption = el("div", "social-caption");
     if (target.title) caption.append(el("strong", "social-title", target.title));
     const copy = el("div", "social-body");

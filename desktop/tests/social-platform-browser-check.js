@@ -94,9 +94,9 @@
   document.querySelector(".social-submit").click(); await sleep(100);
   const sent = fixture.calls.find(call => call.op === "respond");
   assert(sent?.decisions.length === targets.length && sent.decisions.every((decision, index) => decision.revision === targets[index].revision && decision.target_id === targets[index].id && decision.decision === (index === 4 ? "revise" : "approve")) && sent.decisions[4].comment.includes("conversational"), "platform styling preserves exact revisions and scoped review decisions");
-  const unknown = { ...targets[0], id: "future-plugin", platform: "future-plugin", account: "creator" };
+  const unknown = { ...targets[0], id: "future-plugin", platform: "FuturePlugin", account: "creator" };
   open("generic-platform", [unknown]); await ready(unknown);
-  assert(panel().querySelector(".social-post") && panel().querySelector(".social-platform-mark").textContent === "future-plugin", "additional posting plugins keep a generic preview with their platform name");
+  assert(panel().querySelector(".social-post") && panel().querySelector(".social-platform-mark").textContent === "FuturePlugin", "additional posting plugins keep a generic preview with their exact platform name");
   open("brand-fallback", [targets[0]]); await ready(targets[0]);
   const brand = panel().querySelector(".social-platform-mark");
   brand.querySelector("img").dispatchEvent(new Event("error"));
