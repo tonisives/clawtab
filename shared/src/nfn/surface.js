@@ -1150,6 +1150,7 @@
     if (hasBlock(layout, "logs")) {
       const section = el("div", "log-output");
       section.append(el("div", "block-label", "Recent output"));
+      host.style.removeProperty("--details-width");
       const logs = el("pre", "logs", "Loading recent output...");
       node._logs = logs; section.append(logs); primitives.logs = section;
     }
@@ -1222,6 +1223,11 @@
         const logs = card._logs, scroller = card._content;
         const atBottom = logs._raw == null || scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 30;
         logs._raw = value.log; renderAnsi(logs, value.log || "No output yet");
+        // Keep fixed-width captures compact; widen when the output can use it.
+        const measure = document.createElement("canvas").getContext("2d");
+        measure.font = getComputedStyle(logs).font;
+        const outputWidth = Math.max(0, ...stripAnsi(value.log || "").split("\n").map(line => measure.measureText(line.trimEnd()).width));
+        host.style.setProperty("--details-width", `${Math.min(620, Math.max(520, Math.ceil(outputWidth + 44)))}px`);
         card._followLogs = atBottom;
         if (atBottom) scroller.scrollTop = scroller.scrollHeight;
       }

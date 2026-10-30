@@ -911,12 +911,22 @@ pub fn send_mouse_click_to_pane(pane_id: &str, col: u16, row: u16) -> Result<(),
 /// Capture the last N lines from a specific pane.
 /// Pane IDs starting with '%' are global tmux targets and used directly.
 pub fn capture_pane(_session: &str, pane_id: &str, lines: u32) -> Result<String, String> {
+    capture_pane_output(pane_id, lines, false)
+}
+
+/// Preserve hard line breaks while letting captured soft wraps fit the message view.
+pub fn capture_pane_reflowed(pane_id: &str, lines: u32) -> Result<String, String> {
+    capture_pane_output(pane_id, lines, true)
+}
+
+fn capture_pane_output(pane_id: &str, lines: u32, join: bool) -> Result<String, String> {
     let start = format!("-{}", lines);
-    let output = run(
-        &["capture-pane", "-t", pane_id, "-p", "-e", "-S", &start],
-        "tmux::capture_pane",
-    )
-    .map_err(|e| format!("Failed to capture pane: {}", e))?;
+    let mut args = vec!["capture-pane", "-t", pane_id, "-p", "-e", "-S", &start];
+    if join {
+        args.push("-J");
+    }
+    let output = run(&args, "tmux::capture_pane")
+        .map_err(|e| format!("Failed to capture pane: {}", e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);

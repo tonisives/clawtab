@@ -75,7 +75,7 @@
   assert(document.querySelector(".card") === detailCard && document.querySelector(".actions") === detailActions, "background snapshots keep the Details card and action targets mounted");
   await sleep(30);
   const detailSize = document.querySelector("#surface").getBoundingClientRect();
-  assert(detailSize.width === 620 && detailSize.height > compactSize.height + 200, "Details expands both width and reading space");
+  assert(detailSize.width >= 520 && detailSize.width <= 620 && detailSize.height > compactSize.height + 200, "Details sizes its width to output and expands the reading space");
   window.nfn.setPlacement({ placement: "right", max_width: 1000, max_height: 860, reduce_motion: true });
   assert(document.querySelector(".row .diff-add") && window.fixture.contextCalls > 0, "Details loads the custom layout and recent output on demand");
   const outputScroller = document.querySelector(".details-content");
@@ -90,6 +90,8 @@
   assert(outputScroller.clientHeight > 100 && document.querySelector("#surface").offsetHeight === Math.min(860, Math.round(innerHeight * .8)), "Details retains the available reading height even for short output");
   assert(document.querySelector(".reply").getBoundingClientRect().top >= outputScroller.getBoundingClientRect().bottom && document.querySelector(".actions").getBoundingClientRect().top >= outputScroller.getBoundingClientRect().bottom, "reply and action buttons remain below the output reading area");
   assert(document.querySelector(".controls").getBoundingClientRect().top >= document.querySelector(".details-content").getBoundingClientRect().bottom && document.querySelector(".details-toggle").getBoundingClientRect().left < document.querySelector("#surface").getBoundingClientRect().left + 20, "Hide details remains in the bottom-left footer below the output");
+  assert(document.querySelector("#surface").offsetWidth === 520, "short fixed-width output keeps the automatic Details width compact");
+  assert(outputScroller.clientHeight > 200 && outputScroller.getBoundingClientRect().bottom >= document.querySelector(".message-content").getBoundingClientRect().bottom - 2, "shell uses the remaining height without a viewport cap");
   assert(!document.querySelector("select"), "agent settings stay hidden even when viewing details");
   document.querySelector('[aria-label="Notification options"]').click();
   click("Agent controls"); await sleep(60);
@@ -133,6 +135,14 @@
   click("Details"); await sleep(30);
   const resizedOutput = document.querySelector(".details-content"); resizedOutput.scrollIntoView({ block: "end" });
   assert(resizedOutput.getBoundingClientRect().bottom <= document.querySelector(".controls").getBoundingClientRect().top && resizedOutput.clientHeight > 70, "resized output fills the available reading space above the footer");
+  window.fixture.log = "A long logical terminal line that can reflow across the available shell width. ".repeat(8);
+  await sleep(1100);
+  const shellBefore = document.querySelector(".logs").getBoundingClientRect();
+  resizeDrag("se", 100, 100); await sleep(30);
+  const shellAfter = document.querySelector(".logs").getBoundingClientRect();
+  assert(document.querySelector(".logs").textContent === window.fixture.log && document.querySelector(".logs").scrollWidth <= document.querySelector(".logs").clientWidth, "logical output reflows without clipping or losing text");
+  assert(shellAfter.width >= shellBefore.width + 99 && resizedOutput.clientHeight > 0 && shellAfter.height >= shellBefore.height + 99, "shell grows with both dimensions of the message bar");
+  resizeDrag("se", -100, -100); await sleep(30);
   nav("Next"); await sleep(30);
   assert(surface.offsetWidth === draggedSize.width && surface.offsetHeight === draggedSize.height && document.querySelector(".logs"), "next message retains the session size and shell view");
   window.fixture.records.get("second").request.media = [{ kind: "image", src: "/tmp/resize-attachment.png" }];

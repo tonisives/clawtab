@@ -475,7 +475,7 @@ static void verifyExpansion(void (^finish)(void)) {
                 BOOL immediate = widths.count > 0;
                 for (NSNumber *width in widths) if (fabs(width.doubleValue - expanded.size.width) > 1) immediate = NO;
                 CGFloat maxHeight = [surface selectedScreen].visibleFrame.size.height * .8;
-                if (expanded.size.width < 600 || expanded.size.height <= compact.size.height + 100 || expanded.size.height > maxHeight + 1 || !anchored || !immediate || !fixedCanvas) {
+                if (fabs(expanded.size.width - 520) > 1 || expanded.size.height <= compact.size.height + 100 || expanded.size.height > maxHeight + 1 || !anchored || !immediate || !fixedCanvas) {
                     fprintf(stderr,"Expansion failed: compact=%.0fx%.0f drawn=%s expanded=%.0fx%.0f maxHeight=%.0f anchored=%d immediate=%d\n",compact.size.width,compact.size.height,widths.description.UTF8String,expanded.size.width,expanded.size.height,maxHeight,anchored,immediate); exit(1);
                 }
                 [surface.web takeSnapshotWithConfiguration:nil completionHandler:^(NSImage *image, NSError *snapshotError) {

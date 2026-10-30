@@ -81,7 +81,7 @@ pub fn capture_pane_recent_ansi(id: &str, lines: u32) -> Result<String, String> 
     if managed::is_managed(id) {
         capture(id, true, true, lines)
     } else {
-        crate::tmux::capture_pane("", id, lines)
+        crate::tmux::capture_pane_reflowed(id, lines)
     }
 }
 pub fn capture_pane_screen(id: &str, rows: u16) -> Result<String, String> {
