@@ -5,6 +5,7 @@ static NSData *clip;
 static NSUInteger attempts;
 static BOOL presented;
 static NSString *output;
+static NSPoint initialPointer;
 
 static void reply(NSDictionary *request, NSDictionary *value) {
     NSDictionary *response = @{@"type":@"response", @"token":request[@"token"], @"value":value};
@@ -29,7 +30,7 @@ static void receive(const char *raw) {
 }
 
 static void finishChecks(void) {
-    NSString *script = @"const v=document.querySelector('video'), src=v.src, poster=v.poster, body=document.querySelector('.message-content'); const time=v.currentTime; if(!window.nativePlayClick?.trusted||v.paused||v.error||time<.2)throw Error('The native Play button did not advance the video: '+JSON.stringify({click:window.nativePlayClick,paused:v.paused,currentTime:time,error:v.error?.message,playError:document.querySelector('.media-play')?.title,readyState:v.readyState})); document.querySelector('.details-toggle').click(); await new Promise(r=>setTimeout(r,150)); if(v.paused||v.src!==src||v.poster!==poster||document.querySelector('video')!==v||body.hidden||!body.contains(document.querySelector('.details-content')))throw Error('Details interrupted or replaced the post/video'); document.querySelector('.details-toggle').click(); const width=v.getBoundingClientRect().width; for(let i=0;i<4;i++)document.querySelector('.resize-e').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',shiftKey:true,bubbles:true})); await new Promise(r=>setTimeout(r,150)); if(document.querySelector('.logs')||body.hidden||v.src!==src||v.paused||v.getBoundingClientRect().width<=width)throw Error('Resizing failed to retain and enlarge the playing post'); v.pause(); return {passed:7,trustedClick:window.nativePlayClick.trusted,src:src.slice(0,5),poster:poster.length,width:v.videoWidth,height:v.videoHeight,currentTime:v.currentTime};";
+    NSString *script = @"const v=document.querySelector('video'), src=v.src, poster=v.poster, body=document.querySelector('.message-content'); const time=v.currentTime; if(!window.nativePlayClick?.trusted||!document.querySelector('.video-thumbnail')?.hidden||v.paused||v.error||time<.2)throw Error('The native Play button did not advance the video: '+JSON.stringify({click:window.nativePlayClick,paused:v.paused,currentTime:time,error:v.error?.message,playError:document.querySelector('.media-play')?.title,readyState:v.readyState})); document.querySelector('.details-toggle').click(); await new Promise(r=>setTimeout(r,150)); if(v.paused||v.src!==src||v.poster!==poster||document.querySelector('video')!==v||body.hidden||!body.contains(document.querySelector('.details-content')))throw Error('Details interrupted or replaced the post/video'); document.querySelector('.details-toggle').click(); const width=v.getBoundingClientRect().width; for(let i=0;i<4;i++)document.querySelector('.resize-e').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',shiftKey:true,bubbles:true})); await new Promise(r=>setTimeout(r,150)); if(document.querySelector('.logs')||body.hidden||v.src!==src||v.paused||v.getBoundingClientRect().width<=width)throw Error('Resizing failed to retain and enlarge the playing post'); v.pause(); return {passed:7,trustedClick:window.nativePlayClick.trusted,src:src.slice(0,5),poster:poster.length,width:v.videoWidth,height:v.videoHeight,currentTime:v.currentTime};";
     [surface.web callAsyncJavaScript:script arguments:@{} inFrame:nil inContentWorld:WKContentWorld.pageWorld completionHandler:^(id result, NSError *error) {
         if (error) { fprintf(stderr,"%s\n",error.description.UTF8String); exit(1); }
         NSData *data = [NSJSONSerialization dataWithJSONObject:result options:0 error:nil];
@@ -38,7 +39,9 @@ static void finishChecks(void) {
             if (!image || error) exit(1);
             NSBitmapImageRep *bitmap = [NSBitmapImageRep imageRepWithData:image.TIFFRepresentation];
             if (![[bitmap representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:output atomically:YES]) exit(1);
-            clawtab_nfn_stop();
+            CGEventRef move = CGEventCreateMouseEvent(NULL,kCGEventMouseMoved,CGPointMake(initialPointer.x,NSMaxY(NSScreen.screens.firstObject.frame)-initialPointer.y),kCGMouseButtonLeft);
+            CGEventPost(kCGHIDEventTap,move); CFRelease(move);
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC/5),dispatch_get_main_queue(),^{ clawtab_nfn_stop(); });
         }];
     }];
 }
@@ -67,6 +70,7 @@ int main(int argc,const char **argv) {
         output = [NSString stringWithUTF8String:argv[3]];
         if (!html || !clip.length) return 2;
         [NSApplication sharedApplication];
+        initialPointer = NSEvent.mouseLocation;
         [NSTimer scheduledTimerWithTimeInterval:.2 repeats:YES block:^(NSTimer *timer) {
             if (++attempts > 150) { fprintf(stderr,"Native video thumbnail did not load\n"); exit(1); }
             if (!surface.ready) return;
@@ -81,7 +85,7 @@ int main(int argc,const char **argv) {
                 }];
                 return;
             }
-            [surface.web evaluateJavaScript:@"(()=>{const v=document.querySelector('video'),p=document.querySelector('.media-play');if(!v||v.readyState<2||!v.poster||!v.src.startsWith('blob:')||p.disabled||document.getElementById('surface').getAnimations().length)return null; window.nativePlayClick=null; p.addEventListener('click',e=>window.nativePlayClick={trusted:e.isTrusted},{once:true}); const r=p.getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2];})()" completionHandler:^(id point, NSError *error) {
+            [surface.web evaluateJavaScript:@"(()=>{const v=document.querySelector('video'),p=document.querySelector('.media-play'),t=document.querySelector('.video-thumbnail');if(!v||v.readyState<2||!v.poster||!v.src.startsWith('blob:')||!t?.naturalWidth||t.hidden||p.disabled||document.getElementById('surface').getAnimations().length)return null; window.nativePlayClick=null; p.addEventListener('click',e=>window.nativePlayClick={trusted:e.isTrusted},{once:true}); const r=p.getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2];})()" completionHandler:^(id point, NSError *error) {
                 if (error || ![point isKindOfClass:NSArray.class] || !timer.valid) return;
                 [timer invalidate]; clickPlay(point);
             }];

@@ -133,7 +133,9 @@ button.send { flex: none; align-self: flex-end; min-width: 54px; padding: 7px 12
 .video-preview { position: relative; aspect-ratio: 16 / 9; background: #0a0a0a; border-radius: 8px; overflow: hidden; }
 .video-preview video { height: 100%; }
 .video-preview video[hidden] { display: none; }
-.media-play { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #161616e6; color: #fff; border-color: #fff8; border-radius: 999px; font-size: 14px; font-weight: 600; }
+.video-thumbnail { position: absolute; z-index: 1; inset: 0; height: 100%; pointer-events: none; }
+.video-thumbnail[hidden] { display: none; }
+.media-play { position: absolute; z-index: 2; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #161616e6; color: #fff; border-color: #fff8; border-radius: 999px; font-size: 14px; font-weight: 600; }
 .media-play[hidden] { display: none; }
 .media-loading { position: absolute; inset: auto 12px 12px; }
 .message-content > .media { min-height: 80px; }

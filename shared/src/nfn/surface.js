@@ -702,6 +702,9 @@
       if (item.kind === "video") {
         element.controls = true; element.playsInline = true; element.preload = "auto"; element.muted = true;
         element.setAttribute("aria-label", item.alt || "Post video");
+        const poster = el("img", "video-thumbnail"); poster.alt = item.alt || "Video thumbnail"; poster.hidden = true;
+        let playbackStarted = false;
+        frame.append(poster);
         const play = button("Play video", () => {
           element.play().catch(error => { play.textContent = "Play video"; play.title = error.message; });
         }, "media-play");
@@ -719,10 +722,11 @@
             canvas.width = Math.min(element.videoWidth, 1280); canvas.height = Math.round(canvas.width * element.videoHeight / element.videoWidth);
             canvas.getContext("2d").drawImage(element, 0, 0, canvas.width, canvas.height);
             element.poster = canvas.toDataURL("image/jpeg", .85);
+            poster.src = element.poster; poster.hidden = playbackStarted;
           } catch { /* Cross-origin videos still display their decoded first frame. */ }
         };
         element.addEventListener("loadeddata", thumbnail); element.addEventListener("seeked", thumbnail);
-        element.addEventListener("playing", () => { play.hidden = true; });
+        element.addEventListener("playing", () => { playbackStarted = true; play.hidden = true; poster.hidden = true; });
         element.addEventListener("pause", () => { play.hidden = false; });
         if (!item.src.startsWith("/")) remoteMedia.set(element, { cancelled: false, url: null });
       } else { element.alt = item.alt || record.request.title; element.loading = "eager"; }
@@ -731,7 +735,7 @@
         const status = el("div", "hint media-loading", "Loading attachment..."); status.setAttribute("role", "status"); frame.append(status);
         loadRemoteMedia(element, status, record, index);
       } else element.src = item.src.startsWith("/") ? `clawtab-nfn://media/${record.id}/${index}` : item.src;
-      element.addEventListener("error", () => { frame.querySelector(".media-play")?.remove(); element.replaceWith(el("div", "hint", `${item.kind === "video" ? "Video" : "Image"} unavailable`)); });
+      element.addEventListener("error", () => { frame.querySelector(".media-play")?.remove(); frame.querySelector(".video-thumbnail")?.remove(); element.replaceWith(el("div", "hint", `${item.kind === "video" ? "Video" : "Image"} unavailable`)); });
       media.append(frame);
     }
     return media;
