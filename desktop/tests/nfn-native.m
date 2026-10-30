@@ -39,7 +39,7 @@ static void saveSurfaceSnapshot(NSString *path, void (^finish)(void)) {
     [surface.web evaluateJavaScript:@"(() => { const r = document.querySelector('#surface').getBoundingClientRect(); return [r.x, r.y, r.width, r.height]; })()" completionHandler:^(id bounds, NSError *error) {
         if (error || ![bounds isKindOfClass:NSArray.class]) { fprintf(stderr, "Could not measure notification screenshot\n"); exit(1); }
         WKSnapshotConfiguration *configuration = [WKSnapshotConfiguration new];
-        configuration.rect = NSMakeRect([bounds[0] doubleValue], [bounds[1] doubleValue], [bounds[2] doubleValue], [bounds[3] doubleValue]);
+        configuration.rect = NSIntersectionRect(surface.web.bounds, NSMakeRect([bounds[0] doubleValue] - shadowInset, [bounds[1] doubleValue], [bounds[2] doubleValue] + shadowInset * 2, [bounds[3] doubleValue] + shadowBottom));
         [surface.web takeSnapshotWithConfiguration:configuration completionHandler:^(NSImage *image, NSError *snapshotError) {
             if (snapshotError || !image) { fprintf(stderr, "Could not capture notification screenshot\n"); exit(1); }
             NSBitmapImageRep *bitmap = [NSBitmapImageRep imageRepWithData:image.TIFFRepresentation];
@@ -60,12 +60,18 @@ static void verifyResizeCorners(void (^finish)(void)) {
     BOOL keyBefore = surface.panel.isKeyWindow;
     pid_t foregroundBefore = NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier;
     fprintf(stderr, "Corner start: key=%d text=%d keyboard=%d foreground=%d\n", keyBefore, surface.panel.textFocus, surface.panel.keyboardFocus, foregroundBefore);
-    NSString *script = @"(() => { const handle = document.querySelector('.resize-se'); if (!handle || handle.hidden) return null; const r = handle.getBoundingClientRect(); return [r.x+r.width/2,r.y+r.height/2]; })()";
+    NSString *script = @"(() => { const host = document.querySelector('#surface').getBoundingClientRect(); if (host.left < 39 || host.right > innerWidth - 39 || host.bottom > innerHeight - 47) throw Error('Shadow extends outside the native canvas'); const handle = document.querySelector('.resize-se'); if (!handle || handle.hidden) return null; const r = handle.getBoundingClientRect(); return [r.x+r.width/2,r.y+r.height/2]; })()";
     [surface.web evaluateJavaScript:script completionHandler:^(id point, NSError *error) {
         if (error || ![point isKindOfClass:NSArray.class]) { fprintf(stderr, "Bottom-right resize handle is unavailable\n"); exit(1); }
         CGFloat y = [point[1] doubleValue];
         NSPoint location = [surface.web convertPoint:NSMakePoint([point[0] doubleValue], surface.web.isFlipped ? y : surface.web.bounds.size.height - y) toView:nil];
         NSPoint start = [surface.panel convertPointToScreen:location], end = NSMakePoint(start.x + 16, start.y);
+        [NSCursor.arrowCursor set];
+        sendResizePointer(NSEventTypeMouseMoved, start);
+        if (NSCursor.currentCursor == NSCursor.arrowCursor || surface.panel.isKeyWindow != keyBefore
+            || NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier != foregroundBefore) {
+            fprintf(stderr, "Passive corner hover did not show the resize cursor without taking focus\n"); exit(1);
+        }
         sendResizePointer(NSEventTypeLeftMouseDown, start);
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 10), dispatch_get_main_queue(), ^{
             sendResizePointer(NSEventTypeLeftMouseDragged, end);
@@ -86,7 +92,7 @@ static void verifyResizeCorners(void (^finish)(void)) {
                     [surface.web evaluateJavaScript:@"document.querySelector('.resize-se').dispatchEvent(new KeyboardEvent('keydown', {key:'ArrowLeft', bubbles:true}))" completionHandler:^(id result, NSError *restoreError) {
                         if (restoreError) { fprintf(stderr, "Could not restore resized width\n"); exit(1); }
                         waitForSettledSurface(0, ^{
-                            printf("Native corner resize checks passed: real bottom-right pointer drag, fixed opposite edge, top anchor, and reverse resize.\n");
+                            printf("Native corner resize checks passed: passive resize cursor, real bottom-right pointer drag, fixed opposite edge, top anchor, and reverse resize.\n");
                             finish();
                         });
                     }];
@@ -313,9 +319,9 @@ static void verifyReplyFirstClick(void (^finish)(void)) {
         if (error || ![point isKindOfClass:NSArray.class] || surface.panel.isKeyWindow) { fprintf(stderr, "Could not prepare inactive reply click\n"); exit(1); }
         clickWebPoint(point);
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 4), dispatch_get_main_queue(), ^{
-            [surface.web evaluateJavaScript:@"window.firstClickCount === 1 && document.activeElement === document.querySelector('textarea')" completionHandler:^(id received, NSError *clickError) {
+            [surface.web evaluateJavaScript:@"window.firstClickCount === 1 && document.activeElement === document.querySelector('textarea') && document.querySelector('#surface').dataset.keyboardActive === 'true' && getComputedStyle(document.querySelector('.brand img')).filter === 'none' && getComputedStyle(document.querySelector('.todo-ring')).filter === 'none'" completionHandler:^(id received, NSError *clickError) {
                 if (clickError || ![received boolValue]) { fprintf(stderr, "First native click did not reach and focus the reply field\n"); exit(1); }
-                printf("Native first-click check passed: one mouse-down reaches and focuses the reply field from an inactive panel.\n");
+                printf("Native first-click check passed: reply receives the activating click and title bar icons regain color.\n");
                 finish();
             }];
         });
@@ -328,7 +334,7 @@ static void verifyFirstClick(void (^finish)(void)) {
         if (error || ![point isKindOfClass:NSArray.class]) { fprintf(stderr, "Could not measure passive click target\n"); exit(1); }
         clickWebPoint(point);
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 4), dispatch_get_main_queue(), ^{
-            [surface.web evaluateJavaScript:@"window.passiveClickCount === 1" completionHandler:^(id received, NSError *clickError) {
+            [surface.web evaluateJavaScript:@"window.passiveClickCount === 1 && document.querySelector('#surface').dataset.keyboardActive === 'false' && getComputedStyle(document.querySelector('.brand img')).filter === 'grayscale(1)'" completionHandler:^(id received, NSError *clickError) {
                 if (clickError || ![received boolValue] || surface.panel.isKeyWindow || surface.panel.textFocus || NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier != foreground) {
                     fprintf(stderr, "Ordinary first click was lost or activated the notification panel\n"); exit(1);
                 }

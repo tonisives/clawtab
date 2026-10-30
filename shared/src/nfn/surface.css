@@ -8,7 +8,7 @@
   --accent: #7986cb;
 }
 * { box-sizing: border-box; }
-body { display: flex; justify-content: flex-end; margin: 0; background: transparent; overflow: hidden; }
+body { display: flex; justify-content: flex-end; margin: 0; padding: 0 var(--surface-shadow-inset, 0px) var(--surface-shadow-bottom, 0px); background: transparent; overflow: hidden; }
 button, select, input, textarea { font: inherit; }
 button { cursor: pointer; border: 1px solid var(--line); background: #202020; color: inherit; padding: 8px 12px; border-radius: 6px; line-height: 1.4; }
 button:hover { background: #292929; }
