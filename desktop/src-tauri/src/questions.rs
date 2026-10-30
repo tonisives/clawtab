@@ -145,6 +145,12 @@ pub fn parse_numbered_options(text: &str) -> Vec<QuestionOption> {
                 }
             }
         }
+        // A composer below printed options means that menu is transcript text.
+        if line.trim_start().starts_with(['›', '❯']) {
+            groups.clear();
+            current_group.clear();
+            continue;
+        }
         // Only break the group on lines that look like real content (not
         // description lines, separators, or blanks between numbered options).
         // Description lines are indented text under an option, separator lines
@@ -186,7 +192,7 @@ pub fn parse_numbered_options(text: &str) -> Vec<QuestionOption> {
 /// Checks the last 12 non-empty lines (not just the very last) to handle trailing
 /// whitespace or invisible characters left by TUI rendering.
 fn has_interactive_prompt_indicator(text: &str) -> bool {
-    if requires_manual_answer(text) {
+    if is_codex_mcp_permission(text) || requires_manual_answer(text) {
         return true;
     }
     let tail: Vec<String> = text
@@ -215,9 +221,50 @@ fn has_interactive_prompt_indicator(text: &str) -> bool {
         || joined.contains("yes, proceed (y)")
 }
 
+/// MCP permissions use a Field form, while user decisions use a Question form.
+/// Inspect its heading so transcript text and tool arguments cannot turn a
+/// permission into a planning question.
+fn is_codex_mcp_permission(screen: &str) -> bool {
+    let plain = strip_ansi(screen);
+    let lines: Vec<_> = plain
+        .lines()
+        .map(|line| line.trim().trim_start_matches(['•', '›', '>']).trim())
+        .collect();
+    let Some(field) = lines.iter().rposition(|line| {
+        line.starts_with("Field ")
+            || line.starts_with("Question ")
+            || line.eq_ignore_ascii_case("Implement this plan?")
+    }) else {
+        return false;
+    };
+    let Some((current, total)) = lines[field]
+        .strip_prefix("Field ")
+        .and_then(|progress| progress.split_once('/'))
+    else {
+        return false;
+    };
+    if [current, total]
+        .iter()
+        .any(|part| part.is_empty() || !part.bytes().all(|byte| byte.is_ascii_digit()))
+    {
+        return false;
+    }
+    let heading = lines[field + 1..]
+        .iter()
+        .skip_while(|line| line.is_empty())
+        .take_while(|line| !line.is_empty())
+        .copied()
+        .collect::<Vec<_>>()
+        .join(" ");
+    heading.starts_with("Allow the ") && heading.contains(" MCP server to run tool ")
+}
+
 /// Codex user-input forms and plan confirmations need a deliberate answer,
 /// including when their choices happen to be Yes and No.
 fn requires_manual_answer(screen: &str) -> bool {
+    if is_codex_mcp_permission(screen) {
+        return false;
+    }
     strip_ansi(screen)
         .lines()
         .rev()
@@ -585,8 +632,10 @@ fn validate_question_screen(
             .iter()
             .zip(&question.options)
             .all(|(live, previous)| live.number == previous.number && live.label == previous.label);
+    // Detection trims the capture; compare the same context without shifting
+    // mouse-button coordinates in the full live screen.
     if !same_options
-        || prompt_context_key(&last_context_lines(screen))
+        || prompt_context_key(&last_context_lines(screen.trim()))
             != prompt_context_key(&question.context_lines)
     {
         return Err("The visible agent prompt has changed. Focus the agent to review it.".into());
@@ -3010,6 +3059,103 @@ enter to submit answer · esc to interrupt
                 .requires_manual_answer
         );
         assert!(super::validate_question_screen(question, None, CODEX_PLANNING_QUESTION).is_err());
+    }
+
+    const CODEX_MCP_PERMISSION: &str = r#"
+Field 1/1
+Allow the codex_tui MCP server to run tool "send_message_to_thread"?
+
+prompt: New direct user report: resize cursor missing, active tit...
+threadId: 01a17f59-5961-7c31-9e33-08bb2706bf46
+
+› 1. Allow  Run the tool and continue
+  2. Cancel  Cancel this tool call
+enter to submit | esc to cancel
+"#;
+
+    #[test]
+    fn live_mcp_permission_validation_ignores_terminal_bottom_padding() {
+        let history = "Earlier agent output\n".repeat(35);
+        let screen = format!("{history}{CODEX_MCP_PERMISSION}{}", "\n".repeat(14));
+        let mut process = agent("%6", "");
+        process.12 = ProcessProvider::Codex;
+        record_pane_capture(&mut process, &screen, 77);
+        let mut cache = std::collections::HashMap::new();
+        update_question_cache(&[process], &mut cache);
+        let question = &cache["%6"].question;
+
+        let live = super::validate_question_screen(question, None, &screen).unwrap();
+        assert!(!live.requires_manual_answer);
+        assert_eq!(find_yes_option(&live.options).as_deref(), Some("1"));
+        assert!(super::validate_question_screen(
+            question,
+            None,
+            &screen.replace("01a17f59", "01a18a1f"),
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn printed_permission_options_above_a_live_composer_are_not_a_prompt() {
+        for composer in ["›", "› 1", "› Continue", "❯ Continue"] {
+            let screen = format!("{CODEX_MCP_PERMISSION}\n{composer}\nVim: Insert");
+            assert!(parse_numbered_options(&screen).is_empty(), "{composer}");
+            let mut cache = std::collections::HashMap::new();
+            update_question_cache(&[agent("%1", &screen)], &mut cache);
+            assert!(cache.is_empty());
+        }
+    }
+
+    #[test]
+    fn codex_mcp_permissions_keep_auto_yes_enabled() {
+        for screen in [
+            CODEX_MCP_PERMISSION.to_string(),
+            CODEX_MCP_PERMISSION.replace("enter to submit | esc to cancel", ""),
+            CODEX_MCP_PERMISSION.replace(
+                "prompt: New direct user report: resize cursor missing, active tit...",
+                "prompt: Architecture review: enter to submit answer, next question",
+            ),
+            format!("{CODEX_PLANNING_QUESTION}\n{CODEX_MCP_PERMISSION}"),
+            format!("\x1b[1m{CODEX_MCP_PERMISSION}\x1b[0m"),
+            CODEX_MCP_PERMISSION.replace(" MCP server", " MCP\nserver"),
+        ] {
+            let mut cache = std::collections::HashMap::new();
+            let mut process = agent("%1", "");
+            process.12 = ProcessProvider::Codex;
+            record_pane_capture(&mut process, &screen, 99);
+            let detected = update_question_cache(&[process], &mut cache);
+            assert!(detected.contains("%1"), "{screen}");
+            let question = &cache["%1"].question;
+            let auto_yes = HashSet::from(["%1".to_string()]);
+
+            assert_eq!(question.options.len(), 2, "{screen}");
+            assert!(!question.requires_manual_answer, "{screen}");
+            assert!(super::auto_yes_applies(question, &auto_yes), "{screen}");
+            assert!(!super::auto_yes_applies(question, &HashSet::new()));
+            assert_eq!(find_yes_option(&question.options).as_deref(), Some("1"));
+            assert!(
+                filter_auto_yes_questions(std::slice::from_ref(question), &auto_yes).is_empty()
+            );
+            assert!(
+                !super::validate_question_screen(question, None, &screen)
+                    .unwrap()
+                    .requires_manual_answer,
+                "{screen}"
+            );
+        }
+    }
+
+    #[test]
+    fn previous_mcp_permission_does_not_auto_yes_a_new_planning_question() {
+        for form in [
+            CODEX_PLANNING_QUESTION,
+            "› Question 1/1\nArchitecture choice?\n› 1. Yes\n  2. No\nenter to submit answer",
+            "Implement this plan?\n› 1. Yes, implement this plan\n  2. No, stay in Plan mode\nPress enter to confirm",
+        ] {
+            let screen = format!("{CODEX_MCP_PERMISSION}\n{form}");
+            assert!(!super::is_codex_mcp_permission(&screen));
+            assert!(super::requires_manual_answer(&screen));
+        }
     }
 
     #[test]

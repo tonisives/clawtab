@@ -990,6 +990,36 @@
   assert(focusHost.dataset.keyboardActive === "true" && getComputedStyle(focusHost).boxShadow === activeShadow, "keyboard focus restores the active appearance");
   assert(badges.every(badge => !/[JK]/.test(badge.textContent)), "button hints reserve J K for list navigation");
 
+  for (const [variant, source, available] of [
+    ["standalone", { provider: "codex", task: "Codex (terminal unknown)" }, true],
+    ["job", { job_id: "recording-consumer" }, true],
+    ["browser", { browser_pane_id: "%16", browser_session: "recording" }, true],
+    ["session", { pane_id: "%42", provider: "codex" }, true],
+    ["summary", {}, false],
+  ]) {
+    resetFlow();
+    const notice = window.fixture.record(`footer-${variant}`, 0);
+    notice.request.template = "update"; notice.request.source = source;
+    notice.request.actions = [{ id: "acknowledge", label: "Got it", kind: "choice" }];
+    notice.details_available = available;
+    window.fixture.records.set(notice.id, notice);
+    const state = window.fixture.snapshot(notice.id); state.settings.keyboard_hints = true;
+    window.nfn.receive(state); await sleep(100);
+    const checkFooter = () => {
+      const ack = document.querySelector('.controls [data-action-id="acknowledge"]');
+      assert(Boolean(ack) && getComputedStyle(document.querySelector(".answer-row")).display === "none", `${variant}: Got it appears only in the footer`);
+      const bounds = ack.getBoundingClientRect(), footer = ack.closest(".controls").getBoundingClientRect();
+      assert(Math.abs(bounds.right - footer.right) < 1 && Math.abs(bounds.top + bounds.height / 2 - footer.top - footer.height / 2 - 7) < 1, `${variant}: Got it stays at the right of the bottom bar`);
+      const hints = [...document.querySelectorAll(".keyboard-hint")];
+      assert(hints.find(badge => badge.dataset.target === "Got it")?.textContent === "N" && new Set(hints.map(badge => badge.textContent)).size === hints.length, `${variant}: Got it keeps the N shortcut without duplicate hints`);
+    };
+    checkFooter();
+    if (available) { click("Details"); await sleep(100); checkFooter(); }
+    document.getElementById("surface").dispatchEvent(new KeyboardEvent("keydown", { key: "n", bubbles: true, cancelable: true }));
+    await sleep(30);
+    assert(notice.dismissed_at && !notice.response, `${variant}: N dismisses the notice without submitting a response`);
+  }
+
   resetFlow(); window.fixture.serverOrder = false;
   for (let i = 0; i < 8; i++) flowRecord(`vim-${i}`, i);
   const vimSnapshot = window.fixture.snapshot("vim-0"); vimSnapshot.settings.keyboard_hints = true;
