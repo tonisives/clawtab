@@ -79,7 +79,6 @@ window.webkit = { messageHandlers: { nfn: { postMessage(value) {
       setTimeout(() => window.nfn.receive({ type: "response", token, error: fixture.focusError }), 1);
       return;
     }
-    record.dismissed_at = Date.now(); record.read_at = Date.now();
     response = { focused: true, record };
   }
   if (command.op === "list") response = { records: fixture.listRecords(command.pending_only).filter(record => (command.query || "").toLowerCase().split(/\s+/).filter(Boolean).every(term => JSON.stringify(record.request).toLowerCase().includes(term))).slice(command.offset, command.offset + 50), next_offset: command.offset + 50 };

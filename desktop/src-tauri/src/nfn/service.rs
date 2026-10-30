@@ -880,9 +880,7 @@ impl Service {
             validate_source(&record.request.source)?;
             focus_source(&record.request.source).await?;
         }
-        let dismissed = self.store.dismiss_many(std::slice::from_ref(&record.id))?;
-        self.store.supersede_previous(record)?;
-        Ok(json!({"focused":true, "record":dismissed[0]}))
+        Ok(json!({"focused":true, "record":self.store.get(&record.id)?}))
     }
 
     async fn focus_job_session(&self, record: &NfnRecord) -> Result<(), String> {

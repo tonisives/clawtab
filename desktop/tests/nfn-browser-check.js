@@ -368,9 +368,10 @@
   assert(!completion.dismissed_at && document.querySelector(".card") && document.querySelector(".notice").textContent === window.fixture.focusError, "a failed session switch leaves the notification available to retry");
   window.fixture.focusError = null;
   click("Open session"); await sleep(30);
-  assert(completion.status === "pending" && completion.dismissed_at && !completion.response && !document.querySelector(".card"), "opening a completed agent dismisses its card without sending an answer");
+  assert(completion.status === "pending" && !completion.dismissed_at && !completion.response && document.querySelector(".card"), "opening a completed agent keeps its card open without sending an answer");
   window.nfn.receive(window.fixture.snapshot());
-  assert(!document.querySelector(".card"), "a refresh does not reopen a completion dismissed by Open session");
+  assert(document.querySelector("h1").textContent === completion.request.title, "a refresh keeps the opened session message visible");
+  completion.dismissed_at = Date.now(); window.nfn.collapse();
   const dismissedCompletion = { ...completion, id: "dismissed-completion", dismissed_at: null };
   window.fixture.records.set(dismissedCompletion.id, dismissedCompletion);
   window.nfn.receive(window.fixture.snapshot(dismissedCompletion.id));
@@ -385,7 +386,7 @@
   const focusedQuestion = window.fixture.record("focused-question");
   window.fixture.records.set(focusedQuestion.id, focusedQuestion); window.nfn.receive(window.fixture.snapshot(focusedQuestion.id));
   click("Open session"); await sleep(30);
-  assert(focusedQuestion.dismissed_at && !focusedQuestion.response && !document.querySelector(".card"), "the Open session footer also dismisses without answering the request");
+  assert(!focusedQuestion.dismissed_at && !focusedQuestion.response && document.querySelector(".card"), "the Open session footer keeps the question open without answering it");
   window.nfn.collapse();
   window.fixture.records.clear();
   const alert = window.fixture.record("capacity-alert", 0);
@@ -402,7 +403,7 @@
   await sleep(180);
   assert(Boolean(document.querySelector(".card")), "agent alerts stay open until dismissed or recovered");
   click("Open session"); await sleep(30);
-  assert(window.fixture.calls.some(command => command.op === "respond" && command.id === alert.id && command.action_id === "focus") && alert.dismissed_at && !document.querySelector(".card"), "the alert action opens its originating session and dismisses its card");
+  assert(window.fixture.calls.some(command => command.op === "respond" && command.id === alert.id && command.action_id === "focus") && !alert.dismissed_at && document.querySelector(".card"), "the alert action opens its originating session and keeps its card open");
   window.nfn.receive(window.fixture.snapshot());
   alert.dismissed_at = null; window.nfn.receive(window.fixture.snapshot(alert.id));
   alert.status = "resolved";
@@ -420,7 +421,7 @@
   window.fixture.records.set(failedJob.id, failedJob); window.nfn.receive(window.fixture.snapshot(failedJob.id));
   assert(document.querySelector(".controls .open-session") && document.querySelector(".actions").textContent === "Got it" && !buttons().some(button => button.textContent === "Open agent"), "failed jobs expose their saved conversation through the centered footer");
   click("Open session"); await sleep(30);
-  assert(failedJob.dismissed_at && !failedJob.response, "opening a failed job session dismisses its notice without answering an agent");
+  assert(!failedJob.dismissed_at && !failedJob.response && document.querySelector(".card"), "opening a failed job session keeps its notice open without answering an agent");
   window.nfn.collapse();
   window.fixture.records.clear();
   const failedScript = window.fixture.record("failed-script", 0);
@@ -435,7 +436,7 @@
   assert(!failedScript.dismissed_at && document.querySelector(".notice").textContent === window.fixture.focusError, "failed script session resumes stay available for retry");
   window.fixture.focusError = null;
   click("Open session"); await sleep(30);
-  assert(failedScript.dismissed_at && window.fixture.calls.some(command => command.op === "respond" && command.id === failedScript.id && command.action_id === "focus"), "a saved script session uses the resume action and dismisses after success");
+  assert(!failedScript.dismissed_at && document.querySelector(".card") && window.fixture.calls.some(command => command.op === "respond" && command.id === failedScript.id && command.action_id === "focus"), "a saved script session uses the resume action and stays open after success");
   window.nfn.collapse();
   window.fixture.records.clear();
   const job = window.fixture.record("job", 1); job.request.template = "update"; job.request.source = { job_id: "project/fault-updates" }; job.request.title = "Job failed";
@@ -732,8 +733,11 @@
   flowRecord("focus-a", 0); flowRecord("focus-b", 1); flowRecord("focus-c", 2);
   window.fixture.heldOps.add("focus"); window.fixture.heldOps.add("dismiss");
   window.nfn.receive(window.fixture.snapshot("focus-a")); click("Open session");
-  assert(title() === "focus-b", "Open session also advances before the terminal switch completes");
+  assert(title() === "focus-a", "Open session keeps the current card while the terminal switch completes");
   release("focus-a"); await sleep(10);
+  window.nfn.receive(window.fixture.snapshot());
+  assert(title() === "focus-a", "Open session keeps the current card after completion and refresh");
+  nav("Next");
   document.querySelector('[aria-label="Notification options"]').click(); click("Dismiss notification");
   assert(title() === "focus-c" && !document.querySelector(".menu-overlay"), "menu dismissal closes the menu and opens the next notification");
   window.nfn.collapse(); release("focus-b", "Dismiss failed"); await sleep(10);

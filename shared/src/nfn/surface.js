@@ -21,6 +21,7 @@
   let resizedSize = null, resizing = null, resizeRightOffset = 0;
   let nativeWindowFocus = null;
   const autoYesBusy = new Set();
+  const openingSessions = new Set();
   const remoteMedia = new Map();
   const selectedNotifications = new Set();
   let bulkBusy = false, queueError = "";
@@ -642,6 +643,16 @@
       } catch (error) { showError(error, record.id); return; }
     }
   }
+  async function focusSession(id, command) {
+    if (openingSessions.has(id) || actionsInProgress.has(id)) return;
+    openingSessions.add(id); actionErrors.delete(id);
+    expanded = true; pauseTimer(); render();
+    try {
+      const value = await call(command);
+      if (value.record) records.set(id, value.record);
+    } catch (error) { showError(error, id); }
+    finally { openingSessions.delete(id); render(); }
+  }
   async function performAction(id, command, accept = () => {}) {
     if (actionsInProgress.has(id)) return;
     if (preview) {
@@ -691,6 +702,9 @@
       ? actions.find(action => action.id === "revise" && action.kind === "choice") : null;
   }
   async function act(id, action_id, text) {
+    if (records.get(id)?.request.actions?.some(action => action.id === action_id && action.kind === "focus")) {
+      return focusSession(id, { op: "respond", id, action_id, text: null });
+    }
     const revision = revisionChoice(records.get(id));
     if (revision && (action_id === "reply" || action_id === "post" && text?.trim())) action_id = revision.id;
     const dismissOnly = records.get(id)?.request.template === "update" && action_id === "acknowledge";
@@ -1082,7 +1096,7 @@
     } else if (record.request.source?.pane_id || choices.some(action => action.kind === "focus")) {
       utilities.classList.add("session-controls");
       const focus = choices.find(action => action.kind === "focus");
-      const openSession = button("Open session", () => focus ? act(record.id, focus.id, "") : performAction(record.id, { op: "focus", id: record.id }), "primary open-session");
+      const openSession = button("Open session", () => focus ? act(record.id, focus.id, "") : focusSession(record.id, { op: "focus", id: record.id }), "primary open-session");
       openSession.title = "Open the originating session"; node._openSession = openSession; utilities.append(openSession);
     } else if (record.request.source?.job_id && record.details_available !== false) {
       const openJob = button("Go to job", async () => {
@@ -1094,7 +1108,7 @@
       openJob.title = "Show job folder in Finder"; utilities.append(openJob);
     }
     if (!utilities.querySelector(".open-session")) {
-      const openSession = button("Open session", () => performAction(record.id, { op: "focus", id: record.id }), "primary open-session");
+      const openSession = button("Open session", () => focusSession(record.id, { op: "focus", id: record.id }), "primary open-session");
       openSession.disabled = true; openSession.title = "This message has no originating session";
       utilities.classList.add("session-controls"); utilities.append(openSession);
     }
