@@ -149,6 +149,7 @@ button.send { flex: none; align-self: flex-end; min-width: 54px; padding: 7px 12
 .social-account { color: #71767b; overflow-wrap: anywhere; }
 .social-platform-mark { flex: none; font-size: 20px; line-height: 28px; font-weight: 600; }
 .social-body { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 16px; line-height: 24px; }
+.x-post .social-post-link { color: #1d9bf0; }
 .social-title { display: block; margin-bottom: 8px; }
 .social-decisions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .social-decisions button { font-size: 14px; font-weight: 600; }

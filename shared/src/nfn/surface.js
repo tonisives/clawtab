@@ -783,7 +783,11 @@
       header.append(avatar, identity, el("span", "social-platform-mark", isX ? "X" : target.platform));
       post.append(header);
       if (target.title) post.append(el("strong", "social-title", target.title));
-      post.append(el("div", "social-body", target.body || ""));
+      const copy = el("div", "social-body");
+      for (const part of (target.body || "").split(/(https?:\/\/[^\s]+)/g)) {
+        copy.append(/^https?:\/\//.test(part) ? el("span", "social-post-link", part) : document.createTextNode(part));
+      }
+      post.append(copy);
       if (target.media_indices?.length) post.append(mediaView(record, target.media_indices));
       panel.append(post);
       const actions = el("div", "social-decisions"), feedback = el("div", "social-feedback");
