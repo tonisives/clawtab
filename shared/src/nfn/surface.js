@@ -425,13 +425,30 @@
           contentAnimations.forEach(fade => fade.cancel()); contentAnimations = [];
           for (const node of host.children) node.style.width = "";
           if (card?._followLogs) card._content.scrollTop = card._content.scrollHeight;
-          size();
+          fitReviewHeight(); size();
         }
       }).catch(() => {});
     }
     size();
   }
-  new ResizeObserver(size).observe(host);
+  function fitReviewHeight() {
+    if (!card?.classList.contains("social-card") || snapshot.remote || resizedSize || layoutAnimation || details || menu || queue || settingsOpen || todosOpen) return;
+    const body = card._body;
+    host.style.height = "";
+    const needed = Math.ceil(host.getBoundingClientRect().height + body.scrollHeight - body.clientHeight + card.scrollHeight - card.clientHeight);
+    const height = Math.min(geometry.max_height || 860, Math.max(280, needed));
+    host.style.height = `${height}px`;
+  }
+  new ResizeObserver(() => { fitReviewHeight(); size(); }).observe(host);
+  const cardSizeObserver = new ResizeObserver(() => { fitReviewHeight(); size(); });
+  let observedCard = null;
+  function observeCardSize() {
+    if (observedCard === card) return;
+    cardSizeObserver.disconnect(); observedCard = card;
+    if (card?.classList.contains("social-card")) {
+      for (const node of [...card.children, ...card._body.children]) cardSizeObserver.observe(node);
+    }
+  }
   function stopMedia() {
     host.querySelectorAll("video").forEach(video => video.pause());
     setTimeout(cleanupRemoteMedia, 0);
@@ -700,13 +717,17 @@
       const frame = el("div", item.kind === "video" ? "media-item video-preview" : "media-item");
       frame.append(element);
       if (item.kind === "video") {
-        element.controls = true; element.playsInline = true; element.preload = "auto"; element.muted = true;
+        element.controls = false; element.playsInline = true; element.preload = "auto"; element.muted = true;
         element.setAttribute("aria-label", item.alt || "Post video");
         const poster = el("img", "video-thumbnail"); poster.alt = item.alt || "Video thumbnail"; poster.hidden = true;
         let playbackStarted = false, thumbnailQueued = false;
         frame.append(poster);
-        const play = button("Play video", () => {
-          element.play().catch(error => { play.textContent = "Play video"; play.title = error.message; });
+        const play = iconButton("Play video", "M8 5v14l11-7z", () => {
+          play.hidden = true; play.disabled = true; frame.querySelector(".media-error")?.remove();
+          element.play().catch(error => {
+            play.hidden = false; play.disabled = false; play.title = error.message;
+            const status = el("div", "hint media-error", "Video could not start. Try again."); status.setAttribute("role", "status"); frame.append(status);
+          });
         }, "media-play");
         play.setAttribute("aria-label", "Play video"); play.disabled = true;
         frame.append(play);
@@ -734,8 +755,7 @@
           else setTimeout(thumbnail, 100);
         };
         element.addEventListener("loadeddata", queueThumbnail); element.addEventListener("seeked", queueThumbnail);
-        element.addEventListener("playing", () => { playbackStarted = true; play.hidden = true; poster.hidden = true; });
-        element.addEventListener("pause", () => { play.hidden = false; });
+        element.addEventListener("playing", () => { playbackStarted = true; element.controls = true; play.hidden = true; poster.hidden = true; });
         if (!item.src.startsWith("/")) remoteMedia.set(element, { cancelled: false, url: null });
       } else { element.alt = item.alt || record.request.title; element.loading = "eager"; }
       if (item.src.startsWith("/") && (snapshot.remote || item.kind === "video")) {
@@ -747,6 +767,54 @@
       media.append(frame);
     }
     return media;
+  }
+  const socialPlatforms = {
+    x: "X", instagram: "Instagram", tiktok: "TikTok", youtube: "YouTube",
+    threads: "Threads", linkedin: "LinkedIn", bluesky: "Bluesky", mastodon: "Mastodon"
+  };
+  function socialPost(record, target) {
+    const platform = target.platform.toLowerCase(), known = Object.hasOwn(socialPlatforms, platform);
+    const post = el("article", `social-post${known ? ` ${platform}-post` : ""}`);
+    const shortVideo = ["tiktok", "youtube"].includes(platform);
+    if (shortVideo) post.classList.add("short-video-post");
+    post.setAttribute("aria-label", `${target.platform} post preview`);
+    const handle = platform === "linkedin" || target.account.startsWith("@") ? target.account : `@${target.account}`;
+    const name = target.display_name || target.account.replace(/^@/, "");
+    const header = el("div", "social-post-header"), identity = el("div", "social-identity");
+    const avatar = el("div", "social-avatar", name.slice(0, 1).toUpperCase()); avatar.setAttribute("aria-hidden", "true");
+    identity.append(el("strong", "social-name", name), el("span", "social-account", handle));
+    header.append(avatar, identity, el("span", "social-platform-mark", socialPlatforms[platform] || target.platform));
+    const caption = el("div", "social-caption");
+    if (target.title) caption.append(el("strong", "social-title", target.title));
+    const copy = el("div", "social-body");
+    for (const part of (target.body || "").split(/(https?:\/\/[^\s]+)/g)) {
+      copy.append(/^https?:\/\//.test(part) ? el("span", "social-post-link", part) : document.createTextNode(part));
+    }
+    caption.append(copy);
+    const media = target.media_indices?.length ? mediaView(record, target.media_indices) : null;
+    const engagement = el("div", "social-engagement"); engagement.setAttribute("aria-hidden", "true");
+    const icons = {
+      like: "M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8z",
+      comment: "M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9H13a8.5 8.5 0 0 1 8 8v.5z",
+      repost: "M17 2l4 4-4 4M3 11V8a2 2 0 0 1 2-2h16M7 22l-4-4 4-4m14-1v3a2 2 0 0 1-2 2H3",
+      share: "M12 16V3m-5 5 5-5 5 5M5 13v7h14v-7"
+    };
+    for (const [label, path] of Object.entries(icons)) {
+      const item = el("span", "social-engagement-item");
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"); svg.setAttribute("viewBox", "0 0 24 24");
+      const shape = document.createElementNS(svg.namespaceURI, "path"); shape.setAttribute("d", path); svg.append(shape); item.append(svg);
+      if (platform === "linkedin") item.append(el("span", "", { like: "Like", comment: "Comment", repost: "Repost", share: "Send" }[label]));
+      engagement.append(item);
+    }
+    if (shortVideo && media) {
+      const stage = el("div", "social-video-stage"); stage.append(media, engagement);
+      post.append(el("div", "social-video-brand", socialPlatforms[platform]), stage, header, caption);
+    } else if (platform === "instagram" && media) {
+      post.append(header, media, engagement, caption);
+    } else {
+      post.append(header, caption); if (media) post.append(media); if (platform !== "x") post.append(engagement);
+    }
+    return post;
   }
   function socialReview(record, node) {
     const targets = record.request.data?.targets;
@@ -760,6 +828,7 @@
       }) };
       socialDrafts.set(record.id, state);
     }
+    node.classList.add("social-card");
     const review = el("section", "social-review"), tabs = el("div", "segments social-tabs"), panels = el("div");
     tabs.setAttribute("role", "tablist"); tabs.setAttribute("aria-label", "Platform drafts");
     const controls = [], tabControls = [], refresh = [];
@@ -775,33 +844,21 @@
     targets.forEach((target, index) => {
       const decision = state.decisions[index];
       const panel = el("section", "social-platform"); panel.id = `social-platform-${index}`; panel.setAttribute("role", "tabpanel");
-      const tab = button(target.platform, () => {
+      const showPost = () => {
+        if (!panel._post) { panel._post = socialPost(record, target); panel.prepend(panel._post); }
+      };
+      const tab = button(socialPlatforms[target.platform.toLowerCase()] || target.platform, () => {
         state.active = target.id;
         for (const [i, control] of tabControls.entries()) {
           control.setAttribute("aria-selected", String(targets[i].id === state.active));
           panels.children[i].hidden = targets[i].id !== state.active;
+          if (panels.children[i].hidden) panels.children[i].querySelectorAll("video").forEach(video => video.pause());
         }
+        showPost();
       });
       tab.setAttribute("role", "tab"); tab.setAttribute("aria-controls", panel.id); tab.setAttribute("aria-selected", String(target.id === state.active));
       panel.hidden = target.id !== state.active; tabControls.push(tab); tabs.append(tab);
-      const isX = target.platform.toLowerCase() === "x";
-      const post = el("article", `social-post${isX ? " x-post" : ""}`);
-      post.setAttribute("aria-label", `${target.platform} post preview`);
-      const header = el("div", "social-post-header"), identity = el("div", "social-identity");
-      const handle = target.account.startsWith("@") ? target.account : `@${target.account}`;
-      const name = target.display_name || handle.slice(1);
-      const avatar = el("div", "social-avatar", name.slice(0, 1).toUpperCase()); avatar.setAttribute("aria-hidden", "true");
-      identity.append(el("strong", "social-name", name), el("span", "social-account", handle));
-      header.append(avatar, identity, el("span", "social-platform-mark", isX ? "X" : target.platform));
-      post.append(header);
-      if (target.title) post.append(el("strong", "social-title", target.title));
-      const copy = el("div", "social-body");
-      for (const part of (target.body || "").split(/(https?:\/\/[^\s]+)/g)) {
-        copy.append(/^https?:\/\//.test(part) ? el("span", "social-post-link", part) : document.createTextNode(part));
-      }
-      post.append(copy);
-      if (target.media_indices?.length) post.append(mediaView(record, target.media_indices));
-      panel.append(post);
+      if (!panel.hidden) showPost();
       const actions = el("div", "social-decisions"), feedback = el("div", "social-feedback");
       const comment = el("textarea"); comment.rows = 2; comment.value = decision.comment || "";
       comment.maxLength = 32000;
@@ -1718,7 +1775,7 @@
       }
       updateCard(); syncCardDetails(records.get(current));
     } else { host.querySelector(".card")?.remove(); host.querySelector(".queue")?.remove(); renderedId = null; card = null; }
-    renderMenu(); cleanupRemoteMedia(); if (resizing || !animate) size(); else if (!continuingAnimation) animateLayout(before, !queue && !menu && !settingsOpen);
+    renderMenu(); cleanupRemoteMedia(); observeCardSize(); fitReviewHeight(); if (resizing || !animate) size(); else if (!continuingAnimation) animateLayout(before, !queue && !menu && !settingsOpen);
   }
   function receive(value) {
     if (value.type === "pointer_focus") { setPointerFocus(Boolean(value.active)); return; }

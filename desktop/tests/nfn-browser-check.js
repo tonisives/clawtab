@@ -208,7 +208,7 @@
   const mediaSnapshot = window.fixture.snapshot("first"); mediaSnapshot.templates.templates[0].layout.unshift({ type: "media" });
   window.nfn.receive(mediaSnapshot);
   const video = document.querySelector("video");
-  assert(video && video.controls && video.preload === "auto", "cards prepare playable video attachments and a thumbnail inline");
+  assert(video && !video.controls && video.preload === "auto" && document.querySelectorAll(".media-play").length === 1, "cards prepare video attachments with one initial play control and an inline thumbnail");
   window.nfn.collapse();
   await sleep(10);
   assert(video.paused && !video.hasAttribute("src"), "collapsing a card releases video playback");

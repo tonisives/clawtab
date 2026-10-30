@@ -22,8 +22,9 @@ window.webkit = { messageHandlers: { nfn: { postMessage(value) {
   const record = fixture.records.get(command.id);
   let response = record || {};
   if (command.op === "media") {
-    const bytes = fixture.videoBytes;
-    if (!bytes || record?.request.media?.[command.index]?.src !== "/fixture/review.mp4" || command.index !== 0 || command.offset > bytes.length || command.length > 256 * 1024) {
+    const source = record?.request.media?.[command.index]?.src;
+    const bytes = source === "/fixture/review.mp4" ? fixture.videoBytes : source === "/fixture/review-portrait.mp4" ? fixture.portraitVideoBytes : null;
+    if (!bytes || command.index !== 0 || command.offset > bytes.length || command.length > 256 * 1024) {
       window.nfn.receive({ type: "response", token, error: "Fixture attachment unavailable" }); return;
     }
     const part = bytes.slice(command.offset, command.offset + command.length);
@@ -134,7 +135,8 @@ const todoSetup = process.argv.includes("--todos") || todoFileIndex >= 0 ? `wind
 const fixtureSetup = native ? setup.slice(0, setup.indexOf("window.webkit =")) + setup.slice(setup.indexOf("window.fixture.record")) : setup;
 const reviewImage = `data:image/png;base64,${readFileSync(new URL("../../docs/readme-pics/agent-and-shell-side-by-side.png", import.meta.url)).toString("base64")}`;
 const mediaFileIndex = process.argv.indexOf("--media-file");
-const videoSetup = mediaFileIndex < 0 ? "" : `window.fixture.videoBytes = Uint8Array.from(atob(${JSON.stringify(readFileSync(process.argv[mediaFileIndex + 1]).toString("base64"))}), c => c.charCodeAt(0));`;
+const portraitFileIndex = process.argv.indexOf("--portrait-media-file");
+const videoSetup = [[mediaFileIndex, "videoBytes"], [portraitFileIndex, "portraitVideoBytes"]].map(([index, key]) => index < 0 ? "" : `window.fixture.${key} = Uint8Array.from(atob(${JSON.stringify(readFileSync(process.argv[index + 1]).toString("base64"))}), c => c.charCodeAt(0));`).join("\n");
 const document = read("surface.html").replace("/* NFN_CSS */", read("surface.css") + (native ? "" : "\nbody{background:#202126;padding:24px;display:flex;justify-content:center}"))
   .replace("/* NFN_JS */", visibility + fixtureSetup + videoSetup + `\nwindow.fixture.reviewImage = ${JSON.stringify(reviewImage)};\n` + read("surface.js") + "\n" + (process.argv.includes("--video-preview") ? videoReady : ready) + "\n" + todoSetup);
 writeFileSync(process.argv[2] || fileURLToPath(new URL("./nfn-fixture.html", import.meta.url)), document);
