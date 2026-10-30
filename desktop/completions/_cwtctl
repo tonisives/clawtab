@@ -92,7 +92,7 @@ _cwtctl_complete() {
         message|nfn)
           if (( CURRENT == 2 )); then
             local -a sub
-            sub=('send:Send a message' 'list:List pending messages and history' 'get:Get a message and its response' 'wait:Wait for a response' 'reply:Reply or choose an action' 'read:Mark a message read' 'dismiss:Dismiss a message' 'cancel:Cancel a message' 'show:Open the message queue' 'settings:Read or apply message settings' 'templates:List or validate layouts')
+            sub=('send:Send a message' 'list:List pending messages and history' 'get:Get a message and its response' 'wait:Wait for a response' 'reply:Reply or choose an action' 'read:Mark a message read' 'dismiss:Dismiss a message' 'cancel:Cancel a message' 'focus:Show and focus a message on desktop' 'show:Open the message queue' 'settings:Read or apply message settings' 'templates:List or validate layouts')
             _describe -t subcmd 'message command' sub
           elif [[ $words[2] == templates && CURRENT == 3 ]]; then
             compadd list validate

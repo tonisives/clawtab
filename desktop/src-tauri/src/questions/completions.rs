@@ -92,13 +92,14 @@ impl Tracker {
             || activity.asking
             || hook.is_some_and(|hook| hook.state == HookAgentState::Waiting);
         let failed = activity.alert.is_some();
+        let recovered = hook.is_some_and(|hook| hook.event.starts_with("reconciled_"));
         let hook_at = hook.map_or(0, |hook| hook.updated_at_ms);
         let previous = self
             .panes
             .get(&activity.pane_id)
             .filter(|previous| previous.process == *process && previous.session == session);
         let completed = previous.is_some_and(|previous| {
-            if working || failed || previous.failed {
+            if working || failed || previous.failed || recovered {
                 return false;
             }
             let finished = hook.map_or(idle_screen, |hook| {
@@ -116,8 +117,10 @@ impl Tracker {
                 && activity.last_action_at_ms > previous.action_at;
             finished && (previous.active || short_turn)
         });
-        let active =
-            !failed && !completed && (working || previous.is_some_and(|previous| previous.active));
+        let active = !recovered
+            && !failed
+            && !completed
+            && (working || previous.is_some_and(|previous| previous.active));
         let failed = failed || (!working && previous.is_some_and(|previous| previous.failed));
         self.panes.insert(
             activity.pane_id.clone(),
@@ -172,6 +175,34 @@ mod tests {
             working,
             asking,
             alert: None,
+        }
+    }
+
+    #[test]
+    fn recovered_status_does_not_report_completion_or_leave_an_active_turn() {
+        for recovered in [
+            "reconciled_idle",
+            "reconciled_complete",
+            "reconciled_interrupted",
+            "reconciled_failed",
+        ] {
+            let mut tracker = Tracker::default();
+            let process = identity("10");
+            let busy = hook("user_prompt_submit", HookAgentState::Working, 1);
+            assert!(!tracker.observe(&activity(true, false, 1), &process, Some(&busy), false));
+            let repair = hook(recovered, HookAgentState::Idle, 2);
+            assert!(!tracker.observe(&activity(false, false, 2), &process, Some(&repair), true));
+            let housekeeping = hook("stop", HookAgentState::Idle, 3);
+            assert!(!tracker.observe(
+                &activity(false, false, 2),
+                &process,
+                Some(&housekeeping),
+                true
+            ));
+            let new_turn = hook("user_prompt_submit", HookAgentState::Working, 4);
+            assert!(!tracker.observe(&activity(true, false, 4), &process, Some(&new_turn), false));
+            let done = hook("stop", HookAgentState::Idle, 5);
+            assert!(tracker.observe(&activity(false, false, 5), &process, Some(&done), true));
         }
     }
 

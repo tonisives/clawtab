@@ -9,11 +9,12 @@
 
 typedef void (*NfnCallback)(const char *);
 static NfnCallback callback;
-static const CGFloat shadowInset = 40, shadowBottom = 48;
+static const CGFloat shadowInset = 64, shadowBottom = 80;
 
 @interface NfnWebView : WKWebView
 @property NSTrackingArea *resizeTracking;
 @property NSCursor *(^resizeCursor)(NSEvent *);
+@property BOOL showingResizeCursor;
 @end
 @implementation NfnWebView
 // Deliver the activating mouse-down to buttons, reply fields, and drag handles.
@@ -21,13 +22,20 @@ static const CGFloat shadowInset = 40, shadowBottom = 48;
 - (void)updateTrackingAreas {
     [super updateTrackingAreas];
     if (self.resizeTracking) [self removeTrackingArea:self.resizeTracking];
-    self.resizeTracking = [[NSTrackingArea alloc] initWithRect:NSZeroRect options:NSTrackingCursorUpdate | NSTrackingMouseMoved | NSTrackingActiveAlways | NSTrackingInVisibleRect owner:self userInfo:nil];
+    // Cursor-update tracking does not support inactive applications.
+    self.resizeTracking = [[NSTrackingArea alloc] initWithRect:NSZeroRect options:NSTrackingMouseMoved | NSTrackingMouseEnteredAndExited | NSTrackingActiveAlways | NSTrackingInVisibleRect owner:self userInfo:nil];
     [self addTrackingArea:self.resizeTracking];
 }
 - (void)cursorUpdate:(NSEvent *)event {
     NSCursor *cursor = self.resizeCursor ? self.resizeCursor(event) : nil;
-    if (cursor) [cursor set]; else [super cursorUpdate:event];
+    if (cursor) [cursor set];
+    else if (self.showingResizeCursor) [NSCursor.arrowCursor set];
+    else [super cursorUpdate:event];
+    self.showingResizeCursor = cursor != nil;
 }
+- (void)mouseMoved:(NSEvent *)event { [super mouseMoved:event]; [self cursorUpdate:event]; }
+- (void)mouseEntered:(NSEvent *)event { [super mouseEntered:event]; [self cursorUpdate:event]; }
+- (void)mouseExited:(NSEvent *)event { [super mouseExited:event]; self.showingResizeCursor = NO; }
 @end
 
 @interface NfnPanel : NSPanel
@@ -71,6 +79,7 @@ static const CGFloat shadowInset = 40, shadowBottom = 48;
 @property NfnPanel *panel;
 @property NfnWebView *web;
 @property NSDictionary *snapshot;
+@property NSDictionary *openedRecord;
 @property NSDictionary *settings;
 @property NSMutableDictionary<NSString *, NSString *> *media;
 @property NSHashTable *stoppedTasks;
@@ -97,6 +106,7 @@ static const CGFloat shadowInset = 40, shadowBottom = 48;
 @property CGFloat surfaceRightOffset;
 @property BOOL surfaceResizable;
 @property NSNumber *lastWindowFocus;
+@property NSNumber *lastPointerFocus;
 @property BOOL notchPlacement;
 @property NSString *lastGeometry;
 @property NSMutableDictionary<NSString *, NSDictionary *> *notchGeometry;
@@ -112,6 +122,7 @@ static const CGFloat shadowInset = 40, shadowBottom = 48;
 @property BOOL screenLocked;
 @property NSDictionary *pendingPresentation;
 - (void)toggleKeyboardFocus;
+- (void)beginKeyboardFocus;
 - (void)endKeyboardFocus:(BOOL)restore;
 @end
 
@@ -500,7 +511,12 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
 }
 
 - (void)updateMousePassthrough {
-    self.panel.ignoresMouseEvents = !self.pointerDown && !self.dragging && !NSPointInRect(NSEvent.mouseLocation, [self surfaceFrame]);
+    BOOL inside = self.panel.visible && NSPointInRect(NSEvent.mouseLocation, [self surfaceFrame]);
+    self.panel.ignoresMouseEvents = !self.pointerDown && !self.dragging && !inside;
+    if (self.ready && ![self.lastPointerFocus isEqual:@(inside)]) {
+        self.lastPointerFocus = @(inside);
+        [self push:@{@"type":@"pointer_focus", @"active":@(inside)}];
+    }
 }
 
 - (void)configureFocusShortcut {
@@ -533,8 +549,12 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
 
 - (void)toggleKeyboardFocus {
     if (self.panel.isKeyWindow) { [self push:@{@"type":@"keyboard_collapse"}]; [self endKeyboardFocus:YES]; return; }
+    [self beginKeyboardFocus];
+}
+
+- (void)beginKeyboardFocus {
     if (self.screenLocked || self.screenSleeping) return;
-    self.previousApplication = NSWorkspace.sharedWorkspace.frontmostApplication;
+    if (!self.panel.keyboardFocus) self.previousApplication = NSWorkspace.sharedWorkspace.frontmostApplication;
     self.panel.keyboardFocus = YES;
     self.notificationsVisible = YES;
     [self push:@{@"type":@"keyboard_focus",@"active":@YES}];
@@ -563,9 +583,14 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
         self.settingsVisible = YES;
         if (!self.ready) self.pendingPresentation = value;
     }
-    if ([value[@"type"] isEqual:@"show"] || [value[@"type"] isEqual:@"latest"]) {
+    BOOL opensRecord = [value[@"type"] isEqual:@"open_record"];
+    if ([value[@"type"] isEqual:@"show"] || [value[@"type"] isEqual:@"latest"] || opensRecord) {
         self.notificationsVisible = YES;
         if (!self.ready) self.pendingPresentation = value;
+    }
+    if (opensRecord && [value[@"record"] isKindOfClass:NSDictionary.class]) {
+        self.openedRecord = value[@"record"];
+        [self registerMedia:self.openedRecord];
     }
     if ([value[@"type"] isEqual:@"snapshot"]) {
         self.snapshot = value;
@@ -575,12 +600,10 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
         [self positionWidth:self.surfaceWidth height:self.surfaceHeight];
         [self.media removeAllObjects];
         for (NSDictionary *record in value[@"records"]) {
-            NSArray *media = record[@"request"][@"media"];
-            for (NSUInteger i=0; i<media.count; i++) {
-                NSString *src = media[i][@"src"];
-                if ([src hasPrefix:@"/"]) self.media[[NSString stringWithFormat:@"/%@/%lu",record[@"id"],(unsigned long)i]] = src;
-            }
+            if ([record[@"id"] isEqual:self.openedRecord[@"id"]]) self.openedRecord = record;
+            [self registerMedia:record];
         }
+        [self registerMedia:self.openedRecord];
         [self requestFocusIfNeeded];
         if (!self.settingsVisible && !self.notificationsVisible && (![value[@"visible"] boolValue] || ![self allowsOverlay])) { [self.panel orderOut:nil]; [self releaseTextFocus]; }
         if ([value[@"sound"] boolValue] && [value[@"visible"] boolValue] && [self allowsOverlay]) {
@@ -590,7 +613,18 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
     if (!self.ready) return;
     NSData *data = [NSJSONSerialization dataWithJSONObject:value options:0 error:nil];
     NSString *json = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-    [self.web evaluateJavaScript:[NSString stringWithFormat:@"window.nfn.receive(%@)", json] completionHandler:nil];
+    [self.web evaluateJavaScript:[NSString stringWithFormat:@"window.nfn.receive(%@)", json] completionHandler:^(id result, NSError *error) {
+        (void)result;
+        if (!error && opensRecord && [value[@"focus"] boolValue]) [self beginKeyboardFocus];
+    }];
+}
+
+- (void)registerMedia:(NSDictionary *)record {
+    NSArray *media = record[@"request"][@"media"];
+    for (NSUInteger i=0; i<media.count; i++) {
+        NSString *src = media[i][@"src"];
+        if ([src hasPrefix:@"/"]) self.media[[NSString stringWithFormat:@"/%@/%lu",record[@"id"],(unsigned long)i]] = src;
+    }
 }
 
 - (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {

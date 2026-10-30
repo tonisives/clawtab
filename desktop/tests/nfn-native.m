@@ -13,6 +13,8 @@ static NSUInteger attempts;
 static pid_t previousApplication;
 static BOOL positionSaved;
 static NSUInteger hintToggles;
+static NSDictionary *focusRecord;
+static NSMutableArray<NSString *> *focusOperations;
 
 static void verifyIdleSignals(void) {
     [surface powerChanged:[NSNotification notificationWithName:NSWorkspaceScreensDidSleepNotification object:nil]];
@@ -54,24 +56,51 @@ static void sendResizePointer(NSEventType type, NSPoint screenPoint) {
     [NSApp sendEvent:event];
 }
 
+// Exercise WindowServer delivery; NSApp sendEvent skips tracking-area routing.
+static void verifyTrackedResizeHover(NSPoint point, void (^finish)(void)) {
+    BOOL key = surface.panel.isKeyWindow;
+    pid_t foreground = NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier;
+    NSCursor *(^original)(NSEvent *) = surface.web.resizeCursor;
+    __block NSUInteger tracked = 0;
+    surface.web.resizeCursor = ^NSCursor *(NSEvent *event) { tracked++; return original(event); };
+    CGFloat desktopTop = NSMaxY(NSScreen.screens.firstObject.frame);
+    void (^move)(CGFloat) = ^(CGFloat dx) {
+        CGEventRef event = CGEventCreateMouseEvent(NULL, kCGEventMouseMoved, CGPointMake(point.x + dx, desktopTop - point.y), kCGMouseButtonLeft);
+        CGEventPost(kCGHIDEventTap, event);
+        CFRelease(event);
+    };
+    [NSCursor.arrowCursor set];
+    move(-1);
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 10), dispatch_get_main_queue(), ^{
+        move(0);
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 5), dispatch_get_main_queue(), ^{
+            surface.web.resizeCursor = original;
+            if (!tracked || NSCursor.currentCursor == NSCursor.arrowCursor || surface.panel.isKeyWindow != key
+                || NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier != foreground) {
+                fprintf(stderr, "OS-routed passive corner hover failed: tracking=%lu cursor=%s key=%d->%d\n", (unsigned long)tracked, NSCursor.currentCursor == NSCursor.arrowCursor ? "arrow" : "resize", key, surface.panel.isKeyWindow); exit(1);
+            }
+            printf("OS-routed passive hover reached WebKit tracking: %lu callbacks, key=%d->%d.\n", (unsigned long)tracked, key, surface.panel.isKeyWindow);
+            [surface.web evaluateJavaScript:@"document.querySelector('#surface').dataset.pointerActive === 'true' && document.querySelector('#surface').dataset.keyboardActive === 'false' && getComputedStyle(document.querySelector('.brand img')).filter === 'none' && getComputedStyle(document.querySelector('.todo-ring')).filter === 'none' && !document.querySelector('.keyboard-hint')" completionHandler:^(id colored, NSError *error) {
+                if (error || ![colored boolValue]) { fprintf(stderr, "Native hover did not color title buttons while preserving passive keyboard state\n"); exit(1); }
+                saveSurfaceSnapshot(surface.notchPlacement ? @"/tmp/clawtab-nfn-hover-notch.png" : @"/tmp/clawtab-nfn-hover-right.png", finish);
+            }];
+        });
+    });
+}
+
 static void verifyResizeCorners(void (^finish)(void)) {
     NSRect before = [surface surfaceFrame];
     BOOL notch = surface.notchPlacement;
     BOOL keyBefore = surface.panel.isKeyWindow;
     pid_t foregroundBefore = NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier;
     fprintf(stderr, "Corner start: key=%d text=%d keyboard=%d foreground=%d\n", keyBefore, surface.panel.textFocus, surface.panel.keyboardFocus, foregroundBefore);
-    NSString *script = @"(() => { const host = document.querySelector('#surface').getBoundingClientRect(); if (host.left < 39 || host.right > innerWidth - 39 || host.bottom > innerHeight - 47) throw Error('Shadow extends outside the native canvas'); const handle = document.querySelector('.resize-se'); if (!handle || handle.hidden) return null; const r = handle.getBoundingClientRect(); return [r.x+r.width/2,r.y+r.height/2]; })()";
+    NSString *script = @"(() => { const host = document.querySelector('#surface').getBoundingClientRect(); if (host.left < 63 || host.right > innerWidth - 63 || host.bottom > innerHeight - 79) throw Error('Shadow extends outside the native canvas'); const handle = document.querySelector('.resize-se'); if (!handle || handle.hidden) return null; const r = handle.getBoundingClientRect(); return [r.x+r.width/2,r.y+r.height/2]; })()";
     [surface.web evaluateJavaScript:script completionHandler:^(id point, NSError *error) {
         if (error || ![point isKindOfClass:NSArray.class]) { fprintf(stderr, "Bottom-right resize handle is unavailable\n"); exit(1); }
         CGFloat y = [point[1] doubleValue];
         NSPoint location = [surface.web convertPoint:NSMakePoint([point[0] doubleValue], surface.web.isFlipped ? y : surface.web.bounds.size.height - y) toView:nil];
         NSPoint start = [surface.panel convertPointToScreen:location], end = NSMakePoint(start.x + 16, start.y);
-        [NSCursor.arrowCursor set];
-        sendResizePointer(NSEventTypeMouseMoved, start);
-        if (NSCursor.currentCursor == NSCursor.arrowCursor || surface.panel.isKeyWindow != keyBefore
-            || NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier != foregroundBefore) {
-            fprintf(stderr, "Passive corner hover did not show the resize cursor without taking focus\n"); exit(1);
-        }
+        verifyTrackedResizeHover(start, ^{
         sendResizePointer(NSEventTypeLeftMouseDown, start);
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 10), dispatch_get_main_queue(), ^{
             sendResizePointer(NSEventTypeLeftMouseDragged, end);
@@ -88,7 +117,7 @@ static void verifyResizeCorners(void (^finish)(void)) {
                         || (!notch && fabs(NSMinX(after) - NSMinX(before)) > 1)) {
                         fprintf(stderr, "Right corner dragging does not preserve its opposite edge\n"); exit(1);
                     }
-                    saveSurfaceSnapshot(notch ? @"/tmp/clawtab-resize-corner-notch.png" : @"/tmp/clawtab-resize-corner-right.png", ^{
+                    saveSurfaceSnapshot(notch ? @"/tmp/clawtab-nfn-resize-corner-notch.png" : @"/tmp/clawtab-nfn-resize-corner-right.png", ^{
                     [surface.web evaluateJavaScript:@"document.querySelector('.resize-se').dispatchEvent(new KeyboardEvent('keydown', {key:'ArrowLeft', bubbles:true}))" completionHandler:^(id result, NSError *restoreError) {
                         if (restoreError) { fprintf(stderr, "Could not restore resized width\n"); exit(1); }
                         waitForSettledSurface(0, ^{
@@ -99,6 +128,7 @@ static void verifyResizeCorners(void (^finish)(void)) {
                     });
                 });
             });
+        });
         });
     }];
 }
@@ -253,6 +283,40 @@ static void verifyDragging(void (^finish)(void)) {
     finish();
 }
 
+static void verifyMessageFocus(void (^finish)(void)) {
+    clawtab_nfn_activate(previousApplication);
+    NSString *setup = @"window.nfn.collapse(); const record = window.fixture.record('cli-focus'); record.status = 'resolved'; record.dismissed_at = Date.now(); record.request.title = 'Focused history message'; JSON.stringify(record);";
+    [surface.web evaluateJavaScript:setup completionHandler:^(id result, NSError *error) {
+        if (error || ![result isKindOfClass:NSString.class]) { fprintf(stderr, "Could not prepare message focus fixture\n"); exit(1); }
+        focusRecord = [NSJSONSerialization JSONObjectWithData:[result dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
+        focusOperations = [NSMutableArray array];
+        NSDictionary *record = @{@"id":@"cli-focus", @"request":@{@"media":@[@{@"src":@"/tmp/focus-attachment.png"}]}};
+        NSDictionary *event = @{@"type":@"open_record", @"id":@"cli-focus", @"record":record, @"focus":@YES};
+        [surface push:event];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 4), dispatch_get_main_queue(), ^{
+            [surface push:event];
+            [surface push:surface.snapshot];
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 4), dispatch_get_main_queue(), ^{
+                NSString *check = @"document.querySelector('h1')?.textContent === 'Focused history message' && document.activeElement === document.querySelector('#surface')";
+                [surface.web evaluateJavaScript:check completionHandler:^(id opened, NSError *checkError) {
+                    NSSet *allowed = [NSSet setWithArray:@[@"get", @"read", @"context"]];
+                    BOOL inspected = [focusOperations containsObject:@"get"] && [[NSSet setWithArray:focusOperations] isSubsetOfSet:allowed];
+                    if (checkError || ![opened boolValue] || !inspected || !surface.panel.isKeyWindow || !surface.panel.keyboardFocus || !surface.notificationsVisible || ![surface.media[@"/cli-focus/0"] isEqual:@"/tmp/focus-attachment.png"]) {
+                        fprintf(stderr, "CLI message focus did not retain the history card, keyboard focus, or attachment\n"); exit(1);
+                    }
+                    [surface toggleKeyboardFocus];
+                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 4), dispatch_get_main_queue(), ^{
+                        if (surface.panel.isKeyWindow || surface.panel.keyboardFocus) { fprintf(stderr, "Focused message did not release keyboard focus\n"); exit(1); }
+                        printf("Message focus checks passed: history lookup, repeated focus, keyboard entry and exit, attachment retained across snapshots, no response or dismissal.\n");
+                        [surface push:@{@"type":@"latest"}];
+                        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 4), dispatch_get_main_queue(), finish);
+                    });
+                }];
+            });
+        });
+    }];
+}
+
 static void verifyKeyboardControl(void (^finish)(void)) {
     clawtab_nfn_activate(previousApplication);
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 4), dispatch_get_main_queue(), ^{
@@ -279,7 +343,7 @@ static void verifyKeyboardControl(void (^finish)(void)) {
                     if (surface.panel.keyboardFocus || surface.panel.isKeyWindow) { fprintf(stderr,"Second hotkey did not release panel\n"); exit(1); }
                     printf("Keyboard control checks passed: focus entry, field blur lease, double Option, and second-press exit.\n");
                     [surface push:@{@"type":@"latest"}];
-                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 4), dispatch_get_main_queue(), finish);
+                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 4), dispatch_get_main_queue(), ^{ verifyMessageFocus(finish); });
                 });
                 }];
                 }];
@@ -334,7 +398,7 @@ static void verifyFirstClick(void (^finish)(void)) {
         if (error || ![point isKindOfClass:NSArray.class]) { fprintf(stderr, "Could not measure passive click target\n"); exit(1); }
         clickWebPoint(point);
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 4), dispatch_get_main_queue(), ^{
-            [surface.web evaluateJavaScript:@"window.passiveClickCount === 1 && document.querySelector('#surface').dataset.keyboardActive === 'false' && getComputedStyle(document.querySelector('.brand img')).filter === 'grayscale(1)'" completionHandler:^(id received, NSError *clickError) {
+            [surface.web evaluateJavaScript:@"window.passiveClickCount === 1 && document.querySelector('#surface').dataset.keyboardActive === 'false' && getComputedStyle(document.querySelector('.brand img')).filter === (document.querySelector('#surface').dataset.pointerActive === 'true' ? 'none' : 'grayscale(1)')" completionHandler:^(id received, NSError *clickError) {
                 if (clickError || ![received boolValue] || surface.panel.isKeyWindow || surface.panel.textFocus || NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier != foreground) {
                     fprintf(stderr, "Ordinary first click was lost or activated the notification panel\n"); exit(1);
                 }
@@ -399,6 +463,10 @@ static void bridge(const char *raw) {
     }
     if (!value[@"token"]) return;
     NSDictionary *result = @{};
+    if ([value[@"command"][@"id"] isEqual:@"cli-focus"]) {
+        [focusOperations addObject:operation];
+        if ([operation isEqual:@"get"] || [operation isEqual:@"read"]) result = focusRecord;
+    }
     if ([operation isEqual:@"save_settings"]) { hintToggles++; NSMutableDictionary *settings = [surface.settings mutableCopy]; [settings addEntriesFromDictionary:value[@"command"][@"patch"]]; result = @{@"settings":settings}; }
     if ([operation isEqual:@"context"]) result = @{@"log":@"Review ready\nWaiting for a decision",@"models":@[],@"plugins":@[],@"source":@{}};
     clawtab_nfn_push([[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:@{@"type":@"response",@"token":value[@"token"],@"value":result} options:0 error:nil] encoding:NSUTF8StringEncoding].UTF8String);

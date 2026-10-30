@@ -514,6 +514,9 @@ pub enum NfnCommand {
     Focus {
         id: String,
     },
+    Reveal {
+        id: String,
+    },
     OpenBrowser {
         id: String,
     },

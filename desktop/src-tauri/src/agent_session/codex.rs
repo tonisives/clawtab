@@ -410,7 +410,12 @@ fn cached_codex_thread_id_by_pid(pid: &str, process_start_epoch: Option<i64>) ->
 
 fn read_codex_thread(thread_id: &str) -> Option<CodexThreadInfo> {
     let db_path = latest_codex_sqlite("state_")?;
-    let conn = Connection::open(db_path).ok()?;
+    let conn = Connection::open_with_flags(
+        db_path,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .ok()?;
+    conn.busy_timeout(Duration::from_millis(50)).ok()?;
     read_codex_thread_from_db(&conn, thread_id)
 }
 
@@ -900,15 +905,24 @@ mod tests {
         let first = super::read_last_action_at(&path).unwrap();
         assert_eq!(first, 1792461600000);
         // The user-message cache must stay independent of the action cache.
-        assert_eq!(super::read_last_user_message_at(&path), Some(first - 3600000));
+        assert_eq!(
+            super::read_last_user_message_at(&path),
+            Some(first - 3600000)
+        );
         assert_eq!(super::read_last_action_at(&path), Some(first));
         let mut file = std::fs::OpenOptions::new()
             .append(true)
             .open(&path)
             .unwrap();
         writeln!(file, "{{\"type\":\"event_msg\",\"timestamp\":\"2026-10-23T02:00:00Z\",\"payload\":{{\"type\":\"task_complete\",\"last_agent_message\":\"Done\"}}}}").unwrap();
-        assert_eq!(super::read_last_action_at(&path), Some(first + 3 * 86_400_000));
-        assert_eq!(super::read_last_user_message_at(&path), Some(first - 3600000));
+        assert_eq!(
+            super::read_last_action_at(&path),
+            Some(first + 3 * 86_400_000)
+        );
+        assert_eq!(
+            super::read_last_user_message_at(&path),
+            Some(first - 3600000)
+        );
     }
 
     #[test]
