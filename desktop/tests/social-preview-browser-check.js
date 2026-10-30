@@ -7,7 +7,8 @@
     for (let n = 0; n < 150; n++) { if (condition()) return; await sleep(100); }
     throw Error(label);
   };
-  const open = (id, remote = false) => {
+  const mobile = Boolean(window.nfnMobile);
+  const open = (id, remote = mobile) => {
     window.nfn.collapse();
     window.nfn.receive({ ...fixture.snapshot(id), remote });
     window.nfn.receive({ type: "open_record", id });
@@ -27,6 +28,7 @@
   window.nfn.setPlacement({ placement: "right", max_width: 1000, max_height: 860, reduce_motion: true });
   open(record.id);
   const video = document.querySelector("video"), preview = document.querySelector(".x-post"), body = document.querySelector(".message-content");
+  assert(!document.querySelector(".logs"), "opening a media review does not automatically open shell output");
   assert(preview && preview.textContent.includes("@totovoto"), "the X card shows the exact account and post copy separately from the agent note");
   assert(!preview.textContent.includes("Agent note") && !document.querySelector(".social-tabs"), "a single X draft has no full-width platform selector or agent text inside the post");
   assert(document.querySelector(".social-feedback").hidden && document.querySelector(".social-submit").textContent === "Approve", "single-post review starts with Approve and a hidden feedback field");
@@ -34,12 +36,14 @@
   assert(video.src.startsWith("blob:") && video.videoWidth === 1920 && video.videoHeight === 1080, "desktop video uses the bounded attachment bridge and decodes the reviewed landscape file");
   assert(video.muted && video.poster.length > 1000 && document.querySelector(".media-play").disabled === false, "a real video frame is visible before playback and preview starts muted");
   const src = video.src, poster = video.poster, beforeWidth = video.getBoundingClientRect().width;
-  const resize = document.querySelector('[data-resize="se"]'); resize.setPointerCapture = () => {}; resize.hasPointerCapture = () => false;
-  resize.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerId: 9, screenX: 700, screenY: 400 }));
-  document.dispatchEvent(new PointerEvent("pointermove", { pointerId: 9, screenX: 1000, screenY: 650 }));
-  document.dispatchEvent(new PointerEvent("pointerup", { pointerId: 9 }));
+  if (!mobile) {
+    const resize = document.querySelector('[data-resize="se"]'); resize.setPointerCapture = () => {}; resize.hasPointerCapture = () => false;
+    resize.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerId: 9, screenX: 700, screenY: 400 }));
+    document.dispatchEvent(new PointerEvent("pointermove", { pointerId: 9, screenX: 1000, screenY: 650 }));
+    document.dispatchEvent(new PointerEvent("pointerup", { pointerId: 9 }));
+  }
   await sleep(100);
-  assert(!document.querySelector(".logs") && !body.hidden && video.getBoundingClientRect().width > beforeWidth + 150, "resizing enlarges the video without opening shell output");
+  assert(!document.querySelector(".logs") && !body.hidden && (mobile || video.getBoundingClientRect().width > beforeWidth + 150), "the content view retains the video and desktop resizing enlarges it without opening shell output");
   await video.play(); await sleep(350);
   assert(!video.paused && video.currentTime > .2 && !video.error, "the actual reviewed video plays and advances");
   const time = video.currentTime, scroll = body.scrollTop;

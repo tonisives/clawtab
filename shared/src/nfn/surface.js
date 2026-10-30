@@ -1083,8 +1083,7 @@
       if (changedLogs) {
         stopAnimation();
         const logs = card._logs, scroller = card._content;
-        const mediaFirst = snapshot.remote && records.get(id)?.request.media?.length;
-        const atBottom = (!mediaFirst && logs._raw == null) || (logs._raw != null && scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 30);
+        const atBottom = logs._raw == null || scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 30;
         logs._raw = value.log; renderAnsi(logs, value.log || "No output yet");
         card._followLogs = atBottom;
         if (atBottom) scroller.scrollTop = scroller.scrollHeight;
@@ -1746,8 +1745,7 @@
         records.set(record.id, record);
         if (pendingRecords(true).length > before) unseenPending = Math.max(0, unseenPending - 1);
         openRecord(record.id);
-        if (record.request.media?.length) { if (!details) toggleDetails(); }
-        else if (value.popup && record.request.template === "update" && !resizedSize) { expanded = false; render(); resumeTimer(); }
+        if (value.popup && record.request.template === "update" && !resizedSize && !record.request.media?.length) { expanded = false; render(); resumeTimer(); }
       };
       if (records.has(value.id)) open(records.get(value.id));
       else call({ op: "get", id: value.id }).then(open).catch(error => {
