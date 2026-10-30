@@ -131,11 +131,13 @@ static NSDictionary *step(NSString *name, NSPoint point, NSCursor *cursor, BOOL 
 
 static void runStep(NSUInteger index) {
     if (index == steps.count) {
-        verifyOptionalAPI();
         NSRect f = surface.surfaceFrame;
-        observe(@"stop-while-hovering",NSMakePoint(NSMaxX(f)-12,NSMinY(f)+12),^{
-            require(resizeCursorOwned && backgroundAllowed(),@"stop begins with resize ownership");
-            clawtab_nfn_stop();
+        observe(@"outside-before-optional-api",NSMakePoint(NSMinX(f)-30,NSMinY(f)-30),^{
+            verifyOptionalAPI();
+            observe(@"stop-while-hovering",NSMakePoint(NSMaxX(f)-12,NSMinY(f)+12),^{
+                require(resizeCursorOwned && backgroundAllowed(),@"stop begins with resize ownership");
+                clawtab_nfn_stop();
+            });
         });
         return;
     }
@@ -145,7 +147,7 @@ static void runStep(NSUInteger index) {
         require(NSCursor.currentSystemCursor != nil,@"displayed system cursor diagnostics unavailable");
         require([observations.lastObject[@"screen_capture_with_cursor"] boolValue] && [observations.lastObject[@"screen_capture_without_cursor"] boolValue],@"paired screen capture must succeed");
         require([imageData(NSCursor.currentSystemCursor.image) isEqual:imageData([item[@"cursor"] image])], [item[@"name"] stringByAppendingString:@": displayed system cursor differs"]);
-        require(resizeCursorOwned == [item[@"owned"] boolValue] && backgroundAllowed() == [item[@"owned"] boolValue], [item[@"name"] stringByAppendingString:@": cursor permission leaked or missing"]);
+        require(resizeCursorOwned == [item[@"owned"] boolValue] && backgroundAllowed() == ([item[@"owned"] boolValue] || (surface.panel.visible && NSPointInRect(NSEvent.mouseLocation,surface.surfaceFrame))), [item[@"name"] stringByAppendingString:@": cursor permission leaked or missing"]);
         BOOL active = [item[@"active"] boolValue];
         require(surface.panel.isKeyWindow == active && surface.panel.keyboardFocus == active,@"hover must preserve keyboard lease");
         require(NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier == (active ? NSProcessInfo.processInfo.processIdentifier : initialForeground),@"hover must preserve foreground app");
@@ -195,6 +197,92 @@ static void runObservations(void) {
     });
 }
 
+// Move the system pointer without activating the panel. DOM-dispatched events do
+// not exercise WebKit's tracking areas or the cursor displayed by WindowServer.
+static void hoverTarget(NSString *selector, NSString *phase, void (^finish)(NSPoint)) {
+    NSString *script = [NSString stringWithFormat:@"(() => { const b = document.querySelector('%@'); const r = b.getBoundingClientRect(); return [r.x + r.width/2, r.y + r.height/2, getComputedStyle(b).backgroundColor]; })()", selector];
+    [surface.web evaluateJavaScript:script completionHandler:^(id target, NSError *error) {
+        require(!error && [target isKindOfClass:NSArray.class], @"measure hover target");
+        CGFloat y = [target[1] doubleValue];
+        NSPoint point = [surface.web convertPoint:NSMakePoint([target[0] doubleValue], surface.web.isFlipped ? y : surface.web.bounds.size.height - y) toView:nil];
+        point = [surface.panel convertPointToScreen:point];
+        moveTo(NSMakePoint(point.x-1,point.y));
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC/10),dispatch_get_main_queue(),^{ moveTo(point); });
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC/3),dispatch_get_main_queue(),^{
+            NSString *check = [NSString stringWithFormat:@"(() => { const b = document.querySelector('%@'); return [b.matches(':hover, [data-native-hover]'), getComputedStyle(b).backgroundColor]; })()",selector];
+            [surface.web evaluateJavaScript:check completionHandler:^(id state, NSError *hoverError) {
+                if (hoverError || ![state[0] boolValue]) {
+                    fprintf(stderr,"Hover delivery: %s state=%s target=%s point=%s flipped=%d ignores=%d tracking=%s\n", phase.UTF8String,[state description].UTF8String,[target description].UTF8String,NSStringFromPoint(point).UTF8String,surface.web.isFlipped,surface.panel.ignoresMouseEvents,[surface.web.trackingAreas description].UTF8String);
+                }
+                require(!hoverError && [state[0] boolValue], [phase stringByAppendingString:@": real mouse movement must highlight the button before a click"]);
+                require([selector isEqual:@"textarea"] || ![state[1] isEqual:target[2]], [phase stringByAppendingString:@": CSS hover highlight must change"]);
+                finish(point);
+            }];
+        });
+    }];
+}
+
+static void sampleCursor(NSPoint point, NSUInteger count, NSString *phase, NSCursor *expected, void (^finish)(void)) {
+    require([imageData(NSCursor.currentSystemCursor.image) isEqual:imageData(expected.image)], [phase stringByAppendingString:@": content cursor flickered"]);
+    if (!count) { finish(); return; }
+    moveTo(NSMakePoint(point.x + (count % 2 ? 3 : -3), point.y));
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC/100),dispatch_get_main_queue(),^{ sampleCursor(point,count-1,phase,expected,finish); });
+}
+
+static void clickAt(NSPoint point, void (^finish)(void)) {
+    CGPoint global = CGPointMake(point.x,NSMaxY(NSScreen.screens.firstObject.frame)-point.y);
+    for (NSNumber *type in @[@(kCGEventLeftMouseDown), @(kCGEventLeftMouseUp)]) {
+        CGEventRef event = CGEventCreateMouseEvent(NULL,type.unsignedIntValue,global,kCGMouseButtonLeft);
+        CGEventPost(kCGHIDEventTap,event); CFRelease(event);
+    }
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC/3),dispatch_get_main_queue(),finish);
+}
+
+static void verifyContentHover(NSUInteger phase, void (^finish)(void)) {
+    if (phase == 4) {
+        [surface.web evaluateJavaScript:@"document.querySelector('.menu-overlay')?.click()" completionHandler:^(id value, NSError *error) {
+            [surface releaseTextFocus];
+            [[NSRunningApplication runningApplicationWithProcessIdentifier:initialForeground] activateWithOptions:NSApplicationActivateIgnoringOtherApps];
+            moveTo(initialPointer);
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC/3),dispatch_get_main_queue(),finish);
+        }];
+        return;
+    }
+    NSString *selector = phase == 0 ? @".reply-toggle" : phase == 2 ? @".reply-toggle" : @".session-action";
+    NSString *name = @[@"passive-card", @"passive-menu", @"reply-card", @"menu-after-reply"][phase];
+    pid_t foreground = NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier;
+    NSPoint outside = NSMakePoint(NSMinX(surface.surfaceFrame)-30,NSMinY(surface.surfaceFrame)-30);
+    moveTo(outside);
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC/5),dispatch_get_main_queue(),^{
+        hoverTarget(selector,name,^(NSPoint point) {
+            require(!surface.panel.isKeyWindow && NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier == foreground, @"passive hover must preserve foreground and keyboard focus");
+            sampleCursor(point,50,name,NSCursor.pointingHandCursor,^{
+                printf("Content hover and stable pointing hand: %s (50 moving samples).\n",name.UTF8String);
+                void (^advance)(void) = ^{
+                    hoverTarget(@"[aria-haspopup=menu]",@"Got it",^(NSPoint acknowledge) {
+                        void (^openMenu)(void) = ^{ clickAt(acknowledge,^{ verifyContentHover(phase+1,finish); }); };
+                        if (phase == 2) {
+                            require(surface.panel.isKeyWindow && surface.panel.textFocus,@"Reply must take text focus before opening the menu");
+                            sampleCursor(acknowledge,50,@"reply-focused-card",NSCursor.pointingHandCursor,openMenu);
+                        } else openMenu();
+                    });
+                };
+                if (phase == 0 || phase == 2) {
+                    if (phase == 2) clickAt(point,^{
+                        hoverTarget(@"textarea",@"reply-text-cursor",^(NSPoint input) {
+                            sampleCursor(input,50,@"reply-text-cursor",NSCursor.IBeamCursor,advance);
+                        });
+                    }); else advance();
+                } else {
+                    [surface.web evaluateJavaScript:@"document.querySelector('.menu-overlay')?.click()" completionHandler:^(id value, NSError *error) {
+                        verifyContentHover(phase+1,finish);
+                    }];
+                }
+            });
+        });
+    });
+}
+
 static void receive(const char *raw) {
     NSDictionary *request = [NSJSONSerialization JSONObjectWithData:[[NSString stringWithUTF8String:raw] dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
     if (!request[@"token"]) return;
@@ -223,7 +311,7 @@ int main(int argc,const char **argv) {
                 snapshot[@"settings"] = @{ @"delivery":@"enhanced", @"focus":@"independent", @"placement":@"right", @"display":@"primary", @"preview_seconds":@120 };
                 [surface push:snapshot];
                 [surface.web evaluateJavaScript:@"document.querySelector('#surface').dispatchEvent(new MouseEvent('mouseenter'))" completionHandler:nil];
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC),dispatch_get_main_queue(),^{ runObservations(); });
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC),dispatch_get_main_queue(),^{ verifyContentHover(0, ^{ runObservations(); }); });
             }];
         }];
         int result = clawtab_nfn_run(html.UTF8String,NULL,0,receive);

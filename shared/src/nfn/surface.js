@@ -426,7 +426,7 @@
           contentAnimations.forEach(fade => fade.cancel()); contentAnimations = [];
           for (const node of host.children) node.style.width = "";
           if (card?._followLogs) card._content.scrollTop = card._content.scrollHeight;
-          fitReviewHeight(); size();
+          fitReviewHeight(); size(); syncNativePointerHover();
         }
       }).catch(() => {});
     }
@@ -440,7 +440,7 @@
     const height = Math.min(geometry.max_height || 860, Math.max(280, needed));
     host.style.height = `${height}px`;
   }
-  new ResizeObserver(() => { fitReviewHeight(); size(); }).observe(host);
+  new ResizeObserver(() => { fitReviewHeight(); size(); syncNativePointerHover(); }).observe(host);
   const cardSizeObserver = new ResizeObserver(() => { fitReviewHeight(); size(); });
   let observedCard = null;
   function observeCardSize() {
@@ -1800,7 +1800,7 @@
     if (!presented && !hiddenByUser && current && records.has(current) && (snapshot.visible || explicitOpen) && !preview) {
       presented = true; native({ native: "presentation", active: true });
     }
-    if (!preview && !settingsOpen && !todosOpen && (hiddenByUser || (!explicitOpen && !presented && (!snapshot.visible || (!current && !queue && !count && !todoItems().length))))) { stopArrivalAnimation(); host.className = "empty"; host.replaceChildren(); renderedId = null; card = null; stopContext(); size(); return; }
+    if (!preview && !settingsOpen && !todosOpen && (hiddenByUser || (!explicitOpen && !presented && (!snapshot.visible || (!current && !queue && !count && !todoItems().length))))) { stopArrivalAnimation(); host.className = "empty"; host.replaceChildren(); renderedId = null; card = null; stopContext(); syncNativePointerHover(); size(); return; }
     host.className = `${placement} ${expanded ? "expanded" : !current ? "pill" : ""} ${details && !settingsOpen ? "details-open" : ""} ${settingsOpen ? "settings-open" : ""} ${queue && !settingsOpen ? "queue-open" : ""} ${menu ? "menu-open" : ""} ${todosOpen ? "todos-open" : ""}`;
     applyResizedSize(); renderResizeHandles();
     let top = host.querySelector(".top");
@@ -1864,9 +1864,14 @@
       updateCard(); syncCardDetails(records.get(current));
     } else { host.querySelector(".card")?.remove(); host.querySelector(".queue")?.remove(); renderedId = null; card = null; }
     renderMenu(); cleanupRemoteMedia(); observeCardSize(); fitReviewHeight(); if (resizing || !animate) size(); else if (!continuingAnimation) animateLayout(before, !queue && !menu && !settingsOpen);
+    syncNativePointerHover();
   }
   function receive(value) {
-    if (value.type === "pointer_focus") { setPointerFocus(Boolean(value.active)); return; }
+    if (value.type === "pointer_focus") {
+      nativePointer = value.active && Number.isFinite(value.x) && Number.isFinite(value.y) ? { x: value.x, y: value.y } : null;
+      if (nativePointer) host.dataset.nativePointer = "true";
+      setPointerFocus(Boolean(value.active)); syncNativePointerHover(); return;
+    }
     if (value.type === "window_focus") {
       nativeWindowFocus = Boolean(value.active); refreshHints(); return;
     }
@@ -1972,6 +1977,22 @@
   const hintOverlay = el("div", "keyboard-hints");
   hintOverlay.setAttribute("aria-hidden", "true"); document.body.append(hintOverlay);
   function hasWindowFocus() { return nativeWindowFocus ?? document.hasFocus(); }
+  let nativePointer = null, nativeCursor = "default", nativeHovered = new Set();
+  // WebKit suppresses CSS hover in non-key macOS windows. Share the native
+  // pointer path used by the title bar while preserving passive keyboard focus.
+  function syncNativePointerHover() {
+    const target = nativePointer && hovering && !snapshot.remote && !preview ? document.elementFromPoint(nativePointer.x, nativePointer.y) : null;
+    const next = new Set();
+    if (target && host.contains(target)) for (let node = target; node; node = node.parentElement) {
+      next.add(node); if (node === host) break;
+    }
+    for (const node of nativeHovered) if (!next.has(node)) node.removeAttribute("data-native-hover");
+    for (const node of next) if (!nativeHovered.has(node)) node.setAttribute("data-native-hover", "");
+    nativeHovered = next;
+    let cursor = next.size ? getComputedStyle(target).cursor : "default";
+    if (cursor === "auto" && (target.closest('textarea,[contenteditable="true"]') || target instanceof HTMLInputElement && ["text", "search", "url", "email", "password", "number", "tel"].includes(target.type))) cursor = "text";
+    if (cursor !== nativeCursor) { nativeCursor = cursor; native({ native: "cursor", value: cursor }); }
+  }
   function setPointerFocus(active) {
     const entered = active && !hovering;
     hovering = active;
@@ -2152,6 +2173,7 @@
   setInterval(refreshHints, 80);
   host.addEventListener("mouseenter", () => setPointerFocus(true));
   host.addEventListener("mouseleave", () => setPointerFocus(false));
+  document.addEventListener("scroll", syncNativePointerHover, { capture: true, passive: true });
   document.addEventListener("pointerdown", event => { if (event.target.closest("input,textarea,select")) native({ native: "text_focus", active: true }); });
   document.addEventListener("focusin", event => { if (event.target.matches("input,textarea,select")) { focused = true; pauseTimer(); } });
   document.addEventListener("focusout", () => requestAnimationFrame(() => {
