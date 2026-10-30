@@ -124,14 +124,26 @@ if [[ "$current_border" != *"@clawtab-agent-title"* ]]; then
 fi
 old_alert_border='#{?#{@clawtab-daemon-running},#{?#{==:#{@clawtab-agent-pane-alert},1},#[fg=colour208#,bold]! Alert #[default],},}'
 alert_border='#{?#{@clawtab-daemon-running},#{?#{==:#{@clawtab-agent-pane-alert},1},#[fg=colour208#,bold]! Alert#{?#{@clawtab-agent-pane-size-mb}, ↑#{@clawtab-agent-pane-size-mb} MB,} #[default],},}'
-if [[ "$current_border" == *"$old_alert_border"* ]]; then
-    current_border="${current_border/"$old_alert_border"/"$alert_border"}"
-elif [[ "$current_border" != *"@clawtab-agent-pane-alert"* ]]; then
-    current_border="${alert_border}${current_border}"
-fi
-if [[ "$current_border" != *"@clawtab-agent-pane-working"* ]]; then
-    pane_activity='#{?#{@clawtab-daemon-running},#{?#{==:#{@clawtab-agent-pane-present},1},#{?#{==:#{@clawtab-agent-pane-alert},1},,#{?#{==:#{@clawtab-agent-asking},1},#[fg=yellow#,bold]Waiting #[default],#{?#{==:#{@clawtab-agent-pane-working},1},#[fg=cyan#,bold]Working #[default],#[fg=green]Idle #[default]}}},},}'
-    current_border="${pane_activity}${current_border}"
+# Remove older leading state labels when upgrading an existing server.
+current_border="${current_border/"$old_alert_border"/}"
+current_border="${current_border/"$alert_border"/}"
+old_pane_activity='#{?#{@clawtab-daemon-running},#{?#{==:#{@clawtab-agent-pane-present},1},#{?#{==:#{@clawtab-agent-pane-alert},1},,#{?#{==:#{@clawtab-agent-asking},1},#[fg=yellow#,bold]Waiting #[default],#{?#{==:#{@clawtab-agent-pane-working},1},#[fg=cyan#,bold]Working #[default],#[fg=green]Idle #[default]}}},},}'
+current_border="${current_border/"$old_pane_activity"/}"
+right_pane_activity='#{?#{@clawtab-daemon-running},#{?#{==:#{@clawtab-agent-pane-present},1},#[align=right] #{?#{==:#{@clawtab-agent-pane-alert},1},#[fg=colour208#,bold]!,#{?#{==:#{@clawtab-agent-asking},1},#[fg=yellow#,bold]!,#{?#{==:#{@clawtab-agent-pane-working},1},#[fg=cyan#,bold]*,#[fg=green#,bold]✓}}}#[default],},}'
+current_border="${current_border/"$right_pane_activity"/}"
+pane_activity='#{?#{@clawtab-daemon-running},#{?#{==:#{@clawtab-agent-pane-present},1}, #{?#{==:#{@clawtab-agent-pane-alert},1},#[fg=colour208#,bold]!,#{?#{==:#{@clawtab-agent-asking},1},#[fg=yellow#,bold]!,#{?#{==:#{@clawtab-agent-pane-working},1},#[fg=cyan#,bold]*,#[fg=green#,bold]✓}}}#[default],},}'
+# Keep title, activity age and state together in the centered information group.
+info_slot='#{E:@clawtab-pane-info}'
+center_slot="${info_slot}${pane_activity}"
+current_border="${current_border/"$center_slot"/"$info_slot"}"
+if [[ "$current_border" == *"$info_slot"* ]]; then
+    current_border="${current_border/"$info_slot"/"$center_slot"}"
+else
+    fallback_slot='#{@clawtab-agent-title}'
+    fallback_center="#[align=centre]${fallback_slot}${pane_activity}"
+    if [[ "$current_border" != *"$fallback_center"* ]]; then
+        current_border="${current_border/"$fallback_slot"/"$fallback_center"}"
+    fi
 fi
 tmux set-option -g pane-border-format "$current_border"
 tmux set-option -g pane-border-status top

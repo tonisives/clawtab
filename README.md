@@ -70,7 +70,7 @@ Window tabs show a colored age before the agent status: `jn` under a minute, the
 
 The daemon publishes agent activity to tmux without replacing your theme. Working windows get a cyan activity marker, agents asking for input get a yellow attention marker, and present-but-idle agents get a green check.
 
-Each pane also shows `Working`, `Waiting`, or `Idle` in its top border. These labels use the daemon's cached snapshot, so panes in the same window can show different states without running a CLI query on every redraw.
+Each pane centers its title, colored activity age and state icon together in its top border. State icons match window titles: cyan `*` for working, yellow `!` for waiting, orange `!` for alerts, and green `✓` for idle. Pane information shows the title followed by the activity age; narrow panes shorten ages such as `2h ago` to `2h`. These labels use the daemon's cached snapshot, so panes in the same window can show different states without running a CLI query on every redraw.
 
 The daemon repairs missed lifecycle hooks for Codex, Claude, OpenCode, and Hermes after startup and in paced recovery rounds. Rounds start at least ten minutes apart and inspect one session every five seconds, prioritizing older working markers. Confirmed idle sessions leave the queue until a new hook arrives. Unresolved sessions back off to twenty, forty, then eighty minutes. Normal hook events still update status immediately.
 
