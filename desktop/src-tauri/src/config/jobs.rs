@@ -102,6 +102,8 @@ pub struct Job {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub cron: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cron_timezone: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub schedule: Option<CalendarSchedule>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub run_once: Option<RunOnceSchedule>,
@@ -653,6 +655,13 @@ fn parse_effort(value: &str) -> Option<&'static str> {
 }
 
 fn validate_job_schedule(job: &Job) -> Result<(), String> {
+    if let Some(zone) = &job.cron_timezone {
+        zone.parse::<chrono_tz::Tz>()
+            .map_err(|_| "Invalid cron_timezone".to_string())?;
+        if job.cron.is_empty() {
+            return Err("cron_timezone requires a cron schedule".into());
+        }
+    }
     if job.run_once.is_some() && (!job.cron.is_empty() || job.schedule.is_some()) {
         return Err("A one-time job cannot also have a cron or calendar schedule".to_string());
     }

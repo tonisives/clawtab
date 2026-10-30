@@ -386,6 +386,7 @@ pub fn build_agent_job(
         path: prompt_path.display().to_string(),
         args: Vec::new(),
         cron: String::new(),
+        cron_timezone: None,
         schedule: None,
         run_once: None,
         secret_keys: Vec::new(),

@@ -254,6 +254,7 @@ export function JobDetailView({
   const [showParamsModal, setShowParamsModal] = useState(false);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [scheduleDraft, setScheduleDraft] = useState(job.cron ?? "");
+  const [scheduleTimezone, setScheduleTimezone] = useState(job.cron_timezone ?? "");
   const [scheduleSaving, setScheduleSaving] = useState(false);
   const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [showDuplicateMenu, setShowDuplicateMenu] = useState(false);
@@ -284,23 +285,26 @@ export function JobDetailView({
 
   const openScheduleEditor = useCallback(() => {
     setScheduleDraft(job.cron ?? "");
+    setScheduleTimezone(job.cron_timezone ?? "");
     setScheduleError(null);
     setShowScheduleModal(true);
-  }, [job.cron]);
+  }, [job.cron, job.cron_timezone]);
 
   const saveSchedule = useCallback(async () => {
     if (!onUpdateJob) return;
     setScheduleSaving(true);
     setScheduleError(null);
     try {
-      await onUpdateJob({ cron: scheduleDraft.trim() });
+      const zone = scheduleTimezone.trim();
+      if (zone) new Intl.DateTimeFormat("en", { timeZone: zone });
+      await onUpdateJob({ cron: scheduleDraft.trim(), cron_timezone: scheduleDraft.trim() ? zone || null : null });
       setShowScheduleModal(false);
     } catch (error) {
       setScheduleError(error instanceof Error ? error.message : String(error));
     } finally {
       setScheduleSaving(false);
     }
-  }, [onUpdateJob, scheduleDraft]);
+  }, [onUpdateJob, scheduleDraft, scheduleTimezone]);
 
   const toggleEnabledInline = useCallback(async () => {
     if (!onUpdateJob || isManual) return;
@@ -549,13 +553,13 @@ export function JobDetailView({
               style={styles.infoPill}
               onPress={openScheduleEditor}
               activeOpacity={0.65}
-              {...(isWeb ? { title: `${cronTooltip(job.cron)}. Click to edit.` } as any : {})}
+              {...(isWeb ? { title: `${cronTooltip(job.cron, job.cron_timezone || undefined)}. Click to edit.` } as any : {})}
             >
-              <Text style={styles.cronText}>{compactCron(job.cron)}</Text>
+              <Text style={styles.cronText}>{compactCron(job.cron)}{job.cron_timezone ? ` · ${job.cron_timezone}` : ""}</Text>
             </TouchableOpacity>
           ) : job.cron ? (
-            <View style={styles.infoPill} {...(isWeb ? { title: cronTooltip(job.cron) } as any : {})}>
-              <Text style={styles.cronText}>{compactCron(job.cron)}</Text>
+            <View style={styles.infoPill} {...(isWeb ? { title: cronTooltip(job.cron, job.cron_timezone || undefined) } as any : {})}>
+              <Text style={styles.cronText}>{compactCron(job.cron)}{job.cron_timezone ? ` · ${job.cron_timezone}` : ""}</Text>
             </View>
           ) : null}
           {scheduled && job.enabled ? (() => {
@@ -563,7 +567,7 @@ export function JobDetailView({
               ? new Date(job.run_once.at)
               : job.schedule
               ? nextCalendarDate(job.schedule)
-              : nextCronDate(job.cron);
+              : nextCronDate(job.cron, new Date(), job.cron_timezone || undefined);
             return next ? (
               <View style={styles.infoPill}>
                 <Text style={styles.nextRunText}>next: {formatNextRun(next)}</Text>
@@ -1052,6 +1056,8 @@ export function JobDetailView({
               style={styles.inlineModalInput}
               onSubmitEditing={() => void saveSchedule()}
             />
+            <Text style={styles.inlineModalHint}>Timezone (empty uses this machine's timezone)</Text>
+            <TextInput value={scheduleTimezone} onChangeText={setScheduleTimezone} placeholder="Asia/Bangkok" placeholderTextColor={colors.textMuted} autoCapitalize="none" autoCorrect={false} style={styles.inlineModalInput} accessibilityLabel="Schedule timezone" />
             {scheduleError ? <Text style={styles.inlineModalError}>{scheduleError}</Text> : null}
             <View style={styles.inlineModalActions}>
               <TouchableOpacity

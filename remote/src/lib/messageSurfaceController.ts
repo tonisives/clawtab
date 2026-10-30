@@ -1,4 +1,4 @@
-import { messagePending, resourceKey, type MessageRecord } from "@clawtab/shared";
+import { messagePending, resourceKey, type MessageRecord, type SocialDecision } from "@clawtab/shared";
 import { parseSurfaceId, surfaceId, surfaceRecord } from "./messagePresentation";
 
 type Command = Record<string, unknown>;
@@ -9,7 +9,7 @@ type Options = {
   host: (machine: string, command: Command) => Promise<Result>;
   update: (record: MessageRecord) => void;
   navigate: (record: MessageRecord) => void;
-  act: (action: { machine: string; id: string; op: "respond" | "dismiss"; action_id?: string; text?: string }) => Promise<void>;
+  act: (action: { machine: string; id: string; op: "respond" | "dismiss"; action_id?: string; text?: string; decisions?: SocialDecision[] }) => Promise<void>;
 };
 
 export function messageSurfaceController(options: Options) {
@@ -105,7 +105,8 @@ export function messageSurfaceController(options: Options) {
           return { focused: true, record: surfaceRecord(record) };
         }
         await options.act({ machine, id, op, ...(typeof command.action_id === "string" ? { action_id: command.action_id } : {}),
-          ...(typeof command.text === "string" ? { text: command.text } : {}) });
+          ...(typeof command.text === "string" ? { text: command.text } : {}),
+          ...(Array.isArray(command.decisions) ? { decisions: command.decisions as SocialDecision[] } : {}) });
         const next = await get(command.id);
         if (messagePending(next)) throw new Error("Saved. Waiting for the machine to reconnect.");
         return surfaceRecord(next);

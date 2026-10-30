@@ -86,10 +86,10 @@ fn last_run_since(
         .unwrap_or(lookback_limit)
 }
 
-fn has_missed_run(
+fn has_missed_run<T: chrono::TimeZone>(
     schedules: &[Schedule],
-    since: chrono::DateTime<Local>,
-    now: chrono::DateTime<Local>,
+    since: chrono::DateTime<T>,
+    now: chrono::DateTime<T>,
 ) -> bool {
     schedules
         .iter()
@@ -131,8 +131,14 @@ fn log_startup_schedules(jobs_config: &Arc<Mutex<JobsConfig>>) {
         } else if let Some(schedules) = parse_cron(&job.cron) {
             let next: Vec<String> = schedules
                 .iter()
-                .filter_map(|s| s.upcoming(Local).next())
-                .map(|t| t.to_rfc3339())
+                .filter_map(|s| match job.cron_timezone.as_deref() {
+                    Some(zone) => zone
+                        .parse::<chrono_tz::Tz>()
+                        .ok()
+                        .and_then(|zone| s.upcoming(zone).next())
+                        .map(|t| t.to_rfc3339()),
+                    None => s.upcoming(Local).next().map(|t| t.to_rfc3339()),
+                })
                 .collect();
             log::trace!("  '{}' cron='{}' next={:?}", job.name, job.cron, next);
         } else {
@@ -358,6 +364,16 @@ fn job_due_between(
 
     let schedules =
         parse_cron(&job.cron).ok_or_else(|| format!("invalid cron expression '{}'", job.cron))?;
+    if let Some(zone) = &job.cron_timezone {
+        let zone = zone
+            .parse::<chrono_tz::Tz>()
+            .map_err(|_| format!("invalid cron timezone: {zone}"))?;
+        return Ok(has_missed_run(
+            &schedules,
+            since.with_timezone(&zone),
+            now.with_timezone(&zone),
+        ));
+    }
     Ok(has_missed_run(&schedules, since, now))
 }
 
@@ -548,6 +564,21 @@ mod tests {
     use super::{calendar_due_between, job_due_between, next_calendar_occurrence};
     use chrono::NaiveDateTime;
     use clawtab_protocol::{CalendarRepeat, CalendarRepeatUnit, CalendarSchedule};
+    #[test]
+    fn cron_timezone_runs_bangkok_weekdays_independently_of_host() {
+        let job = serde_yml::from_str("name: research\njob_type: job\nenabled: true\npath: ''\ncron: '0 9 * * 1-5'\ncron_timezone: Asia/Bangkok\n").unwrap();
+        let at = |value| {
+            chrono::DateTime::parse_from_rfc3339(value)
+                .unwrap()
+                .with_timezone(&chrono::Local)
+        };
+        assert!(
+            job_due_between(&job, at("2026-10-30T01:59:00Z"), at("2026-10-30T02:00:00Z")).unwrap()
+        );
+        assert!(
+            !job_due_between(&job, at("2026-10-31T01:59:00Z"), at("2026-10-31T02:00:00Z")).unwrap()
+        );
+    }
 
     fn date(value: &str) -> NaiveDateTime {
         NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M").expect("test date should be valid")

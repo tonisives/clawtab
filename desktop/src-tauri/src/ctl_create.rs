@@ -21,6 +21,7 @@ use ratatui::Terminal;
 struct CreateInput {
     name: String,
     cron: Option<String>,
+    cron_timezone: Option<String>,
     at: Option<String>,
     description: Option<String>,
     file: Option<PathBuf>,
@@ -41,7 +42,7 @@ impl Drop for TerminalGuard {
 
 pub fn create(args: &[String]) -> Result<(), String> {
     if args.len() == 1 && matches!(args[0].as_str(), "--help" | "-h") {
-        println!("Usage: cwtctl jobs create [--name NAME (--cron EXPR | --at 'YYYY-MM-DD HH:MM') (--description TEXT | --description-file PATH | --description-stdin) [--provider PROVIDER [--model MODEL]] [--keep-config]]");
+        println!("Usage: cwtctl jobs create [--name NAME (--cron EXPR [--cron-timezone IANA_ZONE] | --at 'YYYY-MM-DD HH:MM') (--description TEXT | --description-file PATH | --description-stdin) [--provider PROVIDER [--model MODEL]] [--keep-config]]");
         println!("Providers: claude, codex, opencode, antigravity, hermes. Omit --provider to use ClawTab's default agent. --model requires --provider; OpenCode model IDs use provider/model.");
         println!("With no options, opens the interactive job creator and nvim.");
         return Ok(());
@@ -98,6 +99,7 @@ fn parse_args(args: &[String]) -> Result<CreateInput, String> {
         match flag {
             "--name" => input.name = value.clone(),
             "--cron" => input.cron = Some(value.clone()),
+            "--cron-timezone" => input.cron_timezone = Some(value.clone()),
             "--at" => input.at = Some(value.clone()),
             "--description" => input.description = Some(value.clone()),
             "--description-file" => input.file = Some(PathBuf::from(value)),
@@ -311,6 +313,7 @@ fn prepare_job(input: CreateInput, config: &JobsConfig, cwd: &Path) -> Result<Jo
         path: String::new(),
         args: Vec::new(),
         cron: input.cron.unwrap_or_default(),
+        cron_timezone: input.cron_timezone,
         schedule: None,
         run_once,
         secret_keys: Vec::new(),
@@ -356,6 +359,13 @@ fn validate_fields(input: &CreateInput) -> Result<(), String> {
     }
     if usize::from(input.cron.is_some()) + usize::from(input.at.is_some()) != 1 {
         return Err("provide exactly one of --cron or --at".into());
+    }
+    if let Some(zone) = &input.cron_timezone {
+        zone.parse::<chrono_tz::Tz>()
+            .map_err(|_| "invalid cron timezone")?;
+        if input.cron.is_none() {
+            return Err("--cron-timezone requires --cron".into());
+        }
     }
     if let Some(cron) = &input.cron {
         if clawtab_lib::scheduler::parse_cron(cron).is_none() {

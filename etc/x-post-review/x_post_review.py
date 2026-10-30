@@ -144,117 +144,59 @@ def approved(record, receipt, reconcile=False):
         raise WorkflowError('Review has expired; create a new draft review')
 
 
-POSTS_JS = r'''(() => Array.from(document.querySelectorAll('article[data-testid="tweet"]')).map(a => {
- const t = a.querySelector('[data-testid="tweetText"]');
- const c = t?.cloneNode(true);
- c?.querySelectorAll('a').forEach(l => {
-   const title=l.getAttribute('title'), href=l.getAttribute('href');
-   if (title?.startsWith('http')) l.replaceWith(title);
-   else if (href?.startsWith('https://') && !href.startsWith('https://t.co/')) l.replaceWith(href);
- });
- const owner=a.querySelector('[data-testid="User-Name"] a[href]')?.getAttribute('href');
- const links=Array.from(a.querySelectorAll('a[href]')).filter(l =>
-   new RegExp('^' + owner + '/status/[0-9]+$','i').test(l.getAttribute('href')));
- const link=links.find(l => l.getAttribute('href') === location.pathname) ||
-   links.find(l => l.querySelector('time'));
- const path=link?.getAttribute('href');
- // Main detail timestamps may have no <time>; a quoted post can have the first one.
- // Snowflake layout: twitter-archive/snowflake, IdWorker.scala (2010 branch).
- const id=path?.split('/').pop();
- const at=id ? new Date(Number((BigInt(id) >> 22n) + 1288834974657n)).toISOString() : null;
- return {text:c?.textContent || '', path, at};
-}))()'''
-
-
 class Browser:
+    """Compatibility transport for old X receipts, using BMUX plugin actions."""
     def __init__(self, draft):
-        self.draft = draft
-        self.pane = None
-        os.environ.setdefault('BMUX_AGENT_TYPE', 'tmux')
-        os.environ.setdefault('BMUX_AGENT_NAME', 'X post review')
-        os.environ.setdefault('BMUX_AGENT_PURPOSE', 'Publish the human-selected X draft and verify its URL')
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('social_review_compat', Path(__file__).parents[1] / 'social-review/social_review.py')
+        self.social = importlib.util.module_from_spec(spec); spec.loader.exec_module(self.social)
+        self.browser = self.social.Bmux(); self.draft = draft
+        self.file = Path.home() / '.local/state/clawtab/x-post-review/plugins' / (fingerprint(draft) + '.json')
+        self.state = json.loads(self.file.read_text()) if self.file.exists() else {}
 
-    def command(self, *args):
-        return run_json(['bmux', *args])['result']
+    def save(self): atomic_json(self.file, self.state)
 
     def open(self):
-        profiles = self.command('profile', 'list')
-        if not any(p['id'] == self.draft['profile'] for p in profiles):
-            raise WorkflowError('The reviewed browser profile is unavailable')
-        window = self.command('new-window', '-t', 'bot', '-n', 'x-post-review',
-                              '--profile', self.draft['profile'], '--url', 'https://x.com/home')
-        self.pane = window['panes'][0]['id']
-        self.window = window['id']
-        self.wait('[data-testid="SideNav_AccountSwitcher_Button"]')
-        self.identity()
+        binding = self.social.accounts()['x']
+        if self.draft['profile'] != binding['profile'] or self.draft['account'].lower() != binding['account'].lstrip('@').lower():
+            raise WorkflowError('The legacy receipt differs from the configured personal X account')
+        self.target = {**binding, 'platform': 'x'}
+        self.binding = self.browser.binding(self.target, binding)
+        self.pane = self.binding['pane']
 
-    def close(self):
-        if self.pane:
-            self.command('kill-window', '-t', self.window, '--confirm')
+    def close(self): pass
 
-    def wait(self, selector):
-        self.command('wait', '-t', self.pane, '--selector', selector, '--state', 'visible')
-
-    def evaluate(self, code):
-        return self.command('eval', '-t', self.pane, code)
-
-    def identity(self):
-        path = self.evaluate('document.querySelector("a[data-testid=AppTabBar_Profile_Link]")?.getAttribute("href")')
-        if (path or '').lower() != '/' + self.draft['account'].lower():
-            raise WorkflowError('Signed-in X account differs from the reviewed destination')
-
-    def posts(self):
-        return self.evaluate(POSTS_JS)
-
-    def profile(self):
-        self.command('navigate', '-t', self.pane, 'https://x.com/' + self.draft['account'])
-        self.wait('article[data-testid="tweet"]')
-        self.identity()
-        return self.posts()
+    def action(self, action, parameters, timeout=240):
+        try: return self.browser.invoke('x', action, self.pane, parameters, self.state, self.save, timeout)
+        except self.social.WorkflowError as error: raise WorkflowError(str(error)) from error
 
     def prepare(self):
-        before = {p['path'] for p in self.profile() if p.get('path')}
-        self.command('navigate', '-t', self.pane, 'https://x.com/home')
-        self.wait('[data-testid="tweetTextarea_0"]')
-        self.identity()
-        selector = '[data-testid="tweetTextarea_0"]'
-        if normalized(self.evaluate('document.querySelector(' + json.dumps(selector) + ').innerText')):
-            raise WorkflowError('X composer already contains a draft')
-        self.command('type', '-t', self.pane, '--selector', selector, '--text', self.draft['text'])
-        actual = self.evaluate('document.querySelector(' + json.dumps(selector) + ').innerText')
-        if normalized(actual) != normalized(self.draft['text']):
-            raise WorkflowError('X composer text differs from the reviewed draft')
-        self.identity()
-        self.command('wait', '-t', self.pane, '--expression',
-                     'document.querySelector("[data-testid=tweetButtonInline]")?.disabled === false')
-        return before
+        if not self.state.get('browsing'):
+            self.browser.call('navigate', '-t', self.pane, 'https://x.com/home')
+            result = self.action('simulate', {'seconds': '90', 'allow_like': False, 'use_decisions': False, 'session': 'legacy-' + fingerprint(self.draft)[:32]})
+            if result.get('status') != 'completed' or result.get('elapsedSeconds', 0) < 85:
+                raise WorkflowError('Pre-publication browsing needs input')
+            self.state['browsing'] = result; self.save()
+        prepared = self.action('prepare-post', {'account_url': 'https://x.com/' + self.draft['account'], 'body': self.draft['text']})
+        if prepared.get('status') != 'prepared': raise WorkflowError('The X plugin needs input before publication')
+        self.state['draft_id'] = prepared['draftId']; self.save()
+        return set()
 
     def submit(self):
-        # Caller durably records submitting before this single non-retriable click.
-        self.command('click', '-t', self.pane, '--selector', '[data-testid="tweetButtonInline"]')
+        self.state['publication'] = self.action('publish-post', {'draft_id': self.state['draft_id']}); self.save()
 
     def verify(self, before, submitted_at):
-        self.command('wait', '-t', self.pane, '--expression',
-                     '!document.querySelector("[data-testid=tweetTextarea_0]")?.innerText.trim()')
-        matches = [p for p in self.profile() if p.get('path') not in before and
-                   matches_post(p, self.draft, submitted_at)]
-        if len(matches) != 1:
-            raise WorkflowError('Could not identify one newly published post; inspect the receipt before retrying')
-        url = 'https://x.com' + matches[0]['path']
-        return self.verify_url(url, submitted_at)
+        result = self.state.get('publication', {})
+        if result.get('status') != 'published' or not result.get('url'): raise WorkflowError('Reconcile the saved plugin publication before continuing')
+        return self.verify_url(result['url'], submitted_at)
 
     def verify_url(self, url, submitted_at):
-        path = canonical_path(url, self.draft['account'])
-        self.command('navigate', '-t', self.pane, 'https://x.com' + path)
-        self.command('wait', '-t', self.pane, '--expression',
-                     'location.pathname === ' + json.dumps(path) +
-                     ' && !!document.querySelector(' +
-                     json.dumps('article[data-testid="tweet"] a[href="' + path + '"]') + ')')
-        matches = [p for p in self.posts() if p.get('path') == path and
-                   matches_post(p, self.draft, submitted_at)]
-        if len(matches) != 1:
-            raise WorkflowError('Post permalink did not verify account, text, and publication time')
-        return {'url': 'https://x.com' + path, 'post': matches[0], 'verified_at': time.time()}
+        canonical_path(url, self.draft['account'])
+        if not self.state.get('draft_id'): raise WorkflowError('No plugin draft is associated with this legacy receipt')
+        self.browser.call('navigate', '-t', self.pane, url)
+        result = self.action('verify-post', {'draft_id': self.state['draft_id'], 'url': url})
+        if result.get('status') != 'published' or result.get('url') != url: raise WorkflowError('The X plugin could not verify this permalink')
+        return {'url': url, 'post': result, 'verified_at': time.time()}
 
 
 def canonical_path(url, account):

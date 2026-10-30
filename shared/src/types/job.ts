@@ -38,6 +38,7 @@ export interface RemoteJob {
   job_type: string;
   enabled: boolean;
   cron: string;
+  cron_timezone?: string | null;
   schedule?: CalendarSchedule | null;
   run_once?: RunOnceSchedule | null;
   group: string;
@@ -63,6 +64,7 @@ export interface RemoteJob {
 export interface JobUpdate {
   enabled?: boolean;
   cron?: string;
+  cron_timezone?: string | null;
   schedule?: CalendarSchedule | null;
   run_once?: RunOnceSchedule | null;
   group?: string;

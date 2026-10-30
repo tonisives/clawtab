@@ -45,9 +45,15 @@ impl NfnSettings {
             let binding = self.focus_shortcut.to_ascii_lowercase();
             let parts: Vec<_> = binding.split('+').collect();
             let key = parts.last().copied().unwrap_or("");
-            if parts.len() < 2 || !parts[..parts.len()-1].iter().all(|part| matches!(*part, "ctrl" | "alt" | "option" | "shift" | "meta" | "cmd"))
-                || !(key == "space" || key.len() == 1 && key.as_bytes()[0].is_ascii_alphanumeric()) {
-                return Err("Focus shortcut must combine modifiers with a letter, digit, or Space".into());
+            if parts.len() < 2
+                || !parts[..parts.len() - 1].iter().all(|part| {
+                    matches!(*part, "ctrl" | "alt" | "option" | "shift" | "meta" | "cmd")
+                })
+                || !(key == "space" || key.len() == 1 && key.as_bytes()[0].is_ascii_alphanumeric())
+            {
+                return Err(
+                    "Focus shortcut must combine modifiers with a letter, digit, or Space".into(),
+                );
             }
         }
         if !["enhanced", "native", "both"].contains(&self.delivery.as_str())
@@ -275,7 +281,7 @@ impl NfnRequest {
             }
         }
         if self.actions.len() > 32
-            || self.media.len() > 8
+            || self.media.len() > 32
             || self.dedupe_key.as_ref().is_some_and(|key| key.len() > 256)
             || serde_json::to_vec(&self.data)
                 .map_err(|e| e.to_string())?
@@ -294,8 +300,96 @@ impl NfnRequest {
                 );
             }
         }
+        if self.template == "social-review" && self.data.get("targets").is_some() {
+            let targets = self.social_targets()?;
+            let mut ids = std::collections::HashSet::new();
+            if targets.is_empty() || targets.len() > 8 {
+                return Err("A social review needs 1 to 8 targets".into());
+            }
+            for target in targets {
+                if target.id.is_empty()
+                    || target.id.len() > 128
+                    || !ids.insert(target.id)
+                    || target.revision.len() != 64
+                    || !target.revision.bytes().all(|b| b.is_ascii_hexdigit())
+                    || target.platform.is_empty()
+                    || target.account.is_empty()
+                    || target
+                        .media_indices
+                        .iter()
+                        .any(|index| *index >= self.media.len())
+                {
+                    return Err("Invalid social review target or media index".into());
+                }
+            }
+        }
         Ok(())
     }
+
+    fn social_targets(&self) -> Result<Vec<SocialTarget>, String> {
+        serde_json::from_value(self.data["targets"].clone())
+            .map_err(|e| format!("Invalid social targets: {e}"))
+    }
+
+    pub fn validate_decisions(&self, decisions: Option<&[SocialDecision]>) -> Result<(), String> {
+        if self.template != "social-review" || self.data.get("targets").is_none() {
+            return if decisions.is_some() {
+                Err("This message has no social targets".into())
+            } else {
+                Ok(())
+            };
+        }
+        let targets = self.social_targets()?;
+        let decisions =
+            decisions.ok_or("Choose a decision for each platform in the review card")?;
+        let mut ids = std::collections::HashSet::new();
+        if decisions.len() != targets.len() {
+            return Err("Include every platform decision".into());
+        }
+        for decision in decisions {
+            let target = targets
+                .iter()
+                .find(|target| target.id == decision.target_id)
+                .ok_or("Unknown social target")?;
+            if !ids.insert(&decision.target_id) || target.revision != decision.revision {
+                return Err("The reviewed revision changed; reopen the review".into());
+            }
+            if !["approve", "revise", "deny"].contains(&decision.decision.as_str())
+                || decision
+                    .comment
+                    .as_ref()
+                    .is_some_and(|text| text.len() > 32768)
+                || decision.decision == "approve"
+                    && decision
+                        .comment
+                        .as_ref()
+                        .is_some_and(|text| !text.trim().is_empty())
+            {
+                return Err("Commented posts require revision before approval".into());
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct SocialTarget {
+    id: String,
+    revision: String,
+    platform: String,
+    account: String,
+    #[serde(default)]
+    media_indices: Vec<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct SocialDecision {
+    pub target_id: String,
+    pub revision: String,
+    pub decision: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -303,6 +397,8 @@ pub struct NfnResponse {
     pub request_id: String,
     pub action_id: String,
     pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decisions: Option<Vec<SocialDecision>>,
     pub status: String,
     pub responded_at: i64,
 }
@@ -412,6 +508,8 @@ pub enum NfnCommand {
         action_id: String,
         #[serde(default)]
         text: Option<String>,
+        #[serde(default)]
+        decisions: Option<Vec<SocialDecision>>,
     },
     Focus {
         id: String,
@@ -522,6 +620,30 @@ pub fn now() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn platform_decisions_bind_revisions_and_require_comment_revision() {
+        let request = NfnRequest {
+            title: "Today's posts".into(),
+            template: "social-review".into(),
+            data: serde_json::json!({"targets":[{"id":"x","platform":"x","account":"@test","revision":"a".repeat(64)}]}),
+            ..Default::default()
+        };
+        assert!(request.validate().is_ok());
+        assert!(request.validate_decisions(None).is_err());
+        let mut decisions = vec![SocialDecision {
+            target_id: "x".into(),
+            revision: "a".repeat(64),
+            decision: "approve".into(),
+            comment: None,
+        }];
+        assert!(request.validate_decisions(Some(&decisions)).is_ok());
+        decisions[0].comment = Some("Change the first line".into());
+        assert!(request.validate_decisions(Some(&decisions)).is_err());
+        decisions[0].decision = "revise".into();
+        assert!(request.validate_decisions(Some(&decisions)).is_ok());
+        decisions[0].revision = "b".repeat(64);
+        assert!(request.validate_decisions(Some(&decisions)).is_err());
+    }
     #[test]
     fn policy_never_plays_fallback_sound_and_preserves_focus_choice() {
         let settings = NfnSettings::default();

@@ -2,7 +2,7 @@
 
 The local posting runner sends a social-review message containing the exact text and destination. Choose **Post to X** to publish it, **Request changes** to return feedback, or **Reject** to stop. The waiting workflow publishes the selected text once, opens its permalink, checks the author and text, and sends a message with the verified URL.
 
-The runner supports one text post up to 280 weighted characters. It uses an existing signed-in BMUX profile and creates its own browser window. It does not change the profile's account or settings. Install BMUX and `cwtctl` on the host; Python 3 uses only its standard library. `cwtctl message` is preferred, with `nfn` compatibility for older installations.
+For new work use [social review bundles](social-review.md), which support long posts, images, video and platform variants. This compatibility runner supports existing text drafts up to 280 weighted characters. It resolves the configured personal X session/window and publishes through BMUX plugin actions after 90 seconds of browsing without likes. It does not change the profile's account or settings. Install BMUX and `cwtctl` on the host; Python 3 uses only its standard library. `cwtctl message` is preferred, with `nfn` compatibility for older installations.
 
 Save a draft as JSON:
 
@@ -37,7 +37,7 @@ python3 etc/x-post-review/x_post_review.py verify /absolute/path/receipt.json \
   --url https://x.com/totovoto/status/POST_ID
 ```
 
-Reconciliation checks the original text, author and publication time. It performs no publishing action. Account or composer mismatches before submission stop the attempt while leaving the review available.
+Reconciliation delegates the original text, author and publication-time check to the X plugin. It performs no publishing action. Account or composer mismatches before submission stop the attempt while leaving the review available.
 
 Creation time comes from the canonical post ID using X's [Snowflake ID format](https://docs.x.com/fundamentals/x-ids) and the epoch and bit layout in Twitter's [original generator](https://github.com/twitter-archive/snowflake/blob/snowflake-2010/src/main/scala/com/twitter/service/snowflake/IdWorker.scala). This avoids confusing a quoted post's timestamp with the main post.
 

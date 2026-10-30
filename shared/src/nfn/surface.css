@@ -126,6 +126,19 @@ button.send { flex: none; align-self: flex-end; min-width: 54px; padding: 7px 12
 .diff-remove { background: #361e23; color: #edb5bc; }
 .media { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }
 .media img, .media video { display: block; width: 100%; max-height: 320px; object-fit: contain; background: #0a0a0a; border-radius: 6px; }
+.card > .media { flex: 0 1 auto; min-height: 80px; max-height: 320px; overflow-y: auto; }
+.card > .media > * { flex: none; }
+.social-review { margin-top: 12px; }
+.card > .social-review { flex: 0 1 auto; min-height: 80px; overflow-y: auto; overscroll-behavior: contain; }
+.social-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 12px; }
+.social-platform[hidden] { display: none; }
+.social-account { color: var(--muted); margin-bottom: 8px; }
+.social-body { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
+.social-title { display: block; margin-bottom: 8px; }
+.social-choice { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 12px 0 8px; }
+.social-platform textarea { margin-bottom: 12px; }
+.social-library { display: block; color: var(--accent); margin: 8px 0; }
+.social-submit { margin-top: 8px; }
 .queue { --queue-height-limit: calc(min(var(--surface-list-max-height, 80vh), var(--surface-max-height, 860px)) - var(--notch-overlap, 0px) - 44px); display: flex; flex-direction: column; padding: 6px; min-height: min(420px, var(--queue-height-limit)); max-height: var(--queue-height-limit); overflow: hidden; }
 #surface[data-desktop="false"] .queue { min-height: 0; max-height: none; }
 .queue-content { min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }

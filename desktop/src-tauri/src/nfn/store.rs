@@ -879,6 +879,7 @@ mod tests {
                 request_id: record.id.clone(),
                 action_id: "approve".into(),
                 text: Some("Ship this caption".into()),
+                decisions: None,
                 status: "resolved".into(),
                 responded_at: now(),
             });

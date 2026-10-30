@@ -1,8 +1,8 @@
 import AsyncStorage from "@react-native-async-storage/async-storage"
-import { machineHostRequest, machineState, resourceKey, messagePending, type MessageRecord } from "@clawtab/shared"
+import { machineHostRequest, machineState, resourceKey, messagePending, type MessageRecord, type SocialDecision } from "@clawtab/shared"
 import { useMessageStore } from "../store/messages"
 
-type Action = { machine: string; id: string; op: "respond" | "dismiss"; action_id?: string; text?: string }
+type Action = { machine: string; id: string; op: "respond" | "dismiss"; action_id?: string; text?: string; decisions?: SocialDecision[] }
 let queue: Action[] = []
 let key: string | null = null
 let generation = 0
@@ -50,7 +50,7 @@ export async function flushMessageActions() {
         queue = queue.filter(item => item !== action); await save(); continue
       }
       try {
-        const result = await machineHostRequest(action.machine, { action: "message", command: { op: action.op, id: action.id, ...(action.action_id ? { action_id: action.action_id } : {}), ...(action.text ? { text: action.text } : {}) } })
+        const result = await machineHostRequest(action.machine, { action: "message", command: { op: action.op, id: action.id, ...(action.action_id ? { action_id: action.action_id } : {}), ...(action.text ? { text: action.text } : {}), ...(action.decisions ? { decisions: action.decisions } : {}) } })
         if (generation !== revision) return
         const record = (result.record ?? result) as MessageRecord
         useMessageStore.getState().updateRecord({ ...record, machine_id: action.machine, request: { ...record.request, source: {

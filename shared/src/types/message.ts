@@ -1,4 +1,5 @@
 export type MessageAction = { id: string; label: string; kind: string; value?: string }
+export type SocialDecision = { target_id: string; revision: string; decision: "approve" | "revise" | "deny"; comment?: string }
 export type MessageRecord = {
   id: string
   machine_id: string
@@ -19,7 +20,7 @@ export type MessageRecord = {
   updated_at: number
   question_id?: string | null
   error?: string | null
-  response?: { action_id: string; text?: string | null } | null
+  response?: { action_id: string; text?: string | null; decisions?: SocialDecision[] } | null
 }
 
 export const messageKind = (record: MessageRecord): string => record.request.kind || (
