@@ -6,6 +6,7 @@ import { SORT_OPTIONS } from "./sign";
 import { styles } from "./styles";
 import type { JobListViewHook } from "./useJobListView";
 import { PopupMenu } from "../PopupMenu";
+import { SegmentedControl } from "../SegmentedControl";
 
 interface JobListToolbarProps {
   hook: JobListViewHook;
@@ -72,25 +73,14 @@ export function JobListToolbar({ hook }: JobListToolbarProps) {
     let compactViews = ["tabs", "jobs", "latest"] as const;
     return (
       <View style={styles.compactToolbarRow}>
-        <View style={styles.compactSegment}>
-          {compactViews.map((view) => {
-            const active = hook.listMode === view;
-            return (
-              <TouchableOpacity
-                key={view}
-                accessibilityRole="button"
-                accessibilityState={{ selected: active }}
-                onPress={() => handleSelectListMode(view)}
-                activeOpacity={0.7}
-                style={[styles.compactSegmentButton, active ? styles.compactSegmentButtonActive : null]}
-              >
-                <Text style={[styles.compactSegmentText, active ? styles.compactSegmentTextActive : null]}>
-                  {view === "tabs" ? "Tabs" : view === "jobs" ? "Jobs" : "Latest"}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+        <SegmentedControl
+          label="Sidebar view"
+          value={hook.listMode}
+          onChange={handleSelectListMode}
+          stretch
+          style={{ alignSelf: "stretch" }}
+          options={compactViews.map((view) => ({ value: view, label: view === "tabs" ? "Tabs" : view === "jobs" ? "Jobs" : "Latest" }))}
+        />
       </View>
     );
   }
@@ -159,53 +149,18 @@ export function JobListToolbar({ hook }: JobListToolbarProps) {
       {hook.onListModeChange && (globalTabsView.anyHeader || hook.latestItemCount > 0) && (
         <>
           <View style={{ flexBasis: "100%", height: 0 }} />
-          <View
-            style={[
-              {
-                flexDirection: "row",
-                alignItems: "center",
-                backgroundColor: colors.surface,
-                borderWidth: 1,
-                borderColor: colors.border,
-                borderRadius: 999,
-                padding: Platform.OS === "web" ? 2 : 3,
-              },
-              Platform.OS !== "web" ? styles.nativeGlobalTabsSegment : null,
-            ]}
-          >
-            {(["tabs", "latest", "jobs"] as const).map((view) => {
-              const active = globalTabsView.activeView === view;
-              const count = view === "tabs"
-                ? globalTabsView.totalTabs
-                : view === "latest"
-                  ? hook.latestItemCount
-                  : globalTabsView.totalJobs;
+          <SegmentedControl
+            label="Sidebar view"
+            value={globalTabsView.activeView}
+            onChange={handleSelectListMode}
+            compact
+            style={Platform.OS !== "web" ? styles.nativeGlobalTabsSegment : undefined}
+            options={(["tabs", "latest", "jobs"] as const).map((view) => {
+              const count = view === "tabs" ? globalTabsView.totalTabs : view === "latest" ? hook.latestItemCount : globalTabsView.totalJobs;
               const label = view === "tabs" ? "Tabs" : view === "latest" ? "Latest" : "Jobs";
-              return (
-                <TouchableOpacity
-                  key={view}
-                  onPress={() => handleSelectListMode(view)}
-                  activeOpacity={0.7}
-                  style={{
-                    paddingHorizontal: Platform.OS === "web" ? 10 : 12,
-                    paddingVertical: Platform.OS === "web" ? 2 : 7,
-                    borderRadius: 999,
-                    backgroundColor: active ? colors.accent : "transparent",
-                  }}
-                >
-                  <Text
-                    style={{
-                      fontSize: 12,
-                      fontWeight: "600",
-                      color: active ? "#ffffff" : colors.textSecondary,
-                    }}
-                  >
-                    {label} ({count})
-                  </Text>
-                </TouchableOpacity>
-              );
+              return { value: view, label: `${label} (${count})` };
             })}
-          </View>
+          />
         </>
       )}
     </View>

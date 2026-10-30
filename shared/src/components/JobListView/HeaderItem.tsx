@@ -1,6 +1,7 @@
 import { Platform, Text, TouchableOpacity, View } from "react-native";
 
 import { colors } from "../../theme/colors";
+import { SegmentedControl } from "../SegmentedControl";
 import { spacing } from "../../theme/spacing";
 import type { ListItem } from "./sign";
 import { styles } from "./styles";
@@ -134,52 +135,17 @@ export function JobListHeaderItem({ hook, item, itemKey, index, prevWasActive }:
               hook.mobileAppearance ? styles.nativeGroupSegmentRow : null,
             ]}
           >
-            <View
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                backgroundColor: colors.groupedSurface,
-                borderWidth: 1,
-                borderColor: colors.border,
-                borderRadius: 999,
-                padding: !hook.mobileAppearance ? 2 : 3,
-                height: !hook.mobileAppearance ? undefined : 34,
-              }}
-            >
-              {(["tabs", "jobs"] as const).map((view) => {
-                const active = item.tabsToggle!.view === view;
-                const count = view === "tabs" ? item.tabsToggle!.tabCount : item.tabsToggle!.jobCount;
-                const label = view === "tabs" ? "Tabs" : "Jobs";
-                return (
-                  <TouchableOpacity
-                    key={view}
-                    onPress={(event: any) => {
-                      event?.stopPropagation?.();
-                      hook.onGroupTabViewChange?.(item.tabsToggle!.group, view);
-                    }}
-                    activeOpacity={0.7}
-                    style={{
-                      paddingHorizontal: !hook.mobileAppearance ? 9 : 12,
-                      paddingVertical: !hook.mobileAppearance ? 2 : 5,
-                      borderRadius: 999,
-                      backgroundColor: active ? colors.accent : "transparent",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <Text
-                      style={{
-                        fontSize: 12,
-                        lineHeight: !hook.mobileAppearance ? undefined : 14,
-                        fontWeight: "600",
-                        color: active ? "#ffffff" : colors.textSecondary,
-                      }}
-                    >
-                      {label} ({count})
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+            <SegmentedControl
+              label={`${item.displayGroup} view`}
+              value={item.tabsToggle.view}
+              onChange={(view) => hook.onGroupTabViewChange?.(item.tabsToggle!.group, view)}
+              compact
+              style={{ backgroundColor: colors.groupedSurface }}
+              options={(["tabs", "jobs"] as const).map((view) => ({
+                value: view,
+                label: `${view === "tabs" ? "Tabs" : "Jobs"} (${view === "tabs" ? item.tabsToggle!.tabCount : item.tabsToggle!.jobCount})`,
+              }))}
+            />
           </View>
         )}
         <View style={styles.groupHeaderMenuSlot}>
