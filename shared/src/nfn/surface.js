@@ -713,7 +713,7 @@
           if (!element.currentTime && element.paused) element.currentTime = Math.min(.1, element.duration / 2);
         });
         const thumbnail = () => {
-          if (element.poster || !element.videoWidth || element.readyState < 2) return;
+          if (element.poster || !element.videoWidth || element.readyState < 2 || element.seeking) return;
           try {
             const canvas = document.createElement("canvas");
             canvas.width = Math.min(element.videoWidth, 1280); canvas.height = Math.round(canvas.width * element.videoHeight / element.videoWidth);

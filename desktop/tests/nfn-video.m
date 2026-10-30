@@ -43,7 +43,8 @@ static void finishChecks(void) {
 }
 
 static void clickPlay(NSArray *point) {
-    NSPoint local = NSMakePoint([point[0] doubleValue],surface.web.bounds.size.height-[point[1] doubleValue]);
+    CGFloat y = [point[1] doubleValue];
+    NSPoint local = NSMakePoint([point[0] doubleValue],surface.web.isFlipped ? y : surface.web.bounds.size.height-y);
     NSPoint position = [surface.panel convertPointToScreen:[surface.web convertPoint:local toView:nil]];
     CGPoint global = CGPointMake(position.x,NSScreen.screens.firstObject.frame.size.height-position.y);
     CGEventRef down = CGEventCreateMouseEvent(NULL,kCGEventLeftMouseDown,global,kCGMouseButtonLeft);
