@@ -29,8 +29,16 @@
     fixture.records.set(id, record); window.nfn.receive({ ...fixture.snapshot(id), remote: mobile }); window.nfn.receive({ type: "open_record", id });
   };
   const panel = () => document.querySelector('.social-platform:not([hidden])');
-  const ready = async () => {
+  const brandNames = { x: "X", instagram: "Instagram", youtube: "YouTube", threads: "Threads", linkedin: "LinkedIn", bluesky: "Bluesky", mastodon: "Mastodon" };
+  const ready = async target => {
     const current = panel(), video = current.querySelector("video");
+    const brand = current.querySelector(".social-platform-mark,.social-video-brand");
+    if (Object.hasOwn(brandNames, target.platform)) {
+      await wait(() => brand.querySelector(".social-brand-icon")?.naturalWidth > 0, `${target.platform} brand asset did not load`);
+      const icon = brand.querySelector(".social-brand-icon"), rect = icon.getBoundingClientRect();
+      assert(new URL(icon.src).origin === "https://cdn.clawtab.cc" && getComputedStyle(icon).objectFit === "contain" && rect.width === 24 && rect.height === 24, `${target.platform} loads its official CDN icon without stretching or changing the review layout`);
+      assert((icon.alt || brand.textContent) === brandNames[target.platform], `${target.platform} retains an accessible platform name`);
+    } else assert(!brand.querySelector("img") && brand.textContent === (target.platform === "tiktok" ? "TikTok" : target.platform), `${target.platform} retains its platform name label`);
     if (video) {
       await wait(() => video.readyState >= 2 && current.querySelector(".video-thumbnail")?.naturalWidth > 0, "portrait video did not decode a thumbnail");
       assert(video.videoWidth === 360 && video.videoHeight === 640 && video.muted, "portrait preview decodes the selected 360 by 640 media and starts muted");
@@ -46,7 +54,7 @@
   window.nfn.setPlacement({ placement: "right", max_width: 1000, max_height: 860, reduce_motion: true });
   if (window.platformCapture) {
     const target = targets.find(target => target.platform === window.platformCapture);
-    open("platform-capture", [target]); await ready();
+    open("platform-capture", [target]); await ready(target);
     assert(!document.querySelector(".social-tabs") && panel().querySelector(`.${target.platform}-post`), "a single platform preview omits the selector and shows its platform card");
     return { passed: checks.length, checks, platform: target.platform };
   }
@@ -58,7 +66,7 @@
   for (const [index, target] of targets.entries()) {
     tabs[index].click();
     if (previousVideo) assert(previousVideo.paused, "switching platforms pauses the previous video");
-    await ready();
+    await ready(target);
     const current = panel(), post = current.querySelector(`.${target.platform}-post`), body = document.querySelector(".message-content");
     assert(post?.querySelector(".social-body").textContent === target.body && !post.textContent.includes("Agent note"), `${target.platform} retains its exact tailored copy separately from agent text`);
     assert(post.querySelector(".social-account").textContent === (target.platform === "linkedin" || target.account.startsWith("@") ? target.account : `@${target.account}`), `${target.platform} shows the account without inventing a LinkedIn handle`);
@@ -87,11 +95,15 @@
   const sent = fixture.calls.find(call => call.op === "respond");
   assert(sent?.decisions.length === targets.length && sent.decisions.every((decision, index) => decision.revision === targets[index].revision && decision.target_id === targets[index].id && decision.decision === (index === 4 ? "revise" : "approve")) && sent.decisions[4].comment.includes("conversational"), "platform styling preserves exact revisions and scoped review decisions");
   const unknown = { ...targets[0], id: "future-plugin", platform: "future-plugin", account: "creator" };
-  open("generic-platform", [unknown]); await ready();
+  open("generic-platform", [unknown]); await ready(unknown);
   assert(panel().querySelector(".social-post") && panel().querySelector(".social-platform-mark").textContent === "future-plugin", "additional posting plugins keep a generic preview with their platform name");
+  open("brand-fallback", [targets[0]]); await ready(targets[0]);
+  const brand = panel().querySelector(".social-platform-mark");
+  brand.querySelector("img").dispatchEvent(new Event("error"));
+  assert(brand.textContent === "X" && !brand.querySelector("img"), "a failed brand image keeps a readable platform label");
   const longAccount = { ...targets[6], account: "a-long-creator-account.with-a-long-domain.example", display_name: "A creator with a longer display name" };
-  open("long-account", [longAccount]); await ready();
+  open("long-account", [longAccount]); await ready(longAccount);
   assert(panel().querySelector(".social-account").textContent === `@${longAccount.account}` && panel().scrollWidth <= panel().clientWidth + 1, "long account names wrap without hiding the account or widening the card");
-  open("portrait-final", [targets[2]]); await ready();
+  open("portrait-final", [targets[2]]); await ready(targets[2]);
   return { passed: checks.length, checks };
 })()

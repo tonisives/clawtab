@@ -1,0 +1,68 @@
+{
+  "checked_at": "2026-10-30",
+  "assets": {
+    "bluesky": {
+      "url": "https://cdn.clawtab.cc/assets/social/bluesky-bc6913b3ec57.svg",
+      "sha256": "bc6913b3ec57c81172969218997bfbdab94ee30eaa61936b26a5003da2e3a948",
+      "bytes": 782,
+      "source": "https://bsky.social/about/support/icons",
+      "guidelines": "https://bsky.social/about/support/brand-guidelines",
+      "variant": "Butterfly icon, official blue SVG"
+    },
+    "instagram": {
+      "url": "https://cdn.clawtab.cc/assets/social/instagram-3347813e9e8f.svg",
+      "sha256": "3347813e9e8f082cdf48495818bd370ccff94b687efb8aa1c8a7b36cfcfb8291",
+      "bytes": 1819,
+      "source": "https://www.meta.com/brand/resources/instagram/instagram-brand/",
+      "guidelines": "https://www.meta.com/brand/resources/instagram/instagram-brand/",
+      "variant": "IG_brand_asset_pack_2023.zip / 01 Static Glyph/02 White Glyph/Instagram_Glyph_White.svg"
+    },
+    "linkedin": {
+      "url": "https://cdn.clawtab.cc/assets/social/linkedin-ed22a5ab46c1.png",
+      "sha256": "ed22a5ab46c171e3449708ff34923de7298da00ac204c7f85444db05bf888791",
+      "bytes": 10621,
+      "source": "https://brand.linkedin.com/downloads",
+      "guidelines": "https://brand.linkedin.com/in-logo",
+      "variant": "in-logo.zip / in-logo/InBug-White.png"
+    },
+    "mastodon": {
+      "url": "https://cdn.clawtab.cc/assets/social/mastodon-7364fa0c83fc.svg",
+      "sha256": "7364fa0c83fcbf9220f80b1ea5ca3b118ca5f8807178b5e75267a0a6c48133e7",
+      "bytes": 2480,
+      "source": "https://joinmastodon.org/branding",
+      "guidelines": "https://joinmastodon.org/branding",
+      "variant": "Mark only, official purple SVG"
+    },
+    "threads": {
+      "url": "https://cdn.clawtab.cc/assets/social/threads-2d569c12fb51.svg",
+      "sha256": "2d569c12fb51499e296ebae0178ea928bce5abf4695f31edceee7b3d22d1a894",
+      "bytes": 1162,
+      "source": "https://www.meta.com/brand/resources/threads/",
+      "guidelines": "https://www.meta.com/brand/resources/threads/",
+      "variant": "Threads-Brand-Resource-Center.zip / 01 White/Logo/threads-logo-white.svg"
+    },
+    "x": {
+      "url": "https://cdn.clawtab.cc/assets/social/x-dd46f96b6f47.svg",
+      "sha256": "dd46f96b6f47fcd33683b79ddfaf3daca1d4f8aeba3c0f2bde1584c69cc699d4",
+      "bytes": 430,
+      "source": "https://docs.x.com/",
+      "guidelines": "https://about.x.com/en/who-we-are/brand-toolkit",
+      "variant": "Standalone white logo linked by the official developer documentation"
+    },
+    "youtube": {
+      "url": "https://cdn.clawtab.cc/assets/social/youtube-1027b1b05177.png",
+      "sha256": "1027b1b0517727adb9697155a270744381c3ce9b047b1c8bd8a9389dc7d07a83",
+      "bytes": 16687,
+      "source": "https://brand.youtube/youtube-icon/",
+      "guidelines": "https://brand.youtube/youtube-icon/",
+      "variant": "youtube-icon.zip / YouTube_Icon/Digital/01 Red/yt_icon_red_digital.png"
+    }
+  },
+  "text_labels": {
+    "tiktok": {
+      "guidelines": "https://developers.tiktok.com/docs/en/getting-started-design-guidelines",
+      "reason": "TikTok requests prior written permission for logo use. The preview uses its name until permission is recorded."
+    }
+  },
+  "rendering": "Assets are mirrored byte for byte to immutable CDN URLs. Keep the original colors and proportions. Failed icon loads fall back to the platform name."
+}

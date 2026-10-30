@@ -157,32 +157,29 @@ button.send { flex: none; align-self: flex-end; min-width: 54px; padding: 7px 12
 .social-identity { display: flex; flex-direction: column; min-width: 0; flex: 1; font-size: 14px; line-height: 20px; }
 .social-name { overflow: hidden; text-overflow: ellipsis; }
 .social-account { color: #71767b; overflow-wrap: anywhere; }
-.social-platform-mark { flex: none; font-size: 20px; line-height: 28px; font-weight: 600; }
+.social-platform-mark { display: inline-flex; align-items: center; justify-content: center; flex: none; padding: 8px; font-size: 14px; line-height: 20px; font-weight: 600; }
+.social-brand-icon { display: block; flex: none; width: 24px; height: 24px; object-fit: contain; }
 .social-body { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 16px; line-height: 24px; }
 .x-post .social-post-link { color: #1d9bf0; }
 .instagram-post, .threads-post { background: #000; border-color: #313131; }
-.instagram-post .social-platform-mark, .threads-post .social-platform-mark { font-size: 16px; }
 .instagram-post > .media { margin: 0 -16px; }
 .instagram-post > .media img, .instagram-post > .media video, .instagram-post > .media .video-preview { border-radius: 0; }
 .instagram-post .social-caption { margin-top: 12px; }
 .linkedin-post { background: #1f1f1f; border-color: #313131; }
 .linkedin-post .social-avatar { border-radius: 8px; }
-.linkedin-post .social-platform-mark { color: #70b5f9; font-size: 16px; }
 .linkedin-post .social-name { font-size: 16px; }
 .bluesky-post { background: #000; border-color: #313131; }
-.bluesky-post .social-platform-mark, .bluesky-post .social-post-link { color: #60a5fa; font-size: 16px; }
+.bluesky-post .social-post-link { color: #60a5fa; font-size: 16px; }
 .mastodon-post { background: #181818; border-color: #313131; }
-.mastodon-post .social-platform-mark, .mastodon-post .social-post-link { color: #a5a5ff; font-size: 16px; }
+.mastodon-post .social-post-link { color: #a5a5ff; font-size: 16px; }
 .social-engagement { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; color: #98989d; }
 .social-engagement-item { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; }
 .social-engagement svg { display: block; width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .short-video-post { background: #000; border-color: #313131; }
-.social-video-brand { margin-bottom: 12px; font-size: 16px; line-height: 24px; font-weight: 600; }
-.youtube-post .social-video-brand { color: #ff6b6b; }
+.social-video-brand { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; font-size: 16px; line-height: 24px; font-weight: 600; }
 .social-video-stage { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
 .social-video-stage > .media { width: min(100%, 320px); min-width: 0; margin: 0 auto; }
 .social-video-stage .social-engagement { flex: none; flex-direction: column; gap: 24px; margin: 0; color: #e4e4e4; }
-.short-video-post .social-platform-mark { display: none; }
 .short-video-post .social-post-header { margin-bottom: 8px; }
 .short-video-post .social-title { font-size: 16px; line-height: 24px; }
 @media (max-width: 480px) {

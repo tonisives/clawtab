@@ -773,6 +773,28 @@
     x: "X", instagram: "Instagram", tiktok: "TikTok", youtube: "YouTube",
     threads: "Threads", linkedin: "LinkedIn", bluesky: "Bluesky", mastodon: "Mastodon"
   };
+  // Official assets and their source downloads are recorded in social-brand-assets.json.
+  const socialBrandAssets = {
+    x: "https://cdn.clawtab.cc/assets/social/x-dd46f96b6f47.svg",
+    instagram: "https://cdn.clawtab.cc/assets/social/instagram-3347813e9e8f.svg",
+    youtube: "https://cdn.clawtab.cc/assets/social/youtube-1027b1b05177.png",
+    threads: "https://cdn.clawtab.cc/assets/social/threads-2d569c12fb51.svg",
+    linkedin: "https://cdn.clawtab.cc/assets/social/linkedin-ed22a5ab46c1.png",
+    bluesky: "https://cdn.clawtab.cc/assets/social/bluesky-bc6913b3ec57.svg",
+    mastodon: "https://cdn.clawtab.cc/assets/social/mastodon-7364fa0c83fc.svg"
+  };
+  function socialBrand(platform, className = "social-platform-mark", showName = false) {
+    const name = Object.hasOwn(socialPlatforms, platform) ? socialPlatforms[platform] : platform;
+    const mark = el("span", className);
+    if (!Object.hasOwn(socialBrandAssets, platform)) { mark.textContent = name; return mark; }
+    const icon = el("img", "social-brand-icon");
+    icon.src = socialBrandAssets[platform]; icon.alt = showName ? "" : name;
+    icon.width = 24; icon.height = 24; icon.referrerPolicy = "no-referrer";
+    icon.addEventListener("error", () => { mark.replaceChildren(document.createTextNode(name)); }, { once: true });
+    mark.append(icon);
+    if (showName) mark.append(document.createTextNode(name));
+    return mark;
+  }
   function socialPost(record, target) {
     const platform = target.platform.toLowerCase(), known = Object.hasOwn(socialPlatforms, platform);
     const post = el("article", `social-post${known ? ` ${platform}-post` : ""}`);
@@ -784,7 +806,9 @@
     const header = el("div", "social-post-header"), identity = el("div", "social-identity");
     const avatar = el("div", "social-avatar", name.slice(0, 1).toUpperCase()); avatar.setAttribute("aria-hidden", "true");
     identity.append(el("strong", "social-name", name), el("span", "social-account", handle));
-    header.append(avatar, identity, el("span", "social-platform-mark", socialPlatforms[platform] || target.platform));
+    const media = target.media_indices?.length ? mediaView(record, target.media_indices) : null;
+    header.append(avatar, identity);
+    if (!shortVideo || !media) header.append(socialBrand(platform));
     const caption = el("div", "social-caption");
     if (target.title) caption.append(el("strong", "social-title", target.title));
     const copy = el("div", "social-body");
@@ -792,7 +816,6 @@
       copy.append(/^https?:\/\//.test(part) ? el("span", "social-post-link", part) : document.createTextNode(part));
     }
     caption.append(copy);
-    const media = target.media_indices?.length ? mediaView(record, target.media_indices) : null;
     const engagement = el("div", "social-engagement"); engagement.setAttribute("aria-hidden", "true");
     const icons = {
       like: "M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8z",
@@ -809,7 +832,7 @@
     }
     if (shortVideo && media) {
       const stage = el("div", "social-video-stage"); stage.append(media, engagement);
-      post.append(el("div", "social-video-brand", socialPlatforms[platform]), stage, header, caption);
+      post.append(socialBrand(platform, "social-video-brand", true), stage, header, caption);
     } else if (platform === "instagram" && media) {
       post.append(header, media, engagement, caption);
     } else {
