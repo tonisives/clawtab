@@ -9,11 +9,12 @@
 
 typedef void (*NfnCallback)(const char *);
 static NfnCallback callback;
-static const CGFloat shadowInset = 40, shadowBottom = 48;
+static const CGFloat shadowInset = 64, shadowBottom = 80;
 
 @interface NfnWebView : WKWebView
 @property NSTrackingArea *resizeTracking;
 @property NSCursor *(^resizeCursor)(NSEvent *);
+@property BOOL showingResizeCursor;
 @end
 @implementation NfnWebView
 // Deliver the activating mouse-down to buttons, reply fields, and drag handles.
@@ -21,13 +22,20 @@ static const CGFloat shadowInset = 40, shadowBottom = 48;
 - (void)updateTrackingAreas {
     [super updateTrackingAreas];
     if (self.resizeTracking) [self removeTrackingArea:self.resizeTracking];
-    self.resizeTracking = [[NSTrackingArea alloc] initWithRect:NSZeroRect options:NSTrackingCursorUpdate | NSTrackingMouseMoved | NSTrackingActiveAlways | NSTrackingInVisibleRect owner:self userInfo:nil];
+    // Cursor-update tracking does not support inactive applications.
+    self.resizeTracking = [[NSTrackingArea alloc] initWithRect:NSZeroRect options:NSTrackingMouseMoved | NSTrackingMouseEnteredAndExited | NSTrackingActiveAlways | NSTrackingInVisibleRect owner:self userInfo:nil];
     [self addTrackingArea:self.resizeTracking];
 }
 - (void)cursorUpdate:(NSEvent *)event {
     NSCursor *cursor = self.resizeCursor ? self.resizeCursor(event) : nil;
-    if (cursor) [cursor set]; else [super cursorUpdate:event];
+    if (cursor) [cursor set];
+    else if (self.showingResizeCursor) [NSCursor.arrowCursor set];
+    else [super cursorUpdate:event];
+    self.showingResizeCursor = cursor != nil;
 }
+- (void)mouseMoved:(NSEvent *)event { [super mouseMoved:event]; [self cursorUpdate:event]; }
+- (void)mouseEntered:(NSEvent *)event { [super mouseEntered:event]; [self cursorUpdate:event]; }
+- (void)mouseExited:(NSEvent *)event { [super mouseExited:event]; self.showingResizeCursor = NO; }
 @end
 
 @interface NfnPanel : NSPanel
@@ -97,6 +105,7 @@ static const CGFloat shadowInset = 40, shadowBottom = 48;
 @property CGFloat surfaceRightOffset;
 @property BOOL surfaceResizable;
 @property NSNumber *lastWindowFocus;
+@property NSNumber *lastPointerFocus;
 @property BOOL notchPlacement;
 @property NSString *lastGeometry;
 @property NSMutableDictionary<NSString *, NSDictionary *> *notchGeometry;
@@ -500,7 +509,12 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
 }
 
 - (void)updateMousePassthrough {
-    self.panel.ignoresMouseEvents = !self.pointerDown && !self.dragging && !NSPointInRect(NSEvent.mouseLocation, [self surfaceFrame]);
+    BOOL inside = self.panel.visible && NSPointInRect(NSEvent.mouseLocation, [self surfaceFrame]);
+    self.panel.ignoresMouseEvents = !self.pointerDown && !self.dragging && !inside;
+    if (self.ready && ![self.lastPointerFocus isEqual:@(inside)]) {
+        self.lastPointerFocus = @(inside);
+        [self push:@{@"type":@"pointer_focus", @"active":@(inside)}];
+    }
 }
 
 - (void)configureFocusShortcut {

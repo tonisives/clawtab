@@ -1637,6 +1637,7 @@
     renderMenu(); cleanupRemoteMedia(); if (resizing || !animate) size(); else if (!continuingAnimation) animateLayout(before, !queue && !menu && !settingsOpen);
   }
   function receive(value) {
+    if (value.type === "pointer_focus") { setPointerFocus(Boolean(value.active)); return; }
     if (value.type === "window_focus") {
       nativeWindowFocus = Boolean(value.active); refreshHints(); return;
     }
@@ -1743,6 +1744,13 @@
   const hintOverlay = el("div", "keyboard-hints");
   hintOverlay.setAttribute("aria-hidden", "true"); document.body.append(hintOverlay);
   function hasWindowFocus() { return nativeWindowFocus ?? document.hasFocus(); }
+  function setPointerFocus(active) {
+    const entered = active && !hovering;
+    hovering = active;
+    host.dataset.pointerActive = String(Boolean(active && !snapshot.remote && !preview));
+    if (active) pauseTimer(); else resumeTimer();
+    if (entered && snapshot.settings?.hover_expand && current && !expanded) openRecord(current);
+  }
   function syncFocusAppearance(active = hasWindowFocus()) {
     const desktop = String(!snapshot.remote && !preview), keyboardActive = String(desktop === "true" && active);
     if (host.dataset.desktop !== desktop) host.dataset.desktop = desktop;
@@ -1914,8 +1922,8 @@
   window.addEventListener("blur", () => { syncFocusAppearance(nativeWindowFocus ?? false); hintInput = ""; hintOverlay.replaceChildren(); hintTargets = []; hintLabels = []; });
   window.addEventListener("focus", refreshHints);
   setInterval(refreshHints, 80);
-  host.addEventListener("mouseenter", () => { hovering = true; pauseTimer(); if (snapshot.settings?.hover_expand && current && !expanded) openRecord(current); });
-  host.addEventListener("mouseleave", () => { hovering = false; resumeTimer(); });
+  host.addEventListener("mouseenter", () => setPointerFocus(true));
+  host.addEventListener("mouseleave", () => setPointerFocus(false));
   document.addEventListener("pointerdown", event => { if (event.target.closest("input,textarea,select")) native({ native: "text_focus", active: true }); });
   document.addEventListener("focusin", event => { if (event.target.matches("input,textarea,select")) { focused = true; pauseTimer(); } });
   document.addEventListener("focusout", () => requestAnimationFrame(() => {

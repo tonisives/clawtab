@@ -964,6 +964,7 @@
   hintSnapshot.settings.keyboard_hints = false;
   window.nfn.receive(hintSnapshot); await sleep(120);
   assert(!document.querySelector(".keyboard-hint"), "keyboard hints default off");
+  window.nfn.receive({ type: "pointer_focus", active: false });
   const originalHasFocus = document.hasFocus;
   document.hasFocus = () => true;
   window.nfn.receive({ type: "keyboard_focus", active: true }); await sleep(100);
@@ -984,6 +985,11 @@
   assert(getComputedStyle(document.querySelector(".brand img")).filter === "grayscale(1)" && getComputedStyle(document.querySelector(".todo-ring")).filter === "grayscale(1)", "passive claw and task icons are gray");
   const passiveBounds = focusHost.getBoundingClientRect();
   assert(passiveBounds.width === focusBounds.width && passiveBounds.height === focusBounds.height, "focus decoration preserves bar geometry");
+  window.nfn.receive({ type: "pointer_focus", active: true }); await sleep(100);
+  assert(focusHost.dataset.pointerActive === "true" && focusHost.dataset.keyboardActive === "false" && !document.querySelector(".keyboard-hint"), "pointer hover colors the passive bar without enabling keyboard shortcuts");
+  assert(getComputedStyle(document.querySelector(".brand img")).filter === "none" && getComputedStyle(document.querySelector(".todo-ring")).filter === "none" && getComputedStyle(focusHost).boxShadow === activeShadow, "native pointer hover restores colored title buttons and the active shadow");
+  window.nfn.receive({ type: "pointer_focus", active: false }); await sleep(100);
+  assert(getComputedStyle(document.querySelector(".brand img")).filter === "grayscale(1)" && getComputedStyle(focusHost).boxShadow !== activeShadow, "leaving a passive bar restores gray buttons and the passive shadow");
   document.hasFocus = () => true;
   window.dispatchEvent(new Event("focus")); await sleep(100);
   assert(document.querySelector(".keyboard-hint"), "hints return on keyboard focus without changing the preference");
