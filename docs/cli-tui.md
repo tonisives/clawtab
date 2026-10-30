@@ -62,6 +62,7 @@ Closing the terminal keeps its agent running by default. Add `--close-with-termi
 | `message list [--pending] [--offset N] [--query TEXT]` | List messages and their responses; search terms match message content and source fields |
 | `message reply <id> [text] [--action <id>]` | Answer a question or choose an action |
 | `message get\|wait\|cancel\|read\|dismiss <id>` | Inspect a message or change its state |
+| `message focus <id>` | Show a message's card and give the macOS desktop message bar keyboard focus |
 | `message show\|settings\|templates` | Open the queue or manage delivery and card layouts |
 
 Messages appear on desktop and also reach mobile while the Mac is idle, locked, or its screen is asleep. Use `--channel mobile` for immediate mobile delivery, `--channel telegram` for Telegram, or repeat the flag to include several channels. Questions and approvals support `--wait` and repeated `--choice [id=]label` options. `nfn` and `telegram send` remain compatibility aliases. See [Messages and notifications](../desktop/docs/enhanced-notifications.md) for delivery settings and JSON requests.

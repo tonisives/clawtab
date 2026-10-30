@@ -36,6 +36,7 @@ pub async fn message(args: &[String]) -> Result<Value, String> {
             "cwtctl message get|wait|cancel|read|dismiss ID [--timeout SECONDS]",
             "cwtctl message ignore|unignore ID",
             "cwtctl message ignored-agents",
+            "cwtctl message focus ID",
             "cwtctl message reply ID [TEXT] [--action ID]",
             "cwtctl message show|settings|templates [args]"
         ]}));
@@ -277,6 +278,7 @@ pub async fn run(args: &[String]) -> Result<Value, String> {
             "cwtctl nfn templates list",
             "cwtctl nfn templates validate [FILE | --stdin]",
             "cwtctl nfn show",
+            "cwtctl nfn focus ID",
             "cwtctl nfn todos list",
             "cwtctl nfn todos link NOTE.md [agents.json]",
             "cwtctl nfn settings [FILE.yaml | --stdin | --json | --ui]"
@@ -356,6 +358,15 @@ pub async fn run(args: &[String]) -> Result<Value, String> {
             } else {
                 call(NfnCommand::Get { id }).await
             }
+        }
+        "focus" => {
+            if args.len() != 2 || args[1].trim().is_empty() || args[1].starts_with('-') {
+                return Err("Use cwtctl message focus ID".into());
+            }
+            call(NfnCommand::Reveal {
+                id: args[1].clone(),
+            })
+            .await
         }
         "show" => {
             validate_flags(&args[1..], &[], &[])?;
@@ -493,6 +504,23 @@ async fn wait(id: &str, timeout: Option<u64>) -> Result<Value, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn focus_requires_one_message_id() {
+        for args in [
+            vec!["focus"],
+            vec!["focus", ""],
+            vec!["focus", "--pending"],
+            vec!["focus", "id", "extra"],
+        ] {
+            let args = args.into_iter().map(str::to_string).collect::<Vec<_>>();
+            assert_eq!(
+                message(&args).await.unwrap_err(),
+                "Use cwtctl message focus ID"
+            );
+            assert_eq!(run(&args).await.unwrap_err(), "Use cwtctl message focus ID");
+        }
+    }
 
     fn message_args(args: &[&str]) -> Result<(NfnRequest, bool, Option<u64>), String> {
         parse_message(
