@@ -91,4 +91,11 @@ grep -Fxq $'action\t@1\t0' "$OPTION_CHANGES_FILE"
 grep -Fxq $'pane-action\t%1\t0' "$OPTION_CHANGES_FILE"
 grep -q 'set-option -pqu -t %1 @clawtab-agent-pane-last-action-at' "$TEST_DIR/calls"
 grep -q 'set-window-option -qu -t @1 @clawtab-agent-last-action-at' "$TEST_DIR/calls"
+# A pane turning idle still updates its border when another pane keeps the
+# window working. Its cached title does not need another provider query.
+test_panes=$'%1|||@1|||1|||1|||1|||0|||0|||1|||0|||0|||0|||0|||0|||0|||1\n%2|||@1|||1|||1|||1|||0|||0|||0|||0|||0|||0|||0|||0|||0|||1'
+apply_snapshot '{"AgentActivity":[{"pane_id":"%1","working":false,"asking":false},{"pane_id":"%2","working":true,"asking":false}]}'
+grep -Fxq $'pane\t%1\t1\t0\t0\t0\t0' "$OPTION_CHANGES_FILE"
+if grep -q '^window\|^pane-title' "$OPTION_CHANGES_FILE"; then exit 1; fi
+grep -q '@clawtab-agent-pane-working 0' "$TEST_DIR/calls"
 printf 'agent alert tests passed\n'

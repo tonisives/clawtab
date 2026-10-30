@@ -129,6 +129,10 @@ if [[ "$current_border" == *"$old_alert_border"* ]]; then
 elif [[ "$current_border" != *"@clawtab-agent-pane-alert"* ]]; then
     current_border="${alert_border}${current_border}"
 fi
+if [[ "$current_border" != *"@clawtab-agent-pane-working"* ]]; then
+    pane_activity='#{?#{@clawtab-daemon-running},#{?#{==:#{@clawtab-agent-pane-present},1},#{?#{==:#{@clawtab-agent-pane-alert},1},,#{?#{==:#{@clawtab-agent-asking},1},#[fg=yellow#,bold]Waiting #[default],#{?#{==:#{@clawtab-agent-pane-working},1},#[fg=cyan#,bold]Working #[default],#[fg=green]Idle #[default]}}},},}'
+    current_border="${pane_activity}${current_border}"
+fi
 tmux set-option -g pane-border-format "$current_border"
 tmux set-option -g pane-border-status top
 

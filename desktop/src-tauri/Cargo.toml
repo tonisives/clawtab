@@ -69,7 +69,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-uti
 cron = "0.15"
 chrono = { version = "0.4", features = ["serde"] }
 chrono-tz = "0.10"
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.32", features = ["bundled", "hooks"] }
 log = "0.4"
 env_logger = "0.11"
 anyhow = "1"
