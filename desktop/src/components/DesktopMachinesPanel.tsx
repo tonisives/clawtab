@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { AddMachineButton, ConnectMachine, HostedWorkspacePanel, ManageMachinesButton, MachineOnboardingProvider, MachinesPanel, RentalsPanel } from "@clawtab/shared"
+import { AddMachineButton, ConnectMachine, HostedWorkspacePanel, ManageMachinesButton, MachineOnboardingProvider, MachinesPanel, RentalsPanel, SegmentedControl } from "@clawtab/shared"
 import { openUrl } from "@tauri-apps/plugin-opener"
 import { approveDesktopMachine, localHostRequest, desktopMachineApi, localMachineId } from "../machines/connection"
 import { checkRemoteConnection, retryRemoteConnection, useRemoteConnection } from "../machines/remoteConnection"
@@ -7,8 +7,6 @@ import { RemoteConnectionStatus } from "./RemoteConnectionStatus"
 
 export let DesktopMachinesPanel = ({ onOpenAccount, manage = true }: { onOpenAccount: () => void; manage?: boolean }) => {
   let [machineType, setMachineType] = useState<"personal" | "rented">("personal")
-  let showPersonal = () => setMachineType("personal")
-  let showRented = () => setMachineType("rented")
   let remote = useRemoteConnection()
   useEffect(() => { void checkRemoteConnection() }, [])
   let retryConnection = () => { void retryRemoteConnection() }
@@ -23,6 +21,7 @@ export let DesktopMachinesPanel = ({ onOpenAccount, manage = true }: { onOpenAcc
     machineType={machineType}
     presentation="panel"
     showConnectionStatus={false}
+    machineListAction={<AddMachineButton style={{ alignSelf: "center" }} />}
     localMachineId={localMachineId()}
     onOpenAccount={onOpenAccount}
     approvePairing={approveDesktopMachine}
@@ -38,13 +37,9 @@ export let DesktopMachinesPanel = ({ onOpenAccount, manage = true }: { onOpenAcc
       {remote.error && <><p role="alert">{remote.error}</p><button className="btn" onClick={retryConnection}>Retry connection</button></>}
       {remote.phase !== "connected" && <button className="btn" onClick={onOpenAccount}>Open Remote Access</button>}
       <HostedWorkspacePanel api={desktopMachineApi} />
-      {manage && <div className="desktop-machines-tabs" role="group" aria-label="Machine type">
-        <button className="desktop-machines-tab" aria-pressed={machineType === "personal"} onClick={showPersonal}>Personal machines</button>
-        <button className="desktop-machines-tab" aria-pressed={machineType === "rented"} onClick={showRented}>Rented boxes</button>
-      </div>}
+      {manage && <div style={{ display: "flex", margin: "16px 0" }}><SegmentedControl label="Machine type" options={[{ value: "personal", label: "Personal machines" }, { value: "rented", label: "Rented boxes" }]} value={machineType} onChange={setMachineType} /></div>}
       <section className={manage ? "desktop-machines-management" : undefined} aria-label={manage ? (machineType === "personal" ? "Personal machines" : "Rented boxes") : "Add machine"}>
         {manage && <header className="desktop-machines-heading">
-          <AddMachineButton />
           <h3>{machineType === "personal" ? "Personal machines" : "Rented boxes"}</h3>
           <p>{machineType === "personal" ? "Connect and manage your own computers, including this Mac." : "Manage your rented servers, agent setup, payments, and renewals."}</p>
         </header>}

@@ -85,6 +85,7 @@ export {
 export type { AvailableAction } from "./util/status";
 
 // Components
+export { SegmentedControl } from "./components/SegmentedControl";
 export { AgentAlertCards } from "./components/AgentAlertCards";
 export { StatusBadge } from "./components/StatusBadge";
 export { QueryLabel } from "./components/QueryLabel";
