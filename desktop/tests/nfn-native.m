@@ -56,38 +56,72 @@ static void sendResizePointer(NSEventType type, NSPoint screenPoint) {
     [NSApp sendEvent:event];
 }
 
-static void waitForHoverRouting(NSUInteger attempt, BOOL (^ready)(void), void (^finish)(void)) {
+static void waitForHoverRouting(NSUInteger attempt, BOOL (^ready)(void), void (^retry)(NSUInteger), void (^finish)(void)) {
     if (ready() || attempt >= 15) { finish(); return; }
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 10), dispatch_get_main_queue(), ^{
-        waitForHoverRouting(attempt + 1, ready, finish);
+        if (retry) retry(attempt);
+        waitForHoverRouting(attempt + 1, ready, retry, finish);
     });
 }
 
-// Exercise WindowServer delivery; NSApp sendEvent skips tracking-area routing.
-static void verifyTrackedResizeHover(NSPoint point, void (^finish)(void)) {
+// Inactive panels can receive hover through the global monitor instead of WebKit.
+// Check WindowServer delivery and its displayed cursor, independent of that route.
+static void verifyNativeResizeHover(NSPoint point, void (^finish)(void)) {
     BOOL key = surface.panel.isKeyWindow;
+    BOOL keyboard = surface.panel.keyboardFocus, text = surface.panel.textFocus;
     pid_t foreground = NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier;
     NSCursor *(^original)(NSEvent *) = surface.web.resizeCursor;
     __block NSUInteger tracked = 0;
+    __block NSUInteger localMoves = 0, globalMoves = 0;
+    __block NSUInteger deliveredMoves = 0;
+    __block NSString *delivery = @"none";
+    void (^record)(NSEvent *) = ^(NSEvent *event) {
+        CGEventRef cg = event.CGEvent;
+        CGPoint location = cg ? CGEventGetLocation(cg) : CGPointMake(-1,-1);
+        CGFloat desktopTop = NSMaxY(NSScreen.screens.firstObject.frame);
+        BOOL expectedPoint = fabs(location.x-point.x) <= 1.1 && fabs(desktopTop-location.y-point.y) <= .5;
+        if (cg && expectedPoint && CGEventGetIntegerValueField(cg,kCGEventSourceUserData) == 0x4e464e43
+            && CGEventGetIntegerValueField(cg,kCGMouseEventWindowUnderMousePointer) == surface.panel.windowNumber
+            && CGEventGetIntegerValueField(cg,kCGMouseEventWindowUnderMousePointerThatCanHandleThisEvent) == surface.panel.windowNumber) deliveredMoves++;
+        delivery = [NSString stringWithFormat:@"window=%ld under=%lld handler=%lld point=%@", (long)event.window.windowNumber,
+            cg ? CGEventGetIntegerValueField(cg,kCGMouseEventWindowUnderMousePointer) : -1,
+            cg ? CGEventGetIntegerValueField(cg,kCGMouseEventWindowUnderMousePointerThatCanHandleThisEvent) : -1,
+            NSStringFromPoint(NSEvent.mouseLocation)];
+    };
+    id localMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskMouseMoved handler:^NSEvent *(NSEvent *event) { localMoves++; record(event); return event; }];
+    id globalMonitor = [NSEvent addGlobalMonitorForEventsMatchingMask:NSEventMaskMouseMoved handler:^(NSEvent *event) { globalMoves++; record(event); }];
     surface.web.resizeCursor = ^NSCursor *(NSEvent *event) { tracked++; return original(event); };
     CGFloat desktopTop = NSMaxY(NSScreen.screens.firstObject.frame);
     void (^move)(CGFloat) = ^(CGFloat dx) {
         CGEventRef event = CGEventCreateMouseEvent(NULL, kCGEventMouseMoved, CGPointMake(point.x + dx, desktopTop - point.y), kCGMouseButtonLeft);
+        CGEventSetIntegerValueField(event,kCGEventSourceUserData,0x4e464e43);
         CGEventPost(kCGHIDEventTap, event);
         CFRelease(event);
     };
     [NSCursor.arrowCursor set];
     move(-1);
-    waitForHoverRouting(0, ^BOOL { return !surface.panel.ignoresMouseEvents; }, ^{
+    waitForHoverRouting(0, ^BOOL { return !surface.panel.ignoresMouseEvents; }, nil, ^{
         if (surface.panel.ignoresMouseEvents) { fprintf(stderr, "Passive hover did not enable mouse routing\n"); exit(1); }
         move(0);
-        waitForHoverRouting(0, ^BOOL { return tracked > 0; }, ^{
+        waitForHoverRouting(0, ^BOOL { return deliveredMoves >= 2; }, ^(NSUInteger attempt) { move(attempt % 2 ? 0 : -1); }, ^{
             surface.web.resizeCursor = original;
-            if (!tracked || NSCursor.currentCursor == NSCursor.arrowCursor || surface.panel.isKeyWindow != key
+            [NSEvent removeMonitor:localMonitor];
+            [NSEvent removeMonitor:globalMonitor];
+            fprintf(stderr,"Hover delivery: panel=%ld target=%s actual=%s frame=%s passthrough=%d local=%lu global=%lu last=%s\n",(long)surface.panel.windowNumber,NSStringFromPoint(point).UTF8String,NSStringFromPoint(NSEvent.mouseLocation).UTF8String,NSStringFromRect(surface.panel.frame).UTF8String,surface.panel.ignoresMouseEvents,(unsigned long)localMoves,(unsigned long)globalMoves,delivery.UTF8String);
+            NSCursor *expected = NSCursor.resizeLeftRightCursor;
+            if (@available(macOS 15.0,*)) expected = [NSCursor frameResizeCursorFromPosition:NSCursorFrameResizePositionBottomRight inDirections:NSCursorFrameResizeDirectionsAll];
+            NSCursor *displayed = NSCursor.currentSystemCursor;
+            NSBitmapImageRep *actualImage = displayed ? [NSBitmapImageRep imageRepWithData:displayed.image.TIFFRepresentation] : nil;
+            NSBitmapImageRep *expectedImage = [NSBitmapImageRep imageRepWithData:expected.image.TIFFRepresentation];
+            BOOL exactCursor = actualImage && NSEqualPoints(displayed.hotSpot,expected.hotSpot)
+                && [[actualImage representationUsingType:NSBitmapImageFileTypePNG properties:@{}] isEqual:[expectedImage representationUsingType:NSBitmapImageFileTypePNG properties:@{}]];
+            BOOL pointerAtCorner = fabs(NSEvent.mouseLocation.x-point.x) <= 1.1 && fabs(NSEvent.mouseLocation.y-point.y) <= .5;
+            if (deliveredMoves < 2 || !pointerAtCorner || !exactCursor || surface.panel.isKeyWindow != key
+                || surface.panel.keyboardFocus != keyboard || surface.panel.textFocus != text
                 || NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier != foreground) {
-                fprintf(stderr, "OS-routed passive corner hover failed: tracking=%lu cursor=%s key=%d->%d\n", (unsigned long)tracked, NSCursor.currentCursor == NSCursor.arrowCursor ? "arrow" : "resize", key, surface.panel.isKeyWindow); exit(1);
+                fprintf(stderr, "OS-routed passive corner hover failed: delivered=%lu tracking=%lu system_cursor=%s point=%d key=%d->%d\n", (unsigned long)deliveredMoves,(unsigned long)tracked,exactCursor ? "native diagonal" : "mismatch",pointerAtCorner,key,surface.panel.isKeyWindow); exit(1);
             }
-            printf("OS-routed passive hover reached WebKit tracking: %lu callbacks, key=%d->%d.\n", (unsigned long)tracked, key, surface.panel.isKeyWindow);
+            printf("OS-routed passive hover: %lu verified panel events, %lu WebKit callbacks, displayed native diagonal, key=%d->%d.\n",(unsigned long)deliveredMoves,(unsigned long)tracked,key,surface.panel.isKeyWindow);
             [surface.web evaluateJavaScript:@"document.querySelector('#surface').dataset.pointerActive === 'true' && document.querySelector('#surface').dataset.keyboardActive === 'false' && getComputedStyle(document.querySelector('.brand img')).filter === 'none' && getComputedStyle(document.querySelector('.todo-ring')).filter === 'none' && !document.querySelector('.keyboard-hint')" completionHandler:^(id colored, NSError *error) {
                 if (error || ![colored boolValue]) { fprintf(stderr, "Native hover did not color title buttons while preserving passive keyboard state\n"); exit(1); }
                 saveSurfaceSnapshot(surface.notchPlacement ? @"/tmp/clawtab-nfn-hover-notch.png" : @"/tmp/clawtab-nfn-hover-right.png", finish);
@@ -108,7 +142,7 @@ static void verifyResizeCorners(void (^finish)(void)) {
         CGFloat y = [point[1] doubleValue];
         NSPoint location = [surface.web convertPoint:NSMakePoint([point[0] doubleValue], surface.web.isFlipped ? y : surface.web.bounds.size.height - y) toView:nil];
         NSPoint start = [surface.panel convertPointToScreen:location], end = NSMakePoint(start.x + 16, start.y);
-        verifyTrackedResizeHover(start, ^{
+        verifyNativeResizeHover(start, ^{
         sendResizePointer(NSEventTypeLeftMouseDown, start);
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 10), dispatch_get_main_queue(), ^{
             sendResizePointer(NSEventTypeLeftMouseDragged, end);
