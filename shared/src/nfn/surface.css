@@ -19,7 +19,7 @@ button.primary:hover { background: #7986cb30; }
 button.utility { border: 0; background: transparent; color: var(--muted); padding: 5px 7px; }
 button.utility:hover { color: #e4e4e4; background: #242424; }
 #surface { position: relative; isolation: isolate; flex-shrink: 0; display: flex; flex-direction: column; width: 520px; min-height: min(280px, var(--surface-max-height, 860px)); max-width: var(--surface-max-width, 1000px); max-height: var(--surface-max-height, 860px); background: #161616; border: 1px solid #333; border-radius: 10px; overflow: hidden; box-shadow: 0 7px 24px #0005; }
-#surface.details-open { width: 620px; }
+#surface.details-open { width: 620px; height: min(var(--surface-list-max-height, 80vh), var(--surface-max-height, 860px)); }
 #surface.notch { align-items: center; }
 #surface.right { align-items: flex-end; }
 .top, .card, .queue, .notification-settings { width: 100%; }
@@ -58,6 +58,7 @@ button.icon-button { display: flex; align-items: center; justify-content: center
 .notch.pill .top { height: 32px; padding: 2px 8px; }
 .card { display: flex; flex: 1; flex-direction: column; min-height: 0; padding: 12px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 .card > * { flex: none; }
+.message-content { min-height: 0; }
 .details-open .card { display: flex; flex-direction: column; overflow: hidden; }
 .details-open .card > * { flex: none; }
 .heading { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
@@ -111,8 +112,8 @@ button.send { flex: none; align-self: flex-end; min-width: 54px; padding: 7px 12
 .session-controls .open-session { grid-column: 2; }
 .notice { font-size: 12px; line-height: 1.45; margin-top: 8px; white-space: pre-wrap; overflow-wrap: anywhere; color: #ff9f0a; }
 .notice:empty { display: none; }
-.details-open .card > .details-content { flex: 0 1 auto; min-height: 0; }
-.details-content { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 10px; max-height: 360px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.details-open .card > .details-content { flex: 1; min-height: 0; }
+.details-content { margin-top: 8px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 .details-content > .meta { margin-bottom: 10px; }
 .body { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; margin-bottom: 12px; }
 .row { display: flex; gap: 10px; }
@@ -231,7 +232,8 @@ button.auto-yes-button[aria-checked="true"] { background: rgba(255, 159, 10, .15
 .keyboard-hint{position:absolute;transform:translate(-100%,-35%);background:#191919e6;color:#cfbd85;font:600 9px/1.1 ui-monospace,monospace;padding:0 2px;border:1px solid #cfbd8540;border-radius:2px;opacity:.85}
 
 #surface.user-sized > .card { flex: 1; overflow-y: auto; }
-#surface.user-sized.details-open .card > .details-content { flex: 1 0 70px; max-height: none; }
+#surface.user-sized.details-open > .card { overflow: hidden; }
+#surface.user-sized.details-open .card > .details-content { flex: 1; min-height: 0; }
 .resize-handle { position: absolute; z-index: 5; touch-action: none; }
 .resize-handle[hidden] { display: none; }
 .resize-w, .resize-e { top: var(--notch-overlap, 0px); bottom: 24px; width: 8px; cursor: ew-resize; }

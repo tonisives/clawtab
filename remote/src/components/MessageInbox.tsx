@@ -14,9 +14,10 @@ import { MessageSurface } from "./MessageSurface";
 import type { SurfaceMessage } from "./messageSurfaceTypes";
 import { nextId } from "../lib/wsRuntime";
 
-export function MessageInbox({ selection, popup = false, arrival, onSelectDetail, onNavigateAway, onNative }: {
+export function MessageInbox({ selection, popup = false, active = true, arrival, onSelectDetail, onNavigateAway, onNative }: {
   selection?: string | null;
   popup?: boolean;
+  active?: boolean;
   arrival?: string;
   onSelectDetail?: (target: NotificationDetailTarget) => void;
   onNavigateAway?: () => void;
@@ -79,14 +80,15 @@ export function MessageInbox({ selection, popup = false, arrival, onSelectDetail
   }), [navigate]);
   const machineKey = machines.filter(machine => machine.online).map(machine => machine.id).sort().join(",");
   useEffect(() => {
-    let active = true;
+    if (!active) return;
+    let mounted = true;
     for (const machine of latest.current.machines.filter(machine => machine.online)) {
       void machineHostRequest(machine.id, { action: "message", command: { op: "templates" } })
-        .then(value => { if (active) setTemplates(previous => ({ ...previous, [machine.id]: value })); })
+        .then(value => { if (mounted) setTemplates(previous => ({ ...previous, [machine.id]: value })); })
         .catch(() => {});
     }
-    return () => { active = false; };
-  }, [machineKey]);
+    return () => { mounted = false; };
+  }, [machineKey, active]);
   const todoMachine = messageTodoMachine(machines, selected, selection);
   const todoMachineRef = useRef(todoMachine);
   todoMachineRef.current = todoMachine;
@@ -97,7 +99,8 @@ export function MessageInbox({ selection, popup = false, arrival, onSelectDetail
     openAgent: paneId => openDetail({ kind: "process", paneId }),
   }), [openDetail]);
   useEffect(() => {
-    let active = true;
+    if (!active) return;
+    let mounted = true;
     let busy = false;
     setTodos({ items: [] });
     const refresh = async () => {
@@ -105,23 +108,23 @@ export function MessageInbox({ selection, popup = false, arrival, onSelectDetail
       busy = true;
       try {
         const value = await machineHostRequest(todoMachine.id, { action: "message", command: { op: "todos" } });
-        if (active) setTodos(value);
+        if (mounted) setTodos(value);
       } catch { /* The message inbox stays usable while its host reconnects. */ }
       finally { busy = false; }
     };
     void refresh();
     const timer = setInterval(refresh, 5000);
-    return () => { active = false; clearInterval(timer); };
-  }, [todoMachine?.id, todoMachine?.online]);
+    return () => { mounted = false; clearInterval(timer); };
+  }, [todoMachine?.id, todoMachine?.online, active]);
   const command = useCallback(async (command: Record<string, unknown>) => {
     return isMessageTodoCommand(command) ? todoCommand(command) : controller.execute(command);
   }, [controller, todoCommand]);
   const snapshot = useMemo(() => ({
-    type: "snapshot", remote: true, visible: true, preview: false, arrival: popup ? arrival : undefined,
+    type: "snapshot", remote: true, visible: active, preview: false, arrival: popup && active ? arrival : undefined,
     records: records.map(surfaceRecord), pending_count: records.filter(messagePending).length,
     auto_yes_panes: [...autoYes], templates_by_machine: templates, todos,
     settings: { preview_seconds: 8, hover_expand: false, placement: "right" },
-  }), [records, autoYes, templates, todos, popup, arrival]);
+  }), [records, autoYes, templates, todos, popup, arrival, active]);
 
   const selectionReady = !selection || records.some(record => surfaceId(record) === selection)
     || machines.some(machine => machine.online && selection.startsWith(`${machine.id}::`));
@@ -129,6 +132,6 @@ export function MessageInbox({ selection, popup = false, arrival, onSelectDetail
     {!selectionReady && <Text accessibilityLiveRegion="polite" style={{ color: "#98989d", padding: 12, fontSize: 13 }}>
       Waiting for this message's machine to connect...
     </Text>}
-    <MessageSurface snapshot={snapshot} selection={selectionReady ? selection : null} popup={popup} onCommand={command} onNative={onNative} />
+    <MessageSurface snapshot={snapshot} active={active} selection={selectionReady ? selection : null} popup={popup} onCommand={command} onNative={onNative} />
   </View>;
 }

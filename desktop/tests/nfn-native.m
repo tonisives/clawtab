@@ -358,10 +358,11 @@ static void verifyExpansion(void (^finish)(void)) {
                 NSRect expanded = [surface surfaceFrame];
                 BOOL anchored = fabs(NSMaxY(expanded) - NSMaxY(compact)) < 1;
                 BOOL fixedCanvas = NSEqualRects(canvas, surface.panel.frame);
-                BOOL animation = NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion;
-                for (NSNumber *width in widths) if (width.doubleValue > compact.size.width && width.doubleValue < expanded.size.width) animation = YES;
-                if (expanded.size.width < 600 || expanded.size.height <= compact.size.height + 100 || !anchored || !animation || !fixedCanvas) {
-                    fprintf(stderr,"Expansion failed: compact=%.0fx%.0f drawn=%s expanded=%.0fx%.0f anchored=%d animated=%d\n",compact.size.width,compact.size.height,widths.description.UTF8String,expanded.size.width,expanded.size.height,anchored,animation); exit(1);
+                BOOL immediate = widths.count > 0;
+                for (NSNumber *width in widths) if (fabs(width.doubleValue - expanded.size.width) > 1) immediate = NO;
+                CGFloat maxHeight = [surface selectedScreen].visibleFrame.size.height * .8;
+                if (expanded.size.width < 600 || expanded.size.height <= compact.size.height + 100 || expanded.size.height > maxHeight + 1 || !anchored || !immediate || !fixedCanvas) {
+                    fprintf(stderr,"Expansion failed: compact=%.0fx%.0f drawn=%s expanded=%.0fx%.0f maxHeight=%.0f anchored=%d immediate=%d\n",compact.size.width,compact.size.height,widths.description.UTF8String,expanded.size.width,expanded.size.height,maxHeight,anchored,immediate); exit(1);
                 }
                 [surface.web takeSnapshotWithConfiguration:nil completionHandler:^(NSImage *image, NSError *snapshotError) {
                     if (snapshotError || !image) { fprintf(stderr,"Expanded snapshot failed\n"); exit(1); }
