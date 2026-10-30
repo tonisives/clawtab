@@ -34,6 +34,10 @@
     if (video) {
       await wait(() => video.readyState >= 2 && current.querySelector(".video-thumbnail")?.naturalWidth > 0, "portrait video did not decode a thumbnail");
       assert(video.videoWidth === 360 && video.videoHeight === 640 && video.muted, "portrait preview decodes the selected 360 by 640 media and starts muted");
+      const thumbnail = current.querySelector(".video-thumbnail"), canvas = document.createElement("canvas"); canvas.width = 36; canvas.height = 64;
+      const ctx = canvas.getContext("2d"); ctx.drawImage(thumbnail, 0, 0, 36, 64);
+      const pixels = ctx.getImageData(0, 0, 36, 64).data;
+      assert(pixels.some((channel, index) => index % 4 !== 3 && channel > 24), "portrait thumbnail contains decoded product footage");
       const rect = current.querySelector(".video-preview").getBoundingClientRect();
       assert(Math.abs(rect.width / rect.height - 9 / 16) < .01, "portrait preview preserves the actual video aspect ratio");
     } else await wait(() => current.querySelector(".media img")?.naturalWidth > 0, "the real product screenshot did not load");
@@ -49,8 +53,12 @@
   open("all-platforms");
   const tabs = [...document.querySelectorAll('.social-tabs [role="tab"]')], host = document.getElementById("surface");
   assert(tabs.length === targets.length, "all eight configured platforms have a selectable preview");
+  assert(!document.querySelector("video") && !fixture.calls.some(call => call.op === "media"), "unopened platform drafts do not download or initialize hidden videos");
+  let previousVideo = null;
   for (const [index, target] of targets.entries()) {
-    tabs[index].click(); await ready();
+    tabs[index].click();
+    if (previousVideo) assert(previousVideo.paused, "switching platforms pauses the previous video");
+    await ready();
     const current = panel(), post = current.querySelector(`.${target.platform}-post`), body = document.querySelector(".message-content");
     assert(post?.querySelector(".social-body").textContent === target.body && !post.textContent.includes("Agent note"), `${target.platform} retains its exact tailored copy separately from agent text`);
     assert(post.querySelector(".social-account").textContent === (target.platform === "linkedin" || target.account.startsWith("@") ? target.account : `@${target.account}`), `${target.platform} shows the account without inventing a LinkedIn handle`);
@@ -60,6 +68,11 @@
     assert(!post.querySelector("button:not(.media-play),a,input,textarea") && (!post.querySelector(".social-engagement") || post.querySelector(".social-engagement").getAttribute("aria-hidden") === "true"), `${target.platform} keeps preview decoration separate from review actions`);
     if (["tiktok", "youtube"].includes(target.platform)) assert(post.querySelector(".social-video-stage") && post.querySelector(".social-video-brand"), `${target.platform} uses a video-first platform layout`);
     if (target.platform === "instagram") assert(post.querySelector(".media").nextElementSibling.classList.contains("social-engagement"), "Instagram puts its caption after the media and action row");
+    previousVideo = post.querySelector("video");
+    if (previousVideo) {
+      post.querySelector(".media-play").click();
+      await wait(() => !previousVideo.paused, "the selected platform video did not start");
+    }
     current.querySelector(`[aria-label="${target.platform === "threads" ? "Request changes for" : "Approve"} ${target.platform}"]`).click();
     if (target.platform === "threads") {
       const feedback = current.querySelector("textarea"); feedback.value = "Use a more conversational opening for Threads."; feedback.dispatchEvent(new Event("input"));

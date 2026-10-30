@@ -844,16 +844,21 @@
     targets.forEach((target, index) => {
       const decision = state.decisions[index];
       const panel = el("section", "social-platform"); panel.id = `social-platform-${index}`; panel.setAttribute("role", "tabpanel");
+      const showPost = () => {
+        if (!panel._post) { panel._post = socialPost(record, target); panel.prepend(panel._post); }
+      };
       const tab = button(socialPlatforms[target.platform.toLowerCase()] || target.platform, () => {
         state.active = target.id;
         for (const [i, control] of tabControls.entries()) {
           control.setAttribute("aria-selected", String(targets[i].id === state.active));
           panels.children[i].hidden = targets[i].id !== state.active;
+          if (panels.children[i].hidden) panels.children[i].querySelectorAll("video").forEach(video => video.pause());
         }
+        showPost();
       });
       tab.setAttribute("role", "tab"); tab.setAttribute("aria-controls", panel.id); tab.setAttribute("aria-selected", String(target.id === state.active));
       panel.hidden = target.id !== state.active; tabControls.push(tab); tabs.append(tab);
-      panel.append(socialPost(record, target));
+      if (!panel.hidden) showPost();
       const actions = el("div", "social-decisions"), feedback = el("div", "social-feedback");
       const comment = el("textarea"); comment.rows = 2; comment.value = decision.comment || "";
       comment.maxLength = 32000;
