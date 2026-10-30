@@ -384,7 +384,7 @@
     for (const node of host.children) node.style.width = "";
   }
   function animateLayout(before, fadeContent = true) {
-    if (host.classList.contains("empty")) { size(); return; }
+    if (host.classList.contains("empty") || snapshot.remote) { size(); return; }
     const after = host.getBoundingClientRect();
     if (!reducedMotion.matches && !geometry.reduce_motion &&
         (Math.abs(before.width - after.width) > 1 || Math.abs(before.height - after.height) > 1)) {
@@ -392,7 +392,7 @@
       // Reflowing every animation frame makes the controls and output jump.
       for (const node of host.querySelectorAll(":scope > .top, :scope > .card, :scope > .queue, :scope > .notification-settings, :scope > .todo-view, :scope > .menu-overlay")) {
         node.style.width = `${after.width - (placement === "notch" ? 0 : 2)}px`;
-        if (fadeContent && !node.classList.contains("top")) {
+        if (fadeContent && !node.classList.contains("top") && !node.classList.contains("card")) {
           const fade = node.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 280, delay: 60, fill: "backwards" });
           fade.pause(); contentAnimations.push(fade);
         }
@@ -562,7 +562,7 @@
     if (records.get(current)?.details_available === false) return;
     pauseTimer(); stopContext(); expanded = true; details = !details;
     if (resizedSize) resizedSize.showDetails = details;
-    menu = null; renderedId = null; render(); startContext();
+    menu = null; render(false); startContext();
   }
   function toggleMenu(next) {
     if (menu === "agent") contextRequest = null;
@@ -810,12 +810,13 @@
       options.title = "Agent options"; options.setAttribute("aria-label", "Notification options"); options.setAttribute("aria-haspopup", "dialog"); node._options = options; tools.append(options);
     }
     node.append(heading);
+    const body = el("div", "message-content"); node._body = body; node.append(body);
     if (!agent) {
       const source = record.request.source || {};
       const label = [source.group, source.agent_title || source.task, source.browser_pane_id ? `BMUX pane ${source.browser_pane_id}` : source.pane_id ? `Pane ${source.pane_id}` : ""].filter(Boolean).join(" · ");
-      if (label) node.append(el("div", "notification-title source-attribution", label));
+      if (label) body.append(el("div", "notification-title source-attribution", label));
     }
-    if (agent && !record.question_id && record.request.title !== identity.group && record.request.title !== identity.title) node.append(el("div", "notification-title", record.request.title));
+    if (agent && !record.question_id && record.request.title !== identity.group && record.request.title !== identity.title) body.append(el("div", "notification-title", record.request.title));
     const messages = cardMessages(record);
     if (messages.length > 1) {
       const thread = el("ol", "message-thread"); thread.setAttribute("aria-label", `${messages.length} messages from this agent`);
@@ -826,13 +827,17 @@
         entry.append(header, el("div", "message", messageText(item)));
         thread.append(entry);
       }
-      node._thread = thread; node.append(thread);
-    } else node.append(el("div", "message", messageText(record)));
-    const layout = template(record).layout, primitives = {};
+      node._thread = thread; body.append(thread);
+    } else body.append(el("div", "message", messageText(record)));
+    const layout = template(record).layout;
     const content = el("div", "details-content"); node._content = content;
     content.addEventListener("scroll", () => { node._followLogs = content.scrollHeight - content.scrollTop - content.clientHeight < 30; });
     const bundle = socialReview(record, node);
-    if (!bundle && record.request.media?.length) node.append(mediaView(record, record.request.media.map((_, index) => index)));
+    if (bundle) {
+      const review = node.querySelector(".social-review");
+      const submit = review.querySelector(".social-submit");
+      body.append(review); node.append(submit);
+    } else if (record.request.media?.length) body.append(mediaView(record, record.request.media.map((_, index) => index)));
     const actions = el("div", "actions"); node._actions = actions;
     const choices = record.request.actions || [];
     for (const [index, action] of choices.filter(action => !bundle && action.kind !== "focus").entries()) {
@@ -855,8 +860,10 @@
       if (questionOptions) {
         const open = replyStates.get(record.id) ?? Boolean(drafts.get(record.id));
         const toggle = button(replyLabel, () => {
-          replyStates.set(record.id, !open); pauseTimer(); expanded = true; renderedId = null; render();
-          if (!open) { native({ native: "text_focus", active: true }); card?._reply?.focus({ preventScroll: true }); }
+          const next = !(replyStates.get(record.id) ?? Boolean(drafts.get(record.id)));
+          replyStates.set(record.id, next); pauseTimer(); expanded = true;
+          row.hidden = !next; toggle.setAttribute("aria-expanded", String(next)); render(false);
+          if (next) { native({ native: "text_focus", active: true }); input.focus({ preventScroll: true }); }
         }, "utility reply-toggle");
         toggle.setAttribute("aria-expanded", String(open)); toggle.setAttribute("aria-controls", "notification-reply-row"); reply.append(toggle);
       } else {
@@ -878,7 +885,7 @@
     const utilities = el("div", "controls");
     if (record.details_available !== false) {
       const detailButton = button(details ? "Hide details" : "Details", toggleDetails, "utility details-toggle");
-      detailButton.setAttribute("aria-expanded", String(details)); utilities.append(detailButton);
+      detailButton.setAttribute("aria-expanded", String(details)); node._detailsButton = detailButton; utilities.append(detailButton);
     }
     if (!snapshot.remote && record.request.source?.browser_pane_id && record.request.source?.browser_session) {
       utilities.classList.add("session-controls");
@@ -904,14 +911,37 @@
       }, "utility");
       openJob.title = "Show job folder in Finder"; utilities.append(openJob);
     }
-    if (details) {
-      content.append(el("div", "meta", metaText(record.request.source || {})));
-      if (hasBlock(layout, "logs")) { const section = el("div"); section.append(el("div", "block-label", "Recent output")); const logs = el("pre", "logs", "Loading recent output..."); node._logs = logs; section.append(logs); primitives.logs = section; }
-      renderBlocks(layout, content, record, true, primitives);
-      node.append(content);
-    }
     node.append(utilities);
     return node;
+  }
+  function syncCardDetails(record) {
+    if (!card) return;
+    card._body.hidden = details;
+    if (card._detailsButton) {
+      card._detailsButton.textContent = details ? "Hide details" : "Details";
+      card._detailsButton.setAttribute("aria-expanded", String(details));
+    }
+    const content = card._content;
+    if (!details) {
+      if (content.isConnected) {
+        content.remove(); content.replaceChildren(); card._logs = null;
+      }
+      return;
+    }
+    if (content.isConnected) return;
+    const node = card, layout = template(record).layout, primitives = {};
+    if (hasBlock(layout, "logs")) {
+      const section = el("div", "log-output");
+      section.append(el("div", "block-label", "Recent output"));
+      const logs = el("pre", "logs", "Loading recent output...");
+      node._logs = logs; section.append(logs); primitives.logs = section;
+    }
+    // Keep the message and inline media mounted while Details shows the output.
+    const detailBlocks = blocks => (blocks || []).filter(block => !["text", "media", "choices", "reply"].includes(block.type))
+      .map(block => block.children ? { ...block, children: detailBlocks(block.children) } : block);
+    renderBlocks(detailBlocks(layout), content, record, true, primitives);
+    card._followLogs = true;
+    card._body.after(content);
   }
   function updateCard() {
     if (!card || !current) return;
@@ -922,7 +952,7 @@
       const selection = card._reply ? [card._reply.selectionStart, card._reply.selectionEnd] : null;
       stopContext();
       const replacement = createCard(record); card.replaceWith(replacement); card = replacement;
-      card._content.scrollTop = scroll;
+      syncCardDetails(record); card._content.scrollTop = scroll;
       if (active && card._reply) { card._reply.focus({ preventScroll: true }); if (selection) card._reply.setSelectionRange(...selection); }
       startContext();
     }
@@ -1408,19 +1438,19 @@
   }
   function normalResizeSize() {
     const width = host.style.width, height = host.style.height, classes = host.className;
-    const contentDisplay = card?._content.style.display;
+    const contentDisplay = card?._content.style.display, bodyHidden = card?._body.hidden;
     host.style.width = ""; host.style.height = "";
     host.classList.remove("user-sized", "details-open");
-    if (card) card._content.style.display = "none";
+    if (card) { card._content.style.display = "none"; card._body.hidden = false; }
     const bounds = host.getBoundingClientRect();
     host.style.width = width; host.style.height = height; host.className = classes;
-    if (card) card._content.style.display = contentDisplay;
+    if (card) { card._content.style.display = contentDisplay; card._body.hidden = bodyHidden; }
     return { width: bounds.width, height: bounds.height };
   }
   function resizeTo(width, height, origin) {
     const east = placement !== "notch" && origin.edge.includes("e");
     const maxWidth = (east ? geometry.max_width_e : geometry.max_width) || geometry.max_width || 1000;
-    const maxHeight = geometry.max_height || 860;
+    const maxHeight = Math.min(geometry.max_height || 860, geometry.list_max_height || Infinity);
     width = Math.round(Math.max(Math.min(520, maxWidth), Math.min(width, maxWidth)));
     height = Math.round(Math.max(Math.min(280, maxHeight), Math.min(height, maxHeight)));
     const showDetails = records.get(current)?.details_available !== false
@@ -1429,7 +1459,7 @@
     if (east) resizeRightOffset = origin.rightOffset + width - origin.width;
     expanded = true; pauseTimer(); stopAnimation(); applyResizedSize();
     if (details !== showDetails) {
-      stopContext(); details = showDetails; menu = null; renderedId = null; render(false); startContext();
+      stopContext(); details = showDetails; menu = null; render(false); startContext();
     }
     size();
   }
@@ -1590,14 +1620,15 @@
       }
     } else if (current && records.has(current)) {
       host.querySelector(".queue")?.remove();
-      if (renderedId !== `${current}:${expanded}`) {
-        host.querySelector(".card")?.remove(); card = createCard(records.get(current)); host.append(card); renderedId = `${current}:${expanded}`;
+      if (renderedId !== current) {
+        host.querySelector(".card")?.remove(); card = createCard(records.get(current)); host.append(card); renderedId = current;
       }
-      updateCard();
+      updateCard(); syncCardDetails(records.get(current));
     } else { host.querySelector(".card")?.remove(); host.querySelector(".queue")?.remove(); renderedId = null; card = null; }
     renderMenu(); cleanupRemoteMedia(); if (resizing || !animate) size(); else if (!continuingAnimation) animateLayout(before, !queue && !menu && !settingsOpen);
   }
   function receive(value) {
+    if (value.type === "hide" && snapshot.remote) { hideBar(); return; }
     if (value.type === "keyboard_focus") {
       if (!value.active) { hintInput = ""; return; }
       hiddenByUser = false; explicitOpen = true; native({ native: "presentation", active: true });

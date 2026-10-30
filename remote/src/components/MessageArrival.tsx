@@ -27,17 +27,20 @@ export function MessageArrival() {
     }));
   }, [records, snapshots, arrivals, viewingMessages]);
   useEffect(() => { if (viewingMessages) setPopup(null); }, [viewingMessages]);
-  if (!target || viewingMessages) return null;
-  return <View style={[styles.popup, { top: insets.top + 52, right: Math.max(12, insets.right),
+  const active = Boolean(target) && !viewingMessages;
+  // Keep the local renderer ready between arrivals instead of starting WebKit
+  // after the popup is already visible.
+  return <View pointerEvents={active ? "auto" : "none"} accessibilityElementsHidden={!active} importantForAccessibility={active ? "auto" : "no-hide-descendants"}
+    style={[styles.popup, { opacity: active ? 1 : 0, top: insets.top + 52, right: Math.max(12, insets.right),
     width: Math.min(520, width - Math.max(12, insets.left) - Math.max(12, insets.right)),
     height: Math.min(430, height - insets.top - insets.bottom - 120) }]}>
     <View style={styles.toolbar}>
       <Pressable accessibilityRole="button" accessibilityLabel="Open this message" style={styles.open}
-        onPress={() => { router.push(messagePath(target) as never); setPopup(null); }}><Text style={styles.label}>Open message</Text></Pressable>
+        onPress={() => { if (target) router.push(messagePath(target) as never); setPopup(null); }}><Text style={styles.label}>Open message</Text></Pressable>
       <Pressable accessibilityRole="button" accessibilityLabel="Close message popup" style={styles.close}
         onPress={() => setPopup(null)}><Text style={styles.label}>Close</Text></Pressable>
     </View>
-    <MessageInbox popup selection={`${target.machine}::${target.id}`} arrival={popup?.arrival} onNavigateAway={() => setPopup(null)}
+    <MessageInbox popup active={active} selection={target ? `${target.machine}::${target.id}` : null} arrival={popup?.arrival} onNavigateAway={() => setPopup(null)}
       onNative={value => { if (value.native === "presentation" && value.active === false) setPopup(null); }} />
   </View>;
 }

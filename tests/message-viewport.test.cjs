@@ -27,7 +27,9 @@ function viewport() {
 
 test("mobile safe-area space disappears during keyboard use and returns after dismissal", () => {
   const v = viewport();
-  v.window.nfnMobile.setInsets(34, false); v.flush();
+  v.window.nfnMobile.setInsets(34, false);
+  assert.equal(v.properties["--message-safe-bottom"], "34px", "the native inset applies before the next animation frame");
+  v.flush();
   assert.equal(v.properties["--message-safe-bottom"], "34px");
   v.window.nfnMobile.setInsets(34, true); v.context.innerHeight = 460;
   v.window.visualViewport.height = 460; v.flush();
@@ -95,6 +97,7 @@ test("web host keeps full height through route entry and follows the outer keybo
     react: { useRef: current => ({ current }), useCallback: callback => callback, useEffect: callback => effects.push(callback) },
     "react/jsx-runtime": { jsx: (type, props) => ({ type, props }) },
     "../lib/messageSurfaceDocument.generated": { default: "fixture" },
+    "../lib/messageSurfaceBootstrap": { messageSurfaceInitialDocument: document => document },
   };
   const window = { innerHeight: 800, visualViewport: viewport, addEventListener() {}, removeEventListener() {} };
   vm.runInNewContext(source, { exports, require: name => dependencies[name],

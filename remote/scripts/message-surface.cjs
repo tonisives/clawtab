@@ -8,24 +8,28 @@ function messageDocument(root = path.resolve(__dirname, "../../shared/src/nfn"))
     .replace("/* NFN_CSS */", read("surface.css") + `
 html,body{width:100%;height:var(--message-height,100%);background:#161616;overflow:hidden}
 body{display:flex;justify-content:center}
-#surface,#surface.details-open,#surface.pill{width:100%;max-width:100%;max-height:100%;border:0;border-radius:0;box-shadow:none}
+#surface,#surface.details-open,#surface.pill{width:100%;height:100%;max-width:100%;max-height:100%;border:0;border-radius:0;box-shadow:none}
 #surface{height:100%;min-height:0;--surface-max-height:var(--message-height,100dvh)}
 .queue{flex:1;height:auto;padding-bottom:max(6px,var(--message-safe-bottom,env(safe-area-inset-bottom,0px)))}
-.card,.details-open .card{overflow-y:auto;padding-bottom:calc(12px + var(--message-safe-bottom,env(safe-area-inset-bottom,0px)))}
-.details-open .card>.details-content{flex:none}
+.card{overflow-y:auto;padding-bottom:calc(12px + var(--message-safe-bottom,env(safe-area-inset-bottom,0px)))}
+.details-open .card{overflow:hidden}
+.details-open .card>.details-content{flex:1;min-height:0}
 .top .brand{pointer-events:none}
 button.bar-toggle{touch-action:auto;cursor:pointer}
 button,input,select,textarea{font-size:16px}
 button{min-height:44px;border-radius:999px;padding:8px 16px;font-size:14px;font-weight:600}
-button.utility:not(.icon-button):not(.close):not(.nav-step):not(.menu-link):not(.reply-toggle):not(.auto-yes-switch):not(.todo-toggle){min-height:44px;padding:8px 16px;border:1px solid var(--line);background:#202020;color:var(--accent);border-radius:999px;font-size:14px;font-weight:600}
-button.utility:not(.icon-button):not(.close):not(.nav-step):not(.menu-link):not(.reply-toggle):not(.auto-yes-switch):not(.todo-toggle):hover{background:#292929}
+button.utility:not(.icon-button):not(.close):not(.nav-step):not(.menu-link):not(.reply-toggle):not(.auto-yes-switch):not(.todo-toggle):not([role="tab"]){min-height:44px;padding:8px 16px;border:1px solid var(--line);background:#202020;color:var(--accent);border-radius:999px;font-size:14px;font-weight:600}
+button.utility:not(.icon-button):not(.close):not(.nav-step):not(.menu-link):not(.reply-toggle):not(.auto-yes-switch):not(.todo-toggle):not([role="tab"]):hover{background:#292929}
 button.primary,.actions button,button.open-session,button.send{min-height:44px;padding:8px 16px;border-radius:999px;font-size:14px;font-weight:600;color:var(--accent);border-color:var(--accent);background:#7986cb1a}
 button.primary:hover,.actions button:hover,button.open-session:hover,button.send:hover{background:#7986cb30}
 button:active:not(:disabled){opacity:.65}
 button.bar-toggle,button.todo-toggle{min-height:0}
 button.icon-button{min-height:36px;border-radius:999px}
 button.close,button.nav-step{min-height:36px;min-width:36px;padding:4px}
-button.queue-item,button.menu-link,button.reply-toggle,button.auto-yes-switch,.segments button{border-radius:6px}
+button.queue-item,button.menu-link,button.reply-toggle{border-radius:6px}
+.segments button{min-height:36px;padding:4px 12px;border:0;border-radius:6px;background:transparent;color:var(--muted)}
+.segments button[aria-selected="true"]{background:#38383a;color:#e4e4e4}
+button.auto-yes-button{min-height:44px;padding:8px 16px;border-radius:999px}
 .todo-agent{margin-top:0}
 .todo-heading,.todo-row{align-items:center}
 .todo-add{grid-template-columns:minmax(0,1fr) auto}

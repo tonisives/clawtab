@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useRef } from "react";
 import document from "../lib/messageSurfaceDocument.generated";
+import { messageSurfaceInitialDocument } from "../lib/messageSurfaceBootstrap";
 import type { MessageSurfaceProps, SurfaceMessage } from "./messageSurfaceTypes";
 
 export function MessageSurface(props: MessageSurfaceProps) {
+  const source = useRef<string | null>(null);
+  if (source.current === null) source.current = messageSurfaceInitialDocument(document, props);
   const frame = useRef<HTMLIFrameElement>(null);
   const latest = useRef(props);
   latest.current = props;
@@ -38,6 +41,11 @@ export function MessageSurface(props: MessageSurfaceProps) {
   const send = useCallback((value: unknown) => frame.current?.contentWindow?.postMessage(value, "*"), []);
   const synchronize = useCallback(() => {
     if (!ready.current) return;
+    if (latest.current.active === false) {
+      if (selected.current !== "inactive") send({ type: "hide" });
+      selected.current = "inactive";
+      return;
+    }
     send(latest.current.snapshot);
     const selection = latest.current.selection ?? null;
     if (selection && selected.current !== selection) {
@@ -62,9 +70,9 @@ export function MessageSurface(props: MessageSurfaceProps) {
     window.addEventListener("message", receive);
     return () => window.removeEventListener("message", receive);
   }, [send, synchronize]);
-  useEffect(synchronize, [props.snapshot, props.selection, synchronize]);
+  useEffect(synchronize, [props.snapshot, props.selection, props.active, synchronize]);
 
-  return <iframe ref={frame} title="Messages" sandbox="allow-scripts" srcDoc={document}
+  return <iframe ref={frame} title="Messages" sandbox="allow-scripts" srcDoc={source.current}
     style={{ display: "block", width: "100%", height: "100%", flex: 1, minHeight: 0, border: 0, background: "#161616" }}
     onLoad={() => { ready.current = true; selected.current = null; synchronize(); }} />;
 }

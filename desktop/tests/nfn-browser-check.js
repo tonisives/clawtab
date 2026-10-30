@@ -60,16 +60,14 @@
   window.nfn.setPlacement({ placement: "right", max_width: 1000, max_height: 860, reduce_motion: false });
   const compactSize = document.querySelector("#surface").getBoundingClientRect();
   window.fixture.log = "Earlier output\n".repeat(60) + "\x1b[32mReady\x1b[0m \x1b[38;5;196mred\x1b[0m \x1b[38;2;12;34;56mRGB\x1b[0m\n<img src=x onerror=window.unsafeLog=true>\n\n  Last output  \x1b[0m\r\n" + "\x1b[0m   \r\n".repeat(25);
+  const detailCard = document.querySelector(".card"), detailActions = document.querySelector(".actions"), detailInput = document.querySelector("textarea");
   click("Details");
-  const resize = document.querySelector("#surface").getAnimations()[0];
-  assert(Boolean(resize), "Details starts an animated resize");
-  resize.pause(); resize.currentTime = 100;
-  const intermediateWidth = document.querySelector("#surface").getBoundingClientRect().width;
-  assert(intermediateWidth > 520 && intermediateWidth < 620, "resize interpolates through intermediate widths");
-  assert(document.querySelector(".card").getBoundingClientRect().width === 618, "Details keeps text at its final width throughout the resize");
+  assert(document.querySelector(".card") === detailCard && document.querySelector(".actions") === detailActions && document.querySelector("textarea") === detailInput, "Details retains the card, actions, and reply field on the first press");
+  assert(!document.querySelector("#surface").getAnimations().length && !detailCard.getAnimations().length && getComputedStyle(detailCard).opacity === "1", "Details replaces content immediately without fading or resizing the reading view");
+  assert(document.querySelector(".message-content").hidden && document.querySelector(".details-content"), "Details replaces the top message content with output");
   window.nfn.receive(window.fixture.snapshot());
-  assert(document.querySelector("#surface").getAnimations().includes(resize), "background snapshots do not restart a Details animation");
-  resize.finish(); await sleep(430);
+  assert(document.querySelector(".card") === detailCard && document.querySelector(".actions") === detailActions, "background snapshots keep the Details card and action targets mounted");
+  await sleep(30);
   const detailSize = document.querySelector("#surface").getBoundingClientRect();
   assert(detailSize.width === 620 && detailSize.height > compactSize.height + 200, "Details expands both width and reading space");
   window.nfn.setPlacement({ placement: "right", max_width: 1000, max_height: 860, reduce_motion: true });
@@ -83,8 +81,8 @@
   outputScroller.scrollTop = 0; window.fixture.log += "\nNew output"; await sleep(1100);
   assert(outputScroller.scrollTop === 0, "new output respects a user reading earlier lines");
   window.fixture.log = "Short output\n" + "\x1b[0m   \n".repeat(25); await sleep(1100);
-  assert(outputScroller.clientHeight < 360 && outputScroller.getBoundingClientRect().bottom - document.querySelector(".logs").getBoundingClientRect().bottom <= 12, "short output fits its content without reserved blank space below it");
-  assert(document.querySelector(".reply").getBoundingClientRect().bottom < document.querySelector(".details-content").getBoundingClientRect().top, "reply stays above the details scroller");
+  assert(outputScroller.clientHeight > 100 && document.querySelector("#surface").offsetHeight === Math.min(860, Math.round(innerHeight * .8)), "Details retains the available reading height even for short output");
+  assert(document.querySelector(".reply").getBoundingClientRect().top >= outputScroller.getBoundingClientRect().bottom && document.querySelector(".actions").getBoundingClientRect().top >= outputScroller.getBoundingClientRect().bottom, "reply and action buttons remain below the output reading area");
   assert(document.querySelector(".controls").getBoundingClientRect().top >= document.querySelector(".details-content").getBoundingClientRect().bottom && document.querySelector(".details-toggle").getBoundingClientRect().left < document.querySelector("#surface").getBoundingClientRect().left + 20, "Hide details remains in the bottom-left footer below the output");
   assert(!document.querySelector("select"), "agent settings stay hidden even when viewing details");
   document.querySelector('[aria-label="Notification options"]').click();
@@ -92,6 +90,7 @@
   assert(document.querySelector(".model-controls select"), "advanced agent controls remain available behind a button");
   document.querySelector('[aria-label="Close menu"]').click();
   click("Hide details"); await sleep(30);
+  assert(document.querySelector(".card") === detailCard && !document.querySelector(".message-content").hidden && document.querySelector("textarea") === detailInput, "Hide details restores the original message and composer without rebuilding the card");
   const contextCalls = window.fixture.contextCalls; await sleep(1150);
   assert(window.fixture.contextCalls === contextCalls && !document.querySelector(".logs, select"), "closing details stops polling and hides extra controls");
   assert(document.querySelectorAll(".actions button").length === 4, "additional choices are available without opening details");
@@ -137,6 +136,10 @@
   nav("Previous"); await sleep(30);
   resizeDrag("sw", -3000, 3000, true);
   assert(surface.offsetWidth === 1000 && surface.offsetHeight === 860 && !surface.classList.contains("resizing"), "resize clamps to display bounds and pointer cancellation ends dragging");
+  window.nfn.setPlacement({ placement: "right", max_width: 1000, max_height: 860, list_max_height: 640, reduce_motion: true });
+  resizeDrag("sw", -3000, 3000);
+  assert(surface.offsetHeight === 640 && document.querySelector(".actions").getBoundingClientRect().bottom <= surface.getBoundingClientRect().bottom, "desktop manual resizing respects the monitor eighty-percent height cap and keeps actions visible");
+  window.nfn.setPlacement({ placement: "right", max_width: 1000, max_height: 860, reduce_motion: true });
   window.nfn.collapse(); document.querySelector(".bar-toggle").click(); await sleep(30);
   assert(surface.offsetWidth === 520 && !surface.style.height && !document.querySelector(".logs"), "collapsing and expanding restores the normal size without Details");
   if (document.querySelector("h1").textContent !== "Review the launch post") nav("Previous");
@@ -233,7 +236,7 @@
   approval.request.body = shortContext; window.nfn.receive(window.fixture.snapshot());
   assert(document.querySelector(".reply-row").hidden && document.querySelector(".reply-toggle").getAttribute("aria-expanded") === "false", "questions with answer options start with the reply composer collapsed");
   click("Reply to agent"); await sleep(30);
-  assert(!document.querySelector(".reply-row").hidden && document.activeElement === document.querySelector("textarea"), "Reply to agent opens and focuses the composer");
+  assert(!document.querySelector(".reply-row").hidden && document.activeElement === document.querySelector("textarea") && !document.querySelector(".card").getAnimations().length && !document.querySelector("#surface").getAnimations().length, "Reply to agent opens and focuses the composer on the first press without an entrance animation");
   draft("Please clarify before continuing");
   document.querySelector('[aria-label="Notification list"]').click(); document.querySelector('[aria-label="Notification list"]').click(); await sleep(30);
   assert(!document.querySelector(".reply-row").hidden && document.querySelector("textarea").value === "Please clarify before continuing", "an open reply draft survives leaving and returning to the card");
@@ -1095,6 +1098,7 @@
     data: { targets: [{ id: "x", platform: "X", account: "@totovoto", body: "A concrete experience on X.", revision: "a".repeat(64), media_indices: [0] }, { id: "youtube", platform: "YouTube", account: "tonisdev", title: "A short screen demo", body: "The portrait version has a different opening.", revision: "b".repeat(64), media_indices: [] }] },
     actions: [{ id: "decide", label: "Send platform decisions", kind: "choice" }] };
   window.nfn.receive(window.fixture.snapshot(social.id)); window.nfn.receive({type:"open_record", id:social.id}); await sleep(60);
+  if (document.querySelector('.details-toggle')?.textContent === 'Hide details') click('Hide details');
   assert(document.querySelector('.social-account').textContent.includes('@totovoto') && Boolean(document.querySelector('.social-review .media img')), "social review shows the exact account and inline media without opening details");
   const tabs = [...document.querySelectorAll('.social-tabs button')]; tabs[1].click();
   const panel = [...document.querySelectorAll('.social-platform')].find(node => !node.hidden);
@@ -1103,6 +1107,12 @@
   assert(panel.querySelector('select').value === 'revise', "a platform comment switches only that platform to revision");
   tabs[0].click();
   assert(document.querySelector('.social-platform:not([hidden]) select').value === 'approve', "another platform keeps its independent approval");
+  const socialCard = document.querySelector('.card'), socialSubmit = document.querySelector('.social-submit');
+  click('Details'); await sleep(60);
+  assert(socialCard === document.querySelector('.card') && document.querySelector('.message-content').hidden && Boolean(document.querySelector('.logs')), "social Details replaces the platform reading area without rebuilding its card");
+  assert(document.querySelector('.social-submit') === socialSubmit && socialSubmit.getBoundingClientRect().bottom <= innerHeight, "platform decision submission stays visible below Details output");
+  click('Hide details');
+  assert(!document.querySelector('.message-content').hidden && document.querySelector('.social-platform textarea') && comment.value === 'Use a closer crop', "Hide details restores platform copy and its existing draft controls");
   document.querySelector('.social-submit').click(); await sleep(40);
   const sent = window.fixture.calls.find(command => command.op === 'respond' && command.id === social.id);
   assert(sent.action_id === 'decide' && sent.decisions[0].revision === 'a'.repeat(64) && sent.decisions[0].decision === 'approve' && sent.decisions[1].decision === 'revise' && sent.decisions[1].comment === 'Use a closer crop', "the shared surface sends exact revision hashes and scoped decisions together");

@@ -4,11 +4,12 @@ import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useMessageKeyboard } from "../hooks/useMessageKeyboard";
 import document from "../lib/messageSurfaceDocument.generated";
+import { messageSurfaceInitialDocument } from "../lib/messageSurfaceBootstrap";
 import type { MessageSurfaceProps, SurfaceMessage } from "./messageSurfaceTypes";
 
-const source = { html: document };
-
 export function MessageSurface(props: MessageSurfaceProps) {
+  const source = useRef<{ html: string } | null>(null);
+  if (!source.current) source.current = { html: messageSurfaceInitialDocument(document, props) };
   const view = useRef<WebView>(null);
   const insets = useSafeAreaInsets();
   const keyboard = useMessageKeyboard();
@@ -26,6 +27,11 @@ export function MessageSurface(props: MessageSurfaceProps) {
   }, []);
   const synchronize = useCallback(() => {
     if (!ready.current) return;
+    if (latest.current.active === false) {
+      if (selected.current !== "inactive") send({ type: "hide" });
+      selected.current = "inactive";
+      return;
+    }
     send(latest.current.snapshot);
     const selection = latest.current.selection ?? null;
     if (selection && selected.current !== selection) {
@@ -34,7 +40,7 @@ export function MessageSurface(props: MessageSurfaceProps) {
       send({ type: "show" }); selected.current = "";
     }
   }, [send]);
-  useEffect(synchronize, [props.snapshot, props.selection, synchronize]);
+  useEffect(synchronize, [props.snapshot, props.selection, props.active, synchronize]);
 
   const receive = async (raw: string) => {
     let value: SurfaceMessage;
@@ -48,7 +54,7 @@ export function MessageSurface(props: MessageSurfaceProps) {
   };
 
   return <View ref={keyboard.host} onLayout={keyboard.onLayout} style={{ flex: 1, minHeight: 0, backgroundColor: "#161616", paddingBottom: keyboard.overlap }}>
-    <WebView ref={view} source={source} style={{ flex: 1, backgroundColor: "#161616" }}
+    <WebView ref={view} source={source.current} style={{ flex: 1, backgroundColor: "#161616" }}
     javaScriptEnabled originWhitelist={["*"]} allowsInlineMediaPlayback mediaPlaybackRequiresUserAction
     keyboardDisplayRequiresUserAction={false} hideKeyboardAccessoryView
     automaticallyAdjustContentInsets={false} contentInsetAdjustmentBehavior="never" bounces={false}

@@ -30,7 +30,7 @@ export default function NotificationsLayout() {
   return (
     <Stack
       screenOptions={{
-        animation: "slide_from_right",
+        animation: "none",
         contentStyle: styles.content,
       }}
     >

@@ -117,7 +117,7 @@ test("arrival tracking initializes hosts independently and ignores replayed hist
   assert.equal(tracker.observe([a, b, fresh], snapshots), fresh);
 });
 
-test("the popup animates new records while preserving its current message", () => {
+test("the warm popup presents new records while preserving its current message", () => {
   const states = [], effects = [];
   let cursor = 0, changed = false, records = [], snapshots = {}, pathname = "/";
   const inbox = Symbol("MessageInbox");
@@ -159,20 +159,21 @@ test("the popup animates new records while preserving its current message", () =
     } while (changed);
     return tree?.props.children.find(child => child.type === inbox)?.props ?? null;
   };
-  assert.equal(render(), null);
+  assert.equal(render().active, false);
   const old = record("mac-a", "old");
   records = [old]; snapshots = { "mac-a": { messages_changed: { records } } };
-  assert.equal(render(), null);
+  assert.equal(render().active, false);
   const first = record("mac-a", "first"); records = [old, first];
   assert.equal(render().arrival, "mac-a::first");
+  assert.equal(render().active, true);
   const second = record("mac-a", "second"); records = [old, first, second];
   const popup = render();
   assert.equal(popup.selection, "mac-a::first");
   assert.equal(popup.arrival, "mac-a::second");
   pathname = "/notifications/message/first";
-  assert.equal(render(), null);
+  assert.equal(render().active, false);
   pathname = "/";
-  assert.equal(render(), null);
+  assert.equal(render().active, false);
 });
 
 function harness(records = [record("mac-a"), record("mac-b")]) {
@@ -342,6 +343,29 @@ test("remote task controls reject desktop source linking and disconnected mutati
   await assert.rejects(execute({ op: "todo_update", id: "task", checked: true }), /Connect/);
 });
 
+test("the local document paints its exact initial message before the ready bridge responds", () => {
+  const { messageSurfaceInitialDocument } = load("messageSurfaceBootstrap");
+  const snapshot = { type: "snapshot", remote: true, records: [record("mac-b")] };
+  const html = messageSurfaceInitialDocument("<html><body></body></html>", { snapshot, selection: "mac-b::same-id", popup: true });
+  const sent = [];
+  vm.runInNewContext(html.match(/<script>([\s\S]*?)<\/script>/)[1], { window: { nfn: { receive: value => sent.push(value) } } });
+  assert.equal(sent.length, 2);
+  assert.equal(JSON.stringify(sent[0]), JSON.stringify(snapshot));
+  assert.equal(JSON.stringify(sent[1]), JSON.stringify({ type: "open_record", id: "mac-b::same-id", popup: true }));
+});
+
+test("initial message data cannot terminate the bootstrap script and inactive popups stay empty", () => {
+  const { messageSurfaceInitialDocument } = load("messageSurfaceBootstrap");
+  const document = "<html><body></body></html>", text = "</script><script>window.injected=true</script>\u2028\u2029";
+  const html = messageSurfaceInitialDocument(document, { snapshot: { type: "snapshot", text } });
+  assert.equal((html.match(/<script>/g) || []).length, 1);
+  const sent = [];
+  vm.runInNewContext(html.match(/<script>([\s\S]*?)<\/script>/)[1], { window: { nfn: { receive: value => sent.push(value) } } });
+  assert.equal(sent[0].text, text);
+  assert.equal(sent[1].type, "show");
+  assert.equal(messageSurfaceInitialDocument(document, { snapshot: {}, active: false }), document);
+});
+
 for (const variant of ["MessageSurface.web.tsx", "MessageSurface.tsx"]) {
   test(`${variant}: clearing and restoring a deep link cannot retain the previous message`, () => {
     const refs = [], effects = [], sent = [];
@@ -359,16 +383,17 @@ for (const variant of ["MessageSurface.web.tsx", "MessageSurface.tsx"]) {
       "react-native": { View: "View" },
       "react-native-safe-area-context": { useSafeAreaInsets: () => ({ bottom: 34 }) },
       "../hooks/useMessageKeyboard": { useMessageKeyboard: () => ({ host: { current: null }, overlap: 0, onLayout() {} }) },
-      "../lib/messageSurfaceDocument.generated": { default: "fixture document" },
+      "../lib/messageSurfaceDocument.generated": { default: "<html><body></body></html>" },
+      "../lib/messageSurfaceBootstrap": load("messageSurfaceBootstrap"),
     };
     const source = ts.transpileModule(fs.readFileSync(path.resolve(base, `../components/${variant}`), "utf8"), {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
     }).outputText;
     const exports = {};
     vm.runInNewContext(source, { exports, require: name => dependencies[name], window: { addEventListener() {}, removeEventListener() {} } });
-    const render = selection => {
+    const render = (selection, active = true) => {
       cursor = 0; effects.length = 0;
-      const root = exports.MessageSurface({ snapshot: { type: "snapshot" }, selection, onCommand: async () => ({}) });
+      const root = exports.MessageSurface({ snapshot: { type: "snapshot" }, selection, active, onCommand: async () => ({}) });
       const node = root.type === "View" ? root.props.children : root;
       node.props.ref.current = frame;
       effects.forEach(effect => effect());
@@ -387,5 +412,12 @@ for (const variant of ["MessageSurface.web.tsx", "MessageSurface.tsx"]) {
     render("mac-a::review");
     assert.equal(sent.at(-1).type, "open_record");
     assert.equal(sent.at(-1).id, "mac-a::review");
+    const initialSource = variant.includes(".web") ? initial.props.srcDoc : initial.props.source;
+    const inactive = render(null, false);
+    assert.equal(sent.at(-1).type, "hide");
+    const reopened = render("mac-b::other");
+    assert.equal(sent.at(-1).id, "mac-b::other");
+    assert.equal(variant.includes(".web") ? reopened.props.srcDoc : reopened.props.source, initialSource, "the warm renderer document is not reloaded on activation or selection changes");
+    assert.equal(variant.includes(".web") ? inactive.props.srcDoc : inactive.props.source, initialSource);
   });
 }
