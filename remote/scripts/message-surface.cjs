@@ -13,7 +13,6 @@ body{display:flex;justify-content:center}
 .queue{flex:1;height:auto;padding-bottom:max(6px,var(--message-safe-bottom,env(safe-area-inset-bottom,0px)))}
 .card{overflow-y:auto;padding-bottom:calc(12px + var(--message-safe-bottom,env(safe-area-inset-bottom,0px)))}
 .details-open .card{overflow:hidden}
-.details-open .card>.details-content{flex:1;min-height:0}
 .top .brand{pointer-events:none}
 button.bar-toggle{touch-action:auto;cursor:pointer}
 button,input,select,textarea{font-size:16px}
@@ -36,7 +35,7 @@ button.auto-yes-button{min-height:44px;padding:8px 16px;border-radius:999px}
 .icon-button{min-height:36px}
 .message{max-height:35dvh}
 .message-thread{max-height:35dvh}
-.details-content{max-height:none}
+.details-content{max-height:50dvh}
 `)
     .replace("/* NFN_JS */", read("surface.js") + "\n" + fs.readFileSync(path.resolve(__dirname, "../src/lib/messageSurfaceViewport.js"), "utf8"));
 }

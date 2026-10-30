@@ -21,6 +21,14 @@ window.webkit = { messageHandlers: { nfn: { postMessage(value) {
   }
   const record = fixture.records.get(command.id);
   let response = record || {};
+  if (command.op === "media") {
+    const bytes = fixture.videoBytes;
+    if (!bytes || record?.request.media?.[command.index]?.src !== "/fixture/review.mp4" || command.index !== 0 || command.offset > bytes.length || command.length > 256 * 1024) {
+      window.nfn.receive({ type: "response", token, error: "Fixture attachment unavailable" }); return;
+    }
+    const part = bytes.slice(command.offset, command.offset + command.length);
+    response = { size: bytes.length, offset: command.offset, mime: "video/mp4", data: btoa(Array.from(part, byte => String.fromCharCode(byte)).join("")) };
+  }
   if (command.op === "save_settings") {
     if (fixture.settingsError) {
       setTimeout(() => window.nfn.receive({ type: "response", token, error: fixture.settingsError }), 1);
@@ -101,6 +109,16 @@ const ready = String.raw`
 window.fixture.records.set("first", window.fixture.record("first"));
 window.nfn.receive(window.fixture.snapshot("first"));
 `;
+const videoReady = String.raw`
+const review = window.fixture.record("video-review");
+review.request = { title: "Review the bmux post", body: "Review the copy and screen recording before posting.", template: "social-review", response_destination: "result",
+  source: { pane_id: "%video-review", provider: "codex" },
+  media: [{ kind: "video", src: "/fixture/review.mp4", alt: "Real bmux session preview and agent handoff" }],
+  data: { targets: [{ id: "x", platform: "x", account: "@totovoto", body: "In bmux I can preview browser sessions and jump to the agent's tmux pane.\n\nhttps://bmux.cc", revision: "a".repeat(64), media_indices: [0] }] },
+  actions: [{ id: "decide", kind: "choice", label: "Send platform decisions" }] };
+window.fixture.records.set(review.id, review);
+window.nfn.receive(window.fixture.snapshot(review.id));
+`;
 const native = process.argv.includes("--native");
 // Tart's no-graphics mode marks every page hidden. These UI scenarios exercise a visible card.
 const visibility = process.argv.includes("--headless-visible")
@@ -115,6 +133,8 @@ const todoData = todoFileIndex >= 0 ? JSON.parse(readFileSync(process.argv[todoF
 const todoSetup = process.argv.includes("--todos") || todoFileIndex >= 0 ? `window.fixture.todos = ${JSON.stringify(todoData)}; window.nfn.receive({type:"todos",todos:window.fixture.todos});` : "";
 const fixtureSetup = native ? setup.slice(0, setup.indexOf("window.webkit =")) + setup.slice(setup.indexOf("window.fixture.record")) : setup;
 const reviewImage = `data:image/png;base64,${readFileSync(new URL("../../docs/readme-pics/agent-and-shell-side-by-side.png", import.meta.url)).toString("base64")}`;
+const mediaFileIndex = process.argv.indexOf("--media-file");
+const videoSetup = mediaFileIndex < 0 ? "" : `window.fixture.videoBytes = Uint8Array.from(atob(${JSON.stringify(readFileSync(process.argv[mediaFileIndex + 1]).toString("base64"))}), c => c.charCodeAt(0));`;
 const document = read("surface.html").replace("/* NFN_CSS */", read("surface.css") + (native ? "" : "\nbody{background:#202126;padding:24px;display:flex;justify-content:center}"))
-  .replace("/* NFN_JS */", visibility + fixtureSetup + `\nwindow.fixture.reviewImage = ${JSON.stringify(reviewImage)};\n` + read("surface.js") + "\n" + ready + "\n" + todoSetup);
+  .replace("/* NFN_JS */", visibility + fixtureSetup + videoSetup + `\nwindow.fixture.reviewImage = ${JSON.stringify(reviewImage)};\n` + read("surface.js") + "\n" + (process.argv.includes("--video-preview") ? videoReady : ready) + "\n" + todoSetup);
 writeFileSync(process.argv[2] || fileURLToPath(new URL("./nfn-fixture.html", import.meta.url)), document);

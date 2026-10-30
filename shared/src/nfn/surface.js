@@ -433,13 +433,14 @@
   }
   new ResizeObserver(size).observe(host);
   function stopMedia() {
-    host.querySelectorAll("video").forEach(video => { video.pause(); if (!snapshot.remote) { video.removeAttribute("src"); video.load(); } });
+    host.querySelectorAll("video").forEach(video => video.pause());
     setTimeout(cleanupRemoteMedia, 0);
   }
   function cleanupRemoteMedia() {
     for (const [element, state] of remoteMedia) {
       if (element.isConnected) continue;
       state.cancelled = true;
+      if (element.tagName === "VIDEO") { element.removeAttribute("src"); element.load(); }
       if (state.url) URL.revokeObjectURL(state.url);
       remoteMedia.delete(element);
     }
@@ -466,7 +467,7 @@
       if (!state.cancelled && element.isConnected) status.textContent = String(error.message || error);
     }
   }
-  function stopContext() { clearInterval(logTimer); logTimer = null; contextRequest = null; stopMedia(); }
+  function stopContext(keepMedia = false) { clearInterval(logTimer); logTimer = null; contextRequest = null; if (!keepMedia) stopMedia(); }
   function pauseTimer() {
     if (collapseTimer) { clearTimeout(collapseTimer); collapseTimer = null; remaining = Math.max(0, remaining - (performance.now() - timerStarted)); }
   }
@@ -563,7 +564,7 @@
   }
   function toggleDetails() {
     if (records.get(current)?.details_available === false) return;
-    pauseTimer(); stopContext(); expanded = true; details = !details;
+    pauseTimer(); stopContext(true); expanded = true; details = !details;
     if (resizedSize) resizedSize.showDetails = details;
     menu = null; render(false); startContext();
   }
@@ -696,15 +697,42 @@
       const item = record.request.media?.[index];
       if (!item) continue;
       const element = el(item.kind === "video" ? "video" : "img");
-      if (snapshot.remote && item.src.startsWith("/")) {
+      const frame = el("div", item.kind === "video" ? "media-item video-preview" : "media-item");
+      frame.append(element);
+      if (item.kind === "video") {
+        element.controls = true; element.playsInline = true; element.preload = "auto"; element.muted = true;
+        element.setAttribute("aria-label", item.alt || "Post video");
+        const play = button("Play video", () => {
+          element.play().catch(error => { play.textContent = "Play video"; play.title = error.message; });
+        }, "media-play");
+        play.setAttribute("aria-label", "Play video"); play.disabled = true;
+        frame.append(play);
+        element.addEventListener("loadedmetadata", () => {
+          frame.style.aspectRatio = `${element.videoWidth} / ${element.videoHeight}`;
+          play.disabled = false;
+          if (!element.currentTime && element.paused) element.currentTime = Math.min(.1, element.duration / 2);
+        });
+        const thumbnail = () => {
+          if (element.poster || !element.videoWidth || element.readyState < 2) return;
+          try {
+            const canvas = document.createElement("canvas");
+            canvas.width = Math.min(element.videoWidth, 1280); canvas.height = Math.round(canvas.width * element.videoHeight / element.videoWidth);
+            canvas.getContext("2d").drawImage(element, 0, 0, canvas.width, canvas.height);
+            element.poster = canvas.toDataURL("image/jpeg", .85);
+          } catch { /* Cross-origin videos still display their decoded first frame. */ }
+        };
+        element.addEventListener("loadeddata", thumbnail); element.addEventListener("seeked", thumbnail);
+        element.addEventListener("playing", () => { play.hidden = true; });
+        element.addEventListener("pause", () => { play.hidden = false; });
+        if (!item.src.startsWith("/")) remoteMedia.set(element, { cancelled: false, url: null });
+      } else { element.alt = item.alt || record.request.title; element.loading = "eager"; }
+      if (item.src.startsWith("/") && (snapshot.remote || item.kind === "video")) {
         element.hidden = true;
-        const status = el("div", "hint", "Loading attachment..."); status.setAttribute("role", "status"); media.append(status);
+        const status = el("div", "hint media-loading", "Loading attachment..."); status.setAttribute("role", "status"); frame.append(status);
         loadRemoteMedia(element, status, record, index);
       } else element.src = item.src.startsWith("/") ? `clawtab-nfn://media/${record.id}/${index}` : item.src;
-      if (item.kind === "video") { element.controls = true; element.playsInline = true; element.preload = "metadata"; }
-      else { element.alt = item.alt || record.request.title; element.loading = "eager"; }
-      element.addEventListener("error", () => element.replaceWith(el("div", "hint", `${item.kind === "video" ? "Video" : "Image"} unavailable`)));
-      media.append(element);
+      element.addEventListener("error", () => { frame.querySelector(".media-play")?.remove(); element.replaceWith(el("div", "hint", `${item.kind === "video" ? "Video" : "Image"} unavailable`)); });
+      media.append(frame);
     }
     return media;
   }
@@ -716,13 +744,22 @@
     if (!state || state.revision !== revision || record.response?.decisions) {
       const saved = record.response?.decisions || [];
       state = { revision, active: targets[0]?.id, decisions: targets.map(target => saved.find(item => item.target_id === target.id) || {
-        target_id: target.id, revision: target.revision, decision: "approve", comment: ""
+        target_id: target.id, revision: target.revision, decision: null, comment: ""
       }) };
       socialDrafts.set(record.id, state);
     }
     const review = el("section", "social-review"), tabs = el("div", "segments social-tabs"), panels = el("div");
     tabs.setAttribute("role", "tablist"); tabs.setAttribute("aria-label", "Platform drafts");
-    const controls = [], tabControls = [];
+    const controls = [], tabControls = [], refresh = [];
+    const single = targets.length === 1;
+    const footer = el("div", "social-footer"), submit = button(single ? "Approve" : "Send platform decisions", () => {
+      if (single && state.decisions[0].decision !== "revise") state.decisions[0].decision = "approve";
+      if (state.decisions.some(item => !item.decision || item.decision === "revise" && !item.comment?.trim())) return;
+      performAction(record.id, { op: "respond", id: record.id, action_id: "decide", decisions: state.decisions.map(item => ({
+        target_id: item.target_id, revision: item.revision, decision: item.decision, comment: item.decision === "approve" ? null : item.comment?.trim() || null
+      })) });
+    }, "primary social-submit");
+    controls.push(submit);
     targets.forEach((target, index) => {
       const decision = state.decisions[index];
       const panel = el("section", "social-platform"); panel.id = `social-platform-${index}`; panel.setAttribute("role", "tabpanel");
@@ -735,32 +772,67 @@
       });
       tab.setAttribute("role", "tab"); tab.setAttribute("aria-controls", panel.id); tab.setAttribute("aria-selected", String(target.id === state.active));
       panel.hidden = target.id !== state.active; tabControls.push(tab); tabs.append(tab);
-      panel.append(el("div", "social-account", `${target.platform} · ${target.account}`));
-      if (target.title) panel.append(el("strong", "social-title", target.title));
-      panel.append(el("div", "body social-body", target.body || ""));
-      if (target.media_indices?.length) panel.append(mediaView(record, target.media_indices));
-      const label = el("label", "social-choice", "Decision");
-      const select = el("select"); select.setAttribute("aria-label", `Decision for ${target.platform}`);
-      for (const [value, text] of [["approve", "Approve publication"], ["revise", "Request changes"], ["deny", "Deny publication"]]) {
-        const option = el("option", "", text); option.value = value; select.append(option);
-      }
-      select.value = decision.decision;
-      select.addEventListener("change", () => { decision.decision = select.value; if (select.value === "approve" && decision.comment?.trim()) { decision.decision = "revise"; select.value = "revise"; } });
-      label.append(select); panel.append(label); controls.push(select);
+      const isX = target.platform.toLowerCase() === "x";
+      const post = el("article", `social-post${isX ? " x-post" : ""}`);
+      post.setAttribute("aria-label", `${target.platform} post preview`);
+      const header = el("div", "social-post-header"), identity = el("div", "social-identity");
+      const handle = target.account.startsWith("@") ? target.account : `@${target.account}`;
+      const name = target.display_name || handle.slice(1);
+      const avatar = el("div", "social-avatar", name.slice(0, 1).toUpperCase()); avatar.setAttribute("aria-hidden", "true");
+      identity.append(el("strong", "social-name", name), el("span", "social-account", handle));
+      header.append(avatar, identity, el("span", "social-platform-mark", isX ? "X" : target.platform));
+      post.append(header);
+      if (target.title) post.append(el("strong", "social-title", target.title));
+      post.append(el("div", "social-body", target.body || ""));
+      if (target.media_indices?.length) post.append(mediaView(record, target.media_indices));
+      panel.append(post);
+      const actions = el("div", "social-decisions"), feedback = el("div", "social-feedback");
       const comment = el("textarea"); comment.rows = 2; comment.value = decision.comment || "";
+      comment.maxLength = 32000;
       comment.setAttribute("aria-label", `Changes or comment for ${target.platform}`); comment.placeholder = "Describe changes for this platform...";
-      comment.addEventListener("input", () => { decision.comment = comment.value; if (comment.value.trim() && decision.decision === "approve") { decision.decision = "revise"; select.value = "revise"; } });
-      panel.append(comment); controls.push(comment); panels.append(panel);
+      comment.addEventListener("input", () => { decision.comment = comment.value; decision.decision = "revise"; updateCard(); });
+      feedback.append(el("label", "social-feedback-label", `Feedback for ${target.platform}`), comment);
+      const approve = single ? submit : button("Approve", () => { decision.decision = decision.comment?.trim() ? "revise" : "approve"; updateCard(); });
+      approve.setAttribute("aria-label", single ? "Approve post" : `Approve ${target.platform}`);
+      const revise = button("Request changes", () => {
+        decision.decision = decision.decision === "revise" ? null : "revise"; updateCard();
+        if (decision.decision === "revise") { native({ native: "text_focus", active: true }); comment.focus({ preventScroll: true }); comment.scrollIntoView({ block: "nearest" }); }
+      });
+      revise.setAttribute("aria-label", `Request changes for ${target.platform}`);
+      const deny = button("Deny", () => {
+        decision.decision = "deny";
+        if (single) performAction(record.id, { op: "respond", id: record.id, action_id: "decide", decisions: [{
+          target_id: decision.target_id, revision: decision.revision, decision: "deny", comment: decision.comment?.trim() || null
+        }] });
+        else updateCard();
+      }, "utility social-deny");
+      deny.setAttribute("aria-label", `Deny ${target.platform}`);
+      controls.push(comment, revise, deny); if (!single) controls.push(approve);
+      actions.append(approve, revise, deny);
+      if (single) footer.append(feedback, actions); else panel.append(feedback, actions);
+      refresh.push(() => {
+        feedback.hidden = decision.decision !== "revise";
+        revise.textContent = decision.decision === "revise" ? "Cancel changes" : "Request changes";
+        revise.setAttribute("aria-expanded", String(!feedback.hidden));
+        if (single) { submit.textContent = decision.decision === "revise" ? "Send feedback" : "Approve"; submit.setAttribute("aria-label", decision.decision === "revise" ? "Send feedback" : "Approve post"); }
+        else for (const [control, value] of [[approve, "approve"], [revise, "revise"], [deny, "deny"]]) control.setAttribute("aria-pressed", String(decision.decision === value));
+      });
+      panels.append(panel);
     });
-    review.append(tabs, panels);
+    if (!single) review.append(tabs);
+    review.append(panels);
     const library = record.request.data?.library_url;
     if (typeof library === "string" && library.startsWith("https://content.tonis.dev/")) {
       const link = el("a", "social-library", "Open in content library"); link.href = library; link.target = "_blank"; link.rel = "noopener"; review.append(link);
     }
-    const submit = button("Send platform decisions", () => performAction(record.id, {
-      op: "respond", id: record.id, action_id: "decide", decisions: state.decisions.map(item => ({ ...item, comment: item.comment?.trim() || null }))
-    }), "primary social-submit");
-    review.append(submit); controls.push(submit); node._socialControls = controls; node.append(review);
+    if (!single) footer.append(submit);
+    node._socialControls = controls;
+    node._updateSocial = () => {
+      refresh.forEach(update => update());
+      submit.disabled = !pending(records.get(record.id) || record) || actionsInProgress.has(record.id) || state.decisions.some(item =>
+        (!single && !item.decision) || item.decision === "revise" && !item.comment?.trim());
+    };
+    node.append(review, footer);
     return true;
   }
   function autoYesControl(record, inCard = false) {
@@ -838,8 +910,7 @@
     const bundle = socialReview(record, node);
     if (bundle) {
       const review = node.querySelector(".social-review");
-      const submit = review.querySelector(".social-submit");
-      body.append(review); node.append(submit);
+      body.append(review);
     } else if (record.request.media?.length) body.append(mediaView(record, record.request.media.map((_, index) => index)));
     const actions = el("div", "actions"); node._actions = actions;
     const choices = record.request.actions || [];
@@ -923,7 +994,7 @@
   }
   function syncCardDetails(record) {
     if (!card) return;
-    card._body.hidden = details;
+    card._body.hidden = false;
     if (card._detailsButton) {
       card._detailsButton.textContent = details ? "Hide details" : "Details";
       card._detailsButton.setAttribute("aria-expanded", String(details));
@@ -948,7 +1019,7 @@
       .map(block => block.children ? { ...block, children: detailBlocks(block.children) } : block);
     renderBlocks(detailBlocks(layout), content, record, true, primitives);
     card._followLogs = true;
-    card._body.after(content);
+    card._body.append(content);
   }
   function updateCard() {
     if (!card || !current) return;
@@ -987,6 +1058,7 @@
     if (card._send) card._send.disabled = !isPending || busy || !card._reply.value.trim();
     if (card._reply) card._reply.readOnly = !isPending || busy;
     for (const control of card._socialControls || []) control.disabled = !isPending || busy;
+    card._updateSocial?.();
     if (actionErrors.has(current)) card._notice.textContent = actionErrors.get(current);
     else if (record.error) card._notice.textContent = record.error;
     else if (record.ignored) card._notice.textContent = "Agent ignored";
@@ -1463,14 +1535,10 @@
     const maxHeight = Math.min(geometry.max_height || 860, geometry.list_max_height || Infinity);
     width = Math.round(Math.max(Math.min(520, maxWidth), Math.min(width, maxWidth)));
     height = Math.round(Math.max(Math.min(280, maxHeight), Math.min(height, maxHeight)));
-    const showDetails = records.get(current)?.details_available !== false
-      && (width > origin.normal.width + 12 || height > origin.normal.height + 12);
+    const showDetails = details;
     resizedSize = { width, height, showDetails };
     if (east) resizeRightOffset = origin.rightOffset + width - origin.width;
     expanded = true; pauseTimer(); stopAnimation(); applyResizedSize();
-    if (details !== showDetails) {
-      stopContext(); details = showDetails; menu = null; render(false); startContext();
-    }
     size();
   }
   function finishResize(event) {

@@ -37,13 +37,16 @@ mod macos {
                 return;
             };
             let token = value.get("token").cloned().unwrap_or(Value::Null);
-            let command =
-                serde_json::from_value(value.get("command").cloned().unwrap_or(value.clone()));
-            let result = match command {
-                Ok(command) => service.execute(command).await,
-                Err(e) => {
-                    log::warn!("[nfn] Invalid macOS notification command: {e}");
-                    Err(e.to_string())
+            let raw_command = value.get("command").cloned().unwrap_or(value.clone());
+            let result = if raw_command["op"] == "media" {
+                super::super::remote::execute(raw_command).await
+            } else {
+                match serde_json::from_value(raw_command) {
+                    Ok(command) => service.execute(command).await,
+                    Err(e) => {
+                        log::warn!("[nfn] Invalid macOS notification command: {e}");
+                        Err(e.to_string())
+                    }
                 }
             };
             let response = match result {

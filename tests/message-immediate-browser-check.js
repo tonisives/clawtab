@@ -31,7 +31,8 @@
   input.setSelectionRange(7, 12);
   fixture.heldOps.add("context"); click("Details");
   const reading = document.querySelector(".details-content");
-  assert(document.querySelector(".message-content").hidden && reading && document.querySelector(".actions") === actions, "Details replaces the message reading area while preserving the action buttons");
+  assert(!document.querySelector(".message-content").hidden && reading && document.querySelector(".actions") === actions, "Details appends below the message while preserving the action buttons");
+  reading.scrollIntoView({ block: "end" });
   assert(document.querySelector("textarea") === input && input.value === "Please check the newest output" && input.selectionStart === 7, "switching to Details preserves the reply draft and selection");
   assert(visible(actions) && visible(document.querySelector(".controls")) && visible(document.querySelector(".reply")), "actions, reply, and Hide details stay visible below the log");
   assert(bounds(reading).bottom <= bounds(actions).top && reading.clientHeight > 60 && bounds(surface).height === innerHeight, "the log fills the available top reading area without overflowing the screen");
