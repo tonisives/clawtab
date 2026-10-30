@@ -6,10 +6,53 @@
 #import <ApplicationServices/ApplicationServices.h>
 #include <errno.h>
 #include <stdlib.h>
+#include <dlfcn.h>
 
 typedef void (*NfnCallback)(const char *);
 static NfnCallback callback;
 static const CGFloat shadowInset = 64, shadowBottom = 80;
+
+static int (*cursorConnection)(void);
+static CGError (*cursorCopyProperty)(int, int, CFStringRef, CFTypeRef *);
+static CGError (*cursorSetProperty)(int, int, CFStringRef, CFTypeRef);
+static NSCursor *previousResizeCursor;
+static BOOL resizeCursorOwned, backgroundCursorChanged;
+static int resizeCursorConnection;
+
+static void setResizeCursor(NSCursor *cursor) {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        cursorConnection = dlsym(RTLD_DEFAULT, "CGSMainConnectionID");
+        cursorCopyProperty = dlsym(RTLD_DEFAULT, "CGSCopyConnectionProperty");
+        cursorSetProperty = dlsym(RTLD_DEFAULT, "CGSSetConnectionProperty");
+    });
+    if (cursor) {
+        if (!resizeCursorOwned) {
+            previousResizeCursor = NSCursor.currentCursor;
+            // AppKit's per-app cursor does not reach WindowServer while inactive.
+            // Limit the optional background permission to this resize gesture.
+            if (cursorConnection && cursorCopyProperty && cursorSetProperty) {
+                int connection = cursorConnection();
+                CFTypeRef value = NULL;
+                CGError result = cursorCopyProperty(connection, connection, CFSTR("SetsCursorInBackground"), &value);
+                if (result == kCGErrorSuccess && (!value || CFGetTypeID(value) == CFBooleanGetTypeID())
+                    && (!value || !CFBooleanGetValue(value))) {
+                    backgroundCursorChanged = cursorSetProperty(connection, connection, CFSTR("SetsCursorInBackground"), kCFBooleanTrue) == kCGErrorSuccess;
+                    resizeCursorConnection = connection;
+                }
+                if (value) CFRelease(value);
+            }
+            resizeCursorOwned = YES;
+        }
+        [cursor set];
+    } else if (resizeCursorOwned) {
+        [previousResizeCursor set];
+        if (backgroundCursorChanged) cursorSetProperty(resizeCursorConnection, resizeCursorConnection, CFSTR("SetsCursorInBackground"), kCFBooleanFalse);
+        previousResizeCursor = nil;
+        resizeCursorOwned = NO;
+        backgroundCursorChanged = NO;
+    }
+}
 
 @interface NfnWebView : WKWebView
 @property NSTrackingArea *resizeTracking;
@@ -28,14 +71,13 @@ static const CGFloat shadowInset = 64, shadowBottom = 80;
 }
 - (void)cursorUpdate:(NSEvent *)event {
     NSCursor *cursor = self.resizeCursor ? self.resizeCursor(event) : nil;
-    if (cursor) [cursor set];
-    else if (self.showingResizeCursor) [NSCursor.arrowCursor set];
-    else [super cursorUpdate:event];
+    setResizeCursor(cursor);
+    if (!cursor) [super cursorUpdate:event];
     self.showingResizeCursor = cursor != nil;
 }
 - (void)mouseMoved:(NSEvent *)event { [super mouseMoved:event]; [self cursorUpdate:event]; }
 - (void)mouseEntered:(NSEvent *)event { [super mouseEntered:event]; [self cursorUpdate:event]; }
-- (void)mouseExited:(NSEvent *)event { [super mouseExited:event]; self.showingResizeCursor = NO; }
+- (void)mouseExited:(NSEvent *)event { [super mouseExited:event]; [self cursorUpdate:event]; }
 @end
 
 @interface NfnPanel : NSPanel
@@ -51,6 +93,11 @@ static const CGFloat shadowInset = 64, shadowBottom = 80;
     if (!self.canBecomeKeyWindow) [self resignKeyWindow];
 }
 - (BOOL)canBecomeMainWindow { return NO; }
+- (void)orderOut:(id)sender {
+    self.dragResizeCursor = nil;
+    setResizeCursor(nil);
+    [super orderOut:sender];
+}
 - (void)sendEvent:(NSEvent *)event {
     BOOL pointer = event.type == NSEventTypeMouseMoved || event.type == NSEventTypeLeftMouseDown
         || event.type == NSEventTypeLeftMouseDragged || event.type == NSEventTypeLeftMouseUp;
@@ -58,8 +105,11 @@ static const CGFloat shadowInset = 64, shadowBottom = 80;
     if (event.type == NSEventTypeLeftMouseDown) self.dragResizeCursor = cursor;
     cursor = self.dragResizeCursor ?: cursor;
     [super sendEvent:event];
-    if (pointer && cursor) [cursor set];
-    if (event.type == NSEventTypeLeftMouseUp) self.dragResizeCursor = nil;
+    if (pointer) setResizeCursor(cursor);
+    if (event.type == NSEventTypeLeftMouseUp) {
+        self.dragResizeCursor = nil;
+        setResizeCursor(self.resizeCursor ? self.resizeCursor(event) : nil);
+    }
 }
 - (BOOL)performKeyEquivalent:(NSEvent *)event {
     // The daemon has no Edit menu to route these commands to WebKit.
@@ -185,7 +235,7 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
     [self.panel.contentView addSubview:self.web];
     [self.web loadHTMLString:html baseURL:[NSURL URLWithString:@"clawtab-nfn://surface/"]];
     __weak NfnSurface *weakSelf = self;
-    self.web.resizeCursor = ^NSCursor *(NSEvent *event) { return [weakSelf resizeCursorForEvent:event]; };
+    self.web.resizeCursor = ^NSCursor *(NSEvent *event) { return weakSelf.panel.dragResizeCursor ?: [weakSelf resizeCursorForEvent:event]; };
     self.panel.resizeCursor = self.web.resizeCursor;
     self.timer = [NSTimer scheduledTimerWithTimeInterval:2 repeats:YES block:^(NSTimer *timer) {
         NfnSurface *self = weakSelf;
@@ -494,9 +544,12 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
 }
 
 - (NSCursor *)resizeCursorForEvent:(NSEvent *)event {
-    if (!self.surfaceResizable || self.dragging) return nil;
+    return [self resizeCursorAtPoint:[self.panel convertPointToScreen:event.locationInWindow]];
+}
+
+- (NSCursor *)resizeCursorAtPoint:(NSPoint)point {
+    if (!self.panel.visible || !self.surfaceResizable || self.dragging) return nil;
     NSRect frame = [self surfaceFrame];
-    NSPoint point = [self.panel convertPointToScreen:event.locationInWindow];
     if (!NSPointInRect(point, frame)) return nil;
     CGFloat left = point.x - NSMinX(frame), right = NSMaxX(frame) - point.x, bottom = point.y - NSMinY(frame);
     BOOL corner = bottom < 24 && (left < 24 || right < 24);
@@ -513,6 +566,7 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
 - (void)updateMousePassthrough {
     BOOL inside = self.panel.visible && NSPointInRect(NSEvent.mouseLocation, [self surfaceFrame]);
     self.panel.ignoresMouseEvents = !self.pointerDown && !self.dragging && !inside;
+    setResizeCursor(self.panel.dragResizeCursor ?: (inside ? [self resizeCursorAtPoint:NSEvent.mouseLocation] : nil));
     if (self.ready && ![self.lastPointerFocus isEqual:@(inside)]) {
         self.lastPointerFocus = @(inside);
         [self push:@{@"type":@"pointer_focus", @"active":@(inside)}];
@@ -754,6 +808,6 @@ void clawtab_nfn_push(const char *json) {
         });
     }
 }
-void clawtab_nfn_stop(void) { dispatch_async(dispatch_get_main_queue(), ^{ [NSApp stop:nil]; [NSApp postEvent:[NSEvent otherEventWithType:NSEventTypeApplicationDefined location:NSZeroPoint modifierFlags:0 timestamp:0 windowNumber:0 context:nil subtype:0 data1:0 data2:0] atStart:NO]; }); }
+void clawtab_nfn_stop(void) { dispatch_async(dispatch_get_main_queue(), ^{ setResizeCursor(nil); [NSApp stop:nil]; [NSApp postEvent:[NSEvent otherEventWithType:NSEventTypeApplicationDefined location:NSZeroPoint modifierFlags:0 timestamp:0 windowNumber:0 context:nil subtype:0 data1:0 data2:0] atStart:NO]; }); }
 void clawtab_nfn_activate(unsigned int pid) { dispatch_async(dispatch_get_main_queue(), ^{ [surface endKeyboardFocus:NO]; [surface releaseTextFocus]; [[NSRunningApplication runningApplicationWithProcessIdentifier:(pid_t)pid] activateWithOptions:NSApplicationActivateIgnoringOtherApps]; }); }
 void clawtab_nfn_activate_clawtab(void) { dispatch_async(dispatch_get_main_queue(), ^{ [surface endKeyboardFocus:NO]; [surface releaseTextFocus]; for (NSRunningApplication *app in [NSRunningApplication runningApplicationsWithBundleIdentifier:@"cc.clawtab"]) [app activateWithOptions:NSApplicationActivateIgnoringOtherApps]; }); }
