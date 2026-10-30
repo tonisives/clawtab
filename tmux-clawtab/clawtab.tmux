@@ -124,15 +124,14 @@ if [[ "$current_border" != *"@clawtab-agent-title"* ]]; then
 fi
 old_alert_border='#{?#{@clawtab-daemon-running},#{?#{==:#{@clawtab-agent-pane-alert},1},#[fg=colour208#,bold]! Alert #[default],},}'
 alert_border='#{?#{@clawtab-daemon-running},#{?#{==:#{@clawtab-agent-pane-alert},1},#[fg=colour208#,bold]! Alert#{?#{@clawtab-agent-pane-size-mb}, ↑#{@clawtab-agent-pane-size-mb} MB,} #[default],},}'
-if [[ "$current_border" == *"$old_alert_border"* ]]; then
-    current_border="${current_border/"$old_alert_border"/"$alert_border"}"
-elif [[ "$current_border" != *"@clawtab-agent-pane-alert"* ]]; then
-    current_border="${alert_border}${current_border}"
-fi
-if [[ "$current_border" != *"@clawtab-agent-pane-working"* ]]; then
-    pane_activity='#{?#{@clawtab-daemon-running},#{?#{==:#{@clawtab-agent-pane-present},1},#{?#{==:#{@clawtab-agent-pane-alert},1},,#{?#{==:#{@clawtab-agent-asking},1},#[fg=yellow#,bold]Waiting #[default],#{?#{==:#{@clawtab-agent-pane-working},1},#[fg=cyan#,bold]Working #[default],#[fg=green]Idle #[default]}}},},}'
-    current_border="${pane_activity}${current_border}"
-fi
+# Remove older leading state labels when upgrading an existing server.
+current_border="${current_border/"$old_alert_border"/}"
+current_border="${current_border/"$alert_border"/}"
+old_pane_activity='#{?#{@clawtab-daemon-running},#{?#{==:#{@clawtab-agent-pane-present},1},#{?#{==:#{@clawtab-agent-pane-alert},1},,#{?#{==:#{@clawtab-agent-asking},1},#[fg=yellow#,bold]Waiting #[default],#{?#{==:#{@clawtab-agent-pane-working},1},#[fg=cyan#,bold]Working #[default],#[fg=green]Idle #[default]}}},},}'
+current_border="${current_border/"$old_pane_activity"/}"
+pane_activity='#{?#{@clawtab-daemon-running},#{?#{==:#{@clawtab-agent-pane-present},1},#[align=right] #{?#{==:#{@clawtab-agent-pane-alert},1},#[fg=colour208#,bold]!,#{?#{==:#{@clawtab-agent-asking},1},#[fg=yellow#,bold]!,#{?#{==:#{@clawtab-agent-pane-working},1},#[fg=cyan#,bold]*,#[fg=green#,bold]✓}}}#[default],},}'
+current_border="${current_border/"$pane_activity"/}"
+current_border="${current_border}${pane_activity}"
 tmux set-option -g pane-border-format "$current_border"
 tmux set-option -g pane-border-status top
 

@@ -46,7 +46,11 @@ refresh_pane() {
         local label="#{?#{e|<:${age},60},just now,#{?#{e|<:${age},3600},#{e|/:${age},60}m ago,#{?#{e|<:${age},86400},#{e|/:${age},3600}h ago,#{e|/:${age},86400}d ago}}}"
         local separator=""
         [ -z "$info" ] || separator=" | "
-        info="#{?#{@clawtab-agent-pane-last-action-at},${label}${separator},}${info}"
+        local compact="#{?#{e|<:${age},60},jn,#{?#{e|<:${age},3600},#{e|/:${age},60}m,#{?#{e|<:${age},86400},#{e|/:${age},3600}h,#{e|/:${age},86400}d}}}"
+        local threshold=$((${#info} + 45))
+        [ "$threshold" -ge 80 ] || threshold=80
+        label="#{?#{e|<:#{pane_width},${threshold}},${compact},${label}}"
+        info="${info}#{?#{@clawtab-agent-pane-last-action-at},${separator}${label},}"
     fi
     tmux set-option -pq -t "$target" @clawtab-pane-path "$path" \
         \; set-option -pq -t "$target" @clawtab-pane-info "$info" \
