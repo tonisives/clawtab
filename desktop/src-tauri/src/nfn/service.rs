@@ -1132,11 +1132,7 @@ impl Service {
             } else {
                 crate::terminal_backend::send_keys_to_tui_pane(pane, &action.value)
             }
-        } else if record.request.response_destination == "agent_message"
-            || (action_id == "reply"
-                && record.request.template == "update"
-                && record.request.source.pane_id.is_some())
-        {
+        } else if reply_targets_agent(&record, action_id) {
             let pane = record
                 .request
                 .source
@@ -1816,9 +1812,33 @@ fn same_source(source: &NfnSource, current: &NfnSource) -> bool {
             .is_none_or(|id| current.session_id.as_ref() == Some(id))
 }
 
+fn reply_targets_agent(record: &NfnRecord, action_id: &str) -> bool {
+    record.request.response_destination == "agent_message"
+        || (action_id == "reply"
+            && record.request.template == "update"
+            && record.request.source.pane_id.is_some())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn update_replies_target_the_originating_agent() {
+        let mut record = pending_permission();
+        record.request.template = "update".into();
+        record.request.response_destination = "result".into();
+        record.request.source.pane_id = Some("%17".into());
+        assert!(reply_targets_agent(&record, "reply"));
+        assert!(!reply_targets_agent(&record, "acknowledge"));
+        record.request.source.pane_id = None;
+        assert!(!reply_targets_agent(&record, "reply"));
+        record.request.template = "question".into();
+        record.request.source.pane_id = Some("%17".into());
+        assert!(!reply_targets_agent(&record, "reply"));
+        record.request.response_destination = "agent_message".into();
+        assert!(reply_targets_agent(&record, "reply"));
+    }
 
     #[test]
     fn failed_jobs_keep_their_session_and_remain_openable_after_exit() {

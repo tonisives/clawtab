@@ -39,7 +39,7 @@
   assert(document.querySelector("#surface").getBoundingClientRect().height < 430, "first card stays compact");
   window.fixture.records.get("first").details_available = false;
   window.nfn.receive(window.fixture.snapshot());
-  assert(!document.querySelector(".details-toggle"), "unavailable message details stay hidden in the combined bar");
+  assert(document.querySelector(".details-toggle").disabled, "unavailable message details stay visible and disabled in the footer");
   window.fixture.records.get("first").details_available = true;
   window.nfn.receive(window.fixture.snapshot());
   assert(document.querySelector(".details-toggle"), "message details return when the source makes them available");
@@ -96,6 +96,7 @@
   document.querySelector('[aria-label="Close menu"]').click();
   click("Hide details"); await sleep(30);
   assert(document.querySelector(".card") === detailCard && !document.querySelector(".message-content").hidden && document.querySelector("textarea") === detailInput, "Hide details restores the original message and composer without rebuilding the card");
+  assert(!document.querySelector("#surface").style.height && document.querySelector("#surface").offsetHeight < detailSize.height, "Hide details shrinks the surface to its message and composer");
   const contextCalls = window.fixture.contextCalls; await sleep(1150);
   assert(window.fixture.contextCalls === contextCalls && !document.querySelector(".logs, select"), "closing details stops polling and hides extra controls");
   assert(document.querySelectorAll(".actions button").length === 4, "additional choices are available without opening details");
@@ -357,7 +358,7 @@
   completion.request.actions = [{ id: "focus", label: "Open session", kind: "focus" }, { id: "acknowledge", label: "Got it", kind: "choice" }];
   window.fixture.records.set(completion.id, completion);
   window.nfn.receive(window.fixture.snapshot(completion.id));
-  assert(document.querySelector("h1").textContent === completion.request.title && !document.querySelector(".reply, .auto-yes, .status.alert"), "agent completions appear as updates without permission or error controls");
+  assert(document.querySelector("h1").textContent === completion.request.title && document.querySelector(".reply").hidden && !document.querySelector(".auto-yes, .status.alert"), "agent completions appear as updates without permission or error controls");
   assert(document.querySelectorAll(".open-session").length === 1 && !document.querySelector(".actions button[title='Open session']") && !buttons().some(button => button.textContent === "Open agent"), "session cards have one footer action and no duplicate below the message");
   const footer = document.querySelector(".controls"), openSession = document.querySelector(".open-session").getBoundingClientRect(), footerBounds = footer.getBoundingClientRect();
   assert(Math.abs(openSession.left + openSession.width / 2 - footerBounds.left - footerBounds.width / 2) < 1 && document.querySelector(".details-toggle").getBoundingClientRect().right <= openSession.left && footer === document.querySelector(".card").lastElementChild && document.querySelector(".card").getBoundingClientRect().bottom - openSession.bottom <= 16, "Open session is centered at the bottom with Details on its left");
@@ -551,7 +552,7 @@
   window.fixture.records.set(shortUpdate.id, shortUpdate); window.nfn.receive(window.fixture.snapshot()); window.nfn.receive({type:"show"});
   document.querySelector(".queue-item").click(); await sleep(30);
   const shortHeight = document.querySelector("#surface").offsetHeight;
-  assert(document.querySelector("#surface").offsetWidth === 520 && shortHeight >= 280, "short notifications retain a larger readable minimum size");
+  assert(document.querySelector("#surface").offsetWidth === 520 && shortHeight > 100 && shortHeight < 280, "short notifications fit their content without a fixed minimum height");
   document.querySelector('[aria-label="Notification options"]').click(); await sleep(30);
   const optionPanel = document.querySelector(".menu-panel");
   assert(document.querySelector("#surface").offsetHeight > shortHeight && optionPanel.scrollHeight <= optionPanel.clientHeight + 1, "the options menu grows a short card to fit every item");
@@ -1006,6 +1007,8 @@
   const actionKey = (key, target = document.getElementById("surface"), modifiers = {}) => {
     const event = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...modifiers }); target.dispatchEvent(event); return event;
   };
+  if (document.querySelector(".reply").hidden) click("Reply");
+  document.querySelector("textarea").blur();
   const hintReply = document.querySelector("textarea"); hintReply.value = "Draft for keyboard shortcuts"; hintReply.dispatchEvent(new Event("input")); await sleep(100);
   const actionHints = () => [...document.querySelectorAll(".keyboard-hint")];
   assert(actionHints().find(badge => badge.dataset.target === "Open session")?.textContent === "O" && actionHints().find(badge => badge.dataset.target === "Details")?.textContent === "D", "main card actions use descriptive fixed O and D hints");
@@ -1041,10 +1044,10 @@
       const ack = document.querySelector('.controls [data-action-id="acknowledge"]');
       assert(Boolean(ack) && getComputedStyle(document.querySelector(".answer-row")).display === "none", `${variant}: Got it appears only in the footer`);
       const bounds = ack.getBoundingClientRect(), footer = ack.closest(".controls").getBoundingClientRect();
-      assert(Math.abs(bounds.right - footer.right) < 1 && Math.abs(bounds.top + bounds.height / 2 - footer.top - footer.height / 2 - 7) < 1, `${variant}: Got it stays at the right of the bottom bar`);
+      assert(bounds.left >= footer.left && bounds.right <= footer.right + 1 && bounds.bottom <= footer.bottom + 1, `${variant}: Got it fits in the bottom bar beside Reply`);
       const hints = [...document.querySelectorAll(".keyboard-hint")];
       assert(hints.find(badge => badge.dataset.target === "Got it")?.textContent === "Enter" && new Set(hints.map(badge => badge.textContent)).size === hints.length, `${variant}: Got it keeps the Enter shortcut without duplicate hints`);
-      if (document.querySelector(".open-session")) assert(hints.find(badge => ["Open session", "Open browser"].includes(badge.dataset.target))?.textContent === "O", `${variant}: session and browser actions keep O`);
+      if (document.querySelector(".open-session:not(:disabled)")) assert(hints.find(badge => ["Open session", "Open browser"].includes(badge.dataset.target))?.textContent === "O", `${variant}: session and browser actions keep O`);
     };
     checkFooter();
     if (available) { click("Details"); await sleep(100); checkFooter(); }
@@ -1227,6 +1230,27 @@
   document.hasFocus = () => false; window.nfn.receive({ type: "window_focus", active: true });
   actionKey("Enter"); await sleep(30);
   assert(nativeNotice.dismissed_at && !nativeNotice.response, "native keyboard focus enables Enter even before WebKit reports focus");
+  resetFlow();
+  const custom = window.fixture.record("custom-question", 1);
+  custom.request.source = {}; custom.request.template = "question"; custom.request.response_destination = "result";
+  custom.request.actions = [{ id: "continue", label: "Continue", kind: "choice" }];
+  window.fixture.records.set(custom.id, custom); window.nfn.receive(window.fixture.snapshot(custom.id));
+  assert(document.querySelector(".controls .open-session").disabled && document.querySelector(".controls .details-toggle") && document.querySelector(".controls .acknowledge"), "source-less questions retain Open session, Details, and Got it in the footer");
+  click("Got it"); await sleep(30);
+  assert(custom.dismissed_at && !custom.response && !window.fixture.calls.some(command => command.id === custom.id && command.op === "respond"), "Got it dismisses a question without submitting an answer");
+  resetFlow(); custom.dismissed_at = null; custom.read_at = null;
+  window.fixture.records.set(custom.id, custom); window.nfn.receive(window.fixture.snapshot(custom.id));
+  click("Continue"); await sleep(30);
+  assert(window.fixture.calls.some(command => command.id === custom.id && command.op === "respond" && command.action_id === "continue"), "Continue still submits the question's original answer");
+  resetFlow();
+  const replyUpdate = window.fixture.record("reply-update", 0); replyUpdate.request.template = "update";
+  replyUpdate.request.actions = [{ id: "acknowledge", label: "Got it", kind: "choice" }];
+  window.fixture.records.set(replyUpdate.id, replyUpdate); window.nfn.receive(window.fixture.snapshot(replyUpdate.id));
+  click("Reply"); draft("Check device 04 again");
+  resizeDrag("sw", -180, 200); click("Details"); click("Hide details");
+  assert(!surface.style.height && surface.offsetWidth === 520 && document.querySelector("textarea").value === "Check device 04 again", "Hide details clears manual sizing while retaining the open reply draft");
+  click("Send"); await sleep(30);
+  assert(window.fixture.calls.some(command => command.id === replyUpdate.id && command.op === "respond" && command.action_id === "reply" && command.text === "Check device 04 again"), "update replies send the entered text to the response handler");
   document.hasFocus = originalHasFocus;
   return { passed: checks.length, checks };
 })()

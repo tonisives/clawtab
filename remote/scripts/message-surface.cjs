@@ -13,6 +13,8 @@ body{display:flex;justify-content:center}
 .queue{flex:1;height:auto;padding-bottom:max(6px,var(--message-safe-bottom,env(safe-area-inset-bottom,0px)))}
 .card{overflow-y:auto;padding-bottom:calc(12px + var(--message-safe-bottom,env(safe-area-inset-bottom,0px)))}
 .details-open .card{overflow:hidden}
+.controls.session-controls{grid-template-columns:minmax(0,1fr) auto;gap:8px}
+.session-controls .footer-actions{grid-column:1 / -1;justify-content:flex-end}
 .top .brand{pointer-events:none}
 button.bar-toggle{touch-action:auto;cursor:pointer}
 button,input,select,textarea{font-size:16px}

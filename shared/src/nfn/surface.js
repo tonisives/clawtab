@@ -1002,16 +1002,17 @@
     }
     let replyToggle = null;
     if (!bundle && (record.request.source?.pane_id || record.request.template !== "update" && hasBlock(layout, "reply"))) {
-      const toAgent = Boolean(record.question_id || record.request.response_destination === "agent_message");
+      const toAgent = Boolean(record.question_id || record.request.response_destination === "agent_message" || record.request.template === "update" && record.request.source?.pane_id);
       const reply = el("div", "reply");
       const revision = revisionChoice(record);
       const replyLabel = revision ? "Changes to the draft" : toAgent ? "Reply to agent" : "Your reply";
       const open = replyStates.get(record.id) ?? Boolean(drafts.get(record.id));
       const toggle = button("Reply", () => {
         const next = !(replyStates.get(record.id) ?? Boolean(drafts.get(record.id)));
+        const previousReplyHeight = reply.hidden ? 0 : reply.offsetHeight + 12;
         replyStates.set(record.id, next); pauseTimer(); expanded = true;
         reply.hidden = !next; row.hidden = !next; toggle.setAttribute("aria-expanded", String(next));
-        if (resizedSize && next) resizedSize.height = Math.min(geometry.max_height || 860, resizedSize.height + reply.scrollHeight);
+        if (resizedSize) resizedSize.height = Math.min(geometry.max_height || 860, resizedSize.height + (next ? reply.offsetHeight + 12 : 0) - previousReplyHeight);
         render(false);
         if (next) { native({ native: "text_focus", active: true }); input.focus({ preventScroll: true }); }
       }, "utility reply-toggle");
@@ -1032,8 +1033,10 @@
     }
     const notice = el("div", "notice"); notice.setAttribute("role", "status"); node._notice = notice; node.append(notice);
     const utilities = el("div", "controls");
-    if (record.details_available !== false) {
+    {
       const detailButton = button(details ? "Hide details" : "Details", toggleDetails, "utility details-toggle");
+      detailButton.disabled = record.details_available === false;
+      if (detailButton.disabled) detailButton.title = "Details are unavailable for this message";
       detailButton.setAttribute("aria-expanded", String(details)); node._detailsButton = detailButton; utilities.append(detailButton);
     }
     if (!snapshot.remote && record.request.source?.browser_pane_id && record.request.source?.browser_session) {
@@ -1060,11 +1063,23 @@
       }, "utility");
       openJob.title = "Show job folder in Finder"; utilities.append(openJob);
     }
+    if (!utilities.querySelector(".open-session")) {
+      const openSession = button("Open session", () => performAction(record.id, { op: "focus", id: record.id }), "primary open-session");
+      openSession.disabled = true; openSession.title = "This message has no originating session";
+      utilities.classList.add("session-controls"); utilities.append(openSession);
+    }
     if (actions.childElementCount === 1 && actions.firstElementChild.dataset.actionId === "acknowledge") {
       utilities.classList.add("session-controls");
       utilities.append(actions);
     }
-    if (replyToggle) utilities.append(replyToggle);
+    const footerActions = el("div", "footer-actions");
+    if (actions.parentElement === utilities) footerActions.append(actions);
+    else {
+      const acknowledge = button("Got it", () => performAction(record.id, { op: "dismiss", id: record.id }), "primary acknowledge");
+      node._acknowledge = acknowledge; footerActions.append(acknowledge);
+    }
+    if (replyToggle) footerActions.append(replyToggle);
+    utilities.append(footerActions);
     node.append(utilities);
     return node;
   }
@@ -1131,6 +1146,7 @@
     for (const control of card._actions.querySelectorAll("button")) control.disabled = !isPending || busy
       || Boolean(record.question_id && feedback) || Boolean(revisionChoice(record) && control.dataset.actionId === "post" && feedback);
     if (card._openSession) card._openSession.disabled = busy;
+    if (card._acknowledge) card._acknowledge.disabled = !isPending || busy;
     if (card._send) card._send.disabled = !isPending || busy || !card._reply.value.trim();
     if (card._reply) card._reply.readOnly = !isPending || busy;
     for (const control of card._socialControls || []) control.disabled = !isPending || busy;

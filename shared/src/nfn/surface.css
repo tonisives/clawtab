@@ -94,8 +94,9 @@ h1 { margin: 0; font-size: 15px; line-height: 1.35; font-weight: 600; overflow-w
 .message-thread .message { max-height: none; overflow: visible; margin-top: 4px; }
 .details-open .message-thread { flex: 0 1 auto; min-height: 70px; }
 button.reply-toggle { font-size: 12px; }
-.session-controls .reply-toggle { grid-column: 3; grid-row: 1; justify-self: end; }
-.session-controls:has(.reply-toggle) .actions { grid-row: 1; margin-right: 72px; }
+.footer-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; }
+.session-controls .footer-actions { grid-column: 3; }
+.footer-actions .reply-toggle { flex: none; }
 .reply-toggle::before { content: "›"; display: inline-block; margin-right: 6px; }
 .reply-toggle[aria-expanded="true"]::before { transform: rotate(90deg); }
 .answer-row { display: flex; align-items: center; gap: 10px; margin-top: 12px; min-width: 0; }

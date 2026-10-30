@@ -188,7 +188,7 @@ static void verifyMenuLayout(void (^finish)(void)) {
         [surface push:snapshot];
         waitForSettledSurface(0, ^{
             CGFloat compactHeight = surface.surfaceHeight;
-            if (surface.surfaceWidth < 520 || compactHeight < 280) { fprintf(stderr, "Short notification is smaller than its minimum size\n"); exit(1); }
+            if (surface.surfaceWidth < 520 || compactHeight < 100) { fprintf(stderr, "Short notification has no readable content height\n"); exit(1); }
             saveSurfaceSnapshot([NSString stringWithFormat:@"/tmp/clawtab-nfn-short-%@.png", position], ^{
                 [surface.web evaluateJavaScript:@"document.querySelector('[aria-label=\"Notification options\"]').click()" completionHandler:^(id result, NSError *menuError) {
                     if (menuError) { fprintf(stderr, "Could not open notification options\n"); exit(1); }
@@ -421,12 +421,14 @@ static void clickWebPoint(NSArray *point) {
 
 static void verifyReplyFirstClick(void (^finish)(void)) {
     [surface releaseTextFocus];
-    [surface.web evaluateJavaScript:@"(() => { window.firstClickCount = 0; const input = document.querySelector('textarea'); input.addEventListener('pointerdown', () => window.firstClickCount++); const r = input.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()" completionHandler:^(id point, NSError *error) {
+    [surface.web evaluateJavaScript:@"(() => { window.firstClickCount = 0; const target = document.querySelector('.reply').hidden ? document.querySelector('.reply-toggle') : document.querySelector('textarea'); target.addEventListener('pointerdown', () => window.firstClickCount++); const r = target.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()" completionHandler:^(id point, NSError *error) {
         if (error || ![point isKindOfClass:NSArray.class] || surface.panel.isKeyWindow) { fprintf(stderr, "Could not prepare inactive reply click\n"); exit(1); }
         clickWebPoint(point);
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 4), dispatch_get_main_queue(), ^{
             [surface.web evaluateJavaScript:@"window.firstClickCount === 1 && document.activeElement === document.querySelector('textarea') && document.querySelector('#surface').dataset.keyboardActive === 'true' && getComputedStyle(document.querySelector('.brand img')).filter === 'none' && getComputedStyle(document.querySelector('.todo-ring')).filter === 'none'" completionHandler:^(id received, NSError *clickError) {
-                if (clickError || ![received boolValue]) { fprintf(stderr, "First native click did not reach and focus the reply field\n"); exit(1); }
+                if (clickError || ![received boolValue]) {
+                    [surface.web evaluateJavaScript:@"JSON.stringify({clicks:window.firstClickCount, active:document.activeElement.outerHTML,keyboard:document.querySelector('#surface').dataset.keyboardActive,brand:getComputedStyle(document.querySelector('.brand img')).filter,ring:getComputedStyle(document.querySelector('.todo-ring')).filter})" completionHandler:^(id debug, NSError *debugError) { fprintf(stderr, "First native click failed: %s key=%d text=%d canKey=%d\n", [debug description].UTF8String, surface.panel.isKeyWindow, surface.panel.textFocus, surface.panel.canBecomeKeyWindow); exit(1); }]; return;
+                }
                 printf("Native first-click check passed: reply receives the activating click and title bar icons regain color.\n");
                 finish();
             }];
