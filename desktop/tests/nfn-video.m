@@ -85,7 +85,7 @@ int main(int argc,const char **argv) {
                 }];
                 return;
             }
-            [surface.web evaluateJavaScript:@"(()=>{const v=document.querySelector('video'),p=document.querySelector('.media-play'),t=document.querySelector('.video-thumbnail');if(!v||v.readyState<2||!v.poster||!v.src.startsWith('blob:')||!t?.naturalWidth||t.hidden||p.disabled||document.getElementById('surface').getAnimations().length)return null; window.nativePlayClick=null; p.addEventListener('click',e=>window.nativePlayClick={trusted:e.isTrusted},{once:true}); const r=p.getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2];})()" completionHandler:^(id point, NSError *error) {
+            [surface.web evaluateJavaScript:@"(()=>{const v=document.querySelector('video'),p=document.querySelector('.media-play'),t=document.querySelector('.video-thumbnail');if(!v||v.readyState<2||!v.poster||!v.src.startsWith('blob:')||!t?.naturalWidth||t.hidden||p.disabled||document.getElementById('surface').getAnimations().length)return null; const c=document.createElement('canvas');c.width=96;c.height=54;const ctx=c.getContext('2d');ctx.drawImage(t,0,0,96,54);const pixels=ctx.getImageData(0,0,96,54).data;let lit=0;for(let i=0;i<pixels.length;i+=4)if(pixels[i]+pixels[i+1]+pixels[i+2]>24)lit++;if(lit<100)return null; window.nativePlayClick=null; p.addEventListener('click',e=>window.nativePlayClick={trusted:e.isTrusted},{once:true}); const r=p.getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2];})()" completionHandler:^(id point, NSError *error) {
                 if (error || ![point isKindOfClass:NSArray.class] || !timer.valid) return;
                 [timer invalidate]; clickPlay(point);
             }];

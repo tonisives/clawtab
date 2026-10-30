@@ -7,6 +7,15 @@
     for (let n = 0; n < 150; n++) { if (condition()) return; await sleep(100); }
     throw Error(label);
   };
+  const visibleThumbnail = image => {
+    if (!image?.naturalWidth || image.hidden) return false;
+    const canvas = document.createElement("canvas"); canvas.width = 96; canvas.height = 54;
+    const ctx = canvas.getContext("2d"); ctx.drawImage(image, 0, 0, 96, 54);
+    const pixels = ctx.getImageData(0, 0, 96, 54).data;
+    let lit = 0;
+    for (let i = 0; i < pixels.length; i += 4) if (pixels[i] + pixels[i + 1] + pixels[i + 2] > 24) lit++;
+    return lit > 100;
+  };
   const mobile = Boolean(window.nfnMobile);
   const open = (id, remote = mobile) => {
     window.nfn.collapse();
@@ -33,10 +42,11 @@
   assert(!preview.textContent.includes("Agent note") && !document.querySelector(".social-tabs"), "a single X draft has no full-width platform selector or agent text inside the post");
   assert(document.querySelector(".social-feedback").hidden && document.querySelector(".social-submit").textContent === "Approve", "single-post review starts with Approve and a hidden feedback field");
   const thumbnail = document.querySelector(".video-thumbnail");
-  await wait(() => video.readyState >= 2 && video.poster.startsWith("data:image/jpeg") && thumbnail.naturalWidth > 0, "the real local clip did not decode a thumbnail");
+  await wait(() => video.readyState >= 2 && video.poster.startsWith("data:image/jpeg") && visibleThumbnail(thumbnail), "the real local clip did not decode a visible thumbnail");
   assert(video.src.startsWith("blob:") && video.videoWidth === 1920 && video.videoHeight === 1080, "desktop video uses the bounded attachment bridge and decodes the reviewed landscape file");
   assert(video.muted && video.poster.length > 1000 && document.querySelector(".media-play").disabled === false, "a real video frame is visible before playback and preview starts muted");
-  assert(!thumbnail.hidden && thumbnail.src === video.poster, "the thumbnail is a decoded image layer above the video before playback");
+  assert(visibleThumbnail(thumbnail) && thumbnail.src === video.poster, "the thumbnail contains actual image pixels above the video before playback");
+  const dimensions = { width: video.videoWidth, height: video.videoHeight };
   const src = video.src, poster = video.poster, beforeWidth = video.getBoundingClientRect().width;
   if (!mobile) {
     const resize = document.querySelector('[data-resize="se"]'); resize.setPointerCapture = () => {}; resize.hasPointerCapture = () => false;
@@ -70,7 +80,8 @@
     assert(response?.decisions[0].decision === expected && !response.decisions[0].comment, `${expected} sends an explicit decision without feedback`);
   }
   post("final-preview"); open("final-preview", true);
-  await wait(() => document.querySelector(".video-thumbnail")?.naturalWidth > 0, "mobile thumbnail did not load");
+  await wait(() => visibleThumbnail(document.querySelector(".video-thumbnail")), "mobile thumbnail did not show the actual clip");
   assert(!document.querySelector(".social-tabs") && document.querySelector(".x-post") && !document.querySelector(".logs"), "mobile uses the same X card and thumbnail without an extra platform box or shell output");
-  return { passed: checks.length, checks, video: { width: video.videoWidth, height: video.videoHeight, poster: poster.length } };
+  await sleep(100);
+  return { passed: checks.length, checks, video: { ...dimensions, poster: poster.length } };
 })()

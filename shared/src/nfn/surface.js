@@ -703,7 +703,7 @@
         element.controls = true; element.playsInline = true; element.preload = "auto"; element.muted = true;
         element.setAttribute("aria-label", item.alt || "Post video");
         const poster = el("img", "video-thumbnail"); poster.alt = item.alt || "Video thumbnail"; poster.hidden = true;
-        let playbackStarted = false;
+        let playbackStarted = false, thumbnailQueued = false;
         frame.append(poster);
         const play = button("Play video", () => {
           element.play().catch(error => { play.textContent = "Play video"; play.title = error.message; });
@@ -713,10 +713,12 @@
         element.addEventListener("loadedmetadata", () => {
           frame.style.aspectRatio = `${element.videoWidth} / ${element.videoHeight}`;
           play.disabled = false;
+          queueThumbnail();
           if (!element.currentTime && element.paused) element.currentTime = Math.min(.1, element.duration / 2);
         });
         const thumbnail = () => {
-          if (element.poster || !element.videoWidth || element.readyState < 2 || element.seeking) return;
+          thumbnailQueued = false;
+          if (!element.isConnected || element.poster || !element.videoWidth || element.readyState < 2 || element.seeking) return;
           try {
             const canvas = document.createElement("canvas");
             canvas.width = Math.min(element.videoWidth, 1280); canvas.height = Math.round(canvas.width * element.videoHeight / element.videoWidth);
@@ -725,7 +727,13 @@
             poster.src = element.poster; poster.hidden = playbackStarted;
           } catch { /* Cross-origin videos still display their decoded first frame. */ }
         };
-        element.addEventListener("loadeddata", thumbnail); element.addEventListener("seeked", thumbnail);
+        const queueThumbnail = () => {
+          if (element.poster || thumbnailQueued) return;
+          thumbnailQueued = true;
+          if (element.requestVideoFrameCallback) element.requestVideoFrameCallback(thumbnail);
+          else setTimeout(thumbnail, 100);
+        };
+        element.addEventListener("loadeddata", queueThumbnail); element.addEventListener("seeked", queueThumbnail);
         element.addEventListener("playing", () => { playbackStarted = true; play.hidden = true; poster.hidden = true; });
         element.addEventListener("pause", () => { play.hidden = false; });
         if (!item.src.startsWith("/")) remoteMedia.set(element, { cancelled: false, url: null });
