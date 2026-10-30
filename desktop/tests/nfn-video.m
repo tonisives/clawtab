@@ -82,7 +82,7 @@ int main(int argc,const char **argv) {
                 return;
             }
             [surface.web evaluateJavaScript:@"(()=>{const v=document.querySelector('video'),p=document.querySelector('.media-play');if(!v||v.readyState<2||!v.poster||!v.src.startsWith('blob:')||p.disabled||document.getElementById('surface').getAnimations().length)return null; window.nativePlayClick=null; p.addEventListener('click',e=>window.nativePlayClick={trusted:e.isTrusted},{once:true}); const r=p.getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2];})()" completionHandler:^(id point, NSError *error) {
-                if (error || ![point isKindOfClass:NSArray.class]) return;
+                if (error || ![point isKindOfClass:NSArray.class] || !timer.valid) return;
                 [timer invalidate]; clickPlay(point);
             }];
         }];
