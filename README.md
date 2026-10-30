@@ -70,6 +70,12 @@ Window tabs show a colored age before the agent status: `jn` under a minute, the
 
 The daemon publishes agent activity to tmux without replacing your theme. Working windows get a cyan activity marker, agents asking for input get a yellow attention marker, and present-but-idle agents get a green check.
 
+Each pane also shows `Working`, `Waiting`, or `Idle` in its top border. These labels use the daemon's cached snapshot, so panes in the same window can show different states without running a CLI query on every redraw.
+
+The daemon repairs missed lifecycle hooks for Codex, Claude, OpenCode, and Hermes after startup and in paced recovery rounds. Rounds start at least ten minutes apart and inspect one session every five seconds, prioritizing older working markers. Confirmed idle sessions leave the queue until a new hook arrives. Unresolved sessions back off to twenty, forty, then eighty minutes. Normal hook events still update status immediately.
+
+Recovery reads provider records directly: bounded transcript tails for Claude and Codex, read-only SQLite for Hermes, and OpenCode's local session-status API with a SQLite fallback for older integrations. Database work has a 50 ms query budget, API requests time out after 250 ms, and recovery never captures pane contents or launches provider commands. It requires explicit terminal evidence; low CPU use or a quiet terminal does not imply completion. Recovered states do not replay historical completion messages.
+
 ClawTab picks up generated session names from Codex, Claude Code, OpenCode, and Hermes as they become available, usually on the next five-second scan. The name appears in ClawTab and on the top pane border. A window with exactly one agent also gets that name if tmux's automatic naming is enabled. Windows with multiple agents keep their window name. Explicitly renaming a window stops ClawTab from renaming it again; existing named windows and custom pane names are preserved.
 
 <p align="center">

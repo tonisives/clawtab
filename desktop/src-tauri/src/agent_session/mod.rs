@@ -4,6 +4,7 @@ mod codex;
 mod common;
 pub(crate) mod hermes;
 mod identities;
+pub(crate) mod lifecycle;
 mod opencode;
 mod output;
 
@@ -11,7 +12,6 @@ pub(crate) use output::{session_announcement, session_from_output};
 
 pub use identities::{agent_identities, AgentIdentity};
 
-pub(crate) use codex::completed_turn_after as codex_completed_turn_after;
 pub(crate) use codex::session_activity_for_pane as codex_session_activity_for_pane;
 pub(crate) use codex::thread_id_for_pane as codex_thread_id_for_pane;
 

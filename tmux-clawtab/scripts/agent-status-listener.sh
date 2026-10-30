@@ -134,6 +134,7 @@ clear_activity_options() {
     tmux list-panes -a -F '#{pane_id}' 2>/dev/null | while IFS= read -r pane_id; do
         [ -n "$pane_id" ] || continue
         tmux set-option -pqu -t "$pane_id" @clawtab-agent-asking 2>/dev/null || true
+        tmux set-option -pqu -t "$pane_id" @clawtab-agent-pane-working 2>/dev/null || true
         tmux set-option -pqu -t "$pane_id" @clawtab-agent-pane-alert 2>/dev/null || true
         tmux set-option -pqu -t "$pane_id" @clawtab-agent-pane-size-mb 2>/dev/null || true
         tmux set-option -pqu -t "$pane_id" @clawtab-agent-pane-last-action-at 2>/dev/null || true
@@ -177,7 +178,7 @@ apply_snapshot() {
         ] | @tsv' \
         2>/dev/null >>"$ACTIVITY_TSV" || return 1
 
-    tmux list-panes -a -F '#{pane_id}|||#{window_id}|||#{@clawtab-agent-pane-present}|||#{@clawtab-agent-present}|||#{@clawtab-agent-working}|||#{@clawtab-agent-question}|||#{@clawtab-agent-asking}|||#{pane_active}|||#{@clawtab-agent-alert}|||#{@clawtab-agent-pane-alert}|||#{@clawtab-agent-size-mb}|||#{@clawtab-agent-pane-size-mb}|||#{@clawtab-agent-last-action-at}|||#{@clawtab-agent-pane-last-action-at}' \
+    tmux list-panes -a -F '#{pane_id}|||#{window_id}|||#{@clawtab-agent-pane-present}|||#{@clawtab-agent-present}|||#{@clawtab-agent-working}|||#{@clawtab-agent-question}|||#{@clawtab-agent-asking}|||#{pane_active}|||#{@clawtab-agent-alert}|||#{@clawtab-agent-pane-alert}|||#{@clawtab-agent-size-mb}|||#{@clawtab-agent-pane-size-mb}|||#{@clawtab-agent-last-action-at}|||#{@clawtab-agent-pane-last-action-at}|||#{@clawtab-agent-pane-working}' \
         >"$PANE_STATE_FILE" 2>/dev/null || return 1
 
     awk -F '\t' 'BEGIN { OFS = "\t" }
@@ -203,6 +204,7 @@ apply_snapshot() {
             pane_alert_current[pane] = (field[10] == "1")
             pane_size_current[pane] = field[12] + 0
             pane_action_current[pane] = field[14] + 0
+            pane_working_current[pane] = (field[15] == "1")
             pane_window[pane] = window
             windows[window] = 1
             if (!(window in window_initialized)) {
@@ -235,7 +237,10 @@ apply_snapshot() {
                 if (pane_action_current[pane] != action) {
                     print "pane-action", pane, action
                 }
-                if (pane_current[pane] != wanted || pane_asking_current[pane] != asking ||
+                if (pane_current[pane] != wanted) {
+                    print "pane-title", pane, wanted
+                }
+                if (pane_current[pane] != wanted || pane_asking_current[pane] != asking || pane_working_current[pane] != working ||
                     pane_alert_current[pane] != alert || pane_size_current[pane] != size) {
                     print "pane", pane, wanted, working, asking, alert, size
                 }
@@ -271,13 +276,16 @@ apply_snapshot() {
 
     while IFS=$'\t' read -r kind target first second third fourth fifth; do
         case "$kind" in
-            pane)
+            pane-title)
                 if [ "$first" = "0" ]; then
                     clear_agent_pane_title "$target"
                 elif [ -x "$PANE_BORDER_CACHE_SCRIPT" ]; then
                     "$PANE_BORDER_CACHE_SCRIPT" "$target" >/dev/null 2>&1 &
                 fi
+                ;;
+            pane)
                 tmux set-option -pq -t "$target" @clawtab-agent-pane-present "$first" \
+                    \; set-option -pq -t "$target" @clawtab-agent-pane-working "$second" \
                     \; set-option -pq -t "$target" @clawtab-agent-asking "$third" \
                     \; set-option -pq -t "$target" @clawtab-agent-pane-alert "$fourth" \
                     \; set-option -pq -t "$target" @clawtab-agent-pane-size-mb "$fifth" \

@@ -46,6 +46,7 @@ pub(super) fn event(name: &str, payload: &Value) -> Option<HookEventV1> {
         _ => return None,
     };
     Some(HookEventV1 {
+        status_url: None,
         hermes_home: Some(home),
         version: EVENT_VERSION,
         provider: ProcessProvider::Hermes,

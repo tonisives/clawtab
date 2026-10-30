@@ -13,6 +13,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::Notify;
 
 mod hermes;
+mod recovery;
 
 #[cfg(unix)]
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
@@ -37,8 +38,10 @@ pub enum HookAttention {
     Question,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HookEventV1 {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hermes_home: Option<String>,
     pub version: u8,
@@ -123,6 +126,7 @@ impl HookEventV1 {
             .filter(|value| value.len() <= 2048)
             .map(str::to_string);
         Some(Self {
+            status_url: None,
             hermes_home: None,
             version: EVENT_VERSION,
             provider,
@@ -153,6 +157,10 @@ impl HookEventV1 {
             && self.session_id.len() <= 256
             && self.pane_id.as_deref().is_none_or(valid_pane_id)
             && self.cwd.as_ref().is_none_or(|value| value.len() <= 2048)
+            && self
+                .status_url
+                .as_ref()
+                .is_none_or(|value| value.len() <= 2048)
             && self
                 .pending_tool
                 .as_ref()
@@ -191,7 +199,6 @@ impl HookPaneState {
         }
     }
 }
-
 
 #[derive(Clone, Default)]
 pub struct HookRuntime {
@@ -356,7 +363,6 @@ impl HookRuntime {
                     .collect(),
             };
             self.codex_panes.lock().insert(pane_id.to_string(), ids);
-            self.reconcile_completed_codex_turns(pane_id);
             return;
         }
         let (changed, removed): (Vec<HookEventV1>, Vec<String>) = {
@@ -385,45 +391,7 @@ impl HookRuntime {
             let _ = fs::remove_file(sessions_dir().join(format!("{}.json", key)));
         }
         for event in changed {
-            persist_session_event(&event);
-        }
-    }
-
-    fn reconcile_completed_codex_turns(&self, pane_id: &str) {
-        let ids = self
-            .codex_panes
-            .lock()
-            .get(pane_id)
-            .cloned()
-            .unwrap_or_default();
-        let candidates: Vec<HookEventV1> = self
-            .sessions
-            .lock()
-            .values()
-            .filter(|event| {
-                event.provider == ProcessProvider::Codex
-                    && ids.contains(&event.session_id)
-                    && !event.ended
-                    && event.state != HookAgentState::Idle
-            })
-            .cloned()
-            .collect();
-        for candidate in candidates {
-            let Some(completed_at) = crate::agent_session::codex_completed_turn_after(
-                &candidate.session_id,
-                candidate.occurred_at_ms,
-            ) else {
-                continue;
-            };
-            let mut sessions = self.sessions.lock();
-            let key = session_key(candidate.provider, &candidate.session_id);
-            let Some(current) = sessions.get_mut(&key) else {
-                continue;
-            };
-            // Transcript reads run outside the lock. A newer hook must win.
-            if reconcile_completed_turn(current, &candidate, completed_at) {
-                persist_session_event(current);
-            }
+            let _ = persist_session_event(&event);
         }
     }
 
@@ -485,15 +453,10 @@ fn reconcile_completed_turn(
     observed: &HookEventV1,
     completed_at: u64,
 ) -> bool {
-    if current.occurred_at_ms != observed.occurred_at_ms
-        || current.state != observed.state
-        || current.pane_id != observed.pane_id
-        || current.ended
-        || completed_at <= current.occurred_at_ms
-    {
+    if current != observed || current.ended || completed_at <= current.occurred_at_ms {
         return false;
     }
-    current.event = "stop".to_string();
+    current.event = "reconciled_idle".to_string();
     current.state = HookAgentState::Idle;
     current.attention = None;
     current.pending_tool = None;
@@ -665,13 +628,18 @@ pub async fn run_event_watcher(
     }
     // Register first so events written during startup cannot be missed.
     replay_session_markers(&runtime);
+    tokio::spawn(recovery::run(runtime.clone()));
     process_inbox(
         &runtime,
         &agent_activity,
         &auto_yes_panes,
         event_sink.as_ref(),
     );
-    while rx.recv().await.is_some() {
+    loop {
+        tokio::select! {
+            event = rx.recv() => { if event.is_none() { return; } }
+            () = tokio::time::sleep(Duration::from_secs(600)) => {}
+        }
         process_inbox(
             &runtime,
             &agent_activity,
@@ -715,14 +683,19 @@ fn process_inbox(
     paths.sort();
     for path in paths {
         let event = read_event_file(&path);
-        let _ = fs::remove_file(&path);
         let Some(event) = event else {
+            let _ = fs::remove_file(&path);
             continue;
         };
-        if !runtime.apply(event.clone()) {
-            continue;
+        match consume_event(runtime, &event, &path, persist_session_event) {
+            Ok(true) => {}
+            Ok(false) => continue,
+            Err(error) => {
+                log::warn!("[agent-hooks] could not persist event: {}", error);
+                continue;
+            }
         }
-        persist_session_event(&event);
+        runtime.wake_question_detection();
         for pane_id in runtime.event_panes(&event) {
             let mut activity = agent_activity.lock().clone();
             let last_action_at_ms = activity
@@ -764,6 +737,33 @@ fn process_inbox(
     }
 }
 
+fn consume_event(
+    runtime: &HookRuntime,
+    event: &HookEventV1,
+    path: &Path,
+    persist: impl FnOnce(&HookEventV1) -> Result<(), String>,
+) -> Result<bool, String> {
+    // Serialize durable writes with recovery so an older inbox record cannot
+    // replace a newer marker between the timestamp check and the write.
+    let mut sessions = runtime.sessions.lock();
+    let key = event.storage_key();
+    if sessions
+        .get(&key)
+        .is_some_and(|previous| previous.occurred_at_ms > event.occurred_at_ms)
+    {
+        let _ = fs::remove_file(path);
+        return Ok(false);
+    }
+    persist(event)?;
+    if event.ended {
+        sessions.remove(&key);
+    } else {
+        sessions.insert(key, event.clone());
+    }
+    let _ = fs::remove_file(path);
+    Ok(true)
+}
+
 fn activity_from_hook_state(
     pane_id: &str,
     provider: ProcessProvider,
@@ -800,12 +800,16 @@ fn replay_session_markers(runtime: &HookRuntime) {
     }
 }
 
-fn persist_session_event(event: &HookEventV1) {
+fn persist_session_event(event: &HookEventV1) -> Result<(), String> {
     let path = sessions_dir().join(format!("{}.json", event.storage_key()));
     if event.ended {
-        let _ = fs::remove_file(path);
-    } else if let Err(error) = atomic_write_json(&path, event) {
-        log::debug!("[agent-hooks] failed to persist session state: {}", error);
+        match fs::remove_file(path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error.to_string()),
+        }
+    } else {
+        atomic_write_json(&path, event)
     }
 }
 
@@ -1120,7 +1124,8 @@ fn provider_configuration_complete(provider: ProcessProvider) -> bool {
             .all(|slot| slots.contains(slot))
                 && !codex_hooks_disabled()
         }
-        ProcessProvider::Opencode => provider_configured(provider),
+        ProcessProvider::Opencode => fs::read_to_string(opencode_plugin_path())
+            .is_ok_and(|value| value.contains(OPENCODE_SENTINEL) && value.contains("status_url:")),
         ProcessProvider::Hermes => {
             hermes::complete(&crate::agent_session::hermes::integration_home())
         }
@@ -1423,7 +1428,7 @@ import {{ randomUUID }} from "node:crypto"
 
 const inbox = "{inbox}"
 
-const emit = async (event, state, attention = null, ended = false) => {{
+const emit = async (serverUrl, event, state, attention = null, ended = false) => {{
   const properties = event?.properties ?? {{}}
   const sessionId = properties.sessionID ?? properties.sessionId ?? properties.id
   if (!sessionId) return
@@ -1431,6 +1436,7 @@ const emit = async (event, state, attention = null, ended = false) => {{
   const payload = {{
     version: 1,
     provider: "opencode",
+    status_url: serverUrl?.origin ?? null,
     event: event.type,
     session_id: String(sessionId),
     pane_id: paneId,
@@ -1449,17 +1455,17 @@ const emit = async (event, state, attention = null, ended = false) => {{
   await rename(temporary, `${{inbox}}/${{name}}`)
 }}
 
-export const ClawTab = async () => ({{
+export const ClawTab = async ({{ serverUrl }}) => ({{
   event: async ({{ event }}) => {{
     try {{
-      if (event.type === "session.created") await emit(event, "idle")
-      else if (event.type === "session.deleted") await emit(event, "idle", null, true)
-      else if (event.type === "session.idle") await emit(event, "idle")
-      else if (event.type === "permission.asked") await emit(event, "waiting", "permission")
-      else if (event.type === "permission.replied") await emit(event, "working")
+      if (event.type === "session.created") await emit(serverUrl, event, "idle")
+      else if (event.type === "session.deleted") await emit(serverUrl, event, "idle", null, true)
+      else if (event.type === "session.idle") await emit(serverUrl, event, "idle")
+      else if (event.type === "permission.asked") await emit(serverUrl, event, "waiting", "permission")
+      else if (event.type === "permission.replied") await emit(serverUrl, event, "working")
       else if (event.type === "session.status") {{
         const status = event.properties?.status?.type ?? event.properties?.status
-        await emit(event, status === "idle" ? "idle" : "working")
+        await emit(serverUrl, event, status === "idle" ? "idle" : "working")
       }}
     }} catch {{
       // Hooks must never interfere with OpenCode.
@@ -1483,6 +1489,53 @@ mod tests {
     use serde_json::json;
     use std::collections::HashSet;
     use std::fs;
+
+    #[test]
+    fn inbox_acknowledgement_follows_persistence_and_preserves_newer_state() {
+        let runtime = HookRuntime::default();
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("event.json");
+        fs::write(&path, "queued").unwrap();
+        let event = HookEventV1::from_provider_payload(
+            ProcessProvider::Claude,
+            "user_prompt_submit",
+            &json!({"session_id": "one"}),
+            Some("%1".into()),
+            Some(1),
+        )
+        .unwrap();
+        assert!(
+            super::consume_event(&runtime, &event, &path, |_| Err("disk full".into())).is_err()
+        );
+        assert!(path.exists());
+        assert!(runtime.pane_state("%1", ProcessProvider::Claude).is_none());
+        assert!(super::consume_event(&runtime, &event, &path, |_| Ok(())).unwrap());
+        assert!(!path.exists());
+        assert_eq!(
+            runtime
+                .pane_state("%1", ProcessProvider::Claude)
+                .unwrap()
+                .state,
+            HookAgentState::Working
+        );
+        let mut newer = event.clone();
+        newer.occurred_at_ms += 10;
+        newer.state = HookAgentState::Idle;
+        runtime.apply(newer);
+        fs::write(&path, "replayed after crash").unwrap();
+        assert!(!super::consume_event(&runtime, &event, &path, |_| panic!(
+            "older event must not be persisted"
+        ))
+        .unwrap());
+        assert!(!path.exists());
+        assert_eq!(
+            runtime
+                .pane_state("%1", ProcessProvider::Claude)
+                .unwrap()
+                .state,
+            HookAgentState::Idle
+        );
+    }
 
     #[tokio::test]
     async fn question_detection_wakeup_survives_an_active_scan_and_coalesces() {
@@ -1686,6 +1739,7 @@ mod tests {
     fn pane_state_aggregates_waiting_above_working() {
         let runtime = HookRuntime::default();
         runtime.apply(HookEventV1 {
+            status_url: None,
             hermes_home: None,
             version: 1,
             provider: ProcessProvider::Opencode,
@@ -1701,6 +1755,7 @@ mod tests {
             ended: false,
         });
         runtime.apply(HookEventV1 {
+            status_url: None,
             hermes_home: None,
             version: 1,
             provider: ProcessProvider::Opencode,
@@ -1734,6 +1789,7 @@ mod tests {
             ("current-idle", 42, 20, HookAgentState::Idle),
         ] {
             runtime.apply(HookEventV1 {
+                status_url: None,
                 hermes_home: None,
                 version: 1,
                 provider: ProcessProvider::Codex,
@@ -1807,8 +1863,7 @@ mod tests {
                 updated_at_ms: 1700000000123,
             };
             for previous in [None, Some(1700000000000)] {
-                let activity =
-                    activity_from_hook_state("%9", provider, &state, false, previous);
+                let activity = activity_from_hook_state("%9", provider, &state, false, previous);
                 assert_eq!(activity.last_action_at_ms, previous);
                 assert!(!activity.working);
                 assert!(!activity.asking);
