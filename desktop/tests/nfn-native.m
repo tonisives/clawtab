@@ -56,6 +56,13 @@ static void sendResizePointer(NSEventType type, NSPoint screenPoint) {
     [NSApp sendEvent:event];
 }
 
+static void waitForHoverRouting(NSUInteger attempt, BOOL (^ready)(void), void (^finish)(void)) {
+    if (ready() || attempt >= 15) { finish(); return; }
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 10), dispatch_get_main_queue(), ^{
+        waitForHoverRouting(attempt + 1, ready, finish);
+    });
+}
+
 // Exercise WindowServer delivery; NSApp sendEvent skips tracking-area routing.
 static void verifyTrackedResizeHover(NSPoint point, void (^finish)(void)) {
     BOOL key = surface.panel.isKeyWindow;
@@ -71,9 +78,10 @@ static void verifyTrackedResizeHover(NSPoint point, void (^finish)(void)) {
     };
     [NSCursor.arrowCursor set];
     move(-1);
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 10), dispatch_get_main_queue(), ^{
+    waitForHoverRouting(0, ^BOOL { return !surface.panel.ignoresMouseEvents; }, ^{
+        if (surface.panel.ignoresMouseEvents) { fprintf(stderr, "Passive hover did not enable mouse routing\n"); exit(1); }
         move(0);
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 5), dispatch_get_main_queue(), ^{
+        waitForHoverRouting(0, ^BOOL { return tracked > 0; }, ^{
             surface.web.resizeCursor = original;
             if (!tracked || NSCursor.currentCursor == NSCursor.arrowCursor || surface.panel.isKeyWindow != key
                 || NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier != foreground) {
