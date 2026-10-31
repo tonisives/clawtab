@@ -11,7 +11,7 @@ export type MessageRecord = {
     data?: Record<string, unknown>
     actions: MessageAction[]
     media?: { kind: string; src: string; alt: string }[]
-    source: { pane_id?: string; job_id?: string; run_id?: string; group?: string; agent_title?: string }
+    source: { pane_id?: string; session_id?: string; job_id?: string; run_id?: string; group?: string; agent_title?: string }
   }
   status: string
   dismissed_at?: number | null

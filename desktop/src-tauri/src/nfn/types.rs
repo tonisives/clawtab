@@ -516,6 +516,11 @@ pub enum NfnCommand {
     },
     Focus {
         id: String,
+        #[serde(default)]
+        pane_id: Option<String>,
+    },
+    SessionTargets {
+        id: String,
     },
     Reveal {
         id: String,

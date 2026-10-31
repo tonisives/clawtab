@@ -692,9 +692,24 @@ impl Service {
                 reveal_job(job).await?;
                 return Ok(json!({"opened":true}));
             }
-            NfnCommand::Focus { id } => {
+            NfnCommand::SessionTargets { id } => {
+                let record = self.store.get(&id)?;
+                return Ok(json!({"targets": session_targets(&record.request.source)?}));
+            }
+            NfnCommand::Focus { id, pane_id } => {
                 let _guard = self.mutation.lock().await;
                 let record = self.store.get(&id)?;
+                if let Some(pane) = pane_id {
+                    let source = resolve_source(&pane, None)?;
+                    if !same_conversation(&record.request.source, &source) {
+                        return Err(
+                            "This pane is no longer showing the message's conversation".into()
+                        );
+                    }
+                    validate_source(&source)?;
+                    focus_source(&source).await?;
+                    return Ok(json!({"focused":true}));
+                }
                 let result = self.focus_notification(&record).await?;
                 self.changed();
                 return Ok(result);
@@ -874,6 +889,24 @@ impl Service {
     }
 
     async fn focus_notification(&self, record: &NfnRecord) -> Result<Value, String> {
+        let targets = session_targets(&record.request.source)?;
+        if targets.len() > 1 {
+            return Ok(json!({"targets":targets}));
+        }
+        if let Some(target) = targets.first() {
+            let pane = target["pane_id"]
+                .as_str()
+                .ok_or("Session target has no pane")?;
+            let source = resolve_source(pane, None)?;
+            if !same_conversation(&record.request.source, &source) {
+                return Err(
+                    "The conversation moved. Open the message again to refresh its panes".into(),
+                );
+            }
+            validate_source(&source)?;
+            focus_source(&source).await?;
+            return Ok(json!({"focused":true}));
+        }
         if job_notice(record) {
             self.focus_job_session(record).await?;
         } else {
@@ -1653,6 +1686,7 @@ pub fn resolve_source(pane: &str, client_tty: Option<String>) -> Result<NfnSourc
     let meta = crate::config::settings::AppSettings::load()
         .process_overrides
         .get(pane)
+        .filter(|meta| meta.matches_identity(&pid, info.session_id.as_deref()))
         .cloned();
     let mut source = NfnSource {
         pane_id: Some(pane.into()),
@@ -1729,6 +1763,59 @@ pub fn resolve_source(pane: &str, client_tty: Option<String>) -> Result<NfnSourc
     Ok(source)
 }
 
+fn same_conversation(source: &NfnSource, current: &NfnSource) -> bool {
+    source
+        .session_id
+        .as_ref()
+        .is_some_and(|id| current.session_id.as_ref() == Some(id))
+        && source.provider == current.provider
+        && source.provider_home == current.provider_home
+}
+
+fn session_targets(source: &NfnSource) -> Result<Vec<Value>, String> {
+    if source.session_id.is_none() || source.provider.is_none() {
+        return Ok(Vec::new());
+    }
+    let mut panes: Vec<String> = tmux(&["list-panes", "-a", "-F", "#{pane_id}"])
+        .unwrap_or_default()
+        .lines()
+        .map(str::to_owned)
+        .collect();
+    panes.extend(
+        crate::managed::list()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|info| info.id),
+    );
+    panes.sort();
+    panes.dedup();
+    let snapshot = crate::agent_session::ProcessSnapshot::capture();
+    let mut targets = Vec::new();
+    for pane in panes {
+        let Ok(identity) = resolve_source_identity(&pane, &snapshot) else {
+            continue;
+        };
+        if !same_conversation(source, &identity) {
+            continue;
+        }
+        let Ok(current) = resolve_source(&pane, None) else {
+            continue;
+        };
+        if !same_conversation(source, &current) {
+            continue;
+        }
+        targets.push(json!({
+            "pane_id":pane,
+            "group":current.group,
+            "window_name":current.window_name,
+            "title":current.task.or(current.pane_title),
+            "program":if crate::managed::is_managed(&pane) { "ClawTab" } else { "tmux" },
+            "origin":source.pane_id.as_deref() == Some(pane.as_str()),
+        }));
+    }
+    Ok(targets)
+}
+
 fn validate_source(source: &NfnSource) -> Result<(), String> {
     SourceValidator::default().validate(source)
 }
@@ -1785,6 +1872,10 @@ fn resolve_source_identity(
             .session_id
         }
     };
+    let provider_home = (provider == Some(ProcessProvider::Hermes))
+        .then(|| agent_session::hermes::identity_for_pane(&pid, Some(snapshot)))
+        .flatten()
+        .map(|identity| identity.home.to_string_lossy().into_owned());
     Ok(NfnSource {
         pane_id: Some(pane.into()),
         pane_pid: Some(pid.clone()),
@@ -1794,6 +1885,7 @@ fn resolve_source_identity(
             .and_then(|pid| snapshot.start_epoch_for_pid(pid)),
         agent_pid,
         provider: provider.map(|provider| provider.as_str().into()),
+        provider_home,
         session_id,
         ..Default::default()
     })
@@ -1833,6 +1925,32 @@ fn reply_targets_agent(record: &NfnRecord, action_id: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn conversation_targets_match_across_panes_but_not_providers_or_homes() {
+        let source = NfnSource {
+            pane_id: Some("%12".into()),
+            provider: Some("codex".into()),
+            session_id: Some("conversation".into()),
+            ..Default::default()
+        };
+        let mut other = source.clone();
+        other.pane_id = Some("%10".into());
+        other.agent_pid = Some("different-process".into());
+        assert!(same_conversation(&source, &other));
+        other.session_id = Some("replacement".into());
+        assert!(!same_conversation(&source, &other));
+        other.session_id = source.session_id.clone();
+        other.provider = Some("claude".into());
+        assert!(!same_conversation(&source, &other));
+        other.provider = source.provider.clone();
+        other.provider_home = Some("/another/home".into());
+        assert!(!same_conversation(&source, &other));
+        assert!(!same_conversation(
+            &NfnSource::default(),
+            &NfnSource::default()
+        ));
+    }
 
     #[test]
     fn update_replies_target_the_originating_agent() {

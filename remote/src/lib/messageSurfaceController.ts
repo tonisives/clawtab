@@ -95,15 +95,27 @@ export function messageSurfaceController(options: Options) {
       }
       const record = await get(command.id);
       if (op === "get") return surfaceRecord(record);
-      if (op === "focus" || op === "open_job") {
+      const focusAction = op === "respond" && record.request.actions.find(action => action.id === command.action_id)?.kind === "focus";
+      if (op === "focus" || focusAction) {
+        let target = record;
+        if (record.request.source.session_id) {
+          const value = await options.host(machine, { op: "session_targets", id });
+          const targets: Result[] = value.targets || [];
+          if (!command.pane_id && targets.length > 1) return { targets };
+          const selected = command.pane_id ? targets.find(item => item.pane_id === command.pane_id) : targets[0];
+          if (command.pane_id && !selected) throw new Error("This pane is no longer showing the message's conversation");
+          if (selected) target = { ...record, request: { ...record.request, source: { ...record.request.source,
+            pane_id: resourceKey(machine, selected.pane_id),
+          } } };
+        }
+        options.navigate(target);
+        return { focused: true, record: surfaceRecord(record) };
+      }
+      if (op === "open_job") {
         options.navigate(record);
         return { focused: true, record: surfaceRecord(record) };
       }
       if (op === "respond" || op === "dismiss") {
-        if (op === "respond" && record.request.actions.find(action => action.id === command.action_id)?.kind === "focus") {
-          options.navigate(record);
-          return { focused: true, record: surfaceRecord(record) };
-        }
         await options.act({ machine, id, op, ...(typeof command.action_id === "string" ? { action_id: command.action_id } : {}),
           ...(typeof command.text === "string" ? { text: command.text } : {}),
           ...(Array.isArray(command.decisions) ? { decisions: command.decisions as SocialDecision[] } : {}) });

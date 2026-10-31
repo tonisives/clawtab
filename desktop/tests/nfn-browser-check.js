@@ -1327,8 +1327,30 @@
   assert(sessionNotice.dismissed_at && window.fixture.calls.some(command => command.op === "kill_session" && command.id === sessionNotice.id), "Kill session sends a separate host command and dismisses the message");
   resetFlow();
   const menuPreview = flowRecord("Session actions", 0, true);
+  const pickerNotice = flowRecord("Shared conversation", 0, true);
+  pickerNotice.request.source.session_id = "shared-conversation";
+  const pickerTargets = [
+    { pane_id: "%10", program: "tmux", group: "bmux", window_name: "recordings", title: "Record browsing sessions", origin: false },
+    { pane_id: "%12", program: "tmux", group: "tskr-signals", window_name: "x", title: "Record browsing sessions", origin: true },
+  ];
+  window.fixture.sessionTargets = pickerTargets;
+  window.nfn.receive(window.fixture.snapshot(pickerNotice.id));
+  await sleep(50);
+  assert(document.querySelector(".open-session").textContent === "Open (2)" && document.querySelector(".session-locations").textContent.includes("2 panes"), "shared conversation shows its pane count before opening");
+  click("Open session"); await sleep(50);
+  assert(document.querySelectorAll(".session-target").length === 2 && document.querySelector('.menu-panel[aria-label="Choose a pane"]'), "Open offers both panes for a shared conversation");
+  assert(document.querySelectorAll(".session-target")[1].textContent.includes("Message origin"), "pane picker identifies the message origin");
+  document.querySelector(".session-target").click(); await sleep(50);
+  assert(window.fixture.calls.some(command => command.op === "focus" && command.pane_id === "%10"), "choosing another pane sends that exact target");
+  assert(!pickerNotice.dismissed_at && pickerNotice.status === "pending" && !document.querySelector(".menu-overlay"), "opening a selected pane closes the picker and keeps the message pending");
+  window.fixture.sessionTargets = [];
+  resetFlow();
   window.fixture.records.set(menuPreview.id, menuPreview); window.nfn.receive(window.fixture.snapshot(menuPreview.id));
   document.querySelector('[data-action-id="acknowledge"]').click();
   await sleep(100);
+  resetFlow();
+  window.fixture.sessionTargets = pickerTargets;
+  window.fixture.records.set(pickerNotice.id, pickerNotice); window.nfn.receive(window.fixture.snapshot(pickerNotice.id));
+  await sleep(50); click("Open session"); await sleep(50);
   return { passed: checks.length, checks };
 })()

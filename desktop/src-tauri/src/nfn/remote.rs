@@ -55,6 +55,7 @@ fn allowed(command: &NfnCommand) -> bool {
             | NfnCommand::IgnoredAgents
             | NfnCommand::Cancel { .. }
             | NfnCommand::Context { .. }
+            | NfnCommand::SessionTargets { .. }
             | NfnCommand::Templates
             | NfnCommand::Todos
             | NfnCommand::TodoRefresh
@@ -176,6 +177,7 @@ mod tests {
             id: "review".into()
         }));
         assert!(allowed(&NfnCommand::Templates));
+        assert!(allowed(&NfnCommand::SessionTargets { id: "message".into() }));
         assert!(allowed(&NfnCommand::Todos));
         assert!(!allowed(&NfnCommand::TodoLink {
             note: "/tmp/tasks.md".into(),

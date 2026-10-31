@@ -21,6 +21,7 @@ window.webkit = { messageHandlers: { nfn: { postMessage(value) {
   }
   const record = fixture.records.get(command.id);
   let response = record || {};
+  if (command.op === "session_targets") response = { targets: fixture.sessionTargets || [] };
   if (command.op === "media") {
     const source = record?.request.media?.[command.index]?.src;
     const bytes = source === "/fixture/review.mp4" ? fixture.videoBytes : source === "/fixture/review-portrait.mp4" ? fixture.portraitVideoBytes : null;
@@ -80,6 +81,7 @@ window.webkit = { messageHandlers: { nfn: { postMessage(value) {
       return;
     }
     response = { focused: true, record };
+    if (!command.pane_id && fixture.sessionTargets?.length > 1) response = { targets: fixture.sessionTargets };
   }
   if (command.op === "list") response = { records: fixture.listRecords(command.pending_only).filter(record => (command.query || "").toLowerCase().split(/\s+/).filter(Boolean).every(term => JSON.stringify(record.request).toLowerCase().includes(term))).slice(command.offset, command.offset + 50), next_offset: command.offset + 50 };
   setTimeout(() => window.nfn.receive({ type: "response", token, value: response }), 1);
