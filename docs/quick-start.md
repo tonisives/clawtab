@@ -29,6 +29,10 @@ For split workspaces, the Mind Map, and visual settings, install the optional de
 brew install --cask tonisives/tap/clawtab-desktop
 ```
 
+Launch the desktop app with `cwt`. Starting with the next release, Homebrew
+installs `cwt` as the desktop shell command in place of `clawtab`. The app name
+remains ClawTab, and `cwtctl` continues to provide CLI commands.
+
 ### Build from source
 
 ```bash

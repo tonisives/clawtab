@@ -1,5 +1,8 @@
 # CLI & TUI
 
+`cwt` launches the ClawTab desktop app. Starting with the next release, it
+replaces the `clawtab` shell command. Use `cwtctl` for the control commands below.
+
 `cwtctl` and `cwttui` communicate over Unix domain sockets. There are two separate sockets, served by two separate processes:
 
 - `/tmp/clawtab.sock` -- daemon. Background lifecycle: jobs, scheduling, relay, auto-yes. Always running once installed (`cwtctl daemon install`).

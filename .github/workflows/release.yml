@@ -442,6 +442,19 @@ jobs:
           python3 homebrew-tap/scripts/update_release.py \
             --product clawtab --tag "$RELEASE_TAG" \
             --assets release-assets --tap homebrew-tap
+          python3 - <<'PY'
+          from pathlib import Path
+
+          cask = Path("homebrew-tap/Casks/clawtab-desktop.rb")
+          contents = cask.read_text()
+          launcher = '  binary "#{appdir}/ClawTab.app/Contents/MacOS/clawtab", target: "cwt"'
+          if launcher not in contents:
+              app = '  app "ClawTab.app"'
+              if contents.count(app) != 1:
+                  raise SystemExit("Expected one ClawTab.app artifact in desktop cask")
+              contents = contents.replace(app, app + "\n" + launcher)
+              cask.write_text(contents)
+          PY
 
       - name: Verify Homebrew entries before publishing
         run: |

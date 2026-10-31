@@ -269,6 +269,9 @@ The default package installs the daemon, `cwtctl`, agent hooks, and Zsh completi
 brew install --cask tonisives/tap/clawtab-desktop
 ```
 
+Launch the desktop app with `cwt`. Future releases install this shell command
+in place of `clawtab`; `cwtctl` remains the command-line control tool.
+
 ### Build from Source
 
 Requires macOS 10.15+, [Rust](https://rustup.rs/), [Node.js](https://nodejs.org/), [pnpm](https://pnpm.io/), and tmux.
