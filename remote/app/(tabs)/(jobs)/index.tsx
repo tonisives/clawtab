@@ -240,14 +240,25 @@ function saveListMode(value: JobListMode) {
 }
 
 export default function JobsScreen() {
-  const [bounds, setBounds] = useState({ width: 0, height: 0 })
-  return <ReservedRegionsProvider style={{ flex: 1 }} onLayout={({ nativeEvent }) => {
-    const { width, height } = nativeEvent.layout
-    setBounds((previous) => previous.width === width && previous.height === height ? previous : { width, height })
-  }}><JobsWorkspace bounds={bounds} /></ReservedRegionsProvider>
+  const provider = useRef<ComponentRef<typeof View>>(null)
+  const [bounds, setBounds] = useState({ x: 0, width: 0, height: 0 })
+  const windowSize = useWindowDimensions()
+  const insets = useSafeAreaInsets()
+  const measure = useCallback(() => {
+    provider.current?.measureInWindow((x, _y, width, height) => {
+      setBounds((previous) => previous.x === x && previous.width === width && previous.height === height ? previous : { x, width, height })
+    })
+  }, [])
+  useEffect(() => {
+    const frame = requestAnimationFrame(measure)
+    return () => cancelAnimationFrame(frame)
+  }, [measure, windowSize.width, windowSize.height, insets.left, insets.right])
+  return <ReservedRegionsProvider ref={provider} style={{ flex: 1 }} onLayout={measure}>
+    <JobsWorkspace bounds={bounds} />
+  </ReservedRegionsProvider>
 }
 
-function JobsWorkspace({ bounds }: { bounds: { width: number; height: number } }) {
+function JobsWorkspace({ bounds }: { bounds: { x: number; width: number; height: number } }) {
   const realJobs = useJobsStore((s) => s.jobs)
   const realStatuses = useJobsStore((s) => s.statuses)
   const detectedProcesses = useJobsStore((s) => s.detectedProcesses)
@@ -287,11 +298,17 @@ function JobsWorkspace({ bounds }: { bounds: { width: number; height: number } }
   const regions = useReservedRegions()
   const regionsReady = useReservedRegionsReady()
   const insets = useSafeAreaInsets()
+  // Native bars may already have inset this provider. Add only the remaining
+  // overlap with the window safe area, and keep fold coordinates local.
+  const phoneInsets = {
+    left: Math.max(0, insets.left - bounds.x),
+    right: Math.max(0, bounds.x + (bounds.width || width) - windowSize.width + insets.right),
+  }
   const phoneLayout = workspaceLayout(
-    (bounds.width || width) - insets.left - insets.right,
+    (bounds.width || width) - phoneInsets.left - phoneInsets.right,
     (bounds.height || windowSize.height) - insets.bottom,
     windowSize.fontScale,
-    regions.filter((region) => region.kind === "division").map(({ frame }) => ({ ...frame, x: frame.x - insets.left, y: frame.y })),
+    regions.filter((region) => region.kind === "division").map(({ frame }) => ({ ...frame, x: frame.x - phoneInsets.left, y: frame.y })),
   )
   const isSplitView = isIosPhone ? phoneLayout.split : responsiveSplit
   const router = useRouter()
@@ -1463,9 +1480,9 @@ function JobsWorkspace({ bounds }: { bounds: { width: number; height: number } }
   if (Platform.OS !== "web") {
     return (
       <View style={[styles.screenRoot, isIosPhone && {
-        opacity: regionsReady ? 1 : 0,
-        paddingLeft: insets.left + phoneLayout.clearance.left,
-        paddingRight: insets.right + phoneLayout.clearance.right,
+        opacity: regionsReady && bounds.width > 0 ? 1 : 0,
+        paddingLeft: phoneInsets.left + phoneLayout.clearance.left,
+        paddingRight: phoneInsets.right + phoneLayout.clearance.right,
         paddingTop: phoneLayout.clearance.top,
         paddingBottom: phoneLayout.clearance.bottom,
       }]}>
