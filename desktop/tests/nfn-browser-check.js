@@ -5,7 +5,7 @@
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
   const buttons = () => [...document.querySelectorAll("button")];
   const keepAlive = () => document.querySelector('.acknowledge-menu [role="menuitem"]')?.click();
-  const click = text => { buttons().find(button => button.textContent === text).click(); if (text === "Got it") keepAlive(); };
+  const click = text => { buttons().find(button => (button.textContent === text || button.getAttribute("aria-label") === text)).click(); if (text === "Got it") keepAlive(); };
   const nav = label => document.querySelector(`[aria-label="${label} notification"]`).click();
   const draft = text => { if (document.querySelector(".reply")?.hidden) document.querySelector(".reply-toggle").click(); const input = document.querySelector("textarea"); input.value = text; input.dispatchEvent(new Event("input")); return input; };
   window.nfn.setPlacement({ placement: "right", max_width: 1000, max_height: 860, reduce_motion: true });
@@ -371,8 +371,12 @@
   window.nfn.receive(window.fixture.snapshot(completion.id));
   assert(document.querySelector("h1").textContent === completion.request.title && document.querySelector(".reply").hidden && !document.querySelector(".auto-yes, .status.alert"), "agent completions appear as updates without permission or error controls");
   assert(document.querySelectorAll(".open-session").length === 1 && !document.querySelector(".actions button[title='Open session']") && !buttons().some(button => button.textContent === "Open agent"), "session cards have one footer action and no duplicate below the message");
+  const segments = [...document.querySelector(".footer-actions").querySelectorAll("button")];
+  assert(segments.map(node => node.textContent).join("|") === "Open session|Got it|Reply", "the centered segments contain session, acknowledgement, and reply in order");
+  assert(document.querySelector(".details-toggle svg") && !document.querySelector(".details-toggle").textContent && document.querySelector(".details-toggle").getAttribute("aria-label") === "Details", "Details uses an accessible chevron without a text label");
+  assert(segments.every((node, index) => !index || Math.abs(node.getBoundingClientRect().left - segments[index - 1].getBoundingClientRect().right - 1) < 1), "the three segments share one contiguous control");
   const footer = document.querySelector(".controls"), openSession = document.querySelector(".open-session").getBoundingClientRect(), footerBounds = footer.getBoundingClientRect();
-  assert(Math.abs(openSession.left + openSession.width / 2 - footerBounds.left - footerBounds.width / 2) < 1 && document.querySelector(".details-toggle").getBoundingClientRect().right <= openSession.left && footer === document.querySelector(".card").lastElementChild && document.querySelector(".card").getBoundingClientRect().bottom - openSession.bottom <= 16, "Open session is centered at the bottom with Details on its left");
+  assert(Math.abs(footer.querySelector(".footer-actions").getBoundingClientRect().left + footer.querySelector(".footer-actions").getBoundingClientRect().width / 2 - footerBounds.left - footerBounds.width / 2) < 1 && document.querySelector(".details-toggle").getBoundingClientRect().right <= openSession.left && footer === document.querySelector(".card").lastElementChild && document.querySelector(".card").getBoundingClientRect().bottom - openSession.bottom <= 16, "the session action group is centered at the bottom with the Details chevron on its left");
   window.fixture.focusError = "No terminal is attached";
   click("Open session"); await sleep(30);
   assert(!completion.dismissed_at && document.querySelector(".card") && document.querySelector(".notice").textContent === window.fixture.focusError, "a failed session switch leaves the notification available to retry");
@@ -1209,7 +1213,7 @@
   click("Got it"); await sleep(40);
   window.nfn.receive(window.fixture.snapshot(social.id)); window.nfn.receive({type:"open_record", id:social.id}); await sleep(60);
   assert(Boolean(document.querySelector('.social-submit')) && social.status === 'pending', "acknowledging a newer completion keeps the original publication review and its controls accessible");
-  if (document.querySelector('.details-toggle')?.textContent === 'Hide details') click('Hide details');
+  if (document.querySelector('.details-toggle')?.getAttribute('aria-expanded') === 'true') click('Hide details');
   assert(document.querySelector('.social-account').textContent.includes('@totovoto') && Boolean(document.querySelector('.social-review .media img')), "social review shows the exact account and inline media without opening details");
   const tabs = [...document.querySelectorAll('.social-tabs button')]; tabs[1].click();
   const panel = [...document.querySelectorAll('.social-platform')].find(node => !node.hidden);

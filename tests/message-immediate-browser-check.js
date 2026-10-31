@@ -3,7 +3,7 @@
   const checks = [];
   const assert = (ok, text) => { if (!ok) throw Error(text); checks.push(text); };
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-  const click = text => [...document.querySelectorAll("button")].find(button => button.textContent === text).click();
+  const click = text => [...document.querySelectorAll("button")].find(button => (button.textContent === text || button.getAttribute("aria-label") === text)).click();
   const bounds = element => element.getBoundingClientRect();
   const visible = element => bounds(element).top >= 0 && bounds(element).bottom <= innerHeight + 1;
   const fixture = window.fixture;

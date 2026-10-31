@@ -1078,7 +1078,7 @@
     const notice = el("div", "notice"); notice.setAttribute("role", "status"); node._notice = notice; node.append(notice);
     const utilities = el("div", "controls");
     {
-      const detailButton = button(details ? "Hide details" : "Details", toggleDetails, "utility details-toggle");
+      const detailButton = iconButton(details ? "Hide details" : "Details", "m6 9 6 6 6-6", toggleDetails, "details-toggle");
       detailButton.disabled = record.details_available === false;
       if (detailButton.disabled) detailButton.title = "Details are unavailable for this message";
       detailButton.setAttribute("aria-expanded", String(details)); node._detailsButton = detailButton; utilities.append(detailButton);
@@ -1117,6 +1117,8 @@
       utilities.append(actions);
     }
     const footerActions = el("div", "footer-actions");
+    footerActions.setAttribute("role", "group"); footerActions.setAttribute("aria-label", "Message actions");
+    footerActions.append(utilities.querySelector(".open-session"));
     if (actions.parentElement === utilities) footerActions.append(actions);
     else {
       const control = button("Got it", () => acknowledge(record), "primary acknowledge");
@@ -1135,7 +1137,8 @@
     if (!card) return;
     card._body.hidden = false;
     if (card._detailsButton) {
-      card._detailsButton.textContent = details ? "Hide details" : "Details";
+      card._detailsButton.setAttribute("aria-label", details ? "Hide details" : "Details");
+      if (!card._detailsButton.disabled) card._detailsButton.title = details ? "Hide details" : "Details";
       card._detailsButton.setAttribute("aria-expanded", String(details));
     }
     const content = card._content;

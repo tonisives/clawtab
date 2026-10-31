@@ -99,11 +99,18 @@ h1 { margin: 0; font-size: 15px; line-height: 1.35; font-weight: 600; overflow-w
 .message-thread .message { max-height: none; overflow: visible; margin-top: 4px; }
 .details-open .message-thread { flex: 0 1 auto; min-height: 70px; }
 button.reply-toggle { font-size: 12px; }
-.footer-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; }
-.session-controls .footer-actions { grid-column: 3; }
-.footer-actions .reply-toggle { flex: none; }
-.reply-toggle::before { content: "›"; display: inline-block; margin-right: 6px; }
-.reply-toggle[aria-expanded="true"]::before { transform: rotate(90deg); }
+.footer-actions { display: flex; align-items: stretch; gap: 1px; min-width: 0; max-width: 100%; border: 1px solid #7986cb80; border-radius: 8px; background: #7986cb80; }
+.session-controls .footer-actions { grid-column: 2; justify-self: center; }
+.footer-actions .actions { display: contents; }
+.controls .footer-actions button { flex: 1 1 auto; min-width: 0; max-width: none; margin: 0; border: 0; border-radius: 0; padding: 8px 12px; background: #272727; color: #aeb8ed; font-size: 12px; font-weight: 500; white-space: nowrap; }
+.controls .footer-actions .open-session { border-radius: 8px 0 0 8px; }
+.controls .footer-actions > :last-child { border-radius: 0 8px 8px 0; }
+.controls .footer-actions .actions:last-child button { border-radius: 0 8px 8px 0; }
+.controls .footer-actions button:is(:hover:where(:not([data-native-pointer] *)), [data-native-hover]) { background: #313131; }
+.controls .footer-actions button:active { background: #313131; }
+.controls .footer-actions .reply-toggle[aria-expanded="true"] { background: #313131; }
+.controls .details-toggle { justify-self: start; }
+.details-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
 .answer-row { display: flex; align-items: center; gap: 10px; margin-top: 12px; min-width: 0; }
 .answer-row:empty, .answer-row:has(.actions:empty) { display: none; }
 .actions { display: flex; flex: 1; min-width: 0; gap: 8px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; }
@@ -119,10 +126,12 @@ textarea::placeholder { color: #98989d; }
 button.send { flex: none; align-self: flex-end; min-width: 54px; padding: 7px 12px; border-radius: 20px; border-color: #7986cb80; font-size: 12px; font-weight: 500; }
 .controls { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 7px -7px -4px; font-size: 11px; }
 .card > .controls { margin-top: auto; padding-top: 7px; }
-.controls.session-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); padding-top: 14px; }
+.controls.session-controls { display: grid; grid-template-columns: minmax(32px, 1fr) auto minmax(32px, 1fr); padding-top: 14px; }
 .session-controls .details-toggle { justify-self: start; max-width: 100%; white-space: normal; text-align: left; }
-.session-controls .open-session { grid-column: 2; }
-.session-controls .actions { grid-column: 3; justify-content: flex-end; }
+@media (max-width: 400px) {
+  .controls.session-controls { grid-template-columns: 24px minmax(0, 1fr) 24px; gap: 4px; }
+  .controls .footer-actions button { padding: 8px; white-space: normal; }
+}
 .notice { font-size: 12px; line-height: 1.45; margin-top: 8px; white-space: pre-wrap; overflow-wrap: anywhere; color: #ff9f0a; }
 .notice:empty { display: none; }
 .details-content { margin-top: 16px; max-height: 50vh; min-height: 160px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
