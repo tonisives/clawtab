@@ -5,3 +5,5 @@ packages:
 allowBuilds:
   dtrace-provider: false
   esbuild: true
+patchedDependencies:
+  react-native-iap@15.6.2: patches/react-native-iap@15.6.2.patch

@@ -1,0 +1,13 @@
+diff --git a/src/utils/debug.ts b/src/utils/debug.ts
+index 3861bb7b0a3aa9eb6d54aa96a9cadc97e438925b..ffb31cdf3ef867d3a2da90fef983dc2d060a7dbb 100644
+--- a/src/utils/debug.ts
++++ b/src/utils/debug.ts
+@@ -11,7 +11,7 @@ const isLibraryDevelopment = () => {
+   // Library developers can set: RN_IAP_DEV_MODE=true
+   return (
+     process.env.RN_IAP_DEV_MODE === 'true' ||
+-    (global as any).RN_IAP_DEV_MODE === true
++    (globalThis as any).RN_IAP_DEV_MODE === true
+   );
+ };
+ 
