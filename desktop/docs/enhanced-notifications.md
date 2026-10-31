@@ -1,21 +1,21 @@
 # Messages and notifications
 
-Use `cwtctl message` for updates, questions, approvals, and completion messages. Desktop, mobile, and Telegram share a stored message ID and response. Existing `cwtctl nfn` commands and `cwtctl telegram send TEXT` remain available as aliases.
+Use `cwt message` for updates, questions, approvals, and completion messages. Desktop, mobile, and Telegram share a stored message ID and response. Existing `cwt nfn` commands and `cwt telegram send TEXT` remain available as aliases.
 
 ```sh
-cwtctl message send "Build finished" --kind completed
-cwtctl message send "Which branch should I use?" --kind question --wait
-cwtctl message send "Ship this release?" --choice "ship=Ship" --choice "revise=Revise" --wait
-cwtctl message send "Review needed" --channel desktop --channel telegram
-cwtctl message send "Build failed" --kind failed --channel mobile
-cwtctl message list --pending
-cwtctl message focus MESSAGE_ID
-cwtctl message reply MESSAGE_ID "Use beta"
-cwtctl message reply MESSAGE_ID --action ship
-cwtctl message dismiss MESSAGE_ID
-cwtctl message ignore MESSAGE_ID
-cwtctl message ignored-agents
-cwtctl message unignore MESSAGE_ID
+cwt message send "Build finished" --kind completed
+cwt message send "Which branch should I use?" --kind question --wait
+cwt message send "Ship this release?" --choice "ship=Ship" --choice "revise=Revise" --wait
+cwt message send "Review needed" --channel desktop --channel telegram
+cwt message send "Build failed" --kind failed --channel mobile
+cwt message list --pending
+cwt message focus MESSAGE_ID
+cwt message reply MESSAGE_ID "Use beta"
+cwt message reply MESSAGE_ID --action ship
+cwt message dismiss MESSAGE_ID
+cwt message ignore MESSAGE_ID
+cwt message ignored-agents
+cwt message unignore MESSAGE_ID
 ```
 
 ### Desktop and mobile delivery
@@ -63,11 +63,11 @@ Following macOS Focus requires notification and Focus access for **ClawTab Daemo
 The daemon reads `~/.config/clawtab/notifications.yaml` and reloads edits within a second. The desktop app is optional. Existing preferences migrate to this file when the daemon starts.
 
 ```sh
-cwtctl message settings                       # Open settings in the notification surface
-cwtctl message settings --json                # Show the path and current values
-cwtctl message settings ./notifications.yaml  # Apply a YAML file
-cwtctl message settings --stdin < ./notifications.yaml
-cwtctl message settings --ui                  # Also opens the notification settings surface
+cwt message settings                       # Open settings in the notification surface
+cwt message settings --json                # Show the path and current values
+cwt message settings ./notifications.yaml  # Apply a YAML file
+cwt message settings --stdin < ./notifications.yaml
+cwt message settings --ui                  # Also opens the notification settings surface
 ```
 
 Applying a partial file preserves unspecified values. Invalid values and unknown keys are rejected. Direct edits that are temporarily invalid leave the running configuration unchanged.
@@ -101,7 +101,7 @@ New notifications open their card when Pending or History is visible. A card bei
 Agent prompts and job notifications enter the queue automatically. Agents and scripts can also submit JSON:
 
 ```sh
-cwtctl message send --stdin --wait --timeout 300 <<'JSON'
+cwt message send --stdin --wait --timeout 300 <<'JSON'
 {
   "title": "Review the launch post",
   "body": "The caption and video are ready for review.",
@@ -116,7 +116,7 @@ JSON
 
 `send` returns the persisted request, including its ID. `--wait` returns the final record and response. A wait timeout returns `wait_timed_out: true` and leaves the request pending. Set `expires_at` to a Unix timestamp in milliseconds to expire the request itself.
 
-Use `cwtctl message focus MESSAGE_ID` to bring its card forward in the macOS desktop message bar with keyboard focus. Agents can use the ID returned by `send`, or find it with `message list --query TEXT`. This also opens messages in History. Messages from the same conversation share a card with the latest actions.
+Use `cwt message focus MESSAGE_ID` to bring its card forward in the macOS desktop message bar with keyboard focus. Agents can use the ID returned by `send`, or find it with `message list --query TEXT`. This also opens messages in History. Messages from the same conversation share a card with the latest actions.
 
 For progress reports that need no decision, send `"template": "update"` without `--wait`. Update cards show **Got it** at the bottom right, including cards without a session link. With keyboard hints enabled, **N** activates Got it on every card. For messages with an originating session, Got it opens a menu: Keep session alive dismisses the message, while Kill session closes the originating pane and dismisses the message. Messages without a session dismiss directly. Neither choice submits a result. Use question or permission templates when the workflow needs an answer. Sending a notification alone does not pause an agent; the workflow must wait for and consume its response.
 
@@ -127,14 +127,14 @@ Script jobs also save child-agent sessions, including Codex and Claude session a
 Shell jobs running inside tmux also capture session announcements from their terminal output. At startup, the daemon recovers missing sessions on existing job cards from each run's saved log. Dismissed cards keep their session action in History.
 
 ```sh
-cwtctl message get REQUEST_ID
-cwtctl message wait REQUEST_ID --timeout 60
-cwtctl message cancel REQUEST_ID
-cwtctl message show
-cwtctl message focus REQUEST_ID
-cwtctl message settings
-cwtctl message templates list
-cwtctl message templates validate ./my-review.yaml
+cwt message get REQUEST_ID
+cwt message wait REQUEST_ID --timeout 60
+cwt message cancel REQUEST_ID
+cwt message show
+cwt message focus REQUEST_ID
+cwt message settings
+cwt message templates list
+cwt message templates validate ./my-review.yaml
 ```
 
 The CLI uses `CODEX_THREAD_ID` to find the sending Codex conversation, since shared command runners can carry another pane's `TMUX_PANE`. Managed agents use `CLAWTAB_SESSION_ID`, with the conversation checked by the daemon. Without a Codex thread, the CLI infers the pane from `CLAWTAB_SESSION_ID` or `TMUX_PANE`. An explicit `source.pane_id` takes precedence. Binary jobs should set `source.job_id` and `source.run_id`; they then use that run's log and do not inherit a terminal pane. Media supports HTTPS URLs and absolute local file paths. The native overlay streams local video in bounded chunks and releases it when the card closes. The remote message view supports local and HTTPS media.
@@ -158,7 +158,7 @@ An explicit request can supply up to 32 actions. All options appear in one horiz
 }
 ```
 
-Agent cards have a **…** menu beside their title with **Auto-yes**, Agent controls, and Dismiss. Job cards omit the agent menu. Clicking the ClawTab icon or right-clicking the bar opens inline settings; `cwtctl message settings` opens the same view. Questions and permission cards show a yellow Auto-yes button on its own row below the answers. Their reply composer starts collapsed; click **Reply to agent** to open it. Reply drafts and open composers survive navigation. Cards show more context in a scrollable body. Auto-yes uses the same pane-specific setting as the remote app and tmux: future prompts from that agent are automatically answered until it is turned off. Its state stays synchronized with other clients, and stale sessions cannot toggle a replacement agent.
+Agent cards have a **…** menu beside their title with **Auto-yes**, Agent controls, and Dismiss. Job cards omit the agent menu. Clicking the ClawTab icon or right-clicking the bar opens inline settings; `cwt message settings` opens the same view. Questions and permission cards show a yellow Auto-yes button on its own row below the answers. Their reply composer starts collapsed; click **Reply to agent** to open it. Reply drafts and open composers survive navigation. Cards show more context in a scrollable body. Auto-yes uses the same pane-specific setting as the remote app and tmux: future prompts from that agent are automatically answered until it is turned off. Its state stays synchronized with other clients, and stale sessions cannot toggle a replacement agent.
 
 Action kinds are `choice` (default), `focus`, `auto_yes`, `model`, and `plugin`. Model and plugin actions use `value` for the model or installed action ID and `parameters` for string values, such as reasoning `effort`. The **… > Agent controls** menu offers Codex model selection and available installed plugin actions without opening Details.
 
@@ -169,8 +169,8 @@ The circular indicator opens a checklist grouped by ClawTab group. Its number sh
 Link an existing Markdown checklist instead of importing a copy:
 
 ```sh
-cwtctl nfn todos link /path/to/todo-today.md /path/to/agents.json
-cwtctl nfn todos list
+cwt nfn todos link /path/to/todo-today.md /path/to/agents.json
+cwt nfn todos list
 ```
 
 The source and optional agent mapping can also be changed under **Source and agent settings**. Level-two Markdown headings define groups; indented checkboxes remain subtasks. The daemon rereads the source, mapping, and agent status files every three seconds. Adding or checking a task writes back to the same note, preserving surrounding content. Repeated additions of the same text in the same group leave one task.

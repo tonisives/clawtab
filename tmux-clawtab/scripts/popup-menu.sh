@@ -113,8 +113,8 @@ load_secrets() {
     local raw=""
     if [ -n "$secrets_file" ] && [ -f "$secrets_file" ]; then
         raw=$(<"$secrets_file")
-    elif command -v cwtctl &>/dev/null; then
-        raw=$(cwtctl secrets 2>/dev/null)
+    elif command -v cwt &>/dev/null; then
+        raw=$(cwt secrets 2>/dev/null)
     fi
     if [ -n "$raw" ] && [ "$raw" != "No secrets stored" ]; then
         while IFS= read -r line; do
@@ -338,7 +338,7 @@ load_agent_actions() {
     AGENT_ACTIONS_JSON=""
     local actions_file="${1:-}"
     if [ -z "$actions_file" ]; then
-        command -v cwtctl &>/dev/null || return 0
+        command -v cwt &>/dev/null || return 0
     fi
 
     if [ "${ACTION_FORMAT:-}" = "text" ] || { [ -z "${ACTION_FORMAT:-}" ] && ! command -v jq &>/dev/null; }; then
@@ -353,7 +353,7 @@ load_agent_actions() {
                 unavailable_reason="${status#unavailable: }"
             fi
             append_agent_action "$action_id" "$title" "$available" "$unavailable_reason"
-        done < <(if [ -n "$actions_file" ]; then cat "$actions_file"; else cwtctl agent actions "$PANE_ID" 2>/dev/null || true; fi)
+        done < <(if [ -n "$actions_file" ]; then cat "$actions_file"; else cwt agent actions "$PANE_ID" 2>/dev/null || true; fi)
         return 0
     fi
 
@@ -361,7 +361,7 @@ load_agent_actions() {
     if [ -n "$actions_file" ]; then
         actions_json=$(<"$actions_file")
     else
-        actions_json=$(cwtctl agent actions "$PANE_ID" --json 2>/dev/null) || return 0
+        actions_json=$(cwt agent actions "$PANE_ID" --json 2>/dev/null) || return 0
     fi
     if ! printf '%s' "$actions_json" | jq -e '.actions | type == "array"' >/dev/null 2>&1; then
         return 0
@@ -382,7 +382,7 @@ load_agent_actions() {
 }
 
 start_agent_actions_load() {
-    command -v cwtctl &>/dev/null || return 0
+    command -v cwt &>/dev/null || return 0
     ACTION_FILE=$(mktemp /tmp/clawtab-actions-XXXXXX)
     ACTION_DONE_FILE="${ACTION_FILE}.done"
     if command -v jq &>/dev/null; then
@@ -392,9 +392,9 @@ start_agent_actions_load() {
     fi
     (
         if [ "$ACTION_FORMAT" = "json" ]; then
-            cwtctl agent actions "$PANE_ID" --json > "$ACTION_FILE" 2>/dev/null || true
+            cwt agent actions "$PANE_ID" --json > "$ACTION_FILE" 2>/dev/null || true
         else
-            cwtctl agent actions "$PANE_ID" > "$ACTION_FILE" 2>/dev/null || true
+            cwt agent actions "$PANE_ID" > "$ACTION_FILE" 2>/dev/null || true
         fi
         : > "$ACTION_DONE_FILE"
     ) &
@@ -735,7 +735,7 @@ start_usage_load() {
     USAGE_STARTED=1
     load_usage_cache || true
 
-    if ! command -v cwtctl &>/dev/null; then
+    if ! command -v cwt &>/dev/null; then
         if [ -z "$USAGE_SESSION" ] || [ -z "$USAGE_WEEK" ]; then
             USAGE_LINE="${USAGE_TITLE} usage unavailable"
         fi
@@ -746,7 +746,7 @@ start_usage_load() {
     USAGE_DONE_FILE="${USAGE_FILE}.done"
     rm -f "$USAGE_FILE" "$USAGE_DONE_FILE"
     (
-        cwtctl usage "$USAGE_PROVIDER" > "$USAGE_FILE" 2>/dev/null
+        cwt usage "$USAGE_PROVIDER" > "$USAGE_FILE" 2>/dev/null
         : > "$USAGE_DONE_FILE"
     ) &
     USAGE_PID=$!
@@ -925,15 +925,15 @@ start_data_load() {
         ) > "$DATA_SKILLS_FILE" &
 
         (
-            if command -v cwtctl &>/dev/null; then
-                cwtctl secrets 2>/dev/null
+            if command -v cwt &>/dev/null; then
+                cwt secrets 2>/dev/null
             fi
         ) > "$DATA_SECRETS_FILE" &
 
         (
-            if command -v cwtctl &>/dev/null; then
-                if ! cwtctl agent info --fast "$PANE_ID" 2>/dev/null; then
-                    cwtctl agent info "$PANE_ID" 2>/dev/null
+            if command -v cwt &>/dev/null; then
+                if ! cwt agent info --fast "$PANE_ID" 2>/dev/null; then
+                    cwt agent info "$PANE_ID" 2>/dev/null
                 fi
             fi
             : > "$DATA_SESSION_DONE_FILE"
@@ -1131,9 +1131,9 @@ maybe_prompt_hook_install() {
     local provider status action action_label prompt_key result restart_hint confirmed
     provider=$(hook_provider_for_agent)
     [ -n "$provider" ] || return 0
-    command -v cwtctl &>/dev/null || return 0
+    command -v cwt &>/dev/null || return 0
 
-    status=$(cwtctl agent hooks status "$provider" 2>/dev/null) || return 0
+    status=$(cwt agent hooks status "$provider" 2>/dev/null) || return 0
     if [[ "$status" == *"configured=true"* ]] && [[ "$status" != *"needs_repair=true"* ]]; then
         return 0
     fi
@@ -1164,7 +1164,7 @@ maybe_prompt_hook_install() {
         "${action}ing ${AGENT_LABEL} hooks..." \
         "" \
         "please wait"
-    result=$(cwtctl agent hooks install "$provider" 2>&1) || {
+    result=$(cwt agent hooks install "$provider" 2>&1) || {
         draw_hook_screen \
             "Hook setup failed" \
             "Could not set up ${AGENT_LABEL} hooks." \
@@ -1396,8 +1396,8 @@ draw_list() {
         if [ -n "$SEARCH" ]; then
             printf "${C_DIM}No matches${C_RESET}" >&3
         elif [ "$tab_type" = "secrets" ]; then
-            if ! command -v cwtctl &>/dev/null; then
-                printf "${C_DIM}cwtctl not found${C_RESET}" >&3
+            if ! command -v cwt &>/dev/null; then
+                printf "${C_DIM}cwt not found${C_RESET}" >&3
             else
                 printf "${C_DIM}No secrets available${C_RESET}" >&3
             fi
@@ -1506,8 +1506,8 @@ draw_plugins() {
         draw_row_start $list_start
         if [ -n "$SEARCH" ]; then
             printf "${C_DIM}No matches${C_RESET}" >&3
-        elif ! command -v cwtctl &>/dev/null; then
-            printf "${C_DIM}cwtctl not found${C_RESET}" >&3
+        elif ! command -v cwt &>/dev/null; then
+            printf "${C_DIM}cwt not found${C_RESET}" >&3
         elif [ "$ACTION_LOADING" -eq 1 ]; then
             printf "${C_DIM}Loading plugins...${C_RESET}" >&3
         else
@@ -1621,31 +1621,31 @@ edit_title() {
     TITLE_FILE=""
     title="${title#"${title%%[![:space:]]*}"}"
     title="${title%"${title##*[![:space:]]}"}"
-    if cwtctl agent rename "$PANE_ID" "$title" >/dev/null 2>&1; then
+    if cwt agent rename "$PANE_ID" "$title" >/dev/null 2>&1; then
         SESSION_DISPLAY_NAME="$title"
     fi
 }
 
 ai_rename_title() {
-    command -v cwtctl &>/dev/null || return 0
+    command -v cwt &>/dev/null || return 0
     draw_empty_row 2
     draw_row_start 3
     printf "${C_SEARCH}Generating title...${C_RESET}" >&3
     draw_row_end 3
     local title
-    if title=$(cwtctl agent ai-rename "$PANE_ID" 2>/dev/null); then
+    if title=$(cwt agent ai-rename "$PANE_ID" 2>/dev/null); then
         SESSION_DISPLAY_NAME="$title"
     fi
 }
 
 toggle_shared_pin() {
-    command -v cwtctl &>/dev/null || return 0
+    command -v cwt &>/dev/null || return 0
     local current
     current=$(tmux show-option -pqvt "$PANE_ID" @clawtab-pinned)
     if [ "$current" = "1" ]; then
-        cwtctl agent unpin "$PANE_ID" >/dev/null 2>&1
+        cwt agent unpin "$PANE_ID" >/dev/null 2>&1
     else
-        cwtctl agent pin "$PANE_ID" >/dev/null 2>&1
+        cwt agent pin "$PANE_ID" >/dev/null 2>&1
     fi
 }
 
@@ -1804,7 +1804,7 @@ run_agent_action_from_menu() {
     fi
 
     if [ -z "$AGENT_ACTIONS_JSON" ]; then
-        AGENT_ACTIONS_JSON=$(cwtctl agent actions "$PANE_ID" --json 2>/dev/null) || {
+        AGENT_ACTIONS_JSON=$(cwt agent actions "$PANE_ID" --json 2>/dev/null) || {
             draw
             return 0
         }
@@ -1827,7 +1827,7 @@ run_agent_action_from_menu() {
     local -a run_args
     run_args=("$action_id" "$PANE_ID")
     if [ "$parameter_count" -eq 0 ]; then
-        cwtctl agent action run "${run_args[@]}" >/dev/null 2>&1 || true
+        cwt agent action run "${run_args[@]}" >/dev/null 2>&1 || true
         return 1
     fi
 
@@ -1918,7 +1918,7 @@ run_agent_action_from_menu() {
     done < <(printf '%s' "$action_json" | jq -c '.parameters[]?')
     exec 4<&-
 
-    if ! cwtctl agent action run "${run_args[@]}" >/dev/null 2>&1; then
+    if ! cwt agent action run "${run_args[@]}" >/dev/null 2>&1; then
         if [ "$has_model" -eq 1 ] && [ "$has_effort" -eq 1 ]; then
             tmux display-message "ClawTab: could not start model switch"
         else
@@ -1968,7 +1968,7 @@ do_enter() {
                     local action_index=$((SHORTCUT_CURSOR - 5))
                     local action_id="${AGENT_ACTION_IDS[$action_index]:-}"
                     if [ -n "$action_id" ]; then
-                        cwtctl agent action run "$action_id" "$PANE_ID" >/dev/null 2>&1 || true
+                        cwt agent action run "$action_id" "$PANE_ID" >/dev/null 2>&1 || true
                         return 1
                     fi
                     ;;

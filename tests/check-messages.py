@@ -14,7 +14,7 @@ results = root / "dist/message-checks"
 results.mkdir(parents=True, exist_ok=True)
 checks = [
     ("lifecycle", ["cargo", "test", "--manifest-path", "desktop/src-tauri/Cargo.toml", "--no-default-features", "--lib", "nfn::", "-j4"]),
-    ("cli", ["cargo", "check", "--manifest-path", "desktop/src-tauri/Cargo.toml", "--no-default-features", "--bin", "cwtctl", "-j4"]),
+    ("cli", ["cargo", "check", "--manifest-path", "desktop/src-tauri/Cargo.toml", "--no-default-features", "--bin", "cwt", "-j4"]),
     ("relay", ["cargo", "test", "--manifest-path", "relay/Cargo.toml", "-j4"]),
     ("desktop", ["pnpm", "--dir", "desktop", "build"]),
     ("mobile", ["pnpm", "--dir", "remote", "exec", "tsc", "--noEmit"]),

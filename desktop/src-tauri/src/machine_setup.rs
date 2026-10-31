@@ -211,7 +211,7 @@ async fn save_pairing(
                 .status()
                 .map_err(|e| e.to_string())?;
             if !status.success() {
-                return Err("paired, but enabling lingering failed; run cwtctl daemon install after configuring the user systemd manager".into());
+                return Err("paired, but enabling lingering failed; run cwt daemon install after configuring the user systemd manager".into());
             }
         }
         println!("{}", crate::daemon::install()?);

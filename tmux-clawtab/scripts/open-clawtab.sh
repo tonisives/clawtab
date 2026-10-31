@@ -6,12 +6,12 @@ if [ -z "$pane_id" ]; then
     pane_id=$(tmux display-message -p '#{pane_id}')
 fi
 
-if ! command -v cwtctl &>/dev/null; then
-    tmux display-message "cwtctl not found"
+if ! command -v cwt &>/dev/null; then
+    tmux display-message "cwt not found"
     exit 1
 fi
 
-result=$(cwtctl pane open "$pane_id" 2>&1)
+result=$(cwt pane open "$pane_id" 2>&1)
 if [ $? -ne 0 ]; then
     tmux display-message "ClawTab: $result"
 fi

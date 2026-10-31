@@ -27,13 +27,13 @@ Forking, skill injection, secret injection and provider quota reports are not ad
 Install and configure Hermes normally, then enable its integration in ClawTab's agent integration settings, or run:
 
 ```sh
-cwtctl agent hooks install hermes
-cwtctl agent hooks status hermes
+cwt agent hooks install hermes
+cwt agent hooks status hermes
 ```
 
 The daemon resolves its `HERMES_HOME` and Hermes's sticky `active_profile`. Installation updates that profile's `config.yaml` and `shell-hooks-allowlist.json`, preserving other hook registrations and settings. Existing files receive `.clawtab-backup` backups. The YAML is reserialized, so comments and formatting remain in the backup. Only ClawTab's six exact hook commands are approved; the global hook auto-accept setting is preserved.
 
-Restart that Hermes gateway after installation and reopen a session so its startup hook registrations reload. For multiple profiles, enable the hooks in each profile you want to monitor. A daemon started before an environment change retains its launch environment; setting `HERMES_HOME` on the `cwtctl` invocation alone does not change the daemon's selected profile.
+Restart that Hermes gateway after installation and reopen a session so its startup hook registrations reload. For multiple profiles, enable the hooks in each profile you want to monitor. A daemon started before an environment change retains its launch environment; setting `HERMES_HOME` on the `cwt` invocation alone does not change the daemon's selected profile.
 
 For classic CLI metadata, leave Hermes's `session.terminal_continue` enabled. That setting writes the terminal identity breadcrumb used by ClawTab.
 

@@ -31,14 +31,14 @@ jobs:
         timeout-minutes: 3
       - name: Build Windows host
         if: runner.os == 'Windows'
-        run: cargo build -j4 --locked --release --no-default-features --bin cwtctl --bin clawtab-daemon --bin clawtab-hook
+        run: cargo build -j4 --locked --release --no-default-features --bin cwt --bin clawtab-daemon --bin clawtab-hook
       - name: Package Windows host
         if: runner.os == 'Windows'
         shell: pwsh
         working-directory: .
         run: |
           New-Item -ItemType Directory -Force package/bin, package/plugins | Out-Null
-          Copy-Item desktop/src-tauri/target/release/cwtctl.exe, desktop/src-tauri/target/release/clawtab-daemon.exe, desktop/src-tauri/target/release/clawtab-hook.exe package/bin/
+          Copy-Item desktop/src-tauri/target/release/cwt.exe, desktop/src-tauri/target/release/clawtab-daemon.exe, desktop/src-tauri/target/release/clawtab-hook.exe package/bin/
           Copy-Item -Recurse etc/agent-plugins/local.session-shortcuts package/plugins/
           Copy-Item etc/install-windows.ps1 package/install.ps1
           Compress-Archive -Path package/* -DestinationPath clawtab-windows-x86_64.zip
@@ -50,7 +50,7 @@ jobs:
         run: |
           $root = Join-Path $env:RUNNER_TEMP 'ClawTab install test'
           & ./package/install.ps1 -InstallRoot $root
-          $shim = Join-Path $root 'bin/cwtctl.cmd'
+          $shim = Join-Path $root 'bin/cwt.cmd'
           & $shim --version
           if ($LASTEXITCODE -ne 0) { throw 'Installed CLI did not run' }
           $env:CLAWTAB_SESSION_DIR = Join-Path $root 'sessions'

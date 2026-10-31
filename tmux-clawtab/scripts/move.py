@@ -12,7 +12,7 @@ import uuid
 
 
 def command(*args):
-    result = subprocess.run(['cwtctl', 'move', *args], capture_output=True, text=True, timeout=240)
+    result = subprocess.run(['cwt', 'move', *args], capture_output=True, text=True, timeout=240)
     if result.returncode:
         raise ValueError(result.stderr.strip() or 'Move command unavailable')
     return json.loads(result.stdout)

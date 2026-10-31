@@ -27,18 +27,18 @@ fn stdin() -> Result<String, String> {
 pub async fn message(args: &[String]) -> Result<Value, String> {
     if args.is_empty() || matches!(args[0].as_str(), "help" | "--help" | "-h") {
         return Ok(json!({"usage":[
-            "cwtctl message send TEXT [--kind update|question|approval|completed|failed]",
+            "cwt message send TEXT [--kind update|question|approval|completed|failed]",
             "  [--channel desktop|mobile|telegram] [--choice [ID=]LABEL] [--wait] [--timeout SECONDS]",
             "  [--title TITLE] [--template ID] [--chat ID] [--response-destination result|agent_message]",
             "  [--image PATH_OR_URL] [--video PATH_OR_URL] (repeat for multiple attachments)",
-            "cwtctl message send --stdin [--wait] [--timeout SECONDS]",
-            "cwtctl message list [--pending] [--offset N] [--query TEXT]",
-            "cwtctl message get|wait|cancel|read|dismiss ID [--timeout SECONDS]",
-            "cwtctl message ignore|unignore ID",
-            "cwtctl message ignored-agents",
-            "cwtctl message focus ID",
-            "cwtctl message reply ID [TEXT] [--action ID]",
-            "cwtctl message show|settings|templates [args]"
+            "cwt message send --stdin [--wait] [--timeout SECONDS]",
+            "cwt message list [--pending] [--offset N] [--query TEXT]",
+            "cwt message get|wait|cancel|read|dismiss ID [--timeout SECONDS]",
+            "cwt message ignore|unignore ID",
+            "cwt message ignored-agents",
+            "cwt message focus ID",
+            "cwt message reply ID [TEXT] [--action ID]",
+            "cwt message show|settings|templates [args]"
         ]}));
     }
     match args[0].as_str() {
@@ -273,15 +273,15 @@ async fn submit(
 pub async fn run(args: &[String]) -> Result<Value, String> {
     if args.is_empty() || matches!(args[0].as_str(), "help" | "--help" | "-h") {
         return Ok(json!({"usage":[
-            "cwtctl nfn send --stdin [--template ID] [--wait] [--timeout SECONDS]",
-            "cwtctl nfn get|wait|cancel ID [--timeout SECONDS]",
-            "cwtctl nfn templates list",
-            "cwtctl nfn templates validate [FILE | --stdin]",
-            "cwtctl nfn show",
-            "cwtctl nfn focus ID",
-            "cwtctl nfn todos list",
-            "cwtctl nfn todos link NOTE.md [agents.json]",
-            "cwtctl nfn settings [FILE.yaml | --stdin | --json | --ui]"
+            "cwt nfn send --stdin [--template ID] [--wait] [--timeout SECONDS]",
+            "cwt nfn get|wait|cancel ID [--timeout SECONDS]",
+            "cwt nfn templates list",
+            "cwt nfn templates validate [FILE | --stdin]",
+            "cwt nfn show",
+            "cwt nfn focus ID",
+            "cwt nfn todos list",
+            "cwt nfn todos link NOTE.md [agents.json]",
+            "cwt nfn settings [FILE.yaml | --stdin | --json | --ui]"
         ],"response_destination":["result","agent_message"],"template_directory":templates::directory()}));
     }
     let timeout = flag_value(args, "--timeout")?
@@ -361,7 +361,7 @@ pub async fn run(args: &[String]) -> Result<Value, String> {
         }
         "focus" => {
             if args.len() != 2 || args[1].trim().is_empty() || args[1].starts_with('-') {
-                return Err("Use cwtctl message focus ID".into());
+                return Err("Use cwt message focus ID".into());
             }
             call(NfnCommand::Reveal {
                 id: args[1].clone(),
@@ -413,7 +413,7 @@ pub async fn run(args: &[String]) -> Result<Value, String> {
             }
             _ => Err("Use nfn templates list or nfn templates validate [FILE | --stdin]".into()),
         },
-        _ => Err("Unknown nfn command; use cwtctl nfn help".into()),
+        _ => Err("Unknown nfn command; use cwt nfn help".into()),
     }
 }
 
@@ -516,9 +516,9 @@ mod tests {
             let args = args.into_iter().map(str::to_string).collect::<Vec<_>>();
             assert_eq!(
                 message(&args).await.unwrap_err(),
-                "Use cwtctl message focus ID"
+                "Use cwt message focus ID"
             );
-            assert_eq!(run(&args).await.unwrap_err(), "Use cwtctl message focus ID");
+            assert_eq!(run(&args).await.unwrap_err(), "Use cwt message focus ID");
         }
     }
 

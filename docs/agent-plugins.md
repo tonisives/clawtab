@@ -111,7 +111,7 @@ CLAWTAB_WORKING_DIRECTORY
 CLAWTAB_PARAMETERS_JSON
 ```
 
-`CLAWTAB_CLI` is the `cwtctl` executable to use for host calls. `CLAWTAB_PARAMETERS_JSON` contains the validated parameter map. `CLAWTAB_WORKING_DIRECTORY` is the working directory of the target pane.
+`CLAWTAB_CLI` is the `cwt` executable to use for host calls. `CLAWTAB_PARAMETERS_JSON` contains the validated parameter map. `CLAWTAB_WORKING_DIRECTORY` is the working directory of the target pane.
 
 `CLAWTAB_PLUGIN_TOKEN` and `CLAWTAB_PLUGIN_SOCKET` are injected internals used to authenticate host calls. Do not log, print, or include them in results.
 
@@ -146,32 +146,32 @@ Local executables are trusted user code. ClawTab does not sandbox them. They run
 Review a plugin's command paths and capabilities before approving it:
 
 ```sh
-cwtctl plugin installed --json
-cwtctl plugin approve <plugin-id> <fingerprint>
-cwtctl plugin revoke <plugin-id>
+cwt plugin installed --json
+cwt plugin approve <plugin-id> <fingerprint>
+cwt plugin revoke <plugin-id>
 ```
 
 Approval controls access to the ClawTab host API and is tied to the plugin fingerprint. If the fingerprint changes, approval is no longer valid and must be renewed after reviewing the new package.
 
-Activation mismatches are hidden from the action list. A matching action from an untrusted plugin is shown as unavailable until approval. Invalid plugin packages are unavailable and are reported by `cwtctl plugin installed --json`.
+Activation mismatches are hidden from the action list. A matching action from an untrusted plugin is shown as unavailable until approval. Invalid plugin packages are unavailable and are reported by `cwt plugin installed --json`.
 
 ## Action commands
 
 Use these commands for actions in the current pane:
 
 ```sh
-cwtctl plugin list [pane_id] [--json]
-cwtctl plugin <name> run [pane_id] [key=value ...]
-cwtctl plugin <name> status <run_id>
-cwtctl plugin <name> cancel <run_id>
+cwt plugin list [pane_id] [--json]
+cwt plugin <name> run [pane_id] [key=value ...]
+cwt plugin <name> status <run_id>
+cwt plugin <name> cancel <run_id>
 ```
 
-When `pane_id` is omitted, `cwtctl` uses `$TMUX_PANE`. `<name>` can be a full action ID or a unique action suffix, with dashes and underscores treated equivalently. Runs return a JSON record immediately. Use `status` to poll the run.
+When `pane_id` is omitted, `cwt` uses `$TMUX_PANE`. `<name>` can be a full action ID or a unique action suffix, with dashes and underscores treated equivalently. Runs return a JSON record immediately. Use `status` to poll the run.
 
 Codex model switching also has a first-class command for latency-sensitive local integrations:
 
 ```sh
-cwtctl codex set-model <model> <effort> [pane_id]
+cwt codex set-model <model> <effort> [pane_id]
 ```
 
 The command waits for the live Codex TUI to confirm the selection and preserves any composer draft. It does not launch an external plugin process. If `pane_id` is omitted, it uses `$TMUX_PANE`.

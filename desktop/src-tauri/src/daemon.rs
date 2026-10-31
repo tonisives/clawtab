@@ -284,10 +284,7 @@ mod tests {
             .join("ClawTab Daemon.app/Contents/MacOS/ClawTab Daemon");
         std::fs::create_dir_all(daemon.parent().unwrap()).unwrap();
         std::fs::write(&daemon, "daemon").unwrap();
-        assert_eq!(
-            daemon_beside(&directory.path().join("cwtctl")),
-            Some(daemon)
-        );
+        assert_eq!(daemon_beside(&directory.path().join("cwt")), Some(daemon));
     }
 
     #[test]

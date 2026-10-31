@@ -31,11 +31,11 @@ jobs:
         working-directory: desktop/src-tauri
         run: |
           cargo test -j4 --no-default-features --lib --bins --test managed_sessions
-          cargo build -j4 --release --no-default-features --bin clawtab-daemon --bin cwtctl --bin clawtab-hook
+          cargo build -j4 --release --no-default-features --bin clawtab-daemon --bin cwt --bin clawtab-hook
       - name: Package
         run: |
           mkdir -p package/bin package/plugins
-          cp desktop/src-tauri/target/release/{clawtab-daemon,cwtctl,clawtab-hook} package/bin/
+          cp desktop/src-tauri/target/release/{clawtab-daemon,cwt,clawtab-hook} package/bin/
           cp -R etc/agent-plugins/local.session-shortcuts package/plugins/
           cp etc/install-linux.sh package/install.sh
           cp etc/download-linux.sh package/download-linux.sh

@@ -1,10 +1,9 @@
 # macOS release package order
 
-The desktop Homebrew cask installs `cwt` as the shell launcher for
-`ClawTab.app/Contents/MacOS/clawtab`. The release workflow adds this artifact
-when updating the tap. The app bundle and its executable keep their existing
-names; `cwtctl` remains the separate CLI. Local source installs use
-`make desktop-build desktop-copy-local` to install `/usr/local/bin/cwt`.
+The host package installs `cwt` and its `_cwt` Zsh completion in place of
+`cwtctl` and `_cwtctl`. The release workflow updates the Homebrew tap generator
+and host cask before publishing. The desktop app keeps its `clawtab` launcher.
+Local source installs use `make cwt-build` to install `/usr/local/bin/cwt`.
 
 The desktop app is compiled once per target. The release signing job applies Developer ID signatures, notarizes the app and standalone host, and staples their tickets. Only then does `etc/package-macos-updater.sh` create the `.app.tar.gz` consumed by the updater-signing job. The DMG and updater archive therefore use the same signed app, including its nested daemon and CLI.
 

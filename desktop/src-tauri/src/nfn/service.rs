@@ -1608,7 +1608,7 @@ fn job_request(slug: &str, event: &str, run_id: Option<&str>, mut source: NfnSou
         body.push_str(&format!("\nRun: {run_id}"));
     }
     if kind == "failed" {
-        body.push_str(&format!("\nRestart: cwtctl jobs restart {slug}"));
+        body.push_str(&format!("\nRestart: cwt jobs restart {slug}"));
     }
     NfnRequest {
         kind: kind.into(),

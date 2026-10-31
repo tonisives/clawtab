@@ -35,7 +35,7 @@
 | `cron` | Scheduler match |
 | `calendar` | Calendar recurrence match |
 | `once` | One-time date match |
-| `cli` | cwtctl or IPC command |
+| `cli` | cwt or IPC command |
 | `restart` | Restart command |
 
 ## Detected Tools

@@ -643,7 +643,7 @@ export function useKeyboardShortcuts({
       if (event.payload === "toggle_auto_yes") toggleActiveAutoYes?.();
       if (/^move_pane_(left|right|up|down)$/.test(event.payload)) {
         // Forward to the in-page handler so the existing pane-movement code
-        // path runs. Sent from the desktop IPC socket (cwtctl pane focus).
+        // path runs. Sent from the desktop IPC socket (cwt pane focus).
         window.dispatchEvent(
           new CustomEvent(APP_SHORTCUT_EVENT, { detail: { action: event.payload } }),
         );

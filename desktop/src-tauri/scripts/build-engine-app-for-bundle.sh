@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Hook for tauri.conf.json:build.beforeBundleCommand.
 #
-# Builds the daemon, hook helper, and cwtctl (release, no default features).
+# Builds the daemon, hook helper, and cwt (release, no default features).
 # It assembles the daemon app and stages the CLI plus its Zsh completion at
 # the locations referenced by bundle.resources in tauri.conf.json.
 #
@@ -39,7 +39,7 @@ CARGO_BUILD_ARGS=(
   --release
   --bin clawtab-daemon
   --bin clawtab-hook
-  --bin cwtctl
+  --bin cwt
   --no-default-features
 )
 if [[ -n "$TARGET_TRIPLE" ]]; then
@@ -49,7 +49,7 @@ else
   echo "[engine-bundle] target: cargo host"
 fi
 
-echo "[engine-bundle] building daemon, hook helper, and cwtctl (release, no default features)"
+echo "[engine-bundle] building daemon, hook helper, and cwt (release, no default features)"
 cargo "${CARGO_BUILD_ARGS[@]}"
 
 # rust-analyzer / shared target dir sometimes puts output under a hashed
@@ -93,10 +93,10 @@ if [[ -z "$HOOK_BIN" ]] || [[ ! -f "$HOOK_BIN" ]]; then
   exit 1
 fi
 
-CWTCTL_BIN="$(find_release_binary cwtctl)"
+CWT_BIN="$(find_release_binary cwt)"
 
-if [[ -z "$CWTCTL_BIN" ]] || [[ ! -f "$CWTCTL_BIN" ]]; then
-  echo "[engine-bundle] error: cwtctl binary not found under $CARGO_TARGET_DIR" >&2
+if [[ -z "$CWT_BIN" ]] || [[ ! -f "$CWT_BIN" ]]; then
+  echo "[engine-bundle] error: cwt binary not found under $CARGO_TARGET_DIR" >&2
   exit 1
 fi
 
@@ -105,8 +105,8 @@ APP_PATH="$OUT_DIR/ClawTab Daemon.app"
 
 mkdir -p "$OUT_DIR"
 bash "$SCRIPT_DIR/build-engine-app.sh" "$DAEMON_BIN" "$HOOK_BIN" "$APP_PATH"
-cp "$CWTCTL_BIN" "$OUT_DIR/cwtctl"
-cp "$SRC_TAURI_DIR/../completions/_cwtctl" "$OUT_DIR/_cwtctl"
-chmod +x "$OUT_DIR/cwtctl"
+cp "$CWT_BIN" "$OUT_DIR/cwt"
+cp "$SRC_TAURI_DIR/../completions/_cwt" "$OUT_DIR/_cwt"
+chmod +x "$OUT_DIR/cwt"
 
 echo "[engine-bundle] staged at $APP_PATH"

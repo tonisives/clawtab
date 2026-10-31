@@ -20,7 +20,7 @@ name = "clawtab"
 path = "src/main.rs"
 
 [[bin]]
-name = "cwtctl"
+name = "cwt"
 path = "src/bin/ctl.rs"
 
 [[bin]]

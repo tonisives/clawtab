@@ -110,7 +110,7 @@ TEST_ACTIONS_JSON='{
     C_HEADER="" C_RESET="" C_DIM="" C_SEARCH=""
     TMUX_MESSAGES=""
 
-    cwtctl() {
+    cwt() {
         if [ "${1:-}" = "agent" ] && [ "${2:-}" = "actions" ]; then
             printf '%s' "$TEST_ACTIONS_JSON"
         elif [ "${1:-}" = "agent" ] && [ "${2:-}" = "action" ] && [ "${3:-}" = "run" ]; then

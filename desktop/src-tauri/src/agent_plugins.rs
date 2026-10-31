@@ -1336,7 +1336,7 @@ async fn run_plugin_process(
             "CLAWTAB_PLUGIN_SOCKET",
             crate::ipc::plugin_host_socket_path(),
         )
-        .env("CLAWTAB_CLI", cwtctl_path());
+        .env("CLAWTAB_CLI", cwt_path());
     #[cfg(unix)]
     unsafe {
         command.pre_exec(|| {
@@ -1451,20 +1451,15 @@ fn copy_safe_environment(command: &mut Command) {
     }
 }
 
-fn cwtctl_path() -> PathBuf {
+fn cwt_path() -> PathBuf {
     std::env::current_exe()
         .ok()
         .and_then(|path| {
-            path.parent().map(|parent| {
-                parent.join(if cfg!(windows) {
-                    "cwtctl.exe"
-                } else {
-                    "cwtctl"
-                })
-            })
+            path.parent()
+                .map(|parent| parent.join(if cfg!(windows) { "cwt.exe" } else { "cwt" }))
         })
         .filter(|path| path.is_file())
-        .unwrap_or_else(|| PathBuf::from("cwtctl"))
+        .unwrap_or_else(|| PathBuf::from("cwt"))
 }
 
 async fn read_bounded<R: AsyncRead + Unpin>(mut reader: R) -> Vec<u8> {

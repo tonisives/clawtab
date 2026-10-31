@@ -106,7 +106,7 @@ run_once:
 
 `at` stores a timestamp with an explicit UTC offset. A due one-time job runs when the daemon starts after downtime. With `remove_after_start: true`, its job directory is removed after the agent starts, but the tmux pane and run history remain available. Its output log is stored under `~/.config/clawtab/run-logs/<project-slug>/<job-name>/` so removing the job does not recreate its config directory. Set `remove_after_start: false` to keep the job disabled after launch.
 
-Create these jobs with `cwtctl jobs create --at ...` or the desktop editor. See [CLI & TUI](cli-tui.md) for the interactive form and description inputs.
+Create these jobs with `cwt jobs create --at ...` or the desktop editor. See [CLI & TUI](cli-tui.md) for the interactive form and description inputs.
 
 ### Calendar Recurrences
 

@@ -14,21 +14,21 @@ fi
 
 # Sync state with desktop app / daemon. Do this BEFORE updating the tmux
 # border option so the border only reflects state that the daemon agreed to.
-# A silent failure here (e.g. cwtctl missing) would leave the [Y] indicator
+# A silent failure here (e.g. cwt missing) would leave the [Y] indicator
 # showing while the daemon never auto-answers.
-if ! command -v cwtctl >/dev/null 2>&1; then
-    tmux display-message "clawtab: cwtctl not found in PATH - run 'make cwtctl-build && make cwtctl-copy-local'"
+if ! command -v cwt >/dev/null 2>&1; then
+    tmux display-message "clawtab: cwt not found in PATH - run 'make cwt-build && make cwt-copy-local'"
     exit 1
 fi
 
-if ! out=$(cwtctl agent auto-yes toggle "$pane_id" 2>&1); then
+if ! out=$(cwt agent auto-yes toggle "$pane_id" 2>&1); then
     tmux display-message "clawtab: auto-yes toggle failed: $out"
     exit 1
 fi
 
 # Reconcile the pane-local indicator with the daemon's authoritative state.
 # The daemon also writes this option so auto-yes survives daemon rebuilds.
-if cwtctl agent auto-yes check "$pane_id" >/dev/null 2>&1; then
+if cwt agent auto-yes check "$pane_id" >/dev/null 2>&1; then
     tmux set-option -pt "$pane_id" @clawtab-auto-yes 1
 else
     tmux set-option -pqu -t "$pane_id" @clawtab-auto-yes

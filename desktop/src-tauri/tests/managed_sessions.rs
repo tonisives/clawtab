@@ -93,7 +93,7 @@ fn windows_batch_shim_launches_with_spaced_arguments() {
         "@echo off\r\necho BATCH_READY:%~1\r\nset /p input=\r\n",
     )
     .unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_cwtctl"))
+    let output = Command::new(env!("CARGO_BIN_EXE_cwt"))
         .env("CLAWTAB_SESSION_DIR", directory.path())
         .args(["session", "start", "--detached", "--keep-running", "--"])
         .arg(&batch)
@@ -162,7 +162,7 @@ impl Session {
             conversation_id: None,
             metadata: Default::default(),
         };
-        let mut owner = Command::new(env!("CARGO_BIN_EXE_cwtctl"))
+        let mut owner = Command::new(env!("CARGO_BIN_EXE_cwt"))
             .env("CLAWTAB_SESSION_DIR", directory.path())
             .env("CLAWTAB_TERMINAL_FIXTURE", "1")
             .args(["session", "_serve", &id])
@@ -201,7 +201,7 @@ impl Session {
     fn start() -> Self {
         let directory = tempfile::tempdir().unwrap();
         eprintln!("starting detached fixture");
-        let output = Command::new(env!("CARGO_BIN_EXE_cwtctl"))
+        let output = Command::new(env!("CARGO_BIN_EXE_cwt"))
             .env("CLAWTAB_SESSION_DIR", directory.path())
             .env("CLAWTAB_TERMINAL_FIXTURE", "1")
             .args(["session", "start", "--detached", "--keep-running", "--"])
@@ -220,7 +220,7 @@ impl Session {
             String::from_utf8_lossy(&output.stderr)
         );
         eprintln!("detached launcher returned; listing sessions");
-        let sessions = Command::new(env!("CARGO_BIN_EXE_cwtctl"))
+        let sessions = Command::new(env!("CARGO_BIN_EXE_cwt"))
             .env("CLAWTAB_SESSION_DIR", directory.path())
             .args(["session", "list", "--json"])
             .output()
@@ -323,7 +323,7 @@ fn owner_crash_is_interrupted_without_relaunching_the_command() {
         .status
         .success());
     wait_for(|| managed::connect(&session.info.id).is_err());
-    let output = Command::new(env!("CARGO_BIN_EXE_cwtctl"))
+    let output = Command::new(env!("CARGO_BIN_EXE_cwt"))
         .env("CLAWTAB_SESSION_DIR", session.directory.path())
         .args(["session", "list", "--json"])
         .output()
@@ -331,7 +331,7 @@ fn owner_crash_is_interrupted_without_relaunching_the_command() {
     let sessions: Vec<SessionInfo> = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(sessions[0].status, Status::Interrupted);
     assert_eq!(sessions[0].execution_id, session.info.execution_id);
-    let resume = Command::new(env!("CARGO_BIN_EXE_cwtctl"))
+    let resume = Command::new(env!("CARGO_BIN_EXE_cwt"))
         .env("CLAWTAB_SESSION_DIR", session.directory.path())
         .args(["session", "resume", &session.info.id])
         .output()

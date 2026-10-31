@@ -1,8 +1,8 @@
-#compdef cwtctl
+#compdef cwt
 
-_cwtctl_jobs() {
+_cwt_jobs() {
   local -a jobs groups
-  jobs=(${(f)"$(cwtctl jobs list 2>/dev/null | awk '
+  jobs=(${(f)"$(cwt jobs list 2>/dev/null | awk '
     /^[^[:space:]]/ { group = $0; groups[group] = 1; next }
     /^[[:space:]]/ {
       name = $0
@@ -15,10 +15,10 @@ _cwtctl_jobs() {
   compadd -a groups
 }
 
-_cwtctl_jobs_for_group() {
+_cwt_jobs_for_group() {
   local group="$1"
   local -a jobs
-  jobs=(${(f)"$(cwtctl jobs list 2>/dev/null | awk -v wanted="$group" '
+  jobs=(${(f)"$(cwt jobs list 2>/dev/null | awk -v wanted="$group" '
     /^[^[:space:]]/ { group = $0; next }
     /^[[:space:]]/ {
       name = $0
@@ -29,22 +29,22 @@ _cwtctl_jobs_for_group() {
   compadd -a jobs
 }
 
-_cwtctl_panes() {
+_cwt_panes() {
   local -a panes
   panes=(${(f)"$(tmux list-panes -a -F '#{pane_id}' 2>/dev/null | sort -u)"})
   compadd -a panes
 }
 
-_cwtctl_sessions() {
+_cwt_sessions() {
   local -a sessions
-  sessions=(${(f)"$(cwtctl session list 2>/dev/null | cut -f1)"})
+  sessions=(${(f)"$(cwt session list 2>/dev/null | cut -f1)"})
   compadd -a sessions
 }
 
-_cwtctl_plugins() {
+_cwt_plugins() {
   local -a plugins
   plugins=('list:List available agent plugins')
-  plugins+=(${(f)"$(cwtctl plugin list 2>/dev/null | awk -F '\t' '
+  plugins+=(${(f)"$(cwt plugin list 2>/dev/null | awk -F '\t' '
     {
       id = $1
       sub(/^.*\./, "", id)
@@ -55,13 +55,13 @@ _cwtctl_plugins() {
   _describe -t plugins 'plugin name' plugins
 }
 
-_cwtctl_secret_keys() {
+_cwt_secret_keys() {
   local -a keys
-  keys=(${(f)"$(cwtctl secrets 2>/dev/null | awk 'NF')"})
+  keys=(${(f)"$(cwt secrets 2>/dev/null | awk 'NF')"})
   compadd -a keys
 }
 
-_cwtctl_complete() {
+_cwt_complete() {
   local curcontext="$curcontext" state line
   typeset -A opt_args
 
@@ -85,7 +85,7 @@ _cwtctl_complete() {
 
   case $state in
     cmd)
-      _describe -t commands 'cwtctl command' top_cmds
+      _describe -t commands 'cwt command' top_cmds
       ;;
     args)
       case $words[1] in
@@ -157,9 +157,9 @@ _cwtctl_complete() {
               '(--description --description-file)--description-stdin[Read job instructions from stdin]' \
               '(--cron)--keep-config[Keep a one-time job disabled after it starts]'
           elif (( CURRENT == 3 )) && [[ $words[2] == run || $words[2] == pause || $words[2] == resume || $words[2] == restart || $words[2] == edit ]]; then
-            _cwtctl_jobs
+            _cwt_jobs
           elif (( CURRENT == 4 )) && [[ $words[2] == run || $words[2] == pause || $words[2] == resume || $words[2] == restart || $words[2] == edit ]] && [[ $words[3] != */* ]]; then
-            _cwtctl_jobs_for_group "$words[3]"
+            _cwt_jobs_for_group "$words[3]"
           fi
           ;;
         session)
@@ -198,13 +198,13 @@ _cwtctl_complete() {
                 _arguments '--json[Output sessions as JSON]'
                 ;;
               attach|stop|resume)
-                _arguments '1:session ID:_cwtctl_sessions'
+                _arguments '1:session ID:_cwt_sessions'
                 ;;
               capture)
                 _arguments \
                   '--history[Include retained terminal history]' \
                   '--ansi[Include ANSI terminal formatting]' \
-                  '1:session ID:_cwtctl_sessions'
+                  '1:session ID:_cwt_sessions'
                 ;;
             esac
           fi
@@ -237,9 +237,9 @@ _cwtctl_complete() {
               'check:Check if pane has auto-yes'
             )
             _describe -t subcmd 'auto-yes subcommand' sub
-            _cwtctl_panes
+            _cwt_panes
           elif (( CURRENT == 4 )) && [[ $words[2] == auto-yes ]] && [[ $words[3] == toggle || $words[3] == check ]]; then
-            _cwtctl_panes
+            _cwt_panes
           elif (( CURRENT == 3 )) && [[ $words[2] == info ]]; then
             local -a sub
             sub=(
@@ -247,13 +247,13 @@ _cwtctl_complete() {
               'restore-command:Print an agent restore command'
             )
             _describe -t subcmd 'info subcommand' sub
-            _cwtctl_panes
+            _cwt_panes
           elif (( CURRENT == 4 )) && [[ $words[2] == info && $words[3] == restore-command ]]; then
-            _cwtctl_panes
+            _cwt_panes
           elif (( CURRENT == 4 )) && [[ $words[2] == info && $words[3] == --fast ]]; then
-            _cwtctl_panes
+            _cwt_panes
           elif (( CURRENT == 3 )) && [[ $words[2] == rename || $words[2] == ai-rename || $words[2] == pin || $words[2] == unpin ]]; then
-            _cwtctl_panes
+            _cwt_panes
           elif (( CURRENT == 3 )) && [[ $words[2] == hooks ]]; then
             local -a actions
             actions=(
@@ -269,9 +269,9 @@ _cwtctl_complete() {
           ;;
         plugin)
           if (( CURRENT == 2 )); then
-            _cwtctl_plugins
+            _cwt_plugins
           elif (( CURRENT == 3 )) && [[ $words[2] == list ]]; then
-            _cwtctl_panes
+            _cwt_panes
             compadd -- --json
           elif (( CURRENT == 3 )); then
             local -a operations
@@ -282,7 +282,7 @@ _cwtctl_complete() {
             )
             _describe -t subcmd 'plugin operation' operations
           elif (( CURRENT == 4 )) && [[ $words[3] == run ]]; then
-            _cwtctl_panes
+            _cwt_panes
           fi
           ;;
         secrets)
@@ -295,12 +295,12 @@ _cwtctl_complete() {
             )
             _describe -t subcmd 'secrets subcommand' sub
           elif (( CURRENT >= 3 )) && [[ $words[2] == get ]]; then
-            _cwtctl_secret_keys
+            _cwt_secret_keys
           elif (( CURRENT == 3 )) && [[ $words[2] == insert || $words[2] == delete ]]; then
             compadd -- --yes -y
-            _cwtctl_secret_keys
+            _cwt_secret_keys
           elif (( CURRENT == 4 )) && [[ $words[2] == insert || $words[2] == delete ]] && [[ $words[3] == --yes || $words[3] == -y ]]; then
-            _cwtctl_secret_keys
+            _cwt_secret_keys
           elif (( CURRENT == 4 )) && [[ $words[2] == insert || $words[2] == delete ]]; then
             compadd -- --yes -y
           fi
@@ -314,7 +314,7 @@ _cwtctl_complete() {
             )
             _describe -t subcmd 'pane subcommand' sub
           elif (( CURRENT == 3 )) && [[ $words[2] == open ]]; then
-            _cwtctl_panes
+            _cwt_panes
           elif (( CURRENT == 3 )) && [[ $words[2] == focus ]]; then
             local -a dirs
             dirs=(left right up down)
@@ -350,8 +350,8 @@ _cwtctl_complete() {
 
 # Zsh caches this entry point in each shell. Read the installed file again on
 # the next completion so an atomic local install takes effect immediately.
-_cwtctl() {
-  source "${functions_source[_cwtctl]}" "$@"
+_cwt() {
+  source "${functions_source[_cwt]}" "$@"
 }
 
-_cwtctl_complete "$@"
+_cwt_complete "$@"

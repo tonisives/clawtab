@@ -201,7 +201,7 @@ async fn poll_login(
         .await
         .map_err(|_| "Could not check login")?;
     if response.status() == reqwest::StatusCode::NOT_FOUND {
-        return Err("Login expired; run cwtctl login again".into());
+        return Err("Login expired; run cwt login again".into());
     }
     let value: serde_json::Value = response_json(response, "Login check").await?;
     match value["status"].as_str() {
@@ -241,7 +241,7 @@ async fn browser_login(client: &Client, options: &Options) -> Result<Account, St
                 if let Some(account) = result? { return Ok(account); }
             }
             _ = tokio::signal::ctrl_c() => return Err("Login canceled".into()),
-            _ = tokio::time::sleep_until(deadline) => return Err("Login timed out; run cwtctl login again".into()),
+            _ = tokio::time::sleep_until(deadline) => return Err("Login timed out; run cwt login again".into()),
         }
         tokio::select! {
             _ = tokio::time::sleep(Duration::from_secs(2)) => {}
@@ -338,7 +338,7 @@ fn save_login(
             };
             if restored.is_err() {
                 return Err(
-                    "Could not save or restore login credentials; run cwtctl login again".into(),
+                    "Could not save or restore login credentials; run cwt login again".into(),
                 );
             }
         }
@@ -351,7 +351,7 @@ pub async fn login(args: &[String]) -> Result<(), String> {
         .iter()
         .any(|a| matches!(a.as_str(), "help" | "-h" | "--help"))
     {
-        println!("Usage: cwtctl login [--provider google|apple | --email EMAIL] [--relay URL] [--name NAME] [--no-browser]");
+        println!("Usage: cwt login [--provider google|apple | --email EMAIL] [--relay URL] [--name NAME] [--no-browser]");
         println!(
             "Defaults to Google sign-in in your browser. --email prompts for a hidden password."
         );
@@ -416,7 +416,7 @@ pub async fn login(args: &[String]) -> Result<(), String> {
         }
         println!("Daemon is connecting with the new login.");
     } else {
-        println!("Login saved. Start the daemon with cwtctl daemon install to connect.");
+        println!("Login saved. Start the daemon with cwt daemon install to connect.");
     }
     Ok(())
 }

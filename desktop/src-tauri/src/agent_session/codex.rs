@@ -614,7 +614,7 @@ fn read_completed_turn_after(path: &std::path::Path, hook_timestamp_ms: u64) -> 
 
 /// History is append-only, so the current session's latest prompt is usually
 /// in the tail. Avoid scanning every historical session on each short-lived
-/// `cwtctl agent info` process; retain the full-file fallback for old or
+/// `cwt agent info` process; retain the full-file fallback for old or
 /// interleaved sessions whose latest entry is outside the tail window.
 fn read_codex_last_query_from_tail(
     path: &PathBuf,

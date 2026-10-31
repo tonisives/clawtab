@@ -18,7 +18,7 @@ A rented box is a Linux server prepared by ClawTab and attached to your account.
 2. Choose a name, size, and region. The first version targets x86 shared-CPU boxes with 4 GB or 8 GB RAM. Review the actual CPU, disk, included outgoing traffic, region, and monthly price shown in the quote. A timezone-based region suggestion is approximate; confirm the location you want.
 3. Add an SSH public key if you want SSH access. Review the deletion and backup terms before paying.
 4. Complete the account-linked checkout in the secure browser. Return to ClawTab from the confirmation page. Provisioning starts only after the initial payment is verified. Returning from checkout alone does not mean the server is ready.
-5. Wait for provisioning to finish and the machine to connect. Enrollment happens automatically, without running `cwtctl setup` or entering a pairing code.
+5. Wait for provisioning to finish and the machine to connect. Enrollment happens automatically, without running `cwt setup` or entering a pairing code.
 6. A group named after the box is saved automatically, using `/home/clawtab/workspace` on that machine. Use **Sign in** for your chosen provider, then **I’ve signed in · Start agent**. The supported account default provider is preselected, with Codex as the fallback. Setup resumes from the same order and terminal after an app restart; **Start another agent** creates a new session.
 
 Exact prices and available regions come from the catalog. The selected quote is checked again before checkout. Failed provisioning triggers cleanup and initial-payment recovery through the rental service.

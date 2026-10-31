@@ -5,8 +5,8 @@ COPY protocol protocol
 COPY desktop/src-tauri desktop/src-tauri
 RUN --mount=type=cache,id=clawtab-machine-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=clawtab-machine-target,target=/src/desktop/src-tauri/target \
-    cd desktop/src-tauri && cargo build -j4 --release --no-default-features --bin clawtab-daemon --bin cwtctl --bin clawtab-hook \
-    && mkdir /out && cp target/release/clawtab-daemon target/release/cwtctl target/release/clawtab-hook /out/
+    cd desktop/src-tauri && cargo build -j4 --release --no-default-features --bin clawtab-daemon --bin cwt --bin clawtab-hook \
+    && mkdir /out && cp target/release/clawtab-daemon target/release/cwt target/release/clawtab-hook /out/
 
 FROM node:22-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git git-lfs openssh-client tmux python3 procps \

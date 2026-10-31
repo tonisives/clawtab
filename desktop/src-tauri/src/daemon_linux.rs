@@ -83,7 +83,7 @@ pub fn install() -> Result<String, String> {
         .map_err(|e| e.to_string())?
         .with_file_name("clawtab-daemon");
     if !binary.is_file() {
-        return Err("clawtab-daemon must be installed beside cwtctl".into());
+        return Err("clawtab-daemon must be installed beside cwt".into());
     }
     let path = unit_path()?;
     let parent = path.parent().ok_or("invalid service path")?;

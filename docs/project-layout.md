@@ -20,7 +20,7 @@ Key paths:
 |------|-------------|
 | `src/` | React frontend (settings UI, job editor, panels) |
 | `src-tauri/src/` | Rust backend (scheduler, executor, relay client, IPC) |
-| `src-tauri/src/bin/ctl.rs` | `cwtctl` CLI |
+| `src-tauri/src/bin/ctl.rs` | `cwt` CLI |
 | `src-tauri/src/bin/tui.rs` | `cwttui` terminal UI |
 | `docs/` | Documentation |
 

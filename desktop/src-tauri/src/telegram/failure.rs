@@ -42,7 +42,7 @@ pub(crate) fn enqueue(
         return;
     }
     let text = format!(
-        "{}\nRun: <code>{}</code>\nRestart: <code>cwtctl jobs restart {}</code>",
+        "{}\nRun: <code>{}</code>\nRestart: <code>cwt jobs restart {}</code>",
         super::format_job_status_message(
             failure.group,
             failure.job_id,
@@ -161,7 +161,7 @@ mod tests {
         assert!(pending[0].message.contains("&lt;local&gt;"));
         assert!(pending[0].message.contains("failed &amp; job"));
         assert!(pending[0].message.contains("exit 7"));
-        assert!(pending[0].message.contains("cwtctl jobs restart local/job"));
+        assert!(pending[0].message.contains("cwt jobs restart local/job"));
         assert!(!pending[0].message.contains("test-token"));
         queue(&history.lock(), &config, None);
         assert_eq!(

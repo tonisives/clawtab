@@ -20,7 +20,7 @@ Local scheduled agents can read the broader approved-only writing export without
 opening the Work Journal socket to their repository sandbox:
 
 ```sh
-cwtctl journal approved --days 7
+cwt journal approved --days 7
 ```
 
 The daemon asks Work Journal for its bounded writing context and returns up to

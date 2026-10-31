@@ -119,18 +119,14 @@ pub fn list() -> Result<Vec<SessionInfo>, String> {
 
 pub fn launcher_path() -> Result<std::path::PathBuf, String> {
     let current = std::env::current_exe().map_err(|e| e.to_string())?;
-    if current.file_stem().is_some_and(|name| name == "cwtctl") {
+    if current.file_stem().is_some_and(|name| name == "cwt") {
         return Ok(current);
     }
-    let sibling = current.with_file_name(if cfg!(windows) {
-        "cwtctl.exe"
-    } else {
-        "cwtctl"
-    });
+    let sibling = current.with_file_name(if cfg!(windows) { "cwt.exe" } else { "cwt" });
     if sibling.is_file() {
         return Ok(sibling);
     }
-    which::which("cwtctl").map_err(|_| "cwtctl launcher is not installed alongside the host".into())
+    which::which("cwt").map_err(|_| "cwt launcher is not installed alongside the host".into())
 }
 
 pub fn launch(launch: Launch, env: &[(String, String)]) -> Result<SessionInfo, String> {

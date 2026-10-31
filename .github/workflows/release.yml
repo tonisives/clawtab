@@ -252,17 +252,17 @@ jobs:
             codesign --verify --deep --strict "$NESTED_DAEMON_APP"
           fi
 
-          CWTCTL_BIN="${{ steps.find-app.outputs.app_path }}/Contents/Resources/cwtctl"
-          if [ ! -f "$CWTCTL_BIN" ]; then
-            echo "Expected bundled cwtctl at $CWTCTL_BIN" >&2
+          CWT_BIN="${{ steps.find-app.outputs.app_path }}/Contents/Resources/cwt"
+          if [ ! -f "$CWT_BIN" ]; then
+            echo "Expected bundled cwt at $CWT_BIN" >&2
             exit 1
           fi
-          echo "Signing bundled cwtctl"
-          chmod +x "$CWTCTL_BIN"
+          echo "Signing bundled cwt"
+          chmod +x "$CWT_BIN"
           codesign --force --options runtime --timestamp \
             --sign "$APPLE_SIGNING_IDENTITY" \
-            "$CWTCTL_BIN"
-          codesign --verify --strict "$CWTCTL_BIN"
+            "$CWT_BIN"
+          codesign --verify --strict "$CWT_BIN"
 
           codesign --deep --force --options runtime \
             --timestamp \
@@ -439,22 +439,21 @@ jobs:
 
       - name: Update tap from verified assets
         run: |
+          python3 - <<'PYTHON'
+          from pathlib import Path
+
+          tap = Path("homebrew-tap")
+          # Migrate both the generator and its current input before updating.
+          for relative in ("scripts/update_release.py", "Casks/clawtab.rb"):
+              path = tap / relative
+              path.write_text(path.read_text().replace("cwtctl", "cwt"))
+          desktop = tap / "Casks/clawtab-desktop.rb"
+          launcher = '  binary "#{appdir}/ClawTab.app/Contents/MacOS/clawtab", target: "cwt"\n'
+          desktop.write_text(desktop.read_text().replace(launcher, ""))
+          PYTHON
           python3 homebrew-tap/scripts/update_release.py \
             --product clawtab --tag "$RELEASE_TAG" \
             --assets release-assets --tap homebrew-tap
-          python3 - <<'PY'
-          from pathlib import Path
-
-          cask = Path("homebrew-tap/Casks/clawtab-desktop.rb")
-          contents = cask.read_text()
-          launcher = '  binary "#{appdir}/ClawTab.app/Contents/MacOS/clawtab", target: "cwt"'
-          if launcher not in contents:
-              app = '  app "ClawTab.app"'
-              if contents.count(app) != 1:
-                  raise SystemExit("Expected one ClawTab.app artifact in desktop cask")
-              contents = contents.replace(app, app + "\n" + launcher)
-              cask.write_text(contents)
-          PY
 
       - name: Verify Homebrew entries before publishing
         run: |
@@ -475,6 +474,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Casks/clawtab.rb Casks/clawtab-desktop.rb
+          git add Casks/clawtab.rb Casks/clawtab-desktop.rb scripts/update_release.py
           git diff --staged --quiet || git commit -m "Update clawtab to $RELEASE_TAG"
           git push
