@@ -111,6 +111,11 @@
     document.dispatchEvent(new PointerEvent("pointermove", { pointerId: 19, screenX: 900 + dx, screenY: 400 + dy }));
     document.dispatchEvent(new PointerEvent(cancel ? "pointercancel" : "pointerup", { pointerId: 19 }));
   };
+  const corner = surface.querySelector('.resize-sw').getBoundingClientRect();
+  window.nfn.receive({ type: 'pointer_focus', active: true, x: corner.left + corner.width / 2, y: corner.top + corner.height / 2 });
+  await sleep(180);
+  assert(getComputedStyle(document.querySelector('.details-toggle')).backgroundColor === 'rgb(36, 36, 36)', "the chevron stays highlighted while the lower-left resize corner owns the pointer");
+  window.nfn.receive({ type: 'pointer_focus', active: false });
   const normalSize = surface.getBoundingClientRect();
   assert(!surface.querySelector('[data-resize="se"]').hidden, "right-side cards expose the bottom-right resize corner");
   assert(getComputedStyle(surface.querySelector('[data-resize="se"]')).cursor === "nwse-resize" && window.fixture.surfaces.at(-1).resizable === true, "expanded cards advertise their resize cursor and native resize capability");
@@ -372,8 +377,9 @@
   assert(document.querySelector("h1").textContent === completion.request.title && document.querySelector(".reply").hidden && !document.querySelector(".auto-yes, .status.alert"), "agent completions appear as updates without permission or error controls");
   assert(document.querySelectorAll(".open-session").length === 1 && !document.querySelector(".actions button[title='Open session']") && !buttons().some(button => button.textContent === "Open agent"), "session cards have one footer action and no duplicate below the message");
   const segments = [...document.querySelector(".footer-actions").querySelectorAll("button")];
-  assert(segments.map(node => node.textContent).join("|") === "Open session|Got it|Reply", "the centered segments contain session, acknowledgement, and reply in order");
+  assert(segments.map(node => node.textContent).join("|") === "Open|Got it|Reply", "the centered segments contain session, acknowledgement, and reply in order");
   assert(document.querySelector(".details-toggle svg") && !document.querySelector(".details-toggle").textContent && document.querySelector(".details-toggle").getAttribute("aria-label") === "Details", "Details uses an accessible chevron without a text label");
+  assert(segments.every(node => Math.abs(node.getBoundingClientRect().width - segments[0].getBoundingClientRect().width) < 1), "footer segments have equal widths");
   assert(segments.every((node, index) => !index || Math.abs(node.getBoundingClientRect().left - segments[index - 1].getBoundingClientRect().right - 1) < 1), "the three segments share one contiguous control");
   const footer = document.querySelector(".controls"), openSession = document.querySelector(".open-session").getBoundingClientRect(), footerBounds = footer.getBoundingClientRect();
   assert(Math.abs(footer.querySelector(".footer-actions").getBoundingClientRect().left + footer.querySelector(".footer-actions").getBoundingClientRect().width / 2 - footerBounds.left - footerBounds.width / 2) < 1 && document.querySelector(".details-toggle").getBoundingClientRect().right <= openSession.left && footer === document.querySelector(".card").lastElementChild && document.querySelector(".card").getBoundingClientRect().bottom - openSession.bottom <= 16, "the session action group is centered at the bottom with the Details chevron on its left");
@@ -518,6 +524,8 @@
   click("Shortcuts");
   assert(!document.querySelector('[data-settings-panel="shortcuts"]').hidden && document.querySelector(".shortcut-help").textContent.includes("3j") && document.querySelector('[data-setting="keyboard_hints"]').getClientRects().length, "the claw menu Shortcuts tab exposes hints, global focus settings and navigation help");
   click("Appearance");
+  const settingsSegments = [...document.querySelector('.settings-tabs').querySelectorAll('button')];
+  assert(document.querySelector('.settings-tabs.segmented-control') && settingsSegments.every(node => Math.abs(node.getBoundingClientRect().width - settingsSegments[0].getBoundingClientRect().width) < 1) && getComputedStyle(settingsSegments[1]).borderRadius === '0px', "message settings use the same equal-width joined segment style");
   duration.value = "12"; duration.dispatchEvent(new Event("change")); await sleep(30);
   assert(window.fixture.settings.preview_seconds === 12 && document.querySelector(".notification-settings") === settingsView, "inline settings save without rebuilding the form");
   const position = document.querySelector('[data-setting="placement"]'); position.value = "custom"; position.dispatchEvent(new Event("change")); await sleep(30);
@@ -1272,7 +1280,12 @@
   replyUpdate.request.actions = [{ id: "acknowledge", label: "Got it", kind: "choice" }];
   window.fixture.records.set(replyUpdate.id, replyUpdate); window.nfn.receive(window.fixture.snapshot(replyUpdate.id));
   click("Reply"); draft("Check device 04 again");
-  resizeDrag("sw", -180, 200); click("Details"); click("Hide details");
+  resizeDrag("sw", -180, 200); click("Details");
+  window.nfn.setPlacement({ placement: "right", max_width: 1000, max_height: 860, reduce_motion: false });
+  click("Hide details");
+  assert(surface.getAnimations().length > 0 && surface.getBoundingClientRect().width > 520, "closing manually resized Details animates from the dragged size");
+  await sleep(420);
+  window.nfn.setPlacement({ placement: "right", max_width: 1000, max_height: 860, reduce_motion: true });
   assert(!surface.style.height && surface.offsetWidth === 520 && document.querySelector("textarea").value === "Check device 04 again", "Hide details clears manual sizing while retaining the open reply draft");
   click("Send"); await sleep(30);
   assert(window.fixture.calls.some(command => command.id === replyUpdate.id && command.op === "respond" && command.action_id === "reply" && command.text === "Check device 04 again"), "update replies send the entered text to the response handler");
