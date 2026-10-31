@@ -633,11 +633,15 @@
   }
   function toggleDetails() {
     if (records.get(current)?.details_available === false) return;
-    const shrinkResizedDetails = details && Boolean(resizedSize);
     pauseTimer(); stopContext(true); expanded = true; details = !details;
-    if (details) { if (resizedSize) resizedSize.showDetails = true; }
+    if (details) {
+      if (resizedSize) {
+        resizedSize.showDetails = true;
+        resizedSize.height = Math.max(resizedSize.height, Math.min(geometry.max_height || 860, geometry.list_max_height || innerHeight * .8));
+      }
+    }
     else { finishResize(); resizedSize = null; resizeRightOffset = 0; }
-    menu = null; render(shrinkResizedDetails); startContext();
+    menu = null; render(); startContext();
   }
   function toggleMenu(next) {
     const closingAcknowledgement = menu === "acknowledge" && next === menu;
@@ -1226,7 +1230,6 @@
     if (hasBlock(layout, "logs")) {
       const section = el("div", "log-output");
       section.append(el("div", "block-label", "Recent output"));
-      host.style.removeProperty("--details-width");
       const logs = el("pre", "logs", "Loading recent output...");
       node._logs = logs; section.append(logs); primitives.logs = section;
     }
@@ -1295,15 +1298,9 @@
       const changedLogs = card._logs && card._logs._raw !== value.log;
       const before = changedLogs ? host.getBoundingClientRect() : null;
       if (changedLogs) {
-        stopAnimation();
         const logs = card._logs, scroller = card._content;
         const atBottom = logs._raw == null || scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 30;
         logs._raw = value.log; renderAnsi(logs, value.log || "No output yet");
-        // Keep fixed-width captures compact; widen when the output can use it.
-        const measure = document.createElement("canvas").getContext("2d");
-        measure.font = getComputedStyle(logs).font;
-        const outputWidth = Math.max(0, ...stripAnsi(value.log || "").split("\n").map(line => measure.measureText(line.trimEnd()).width));
-        host.style.setProperty("--details-width", `${Math.min(620, Math.max(520, Math.ceil(outputWidth + 44)))}px`);
         card._followLogs = atBottom;
         if (atBottom) scroller.scrollTop = scroller.scrollHeight;
       }
@@ -1323,7 +1320,7 @@
         if (!agent.childElementCount) agent.append(el("div", "meta", "No controls available"));
         animateLayout(beforeMenu, false);
       }
-      if (before) animateLayout(before, false);
+      if (before && !layoutAnimation) animateLayout(before, false);
     } catch (error) { if (ownsContext()) { if (card._logs) card._logs.textContent = String(error.message || error); showError(error); } }
     finally { if (contextRequest === request) contextRequest = null; }
   }
@@ -1891,7 +1888,10 @@
     if (records.get(current)?.details_available === false) details = false;
     if (reducedMotion.matches || geometry.reduce_motion) stopArrivalAnimation();
     const before = host.getBoundingClientRect();
-    const signature = JSON.stringify([current, expanded, details, queue, settingsOpen, todosOpen, menu, replyStates.get(current), resizedSize, geometry, snapshot.visible, records.get(current)?.request]);
+    // The native east-edge limit follows the animated width. It affects the
+    // next manual drag, not this transition's destination.
+    const { max_width_e, native_resize, ...layoutGeometry } = geometry;
+    const signature = JSON.stringify([current, expanded, details, queue, settingsOpen, todosOpen, menu, replyStates.get(current), resizedSize, layoutGeometry, snapshot.visible, records.get(current)?.request]);
     const continuingAnimation = layoutAnimation && signature === renderedLayout;
     if (!continuingAnimation) stopAnimation();
     renderedLayout = signature;

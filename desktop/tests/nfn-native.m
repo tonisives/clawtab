@@ -470,9 +470,9 @@ static void verifyFirstClick(void (^finish)(void)) {
     }];
 }
 
-static void sampleExpansion(NSMutableArray<NSNumber *> *widths, void (^finish)(void)) {
-    [surface.web evaluateJavaScript:@"document.querySelector('#surface').getBoundingClientRect().width" completionHandler:^(id width, NSError *error) {
-        if (error || ![width isKindOfClass:NSNumber.class]) { fprintf(stderr, "Could not measure the notification animation\n"); exit(1); }
+static void sampleExpansion(NSMutableArray<NSArray<NSNumber *> *> *widths, void (^finish)(void)) {
+    [surface.web evaluateJavaScript:@"(() => { const r = document.querySelector('#surface').getBoundingClientRect(); return [r.width, r.height]; })()" completionHandler:^(id width, NSError *error) {
+        if (error || ![width isKindOfClass:NSArray.class]) { fprintf(stderr, "Could not measure the notification animation\n"); exit(1); }
         [widths addObject:width];
         if (widths.count >= 10) { finish(); return; }
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 20), dispatch_get_main_queue(), ^{ sampleExpansion(widths, finish); });
@@ -483,17 +483,23 @@ static void verifyExpansion(void (^finish)(void)) {
     NSRect compact = [surface surfaceFrame], canvas = surface.panel.frame;
     [surface.web evaluateJavaScript:@"document.querySelector('.details-toggle').click()" completionHandler:^(id value, NSError *error) {
         if (error) { fprintf(stderr,"Details did not open\n"); exit(1); }
-        NSMutableArray<NSNumber *> *widths = [NSMutableArray array];
+        NSMutableArray<NSArray<NSNumber *> *> *widths = [NSMutableArray array];
         sampleExpansion(widths, ^{
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 5), dispatch_get_main_queue(), ^{
                 NSRect expanded = [surface surfaceFrame];
                 BOOL anchored = fabs(NSMaxY(expanded) - NSMaxY(compact)) < 1;
                 BOOL fixedCanvas = NSEqualRects(canvas, surface.panel.frame);
-                BOOL immediate = widths.count > 0;
-                for (NSNumber *width in widths) if (fabs(width.doubleValue - expanded.size.width) > 1) immediate = NO;
+                BOOL simultaneous = NO, continuous = YES;
+                double previousWidth = compact.size.width, previousHeight = compact.size.height;
+                for (NSArray<NSNumber *> *sample in widths) {
+                    double width = sample[0].doubleValue, height = sample[1].doubleValue;
+                    if (width > compact.size.width + 1 && width < expanded.size.width - 1 && height > compact.size.height + 1 && height < expanded.size.height - 1) simultaneous = YES;
+                    if (width < previousWidth - 1 || height < previousHeight - 1) continuous = NO;
+                    previousWidth = width; previousHeight = height;
+                }
                 CGFloat maxHeight = [surface selectedScreen].visibleFrame.size.height * .8;
-                if (fabs(expanded.size.width - 520) > 1 || expanded.size.height <= compact.size.height + 100 || expanded.size.height > maxHeight + 1 || !anchored || !immediate || !fixedCanvas) {
-                    fprintf(stderr,"Expansion failed: compact=%.0fx%.0f drawn=%s expanded=%.0fx%.0f maxHeight=%.0f anchored=%d immediate=%d\n",compact.size.width,compact.size.height,widths.description.UTF8String,expanded.size.width,expanded.size.height,maxHeight,anchored,immediate); exit(1);
+                if (fabs(expanded.size.width - 620) > 1 || expanded.size.height <= compact.size.height + 100 || expanded.size.height > maxHeight + 1 || !anchored || !simultaneous || !continuous || !fixedCanvas) {
+                    fprintf(stderr,"Expansion failed: compact=%.0fx%.0f drawn=%s expanded=%.0fx%.0f maxHeight=%.0f anchored=%d simultaneous=%d\n",compact.size.width,compact.size.height,widths.description.UTF8String,expanded.size.width,expanded.size.height,maxHeight,anchored,simultaneous); exit(1);
                 }
                 [surface.web takeSnapshotWithConfiguration:nil completionHandler:^(NSImage *image, NSError *snapshotError) {
                     if (snapshotError || !image) { fprintf(stderr,"Expanded snapshot failed\n"); exit(1); }
