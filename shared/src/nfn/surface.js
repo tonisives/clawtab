@@ -22,6 +22,7 @@
   let nativeWindowFocus = null;
   const autoYesBusy = new Set();
   const openingSessions = new Set();
+  const sessionTargets = new Map();
   const remoteMedia = new Map();
   const selectedNotifications = new Set();
   let bulkBusy = false, queueError = "";
@@ -701,8 +702,28 @@
     try {
       const value = await call(command);
       if (value.record) records.set(id, value.record);
+      if (value.targets) {
+        sessionTargets.set(id, value.targets);
+        if (current === id) { menu = "sessions"; host.querySelector(".menu-overlay")?.remove(); }
+      } else if (value.focused && current === id && menu === "sessions") menu = null;
     } catch (error) { showError(error, id); }
     finally { openingSessions.delete(id); render(); }
+  }
+  async function loadSessionTargets(record, node) {
+    if (preview || !record.request.source?.session_id) return;
+    try {
+      const value = await call({ op: "session_targets", id: record.id });
+      sessionTargets.set(record.id, value.targets || []);
+      if (!node.isConnected) return;
+      const count = value.targets?.length || 0;
+      if (count > 1 && node._openSession) {
+        node._openSession.textContent = `Open (${count})`;
+        node._openSession.title = `This conversation is open in ${count} panes. Choose where to open it.`;
+        node._openSession.setAttribute("aria-haspopup", "dialog");
+        const hint = button(`Session open in ${count} panes`, () => focusSession(record.id, { op: "focus", id: record.id }), "utility session-locations");
+        node._notice.after(hint);
+      }
+    } catch (_) { /* Opening the session reports connection errors on demand. */ }
   }
   async function performAction(id, command, accept = () => {}) {
     if (actionsInProgress.has(id)) return;
@@ -1182,6 +1203,7 @@
     if (replyToggle) footerActions.append(replyToggle);
     utilities.append(footerActions);
     node.append(utilities);
+    loadSessionTargets(record, node);
     return node;
   }
   function syncCardDetails(record) {
@@ -1544,12 +1566,21 @@
     existing?.remove();
     const record = records.get(current), overlay = el("div", "menu-overlay");
     overlay.dataset.menu = menu; overlay.dataset.id = current || "";
-    const panel = el("div", "menu-panel"); panel.setAttribute("role", "dialog"); panel.setAttribute("aria-label", menu === "agent" ? "Agent controls" : "Notification options");
+    const panel = el("div", "menu-panel"); panel.setAttribute("role", "dialog"); panel.setAttribute("aria-label", menu === "sessions" ? "Choose a pane" : menu === "agent" ? "Agent controls" : "Notification options");
     const heading = el("div", "menu-heading");
     if (menu === "agent") { const back = button("‹", () => toggleMenu("options"), "utility nav-step"); back.setAttribute("aria-label", "Back to options"); heading.append(back); }
-    heading.append(el("span", "", menu === "agent" ? "Agent controls" : "Options"));
+    heading.append(el("span", "", menu === "sessions" ? "Choose a pane" : menu === "agent" ? "Agent controls" : "Options"));
     const close = button("×", () => toggleMenu(menu), "utility close"); close.setAttribute("aria-label", "Close menu"); heading.append(close); panel.append(heading);
-    if (menu === "acknowledge") {
+    if (menu === "sessions") {
+      const targets = sessionTargets.get(record.id) || [];
+      panel.append(el("p", "session-locations-summary", `This conversation is open in ${targets.length} panes.`));
+      for (const target of targets) {
+        const label = [target.program, target.group, target.window_name, target.pane_id].filter(Boolean).join(" · ");
+        const action = button(label, () => focusSession(record.id, { op: "focus", id: record.id, pane_id: target.pane_id }), "utility menu-link session-target");
+        action.append(el("span", "session-target-title", [target.title, target.origin ? "Message origin" : ""].filter(Boolean).join(" · ")));
+        action.disabled = openingSessions.has(record.id); panel.append(action);
+      }
+    } else if (menu === "acknowledge") {
       overlay.classList.add("acknowledge-overlay"); panel.classList.add("acknowledge-menu");
       panel.setAttribute("role", "menu"); panel.setAttribute("aria-label", "Session actions"); heading.remove();
       for (const [label, op] of [["Keep session alive", "dismiss"], ["Kill session", "kill_session"]]) {
@@ -1578,6 +1609,7 @@
     const notice = el("div", "notice menu-notice"); notice.setAttribute("role", "status"); panel.append(notice);
     overlay.append(panel); overlay.addEventListener("click", event => { if (event.target === overlay) toggleMenu(menu); }); host.append(overlay);
     if (menu === "acknowledge") panel.querySelector("[role=menuitem]").focus({ preventScroll: true });
+    if (menu === "sessions") panel.querySelector(".session-target")?.focus({ preventScroll: true });
     updateAutoYes();
   }
   function leaveSettings() {

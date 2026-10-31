@@ -331,3 +331,8 @@ button.auto-yes-button[aria-checked="true"] { background: rgba(255, 159, 10, .15
 .resize-se { right: 0; cursor: nwse-resize; }
 .resize-handle:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 #surface.resizing { user-select: none; }
+.menu-panel button.session-target{display:flex;flex-direction:column;align-items:flex-start;gap:4px;white-space:normal;text-align:left;padding:8px 12px;font-size:14px;line-height:20px}
+.session-target::after{display:none}
+.session-target-title,.session-locations-summary{color:var(--muted);font-size:14px;line-height:20px;overflow-wrap:anywhere}
+.session-locations-summary{margin:0;padding:8px 12px}
+button.session-locations{font-size:14px;line-height:20px;padding:4px 8px}

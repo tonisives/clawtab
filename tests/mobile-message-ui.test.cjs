@@ -232,6 +232,29 @@ test("missing deep-link record is fetched from its machine before opening", asyn
   assert.equal(h.calls.length, 1);
 });
 
+test("a shared conversation offers its panes and navigates only to a verified selection", async () => {
+  const original = record("mac-b");
+  original.request.source.session_id = "shared-thread";
+  original.request.actions.push({ id: "focus", kind: "focus", label: "Open" });
+  const h = harness([original]);
+  const targets = [{ pane_id: "%10" }, { pane_id: "%12" }];
+  h.options.host = async (machine, command) => {
+    h.calls.push({ machine, ...command });
+    assert.equal(command.op, "session_targets");
+    return { targets };
+  };
+  const result = await h.controller.execute({ op: "respond", id: "mac-b::same-id", action_id: "focus" });
+  assert.equal(result.targets.length, 2);
+  assert.equal(h.opened.length, 0);
+  await h.controller.execute({ op: "focus", id: "mac-b::same-id", pane_id: "%10" });
+  assert.equal(h.opened[0].request.source.pane_id, "mac-b::%10");
+  assert.equal(original.request.source.pane_id, "mac-b::%1");
+  targets.shift();
+  await assert.rejects(h.controller.execute({ op: "focus", id: "mac-b::same-id", pane_id: "%10" }), /no longer showing/);
+  assert.equal(h.opened.length, 1);
+  assert.ok(h.calls.every(call => call.machine === "mac-b" && call.id === "same-id"));
+});
+
 test("a live message refresh replaces cached pending state after an answer elsewhere", async () => {
   const h = harness();
   const updates = [];
