@@ -19,9 +19,9 @@ let purchaseInsertions = [
 let otherInsertions = [
   ["        guard let scene = activeWindowScene() else {", '\n            ClawTabIapTrace.record("scene-missing")'],
   [sceneAnchor, null],
-  ["            let listeners = await state.snapshotPurchaseUpdated(isDuplicate: isDuplicate)", '\n            ClawTabIapTrace.record("native-update-listeners", code: listeners.count)\n            if isDuplicate { ClawTabIapTrace.record("native-update-duplicate") }'],
-  ["    private func emitPurchaseError(_ error: PurchaseError) {", '\n        ClawTabIapTrace.record("native-error-emitted")'],
-  ["            let listeners = await state.snapshotPurchaseError()", '\n            ClawTabIapTrace.record("native-error-listeners", code: listeners.count)'],
+  ["            let listeners = state.snapshotPurchaseUpdated(isDuplicate: isDuplicate)", '\n            ClawTabIapTrace.record("native-update-listeners", code: listeners.count)\n            if isDuplicate { ClawTabIapTrace.record("native-update-duplicate") }'],
+  ["        guard !Self.suppressPurchaseErrorEmission else { return }", '\n        ClawTabIapTrace.record("native-error-emitted")'],
+  ["            let listeners = state.snapshotPurchaseError()", '\n            ClawTabIapTrace.record("native-error-listeners", code: listeners.count)'],
 ]
 let insertions = [...purchaseInsertions, ...otherInsertions]
 
