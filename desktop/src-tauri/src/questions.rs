@@ -744,7 +744,10 @@ pub async fn question_detection_loop(
             process_snapshot_at = Instant::now();
         }
         if titles_synced_at.is_none_or(|time| time.elapsed() >= PROCESS_SNAPSHOT_INTERVAL) {
-            if let Err(error) = crate::terminal_backend::sync_agent_titles(&process_snapshot) {
+            let task_titles = settings.lock().session_task_titles.clone();
+            if let Err(error) =
+                crate::terminal_backend::sync_agent_titles(&process_snapshot, &task_titles)
+            {
                 log::debug!("failed to sync agent titles: {}", error);
             }
             titles_synced_at = Some(Instant::now());

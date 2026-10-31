@@ -801,6 +801,14 @@ async fn handle_ipc_command(
                 Err(error) => IpcResponse::Error(error),
             }
         }
+        IpcCommand::SetSessionTaskTitle {
+            provider,
+            session_id,
+            title,
+        } => match clawtab_lib::task_titles::save(settings, provider, &session_id, &title) {
+            Ok(()) => IpcResponse::Ok,
+            Err(error) => IpcResponse::Error(error),
+        },
         IpcCommand::SetPaneDisplayName {
             pane_id,
             display_name,

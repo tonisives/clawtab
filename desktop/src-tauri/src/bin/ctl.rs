@@ -59,6 +59,9 @@ fn print_usage() {
     eprintln!("  agent rename <pane_id> <title>            Rename an agent pane");
     eprintln!("  agent pin [pane_id]                       Pin an agent across ClawTab");
     eprintln!("  agent unpin [pane_id]                     Unpin an agent across ClawTab");
+    eprintln!(
+        "  agent task-title <provider> <session_id> <title>  Update a conversation task label"
+    );
     eprintln!("  agent ai-rename <pane_id>                  Generate a concise pane title");
     eprintln!("  agent hooks <status|install> <provider>    Manage agent event hooks");
     eprintln!("  agent actions [pane_id] [--json]           List available agent actions");
@@ -151,6 +154,9 @@ fn print_agent_usage() {
     eprintln!("  agent rename <pane_id> <title>            Rename an agent pane");
     eprintln!("  agent pin [pane_id]                       Pin an agent across ClawTab");
     eprintln!("  agent unpin [pane_id]                     Unpin an agent across ClawTab");
+    eprintln!(
+        "  agent task-title <provider> <session_id> <title>  Update a conversation task label"
+    );
     eprintln!("  agent ai-rename <pane_id>                  Generate a concise pane title");
     eprintln!("  agent hooks <status|install> <provider>    Manage agent event hooks");
     eprintln!("  agent actions [pane_id] [--json]           List available agent actions");
@@ -675,6 +681,7 @@ fn is_agent_subcommand(command: &str) -> bool {
             | "info"
             | "identities"
             | "rename"
+            | "task-title"
             | "ai-rename"
             | "hooks"
             | "pin"
@@ -822,7 +829,14 @@ async fn main() {
     if !agent_scope
         && matches!(
             command,
-            "auto-yes" | "pane-info" | "identities" | "rename" | "ai-rename" | "pin" | "unpin"
+            "auto-yes"
+                | "pane-info"
+                | "identities"
+                | "rename"
+                | "task-title"
+                | "ai-rename"
+                | "pin"
+                | "unpin"
         )
     {
         eprintln!(
@@ -1093,6 +1107,11 @@ async fn main() {
             let display_name = (!pane_display_name.is_empty())
                 .then_some(pane_display_name.as_str())
                 .or_else(|| process_override.and_then(|meta| meta.display_name.as_deref()))
+                .or_else(|| {
+                    settings
+                        .session_task_titles
+                        .get(provider, info.session_id.as_deref())
+                })
                 .or(info.title.as_deref());
             let first_query = process_override
                 .and_then(|meta| meta.first_query.as_ref())
@@ -1115,6 +1134,18 @@ async fn main() {
                 std::process::exit(1);
             }
             return;
+        }
+        "task-title" => {
+            if args.len() < 5 {
+                exit_error("Usage: cwt agent task-title <provider> <session_id> <title>");
+            }
+            let provider = clawtab_lib::agent_session::ProcessProvider::from_name(&args[2])
+                .unwrap_or_else(|| exit_error("Unknown agent provider"));
+            Target::Daemon(IpcCommand::SetSessionTaskTitle {
+                provider,
+                session_id: args[3].clone(),
+                title: args[4..].join(" "),
+            })
         }
         "rename" => {
             if args.len() < 4 {

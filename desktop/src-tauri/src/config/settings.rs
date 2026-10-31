@@ -211,6 +211,8 @@ pub struct AppSettings {
     pub hide_titlebar: bool,
     /// Per-pane detected process metadata overrides.
     pub process_overrides: HashMap<String, DetectedProcessOverride>,
+    /// Task labels supplied by the working agent, scoped to provider and conversation.
+    pub session_task_titles: crate::task_titles::TaskTitles,
     /// Ordered pins shared by the daemon with desktop and Remote clients.
     /// Keys use `job:<slug>` or `pane:<tmux-pane-id>`.
     #[serde(default)]
@@ -291,6 +293,7 @@ impl Default for AppSettings {
             relay: None,
             hide_titlebar: true,
             process_overrides: HashMap::new(),
+            session_task_titles: Default::default(),
             pinned_items: Vec::new(),
             pinned_pane_identities: HashMap::new(),
             shortcuts: ShortcutSettings::default(),

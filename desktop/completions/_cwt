@@ -226,6 +226,7 @@ _cwt_complete() {
               'rename:Rename an agent pane'
               'pin:Pin an agent across ClawTab'
               'unpin:Unpin an agent across ClawTab'
+              'task-title:Update a conversation task label'
               'ai-rename:Generate a concise pane title'
               'hooks:Manage agent event hooks'
             )
@@ -254,6 +255,8 @@ _cwt_complete() {
             _cwt_panes
           elif (( CURRENT == 3 )) && [[ $words[2] == rename || $words[2] == ai-rename || $words[2] == pin || $words[2] == unpin ]]; then
             _cwt_panes
+          elif (( CURRENT == 3 )) && [[ $words[2] == task-title ]]; then
+            compadd codex claude
           elif (( CURRENT == 3 )) && [[ $words[2] == hooks ]]; then
             local -a actions
             actions=(

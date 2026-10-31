@@ -34,6 +34,7 @@ pub fn set_settings(
     }
     let telegram = settings.telegram.clone().or(on_disk.telegram);
     let relay = settings.relay.clone().or(on_disk.relay);
+    let session_task_titles = on_disk.session_task_titles.clone();
     let pinned_items = on_disk.pinned_items.clone();
     let pinned_pane_identities = on_disk.pinned_pane_identities.clone();
     *settings = new_settings;
@@ -46,6 +47,7 @@ pub fn set_settings(
     if settings.relay.is_none() {
         settings.relay = relay;
     }
+    settings.session_task_titles = session_task_titles;
     settings.pinned_items = pinned_items;
     settings.pinned_pane_identities = pinned_pane_identities;
     settings.save()?;

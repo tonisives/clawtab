@@ -51,6 +51,7 @@ pub mod runtime_paths;
 pub mod scheduler;
 pub mod secrets;
 pub mod shared_state;
+pub mod task_titles;
 pub mod telegram;
 mod terminal;
 pub mod terminal_backend;
