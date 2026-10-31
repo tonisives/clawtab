@@ -27,9 +27,9 @@ button.utility:is(:hover:where(:not([data-native-pointer] *)), [data-native-hove
 #surface.notch { background: #000; border: 0; border-radius: 0 0 20px 20px; padding-top: var(--notch-overlap, 38px); box-shadow: none; }
 #surface:focus { outline: none; }
 #surface[data-keyboard-active="true"], #surface[data-pointer-active="true"] { box-shadow: 0 12px 32px #000a, 0 4px 12px #0006; }
-#surface[data-desktop="true"] .brand img, #surface[data-desktop="true"] .todo-ring { filter: grayscale(1); opacity: .7; }
-#surface[data-keyboard-active="true"] .brand img, #surface[data-keyboard-active="true"] .todo-ring,
-#surface[data-pointer-active="true"] .brand img, #surface[data-pointer-active="true"] .todo-ring { filter: none; opacity: 1; }
+#surface[data-desktop="true"] .brand .brand-icon, #surface[data-desktop="true"] .todo-ring { filter: grayscale(1); opacity: .7; }
+#surface[data-keyboard-active="true"] .brand .brand-icon, #surface[data-keyboard-active="true"] .todo-ring,
+#surface[data-pointer-active="true"] .brand .brand-icon, #surface[data-pointer-active="true"] .todo-ring { filter: none; opacity: 1; }
 #surface.empty { display: none; }
 #surface.pill { width: 224px; min-height: 0; border-color: #333; }
 #surface.notch.pill { width: var(--notch-width, 220px); border-radius: 0 0 12px 12px; }
@@ -38,12 +38,9 @@ button.bar-toggle { position: absolute; inset: 0; width: 100%; border: 0; border
 button.bar-toggle:active { cursor: grabbing; }
 button.bar-toggle:is(:hover:where(:not([data-native-pointer] *)), [data-native-hover]) { background: #ffffff08; }
 .top > .icon-button, .top-actions { position: relative; }
-.brand img { width: 20px; height: 20px; border-radius: 5px; }
-.brand .claw-slash { position: absolute; inset: 1px; width: 28px; height: 28px; pointer-events: none; overflow: visible; fill: none; stroke: #ff9f0a; stroke-width: 2; stroke-linecap: round; filter: drop-shadow(0 1px 1px #000); }
-.claw-slash path { stroke-dasharray: 1; stroke-dashoffset: 1; opacity: 0; }
-@media (prefers-reduced-motion: reduce) {
-  .brand .claw-slash { display: none; }
-}
+button.brand { padding: 1px; }
+.brand .claw-arrival { width: 28px; height: 28px; pointer-events: none; overflow: visible; flex: none; }
+#surface .brand.arriving .brand-icon { filter: none; opacity: 1; }
 .count { display: flex; align-items: center; height: 30px; padding: 0 6px; color: inherit; font-size: 11px; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .top-actions { display: flex; align-items: center; justify-content: center; gap: 4px; pointer-events: none; }
 .top-actions button { pointer-events: auto; }
