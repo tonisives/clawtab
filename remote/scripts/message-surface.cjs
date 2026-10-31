@@ -28,8 +28,8 @@ button.bar-toggle,button.todo-toggle{min-height:0}
 button.icon-button{min-height:36px;border-radius:999px}
 button.close,button.nav-step{min-height:36px;min-width:36px;padding:4px}
 button.queue-item,button.menu-link,button.reply-toggle{border-radius:6px}
-.segments button{min-height:36px;padding:4px 12px;border:0;border-radius:6px;background:transparent;color:var(--muted)}
-.segments button[aria-selected="true"]{background:#38383a;color:#e4e4e4}
+.segments:not(.segmented-control) button{min-height:36px;padding:4px 12px;border:0;border-radius:6px;background:transparent;color:var(--muted)}
+.segments:not(.segmented-control) button[aria-selected="true"]{background:#38383a;color:#e4e4e4}
 button.auto-yes-button{min-height:44px;padding:8px 16px;border-radius:999px}
 .todo-agent{margin-top:0}
 .todo-heading,.todo-row{align-items:center}

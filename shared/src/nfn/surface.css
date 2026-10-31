@@ -99,17 +99,10 @@ h1 { margin: 0; font-size: 15px; line-height: 1.35; font-weight: 600; overflow-w
 .message-thread .message { max-height: none; overflow: visible; margin-top: 4px; }
 .details-open .message-thread { flex: 0 1 auto; min-height: 70px; }
 button.reply-toggle { font-size: 12px; }
-.footer-actions { display: flex; align-items: stretch; gap: 1px; min-width: 0; max-width: 100%; border: 1px solid #7986cb80; border-radius: 8px; background: #7986cb80; }
+.footer-actions { min-width: 0; max-width: 100%; }
 .session-controls .footer-actions { grid-column: 2; justify-self: center; }
 .footer-actions .actions { display: contents; }
-.controls .footer-actions button { flex: 1 1 auto; min-width: 0; max-width: none; margin: 0; border: 0; border-radius: 0; padding: 8px 12px; background: #272727; color: #aeb8ed; font-size: 12px; font-weight: 500; white-space: nowrap; }
-.controls .footer-actions .open-session { border-radius: 8px 0 0 8px; }
-.controls .footer-actions > :last-child { border-radius: 0 8px 8px 0; }
-.controls .footer-actions .actions:last-child button { border-radius: 0 8px 8px 0; }
-.controls .footer-actions button:is(:hover:where(:not([data-native-pointer] *)), [data-native-hover]) { background: #313131; }
-.controls .footer-actions button:active { background: #313131; }
-.controls .footer-actions .reply-toggle[aria-expanded="true"] { background: #313131; }
-.controls .details-toggle { justify-self: start; }
+.controls .details-toggle { justify-self: start; transition: none; }
 .details-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
 .answer-row { display: flex; align-items: center; gap: 10px; margin-top: 12px; min-width: 0; }
 .answer-row:empty, .answer-row:has(.actions:empty) { display: none; }
@@ -223,6 +216,15 @@ button.send { flex: none; align-self: flex-end; min-width: 54px; padding: 7px 12
 .segments { flex: none; display: flex; gap: 3px; padding: 3px; margin: 2px 2px 8px; background: #1c1c1e; border-radius: 8px; }
 .segments button { flex: 1; padding: 5px 12px; border: 0; color: var(--muted); background: transparent; border-radius: 5px; font-size: 12px; }
 .segments button[aria-selected="true"] { background: #38383a; color: #e4e4e4; }
+.segmented-control { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); align-items: stretch; gap: 1px; padding: 0; border: 1px solid #7986cb80; border-radius: 8px; background: #7986cb80; }
+.segmented-control button { min-width: 0; max-width: none; margin: 0; border: 0; border-radius: 0; padding: 8px 12px; background: #272727; color: #aeb8ed; font-size: 12px; font-weight: 500; white-space: nowrap; }
+.segmented-control > button:first-child { border-radius: 8px 0 0 8px; }
+.segmented-control > button:last-child, .segmented-control > .actions:last-child button { border-radius: 0 8px 8px 0; }
+.segmented-control button:is(:hover:where(:not([data-native-pointer] *)), [data-native-hover]), .segmented-control button:active,
+.segmented-control button[aria-selected="true"], .segmented-control button[aria-expanded="true"] { background: #313131; color: #e4e4e4; }
+#surface:not([data-native-pointer]):has(.resize-sw:not([hidden]):hover) .details-toggle,
+#surface[data-resize-edge="sw"] .details-toggle { background: #242424; color: #e4e4e4; }
+
 .queue-item { display: block; text-align: left; width: 100%; background: transparent; border: 0; border-radius: 6px; padding: 10px 8px; margin: 2px 0; }
 .queue-item:focus { outline: none; }
 .queue-row { display: flex; align-items: center; gap: 2px; padding: 0 4px; }

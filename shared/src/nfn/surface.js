@@ -582,10 +582,11 @@
   }
   function toggleDetails() {
     if (records.get(current)?.details_available === false) return;
+    const shrinkResizedDetails = details && Boolean(resizedSize);
     pauseTimer(); stopContext(true); expanded = true; details = !details;
     if (details) { if (resizedSize) resizedSize.showDetails = true; }
     else { finishResize(); resizedSize = null; resizeRightOffset = 0; }
-    menu = null; render(false); startContext();
+    menu = null; render(shrinkResizedDetails); startContext();
   }
   function toggleMenu(next) {
     const closingAcknowledgement = menu === "acknowledge" && next === menu;
@@ -1096,8 +1097,8 @@
     } else if (record.request.source?.pane_id || choices.some(action => action.kind === "focus")) {
       utilities.classList.add("session-controls");
       const focus = choices.find(action => action.kind === "focus");
-      const openSession = button("Open session", () => focus ? act(record.id, focus.id, "") : focusSession(record.id, { op: "focus", id: record.id }), "primary open-session");
-      openSession.title = "Open the originating session"; node._openSession = openSession; utilities.append(openSession);
+      const openSession = button("Open", () => focus ? act(record.id, focus.id, "") : focusSession(record.id, { op: "focus", id: record.id }), "primary open-session");
+      openSession.setAttribute("aria-label", "Open session"); openSession.title = "Open the originating session"; node._openSession = openSession; utilities.append(openSession);
     } else if (record.request.source?.job_id && record.details_available !== false) {
       const openJob = button("Go to job", async () => {
         openJob.disabled = true;
@@ -1108,15 +1109,15 @@
       openJob.title = "Show job folder in Finder"; utilities.append(openJob);
     }
     if (!utilities.querySelector(".open-session")) {
-      const openSession = button("Open session", () => focusSession(record.id, { op: "focus", id: record.id }), "primary open-session");
-      openSession.disabled = true; openSession.title = "This message has no originating session";
+      const openSession = button("Open", () => focusSession(record.id, { op: "focus", id: record.id }), "primary open-session");
+      openSession.setAttribute("aria-label", "Open session"); openSession.disabled = true; openSession.title = "This message has no originating session";
       utilities.classList.add("session-controls"); utilities.append(openSession);
     }
     if (actions.childElementCount === 1 && actions.firstElementChild.dataset.actionId === "acknowledge") {
       utilities.classList.add("session-controls");
       utilities.append(actions);
     }
-    const footerActions = el("div", "footer-actions");
+    const footerActions = el("div", "footer-actions segmented-control");
     footerActions.setAttribute("role", "group"); footerActions.setAttribute("aria-label", "Message actions");
     footerActions.append(utilities.querySelector(".open-session"));
     if (actions.parentElement === utilities) footerActions.append(actions);
@@ -1564,7 +1565,7 @@
       view = el("section", "notification-settings"); view.setAttribute("aria-label", "Notification settings");
       const heading = el("div", "settings-heading");
       heading.append(el("h1", "", "Notifications"), button("Close bar", hideBar, "utility close-bar")); view.append(heading);
-      const tabs = el("div", "segments settings-tabs"); tabs.setAttribute("role", "tablist"); tabs.setAttribute("aria-label", "Settings sections");
+      const tabs = el("div", "segments settings-tabs segmented-control"); tabs.setAttribute("role", "tablist"); tabs.setAttribute("aria-label", "Settings sections");
       const panels = new Map(); view.append(tabs);
       for (const [id, title] of [["appearance", "Appearance"], ["delivery", "Delivery"], ["shortcuts", "Shortcuts"]]) {
         const tab = button(title, () => { settingsTab = id; render(); });
@@ -1706,7 +1707,7 @@
   }
   function finishResize(event) {
     if (!resizing || event && event.pointerId !== resizing.pointerId) return;
-    const { control, pointerId } = resizing; resizing = null;
+    const { control, pointerId } = resizing; resizing = null; delete host.dataset.resizeEdge;
     document.removeEventListener("pointermove", moveResize);
     document.removeEventListener("pointerup", finishResize);
     document.removeEventListener("pointercancel", finishResize);
@@ -1737,6 +1738,7 @@
           event.preventDefault(); event.stopPropagation(); finishResize(); stopAnimation();
           const bounds = host.getBoundingClientRect();
           resizing = { control, edge, pointerId: event.pointerId, x: event.screenX, y: event.screenY, width: bounds.width, height: bounds.height, normal: normalResizeSize(), rightOffset: resizeRightOffset, started: false };
+          host.dataset.resizeEdge = edge;
           control.setPointerCapture(event.pointerId);
           document.addEventListener("pointermove", moveResize);
           document.addEventListener("pointerup", finishResize);
@@ -1989,6 +1991,7 @@
     if (target && host.contains(target)) for (let node = target; node; node = node.parentElement) {
       next.add(node); if (node === host) break;
     }
+    if (target?.closest(".resize-sw") && host.contains(target) && card?._detailsButton) next.add(card._detailsButton);
     for (const node of nativeHovered) if (!next.has(node)) node.removeAttribute("data-native-hover");
     for (const node of next) if (!nativeHovered.has(node)) node.setAttribute("data-native-hover", "");
     nativeHovered = next;
