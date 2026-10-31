@@ -241,24 +241,24 @@ function saveListMode(value: JobListMode) {
 
 export default function JobsScreen() {
   const provider = useRef<ComponentRef<typeof View>>(null)
-  const [bounds, setBounds] = useState({ x: 0, width: 0, height: 0 })
+  const [bounds, setBounds] = useState({ x: 0, y: 0, width: 0, height: 0 })
   const windowSize = useWindowDimensions()
   const insets = useSafeAreaInsets()
   const measure = useCallback(() => {
-    provider.current?.measureInWindow((x, _y, width, height) => {
-      setBounds((previous) => previous.x === x && previous.width === width && previous.height === height ? previous : { x, width, height })
+    provider.current?.measureInWindow((x, y, width, height) => {
+      setBounds((previous) => previous.x === x && previous.y === y && previous.width === width && previous.height === height ? previous : { x, y, width, height })
     })
   }, [])
   useEffect(() => {
     const frame = requestAnimationFrame(measure)
     return () => cancelAnimationFrame(frame)
-  }, [measure, windowSize.width, windowSize.height, insets.left, insets.right])
+  }, [measure, windowSize.width, windowSize.height, insets.left, insets.right, insets.bottom])
   return <ReservedRegionsProvider ref={provider} style={{ flex: 1 }} onLayout={measure}>
     <JobsWorkspace bounds={bounds} />
   </ReservedRegionsProvider>
 }
 
-function JobsWorkspace({ bounds }: { bounds: { x: number; width: number; height: number } }) {
+function JobsWorkspace({ bounds }: { bounds: { x: number; y: number; width: number; height: number } }) {
   const realJobs = useJobsStore((s) => s.jobs)
   const realStatuses = useJobsStore((s) => s.statuses)
   const detectedProcesses = useJobsStore((s) => s.detectedProcesses)
@@ -303,10 +303,11 @@ function JobsWorkspace({ bounds }: { bounds: { x: number; width: number; height:
   const phoneInsets = {
     left: Math.max(0, insets.left - bounds.x),
     right: Math.max(0, bounds.x + (bounds.width || width) - windowSize.width + insets.right),
+    bottom: Math.max(0, bounds.y + (bounds.height || windowSize.height) - windowSize.height + insets.bottom),
   }
   const phoneLayout = workspaceLayout(
     (bounds.width || width) - phoneInsets.left - phoneInsets.right,
-    (bounds.height || windowSize.height) - insets.bottom,
+    (bounds.height || windowSize.height) - phoneInsets.bottom,
     windowSize.fontScale,
     regions.filter((region) => region.kind === "division").map(({ frame }) => ({ ...frame, x: frame.x - phoneInsets.left, y: frame.y })),
   )
@@ -1484,7 +1485,7 @@ function JobsWorkspace({ bounds }: { bounds: { x: number; width: number; height:
         paddingLeft: phoneInsets.left + phoneLayout.clearance.left,
         paddingRight: phoneInsets.right + phoneLayout.clearance.right,
         paddingTop: phoneLayout.clearance.top,
-        paddingBottom: phoneLayout.clearance.bottom,
+        paddingBottom: phoneInsets.bottom + phoneLayout.clearance.bottom,
       }]}>
         {splitContent}
         {searchModal}
