@@ -85,7 +85,7 @@ def sign_app(app, identity):
     resources = contents / "Resources"
     for nested_app in sorted(resources.glob("*.app")):
         sign_app(nested_app, identity)
-    cli = resources / "cwtctl"
+    cli = resources / "cwt"
     if cli.is_file():
         sign_code(cli, identity, cli.name)
     sign_code(app, identity, info["CFBundleIdentifier"])

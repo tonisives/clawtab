@@ -16,11 +16,11 @@ For Linux or Windows hosts, follow [platform installation](platform-builds.md).
 brew install --cask tonisives/tap/clawtab
 ```
 
-This installs the headless daemon, `cwtctl`, agent hooks, and Zsh completion. Start the background service:
+This installs the headless daemon, `cwt`, agent hooks, and Zsh completion. Start the background service:
 
 ```sh
-cwtctl daemon install
-cwtctl daemon ping
+cwt daemon install
+cwt daemon ping
 ```
 
 For split workspaces, the Mind Map, and visual settings, install the optional desktop app:
@@ -29,9 +29,8 @@ For split workspaces, the Mind Map, and visual settings, install the optional de
 brew install --cask tonisives/tap/clawtab-desktop
 ```
 
-Launch the desktop app with `cwt`. Starting with the next release, Homebrew
-installs `cwt` as the desktop shell command in place of `clawtab`. The app name
-remains ClawTab, and `cwtctl` continues to provide CLI commands.
+Starting with the next release, `cwt` replaces `cwtctl` as the CLI command.
+The desktop app keeps its `clawtab` launcher.
 
 ### Build from source
 
@@ -46,7 +45,7 @@ Source builds can produce these binaries:
 |--------|---------|
 | `clawtab-daemon` | Headless scheduler, agent monitor, and Remote host |
 | `clawtab` | GUI app (Tauri window) |
-| `cwtctl` | CLI for headless control |
+| `cwt` | CLI for headless control |
 | `cwttui` | Terminal UI (ratatui) |
 
 ## Start an agent from your terminal
@@ -54,10 +53,10 @@ Source builds can produce these binaries:
 ClawTab 0.6 can run agents without tmux. In your project directory:
 
 ```sh
-cwtctl session start -- codex
+cwt session start -- codex
 ```
 
-Use `claude` or `opencode` for another provider. The agent keeps running when you close the terminal. Press Ctrl+] then d to detach, and use `cwtctl session list` followed by `cwtctl session attach <id>` to reconnect. Pair the host with `cwtctl setup` to see it in Remote.
+Use `claude` or `opencode` for another provider. The agent keeps running when you close the terminal. Press Ctrl+] then d to detach, and use `cwt session list` followed by `cwt session attach <id>` to reconnect. Pair the host with `cwt setup` to see it in Remote.
 
 See [sessions without tmux](managed-sessions.md) for control, shutdown, and recovery options, and the [0.6.0 release notes](release-notes.md) for the full update.
 
@@ -106,14 +105,14 @@ All job files (config, prompts, context) are stored centrally at `~/.config/claw
 
 ### Scheduled agent job from the CLI
 
-In a project directory, run `cwtctl jobs create` for an interactive form. Enter the name and a cron expression or one-time date, then write the job description in `nvim`. The command joins the nearest configured group whose project folder contains the current directory. If none matches, it creates a group from the directory name.
+In a project directory, run `cwt jobs create` for an interactive form. Enter the name and a cron expression or one-time date, then write the job description in `nvim`. The command joins the nearest configured group whose project folder contains the current directory. If none matches, it creates a group from the directory name.
 
 You can also supply the fields directly:
 
 ```bash
-cwtctl jobs create --name daily-review --cron '0 9 * * *' --description-file review.md
-cwtctl jobs create --name follow-up --at '2026-10-02 09:00' --description 'Check the results'
-cat task.md | cwtctl jobs create --name task --at '2026-10-02T09:00:00+07:00' --description-stdin
+cwt jobs create --name daily-review --cron '0 9 * * *' --description-file review.md
+cwt jobs create --name follow-up --at '2026-10-02 09:00' --description 'Check the results'
+cat task.md | cwt jobs create --name task --at '2026-10-02T09:00:00+07:00' --description-stdin
 ```
 
 `--at` takes a future local date and time or RFC 3339 timestamp. A one-time job removes its config after the agent starts by default, while the tmux pane and run history remain available. Pass `--keep-config` to retain a disabled job. See [CLI & TUI](cli-tui.md) for details.
@@ -121,7 +120,7 @@ cat task.md | cwtctl jobs create --name task --at '2026-10-02T09:00:00+07:00' --
 ## Running a Job
 
 - **GUI**: Click "Run Now" on any job
-- **CLI**: `cwtctl jobs run <group>/<name>`
+- **CLI**: `cwt jobs run <group>/<name>`
 - **TUI**: Select job, press `r`
 - **Telegram**: Send `/run <name>` to your bot
 - **Schedule**: Automatically triggered by the job's cron expression, calendar recurrence, or one-time date
@@ -129,7 +128,7 @@ cat task.md | cwtctl jobs create --name task --at '2026-10-02T09:00:00+07:00' --
 ## Checking Status
 
 ```bash
-cwtctl jobs status
+cwt jobs status
 ```
 
 Status values: `idle`, `running`, `success`, `failed`, `paused`.

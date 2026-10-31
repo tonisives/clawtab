@@ -48,7 +48,7 @@ A headless daemon adds the agent-aware layer: schedules, session metadata, task 
 - **Durable tmux sessions** - Agents remain ordinary, inspectable tmux panes with their real terminal state intact.
 - **Headless control plane** - The launchd daemon keeps jobs, monitoring, relay connections, and auto-yes running without the desktop window.
 - **Agent-aware tmux UI** - See working, waiting, and idle states; replace generic process names with useful task titles.
-- **Terminal-native controls** - Use `cwtctl`, `cwttui`, or the tmux popup to manage agents and scheduled jobs.
+- **Terminal-native controls** - Use `cwt`, `cwttui`, or the tmux popup to manage agents and scheduled jobs.
 - **Session continuity** - Open the same pane in tmux, the desktop app, web Remote, or mobile without starting a new process.
 - **Multiple providers** - Run Claude Code, Codex, OpenCode, Antigravity, Hermes, and normal shells in one workspace.
 - **Scheduled jobs** - Create prompt, project-folder, and binary jobs with cron expressions or calendar-anchored weekly recurrences.
@@ -126,31 +126,31 @@ All keys can be customized through tmux options.
 
 ## Control from the CLI
 
-`cwtctl` works without the desktop app. Job control talks to the daemon; job creation writes local config and also works while the daemon is offline.
+`cwt` works without the desktop app. Job control talks to the daemon; job creation writes local config and also works while the daemon is offline.
 
 ```sh
-cwtctl daemon status
-cwtctl jobs list
-cwtctl jobs run my-project/review
-cwtctl jobs status
-cwtctl agent info %16
-cwtctl agent auto-yes toggle %16
-cwtctl plugin installed --json
-cwtctl plugin list
-cwtctl plugin <name> run [pane_id] [key=value ...]
+cwt daemon status
+cwt jobs list
+cwt jobs run my-project/review
+cwt jobs status
+cwt agent info %16
+cwt agent auto-yes toggle %16
+cwt plugin installed --json
+cwt plugin list
+cwt plugin <name> run [pane_id] [key=value ...]
 ```
 
-Run `cwtctl jobs create` from a project directory for the interactive form and `nvim` description editor. It creates an agent job in the nearest configured group whose `folder_path` contains the current directory, or derives a group from the directory name when there is no match. You can also supply every field on the command line:
+Run `cwt jobs create` from a project directory for the interactive form and `nvim` description editor. It creates an agent job in the nearest configured group whose `folder_path` contains the current directory, or derives a group from the directory name when there is no match. You can also supply every field on the command line:
 
 ```sh
-cwtctl jobs create --name daily-review --cron '0 9 * * *' --description-file review.md
-cwtctl jobs create --name follow-up --at '2026-10-02 09:00' --description 'Check the results'
-cat task.md | cwtctl jobs create --name task --at '2026-10-02T09:00:00+07:00' --description-stdin --keep-config
+cwt jobs create --name daily-review --cron '0 9 * * *' --description-file review.md
+cwt jobs create --name follow-up --at '2026-10-02 09:00' --description 'Check the results'
+cat task.md | cwt jobs create --name task --at '2026-10-02T09:00:00+07:00' --description-stdin --keep-config
 ```
 
 One-time jobs run when the daemon returns if their scheduled time passed while it was offline. By default, their config is removed after the agent starts, while the pane and run history remain available. `--keep-config` leaves the job disabled after launch.
 
-The CLI accepts one description source: inline text, a text or Markdown file, or standard input. `--at` accepts a future local `YYYY-MM-DD HH:MM` date or RFC 3339 timestamp. `cwtctl jobs create` creates agent jobs; use the desktop app to create a Binary job that runs a script directly.
+The CLI accepts one description source: inline text, a text or Markdown file, or standard input. `--at` accepts a future local `YYYY-MM-DD HH:MM` date or RFC 3339 timestamp. `cwt jobs create` creates agent jobs; use the desktop app to create a Binary job that runs a script directly.
 
 Agent actions are optional local executables. ClawTab installs none by default.
 Plugin packages are hot-discovered from
@@ -159,10 +159,10 @@ a daemon restart. Plugin names can use a unique action suffix, with dashes in
 place of underscores. See [Local Executable Plugins](./docs/agent-plugins.md)
 for the package format, host commands, and approval flow.
 
-For an interactive agent job, `cwtctl jobs run` waits for the daemon to publish its terminal and then attaches your terminal to it. If you are already inside tmux, it selects the new pane in the current client.
+For an interactive agent job, `cwt jobs run` waits for the daemon to publish its terminal and then attaches your terminal to it. If you are already inside tmux, it selects the new pane in the current client.
 
 <p align="center">
-  <img src="https://cdn.clawtab.cc/assets/articles/daemon-tmux/cwtctl-command-groups.png?v=20260716" alt="cwtctl command groups for agents, jobs, panes, secrets, Telegram, and the daemon" width="1000" />
+  <img src="https://cdn.clawtab.cc/assets/articles/daemon-tmux/cwtctl-command-groups.png?v=20260716" alt="cwt command groups for agents, jobs, panes, secrets, Telegram, and the daemon" width="1000" />
 </p>
 
 ## Managed CLI sessions
@@ -172,43 +172,43 @@ New in [ClawTab 0.6.0](docs/release-notes.md). Follow the [session guide](docs/m
 ClawTab also supports agents without tmux. Launch the command through ClawTab so a separate owner process can keep its terminal alive:
 
 ```sh
-cwtctl session start -- codex
-cwtctl session start -- claude
-cwtctl session start --detached -- opencode
-cwtctl session list
-cwtctl session attach managed:<session-id>
-cwtctl session capture managed:<session-id> --history
-cwtctl session stop managed:<session-id>
+cwt session start -- codex
+cwt session start -- claude
+cwt session start --detached -- opencode
+cwt session list
+cwt session attach managed:<session-id>
+cwt session capture managed:<session-id> --history
+cwt session stop managed:<session-id>
 ```
 
-These sessions use a Unix PTY on macOS/Linux and ConPTY on Windows. They appear beside tmux sessions in ClawTab. The owner keeps the process, terminal screen, and up to 10,000 history rows while the desktop app or daemon restarts. Existing commands started outside ClawTab cannot be adopted; launch them through `cwtctl session start`.
+These sessions use a Unix PTY on macOS/Linux and ConPTY on Windows. They appear beside tmux sessions in ClawTab. The owner keeps the process, terminal screen, and up to 10,000 history rows while the desktop app or daemon restarts. Existing commands started outside ClawTab cannot be adopted; launch them through `cwt session start`.
 
 Closing the originating terminal keeps its agent running by default. Use `--close-with-terminal` to stop it when that terminal closes, or `--keep-running` to override the global preference. In an attached terminal, press Ctrl+] then d to detach deliberately; explicit detach keeps the process running with either policy.
 
 Taking control on mobile resizes the agent to the mobile terminal. The first local key reclaims control and is consumed. ClawTab restores the latest local terminal dimensions, including any desktop resize while mobile had control. Remote control has a renewable 30-second lease; losing the host connection also releases it. Watching clients cannot resize or type without taking control.
 
-After an owner crash or computer restart, the session is marked interrupted. `cwtctl session resume <id>` explicitly resumes its saved provider conversation when available. It never automatically replays the original prompt. Enable the provider's ClawTab hooks to retain conversation identity and immediate question/activity events.
+After an owner crash or computer restart, the session is marked interrupted. `cwt session resume <id>` explicitly resumes its saved provider conversation when available. It never automatically replays the original prompt. Enable the provider's ClawTab hooks to retain conversation identity and immediate question/activity events.
 
 Choose the default under Settings > Runtime, or set `terminal_backend: managed` / `terminal_backend: tmux` in an individual job's YAML. Windows defaults to managed sessions; existing Unix installations retain tmux as their default. Scheduling, captured output, notifications, question detection, auto-yes, and compatible agent plugins use either backend. Tmux layouts, copy mode, and Move remain tmux features. Use History or `session capture --history` for managed scrollback.
 
 ### Native Windows host
 
-Windows 10 version 1809 or newer is required. Install your agent CLI, extract the Windows host package, verify its SHA-256 checksum, and run `powershell -ExecutionPolicy Bypass -File .\install.ps1` from that extracted package. Then run `cwtctl setup` and approve its pairing code in the mobile app. Setup registers per-user startup at login; it does not require administrator privileges. Python is needed only for Python plugins, and Git for repository operations.
+Windows 10 version 1809 or newer is required. Install your agent CLI, extract the Windows host package, verify its SHA-256 checksum, and run `powershell -ExecutionPolicy Bypass -File .\install.ps1` from that extracted package. Then run `cwt setup` and approve its pairing code in the mobile app. Setup registers per-user startup at login; it does not require administrator privileges. Python is needed only for Python plugins, and Git for repository operations.
 
 For a source build:
 
 ```powershell
 cd desktop/src-tauri
-cargo build -j4 --release --no-default-features --bin cwtctl --bin clawtab-daemon --bin clawtab-hook
-.\target\release\cwtctl.exe setup
-.\target\release\cwtctl.exe session start -- codex
+cargo build -j4 --release --no-default-features --bin cwt --bin clawtab-daemon --bin clawtab-hook
+.\target\release\cwt.exe setup
+.\target\release\cwt.exe session start -- codex
 ```
 
 The installer puts each version in a separate directory and updates the CLI shim and startup path. Updating the host leaves existing owners on their original executable until their sessions end. Keep those older directories while their sessions are running. This package provides the Windows host and CLI; the Tauri desktop UI remains a separate platform target.
 
 ## Optional GUI and Mind Map
 
-ClawTab works headlessly through tmux, the daemon, and `cwtctl`. The macOS GUI is optional: open it when you want visual split workspaces or a Mind Map of running Claude Code, Codex, and OpenCode agents. Click an agent in the map to open its live tmux terminal, then close the GUI without stopping the session.
+ClawTab works headlessly through tmux, the daemon, and `cwt`. The macOS GUI is optional: open it when you want visual split workspaces or a Mind Map of running Claude Code, Codex, and OpenCode agents. Click an agent in the map to open its live tmux terminal, then close the GUI without stopping the session.
 
 <p align="center">
   <img src="https://cdn.clawtab.cc/assets/articles/mind-map/mindmap-claude-and-codex.png" alt="ClawTab Mind Map with agent hubs and live terminal windows" width="1000" />
@@ -237,7 +237,7 @@ tmux pane <-> ClawTab daemon <-> Relay server <-> Web or mobile client
 
 ## How It Works
 
-1. **Start in tmux** - Run an agent normally or launch a configured job through `cwtctl`, `cwttui`, the desktop app, Telegram, or a schedule.
+1. **Start in tmux** - Run an agent normally or launch a configured job through `cwt`, `cwttui`, the desktop app, Telegram, or a schedule.
 2. **Discover the session** - The daemon associates provider metadata, activity, questions, and a useful task title with the pane ID.
 3. **Keep it alive** - tmux preserves the process and terminal state while the daemon keeps schedules and integrations running.
 4. **Open it anywhere** - Attach through tmux or view the same pane from the desktop, web, or mobile interface.
@@ -257,20 +257,20 @@ Mix providers without reorganizing your workspace or giving up session visibilit
 
 ```sh
 brew install --cask tonisives/tap/clawtab
-cwtctl daemon install
-cwtctl daemon status
+cwt daemon install
+cwt daemon status
 ```
 
 The daemon starts at login through launchd and continues running independently of the desktop app.
 
-The default package installs the daemon, `cwtctl`, agent hooks, and Zsh completion. Add the desktop app separately for split workspaces, the Mind Map, and visual settings:
+The default package installs the daemon, `cwt`, agent hooks, and Zsh completion. Add the desktop app separately for split workspaces, the Mind Map, and visual settings:
 
 ```sh
 brew install --cask tonisives/tap/clawtab-desktop
 ```
 
-Launch the desktop app with `cwt`. Future releases install this shell command
-in place of `clawtab`; `cwtctl` remains the command-line control tool.
+Starting with the next release, use `cwt` in place of `cwtctl` for CLI commands.
+The desktop app keeps its `clawtab` launcher.
 
 ### Build from Source
 
@@ -286,7 +286,7 @@ cargo tauri build
 | Binary | Purpose |
 |--------|---------|
 | `clawtab-daemon` | Headless scheduler, agent monitor, relay client, PTY owner, and IPC server |
-| `cwtctl` | CLI for agents, jobs, panes, secrets, Telegram, and daemon lifecycle |
+| `cwt` | CLI for agents, jobs, panes, secrets, Telegram, and daemon lifecycle |
 | `cwttui` | Terminal job interface built with ratatui |
 | `clawtab` | Optional Tauri GUI for split workspaces, Mind Map, settings, and history |
 

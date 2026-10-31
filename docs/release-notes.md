@@ -1,6 +1,6 @@
 # ClawTab 0.6.1
 
-The default macOS install now contains the headless daemon, `cwtctl`, agent hooks, and Zsh completion. Install the desktop app separately:
+The default macOS install now contains the headless daemon, `cwt`, agent hooks, and Zsh completion. Install the desktop app separately:
 
 ```sh
 brew install --cask tonisives/tap/clawtab
@@ -9,7 +9,7 @@ brew install --cask tonisives/tap/clawtab-desktop
 
 The desktop app is optional. The daemon keeps schedules, notifications, and Remote running on its own. Apple Silicon and Intel releases include signed and notarized host archives alongside the desktop DMGs.
 
-The daemon installer now finds Homebrew's installed executable and records its path in launchd. If you are moving from the combined cask, stop the service with `cwtctl daemon stop`, reinstall `clawtab`, and run `cwtctl daemon install`. Add `clawtab-desktop` afterward to keep the GUI.
+The daemon installer now finds Homebrew's installed executable and records its path in launchd. If you are moving from the combined cask, stop the service with `cwt daemon stop`, reinstall `clawtab`, and run `cwt daemon install`. Add `clawtab-desktop` afterward to keep the GUI.
 
 See the [macOS installation guide](https://clawtab.cc/docs#platform-builds).
 
@@ -20,12 +20,12 @@ ClawTab can now keep coding agents running without tmux. Launch an agent from a 
 ## Managed terminal sessions
 
 ```sh
-cwtctl session start -- codex
+cwt session start -- codex
 ```
 
 - Run Codex, Claude Code, OpenCode, or a shell in a persistent terminal on macOS, Linux, or Windows.
 - Close the terminal and keep the agent running, or choose `--close-with-terminal`. Press Ctrl+] then d to detach deliberately.
-- List, attach, capture output, stop, and resume sessions with `cwtctl session` commands.
+- List, attach, capture output, stop, and resume sessions with `cwt session` commands.
 - Take control from Remote and return to the local terminal with a keypress. Terminal dimensions follow the controlling client.
 - See generated Codex titles, a shell icon on Remote cards, and a small claw marker in the local viewer without losing a footer row.
 
@@ -33,15 +33,15 @@ See the [managed session guide](https://clawtab.cc/docs#managed-sessions) for se
 
 ## Native Windows host
 
-The Windows x86_64 package includes the daemon, `cwtctl`, provider hooks, and a per-user installer. It uses ConPTY on Windows 10 1809 or newer, with no WSL or tmux requirement. Pair with `cwtctl setup` and start an agent from your project directory. Installer upgrades preserve already running managed sessions.
+The Windows x86_64 package includes the daemon, `cwt`, provider hooks, and a per-user installer. It uses ConPTY on Windows 10 1809 or newer, with no WSL or tmux requirement. Pair with `cwt setup` and start an agent from your project directory. Installer upgrades preserve already running managed sessions.
 
 macOS downloads remain available for Apple Silicon and Intel. Linux host packages are available for x86_64 and ARM64. The desktop GUI remains a macOS app.
 
 ## Agent titles and scheduling
 
 - Generated conversation names appear in ClawTab and tmux. Duplicate Codex names retain useful generated labels.
-- `cwtctl jobs create` supports recurring and one-time schedules, description files or stdin, and provider/model selection.
-- `cwtctl jobs edit <group>/<job>` opens job configuration in nvim. Saved changes reload automatically.
+- `cwt jobs create` supports recurring and one-time schedules, description files or stdin, and provider/model selection.
+- `cwt jobs edit <group>/<job>` opens job configuration in nvim. Saved changes reload automatically.
 - Failed jobs can produce local macOS alerts while offline.
 - Claude activity detection follows live terminal spinners and footers. Auto-yes avoids a deadlock during concurrent process discovery, and tmux activity indicators recover after server restarts.
 

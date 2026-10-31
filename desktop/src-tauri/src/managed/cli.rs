@@ -73,7 +73,7 @@ pub fn run_cli(args: &[String]) -> Result<(), String> {
         }
         "detach" => Err("press Ctrl+] then d in the attached terminal to detach".into()),
         "help" | "--help" | "-h" => {
-            println!("Usage: cwtctl session start [--detached] [--close-with-terminal | --keep-running] -- <program> [args]\n       cwtctl session list [--json]\n       cwtctl session attach <id>\n       cwtctl session capture <id> [--history] [--ansi]\n       cwtctl session stop <id>\n       cwtctl session resume <id>\n\nIn an attached terminal, Ctrl+] then d detaches; Ctrl+] twice sends Ctrl+].\nClosing the terminal leaves its agent running unless --close-with-terminal is set.");
+            println!("Usage: cwt session start [--detached] [--close-with-terminal | --keep-running] -- <program> [args]\n       cwt session list [--json]\n       cwt session attach <id>\n       cwt session capture <id> [--history] [--ansi]\n       cwt session stop <id>\n       cwt session resume <id>\n\nIn an attached terminal, Ctrl+] then d detaches; Ctrl+] twice sends Ctrl+].\nClosing the terminal leaves its agent running unless --close-with-terminal is set.");
             Ok(())
         }
         _ => Err(format!("unknown session command: {action}")),
@@ -97,7 +97,7 @@ fn capture(args: &[String]) -> Result<(), String> {
 
 fn start(args: &[String]) -> Result<(), String> {
     let split = args.iter().position(|arg| arg == "--").ok_or(
-        "usage: cwtctl session start [--detached] [--close-with-terminal] -- <program> [args]",
+        "usage: cwt session start [--detached] [--close-with-terminal] -- <program> [args]",
     )?;
     let program = required(args, split + 1)?.to_owned();
     let mut close_with_terminal =
@@ -143,7 +143,7 @@ fn start(args: &[String]) -> Result<(), String> {
 fn required(args: &[String], index: usize) -> Result<&str, String> {
     args.get(index)
         .map(String::as_str)
-        .ok_or_else(|| "missing session argument; see cwtctl session help".into())
+        .ok_or_else(|| "missing session argument; see cwt session help".into())
 }
 
 fn provider_for_program(program: &str) -> String {

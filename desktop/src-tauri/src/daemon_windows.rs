@@ -27,7 +27,7 @@ pub fn is_running() -> (bool, Option<u32>) {
 pub fn install() -> Result<String, String> {
     let binary = binary()?;
     if !binary.is_file() {
-        return Err("clawtab-daemon.exe must be installed beside cwtctl.exe".into());
+        return Err("clawtab-daemon.exe must be installed beside cwt.exe".into());
     }
     let value = format!("\"{}\"", binary.display());
     let status = Command::new("reg.exe")
@@ -70,13 +70,13 @@ fn start() -> Result<(), String> {
         }
         if let Some(exit) = child.try_wait().map_err(|e| e.to_string())? {
             return Err(format!(
-                "Daemon exited during startup ({exit}); run cwtctl daemon logs"
+                "Daemon exited during startup ({exit}); run cwt daemon logs"
             ));
         }
         if std::time::Instant::now() >= deadline {
             let _ = child.kill();
             let _ = child.wait();
-            return Err("Daemon did not become ready; run cwtctl daemon logs".into());
+            return Err("Daemon did not become ready; run cwt daemon logs".into());
         }
         std::thread::sleep(std::time::Duration::from_millis(50));
     }

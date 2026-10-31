@@ -14,7 +14,7 @@ if ! echo "$cmd" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' && ! echo "$cmd" | grep -
     exit 0
 fi
 
-# Use local flag file for instant response (avoids cwtctl/tokio startup overhead)
+# Use local flag file for instant response (avoids cwt/tokio startup overhead)
 flag_file="/tmp/clawtab-auto-yes/${pane_id//\%/}"
 if [ -f "$flag_file" ]; then
     echo "#[fg=green,bold][Y]#[default]"

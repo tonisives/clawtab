@@ -49,7 +49,7 @@ fn ensure_engine_bundle_placeholders() -> std::io::Result<()> {
         )?;
     }
 
-    for name in ["cwtctl", "_cwtctl"] {
+    for name in ["cwt", "_cwt"] {
         let path = bundle_path.join(name);
         if !path.exists() {
             fs::write(path, b"")?;

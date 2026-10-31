@@ -93,7 +93,7 @@ pub enum IpcCommand {
     /// Return the current activity state for detected agent panes.
     ///
     /// This is intentionally an IPC-only command. It is consumed by the tmux
-    /// plugin and is not exposed as a cwtctl subcommand.
+    /// plugin and is not exposed as a cwt subcommand.
     GetAgentActivity,
     ListAgentActions {
         pane_id: String,
@@ -155,7 +155,7 @@ pub enum IpcCommand {
     ReloadSettings,
 
     // Secrets cache: invalidate the daemon's in-memory keychain cache
-    // (sent by the UI / cwtctl after writing or deleting a secret).
+    // (sent by the UI / cwt after writing or deleting a secret).
     ReloadSecrets,
 
     // Job lifecycle (state-touching)
@@ -245,7 +245,7 @@ pub struct AgentActivity {
 }
 
 /// Direction for pane focus changes. Used by external integrations
-/// (vim/tmux configs) calling into the desktop app via cwtctl.
+/// (vim/tmux configs) calling into the desktop app via cwt.
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PaneDirection {
@@ -286,7 +286,7 @@ pub struct IpcRelayStatus {
 
 /// Shared response type for both the daemon and desktop sockets. The desktop
 /// handler only ever returns `Ok` or `Error(String)`; the richer variants are
-/// daemon-only. This keeps the wire format symmetric and lets cwtctl reuse one
+/// daemon-only. This keeps the wire format symmetric and lets cwt reuse one
 /// big response match regardless of which socket it talked to.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum IpcResponse {

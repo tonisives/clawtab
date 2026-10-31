@@ -28,7 +28,7 @@ checks = [
     ("host", ["cargo", "test", "--manifest-path", "desktop/src-tauri/Cargo.toml", "--no-default-features", "--lib", "nfn::", "-j4"]),
     ("history", ["cargo", "test", "--manifest-path", "desktop/src-tauri/Cargo.toml", "--no-default-features", "--lib", "history::notification_sources::", "-j4"]),
     ("failure-source", ["cargo", "test", "--manifest-path", "desktop/src-tauri/Cargo.toml", "--no-default-features", "--lib", "failure_delivery_binds_the_exact_run_before_a_newer_job_can_start", "-j4"]),
-    ("cli", ["cargo", "check", "--manifest-path", "desktop/src-tauri/Cargo.toml", "--no-default-features", "--bin", "cwtctl", "-j4"]),
+    ("cli", ["cargo", "check", "--manifest-path", "desktop/src-tauri/Cargo.toml", "--no-default-features", "--bin", "cwt", "-j4"]),
     ("relay", ["cargo", "test", "--manifest-path", "relay/Cargo.toml", "-j4"]),
     ("desktop", ["pnpm", "--dir", "desktop", "build"]),
     ("web", ["pnpm", "--dir", "remote", "exec", "expo", "export", "--platform", "web", "--output-dir", "../dist/mobile-message-web"]),

@@ -9,7 +9,7 @@ for dependency in git python3 systemctl; do
   command -v "$dependency" >/dev/null 2>&1 || { echo "Install $dependency before setup." >&2; exit 1; }
 done
 mkdir -p "$install_dir" "$config_dir/agent-plugins"
-for binary in clawtab-daemon cwtctl clawtab-hook; do
+for binary in clawtab-daemon cwt clawtab-hook; do
   install -m 755 "$package_dir/bin/$binary" "$install_dir/$binary.new"
   mv "$install_dir/$binary.new" "$install_dir/$binary"
 done
@@ -17,5 +17,5 @@ if [ -d "$package_dir/plugins/local.session-shortcuts" ] && [ ! -d "$config_dir/
   cp -R "$package_dir/plugins/local.session-shortcuts" "$config_dir/agent-plugins/"
 fi
 if ! command -v tmux >/dev/null 2>&1; then printf 'Tmux is optional for managed sessions. Install it to use the tmux backend.\n'; fi
-printf 'Installed. Run %s/cwtctl setup to pair this host.\n' "$install_dir"
-printf 'For an existing installation, run cwtctl daemon restart when ready to load the update.\n'
+printf 'Installed. Run %s/cwt setup to pair this host.\n' "$install_dir"
+printf 'For an existing installation, run cwt daemon restart when ready to load the update.\n'

@@ -81,7 +81,7 @@ def run_json(argv, payload=None, timeout=60, env=None):
 
 
 def message(*args, payload=None):
-    return run_json(['cwtctl', 'message', *args], payload, timeout=75 if args[0] == 'wait' else 60)
+    return run_json(['cwt', 'message', *args], payload, timeout=75 if args[0] == 'wait' else 60)
 
 
 def accounts():

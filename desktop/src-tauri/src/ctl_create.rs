@@ -42,7 +42,7 @@ impl Drop for TerminalGuard {
 
 pub fn create(args: &[String]) -> Result<(), String> {
     if args.len() == 1 && matches!(args[0].as_str(), "--help" | "-h") {
-        println!("Usage: cwtctl jobs create [--name NAME (--cron EXPR [--cron-timezone IANA_ZONE] | --at 'YYYY-MM-DD HH:MM') (--description TEXT | --description-file PATH | --description-stdin) [--provider PROVIDER [--model MODEL]] [--keep-config]]");
+        println!("Usage: cwt jobs create [--name NAME (--cron EXPR [--cron-timezone IANA_ZONE] | --at 'YYYY-MM-DD HH:MM') (--description TEXT | --description-file PATH | --description-stdin) [--provider PROVIDER [--model MODEL]] [--keep-config]]");
         println!("Providers: claude, codex, opencode, antigravity, hermes. Omit --provider to use ClawTab's default agent. --model requires --provider; OpenCode model IDs use provider/model.");
         println!("With no options, opens the interactive job creator and nvim.");
         return Ok(());

@@ -769,8 +769,8 @@ fn generate_agent_cwt_context(
 /// Default Bash commands allowed for automated Claude Code jobs.
 const CLAUDE_ALLOWED_BASH: &[&str] = &[
     "Bash(curl *)",
-    "Bash(cwtctl *)",
-    "Bash(cwtctl)",
+    "Bash(cwt *)",
+    "Bash(cwt)",
     "Bash(kill *)",
     "Bash(cat *)",
     "Bash(ls *)",
@@ -842,7 +842,7 @@ const CLAUDE_ALLOWED_BASH: &[&str] = &[
 ];
 
 /// Write `.claude/settings.local.json` in the given directory with default
-/// permissions for automated Claude Code jobs (curl, cwtctl, kill, etc.).
+/// permissions for automated Claude Code jobs (curl, cwt, kill, etc.).
 fn write_claude_settings(dir: &std::path::Path) {
     let claude_dir = dir.join(".claude");
     if let Err(e) = std::fs::create_dir_all(&claude_dir) {

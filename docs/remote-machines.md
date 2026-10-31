@@ -9,7 +9,7 @@ Use the desktop **Machines** button to manage your Mac and paired Linux hosts. T
 - Choose a [release with Linux assets](https://github.com/tonisives/clawtab/releases). Older macOS-only releases do not include Linux packages.
 - Sign in to your existing ClawTab account. On desktop, use **Settings → Remote → Account access**. There is no separate Machines account.
 
-ClawTab runs one `clawtab-daemon` per machine. The same daemon handles local IPC, schedules, agent discovery, plugins, questions, and the outbound connection to the shared relay. Installing a Linux host does not install a local relay, database, or second daemon. `cwtctl` is a command-line client; `clawtab-hook` is an event helper.
+ClawTab runs one `clawtab-daemon` per machine. The same daemon handles local IPC, schedules, agent discovery, plugins, questions, and the outbound connection to the shared relay. Installing a Linux host does not install a local relay, database, or second daemon. `cwt` is a command-line client; `clawtab-hook` is an event helper.
 
 ## Install and pair
 
@@ -38,7 +38,7 @@ After inspecting the script, install and pair:
 ```sh
 sh download-linux.sh "$CLAWTAB_RELEASE"
 export PATH="$HOME/.local/bin:$PATH"
-cwtctl setup --name build-host --linger
+cwt setup --name build-host --linger
 ```
 
 The downloader requires an explicit version, fetches the matching architecture and SHA-256 file over HTTPS, verifies the archive, then installs it. Release packages become available when the Linux release workflow completes for a tag. Add `~/.local/bin` to your shell's PATH.
@@ -46,11 +46,11 @@ The downloader requires an explicit version, fetches the matching architecture a
 `setup` displays a code valid for ten minutes. In the desktop or mobile app, open **Machines → Add machine**, enter the code, and approve it. The host saves its credential and enables the user service. `--linger` asks systemd to keep that service available after logout and at boot; the host may require administrator authorization. Omit it if your host already configures lingering. Use `--relay https://…` for a self-hosted relay. Replacing an existing pairing requires `--replace`.
 
 ```sh
-cwtctl daemon status
-cwtctl daemon logs
-cwtctl daemon stop
-cwtctl daemon restart
-cwtctl daemon uninstall
+cwt daemon status
+cwt daemon logs
+cwt daemon stop
+cwt daemon restart
+cwt daemon uninstall
 ```
 
 Updates replace binaries atomically. Restart the daemon when ready to load an update. Existing tmux agents survive daemon restarts; agents are not recreated after a host reboot. Normal scheduled jobs continue to follow their schedules. Uninstalling the service leaves repositories, configuration, and tmux sessions intact.
@@ -89,16 +89,16 @@ If another client controls the terminal, use **Take control** before typing. To 
 
 Build `etc/Dockerfile.machine` from the public repository root. The image includes one foreground daemon, tmux, Git, Git LFS, Python, and Node.js. Mount a persistent home directory at `/home/clawtab` owned by UID/GID 1000 and run one replica. Install and authenticate provider CLIs on that persistent home directory.
 
-The entrypoint starts the daemon immediately, so local IPC and readiness work before pairing. In the running container, run `cwtctl setup --name k3s-agent --no-service`, then approve the code from **Machines → Add machine**. This saves the pairing without installing systemd; Kubernetes supervises the daemon. Setup reloads the running daemon and starts its relay connection after saving the pairing. Replacing an existing pairing requires a deliberate container restart to load the replacement credentials. `--no-service` and `--linger` are mutually exclusive.
+The entrypoint starts the daemon immediately, so local IPC and readiness work before pairing. In the running container, run `cwt setup --name k3s-agent --no-service`, then approve the code from **Machines → Add machine**. This saves the pairing without installing systemd; Kubernetes supervises the daemon. Setup reloads the running daemon and starts its relay connection after saving the pairing. Replacing an existing pairing requires a deliberate container restart to load the replacement credentials. `--no-service` and `--linger` are mutually exclusive.
 
 For example, with a StatefulSet named `clawtab-machine` in namespace `clawtab`:
 
 ```sh
 kubectl -n clawtab exec -it clawtab-machine-0 -- \
-  cwtctl setup --name k3s-agent --no-service
+  cwt setup --name k3s-agent --no-service
 
 # After approval, verify local daemon requests and inspect container logs.
-kubectl -n clawtab exec clawtab-machine-0 -- cwtctl jobs list
+kubectl -n clawtab exec clawtab-machine-0 -- cwt jobs list
 kubectl -n clawtab logs clawtab-machine-0 --tail=100
 ```
 
@@ -118,7 +118,7 @@ The jobs and agents list combines accessible machines. Machine badges distinguis
 - **Models:** refresh detected models, add custom identifiers, remove models from agent menus, and choose a default. These preferences apply across your machines and apps. In Remote, open **+**, then the settings icon in the top right to add, remove, or refresh models inside the agent popup. Newly detected Codex, Claude, and Antigravity models appear automatically; older hosts use the bundled catalog until live detection is available. Removals survive refreshes. OpenCode models are available to add individually. Provider installation and authentication happen on the host.
 - **Access:** explicitly grant or revoke access for existing workspace guests, or remove a machine. Workspace group restrictions still apply. New machines start private; migration preserves shares for machines that already existed.
 
-Plugin packages are installed and approved on their host using `cwtctl plugin installed`, `plugin approve`, and `plugin revoke`. Terminal **Agent actions** expose the approved provider-specific actions and their parameter forms. Questions remain attached to the originating machine, including notification answers.
+Plugin packages are installed and approved on their host using `cwt plugin installed`, `plugin approve`, and `plugin revoke`. Terminal **Agent actions** expose the approved provider-specific actions and their parameter forms. Questions remain attached to the originating machine, including notification answers.
 
 Multiple relay clients may watch a terminal. One client controls its input and dimensions. **Take control** transfers that lease; it is renewed while connected and expires after thirty seconds without renewal. Closing a view releases its subscription. Direct tmux sessions and existing local desktop terminals remain governed by tmux rather than the relay's viewer lease.
 

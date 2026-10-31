@@ -99,13 +99,13 @@ def message(*args, payload=None):
     # Discover once; nfn remains the compatibility alias on older installations.
     if not hasattr(message, 'group'):
         try:
-            run_json(['cwtctl', 'message', 'help'])
+            run_json(['cwt', 'message', 'help'])
             message.group = 'message'
         except WorkflowError:
-            run_json(['cwtctl', 'nfn', 'help'])
+            run_json(['cwt', 'nfn', 'help'])
             message.group = 'nfn'
     timeout = int(args[-1]) + 15 if args[0] == 'wait' else 60
-    return run_json(['cwtctl', message.group, *args], payload, timeout=timeout)
+    return run_json(['cwt', message.group, *args], payload, timeout=timeout)
 
 
 def request_for(draft, digest):
@@ -127,7 +127,7 @@ def approved(record, receipt, reconcile=False):
     request = record.get('request', {})
     response = record.get('response') or {}
     wanted = receipt['request']
-    # Source attribution is filled by cwtctl. Every reviewed content field stays bound.
+    # Source attribution is filled by cwt. Every reviewed content field stays bound.
     if record.get('id') != receipt['message_id'] or any(
             request.get(k) != wanted[k] for k in wanted):
         raise WorkflowError('Review payload changed; create a new review')

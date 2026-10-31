@@ -14,7 +14,7 @@ mod ctl_create;
 mod ctl_login;
 
 /// Routes a parsed command to either the daemon or the desktop-app socket.
-/// `cwtctl` originally only spoke to the daemon; UI actions like `pane focus`
+/// `cwt` originally only spoke to the daemon; UI actions like `pane focus`
 /// and `open` live on the desktop socket so the daemon stays UI-agnostic.
 enum Target {
     Daemon(IpcCommand),
@@ -22,9 +22,9 @@ enum Target {
 }
 
 fn print_usage() {
-    eprintln!("cwtctl - CLI for ClawTab");
+    eprintln!("cwt - CLI for ClawTab");
     eprintln!();
-    eprintln!("Usage: cwtctl <command> [args]");
+    eprintln!("Usage: cwt <command> [args]");
     eprintln!();
     eprintln!("  setup [--relay URL] [--name NAME] [--linger | --no-service] [--replace]  Pair and install the host");
     eprintln!("  login [--provider google|apple | --email EMAIL] [--relay URL] [--no-browser]  Replace the current account");
@@ -84,7 +84,7 @@ fn print_usage() {
 }
 
 fn print_jobs_usage() {
-    eprintln!("Usage: cwtctl jobs <command> [args]");
+    eprintln!("Usage: cwt jobs <command> [args]");
     eprintln!();
     eprintln!("Commands:");
     eprintln!("  jobs list | ls             List jobs grouped by group");
@@ -109,7 +109,7 @@ fn is_jobs_subcommand(command: &str) -> bool {
 
 fn edit_job_command(args: &[String]) -> Result<(), String> {
     if args.len() == 3 && matches!(args[2].as_str(), "help" | "-h" | "--help") {
-        println!("Usage: cwtctl jobs edit <group>/<job> (or: cwtctl jobs edit <group> <job>)");
+        println!("Usage: cwt jobs edit <group>/<job> (or: cwt jobs edit <group> <job>)");
         println!("Opens job.yaml in nvim; works without the daemon.");
         println!("Set enabled: false to disable future scheduled runs, or true to enable them.");
         println!("The running daemon reloads saved changes automatically.");
@@ -141,7 +141,7 @@ fn edit_job_command(args: &[String]) -> Result<(), String> {
 }
 
 fn print_agent_usage() {
-    eprintln!("Usage: cwtctl agent <command> [args]");
+    eprintln!("Usage: cwt agent <command> [args]");
     eprintln!();
     eprintln!("Commands:");
     eprintln!("  agent auto-yes [toggle|check] [pane_id]  Manage auto-yes for an agent pane");
@@ -160,7 +160,7 @@ fn print_agent_usage() {
 }
 
 fn print_plugin_usage() {
-    eprintln!("Usage: cwtctl plugin <name> <command> [args]");
+    eprintln!("Usage: cwt plugin <name> <command> [args]");
     eprintln!();
     eprintln!("Commands:");
     eprintln!("  plugin list [pane_id] [--json]                 List available agent plugins");
@@ -174,11 +174,11 @@ fn print_plugin_usage() {
     eprintln!("  plugin revoke <plugin_id>                       Revoke plugin trust");
     eprintln!();
     eprintln!("Plugin names accept the action suffix with '-' in place of '_'.");
-    eprintln!("For example: cwtctl plugin summarize-session run");
+    eprintln!("For example: cwt plugin summarize-session run");
 }
 
 fn print_codex_usage() {
-    eprintln!("Usage: cwtctl codex set-model <model> <effort> [pane_id]");
+    eprintln!("Usage: cwt codex set-model <model> <effort> [pane_id]");
     eprintln!();
     eprintln!("Changes the live Codex model while preserving the composer draft.");
     eprintln!("pane_id defaults to $TMUX_PANE when omitted.");
@@ -232,7 +232,7 @@ async fn handle_codex_command(args: &[String]) {
 
 async fn handle_journal_command(args: &[String]) {
     if args.get(2).map(String::as_str) != Some("approved") {
-        eprintln!("Usage: cwtctl journal approved [--days 1..30]");
+        eprintln!("Usage: cwt journal approved [--days 1..30]");
         std::process::exit(1);
     }
     let mut days = 7_u32;
@@ -247,7 +247,7 @@ async fn handle_journal_command(args: &[String]) {
                 index += 2;
             }
             "-h" | "--help" => {
-                println!("Usage: cwtctl journal approved [--days 1..30]");
+                println!("Usage: cwt journal approved [--days 1..30]");
                 return;
             }
             value => {
@@ -344,7 +344,7 @@ async fn handle_agent_action_command(args: &[String]) {
         match operation {
             "run" => {
                 let action_id = args.get(3).cloned().unwrap_or_else(|| {
-                    eprintln!("Usage: cwtctl agent action run <id> [pane_id] [key=value ...]");
+                    eprintln!("Usage: cwt agent action run <id> [pane_id] [key=value ...]");
                     std::process::exit(1);
                 });
                 let explicit_pane = args.get(4).filter(|value| !value.contains('='));
@@ -376,7 +376,7 @@ async fn handle_agent_action_command(args: &[String]) {
             }
             "status" | "cancel" => {
                 let run_id = args.get(3).cloned().unwrap_or_else(|| {
-                    eprintln!("Usage: cwtctl agent action {operation} <run_id>");
+                    eprintln!("Usage: cwt agent action {operation} <run_id>");
                     std::process::exit(1);
                 });
                 if operation == "status" {
@@ -478,7 +478,7 @@ async fn handle_plugin_command(args: &[String]) {
     if matches!(plugin_name, "approve" | "revoke") {
         let plugin_id = args.get(3).cloned().unwrap_or_else(|| {
             eprintln!(
-                "Usage: cwtctl plugin {plugin_name} <plugin_id>{}",
+                "Usage: cwt plugin {plugin_name} <plugin_id>{}",
                 if plugin_name == "approve" {
                     " <fingerprint>"
                 } else {
@@ -489,7 +489,7 @@ async fn handle_plugin_command(args: &[String]) {
         });
         let command = if plugin_name == "approve" {
             let fingerprint = args.get(4).cloned().unwrap_or_else(|| {
-                eprintln!("Usage: cwtctl plugin approve <plugin_id> <fingerprint>");
+                eprintln!("Usage: cwt plugin approve <plugin_id> <fingerprint>");
                 std::process::exit(1);
             });
             IpcCommand::ApprovePlugin {
@@ -563,7 +563,7 @@ async fn handle_plugin_command(args: &[String]) {
         }
         "status" | "cancel" => {
             let run_id = args.get(4).cloned().unwrap_or_else(|| {
-                eprintln!("Usage: cwtctl plugin {plugin_name} {operation} <run_id>");
+                eprintln!("Usage: cwt plugin {plugin_name} {operation} <run_id>");
                 std::process::exit(1);
             });
             let command = if operation == "status" {
@@ -599,7 +599,7 @@ async fn handle_plugin_host_command(args: &[String]) {
                 .get(4)
                 .and_then(|value| value.parse::<u8>().ok())
                 .unwrap_or_else(|| {
-                    exit_error("usage: cwtctl plugin host progress <percent> <message>")
+                    exit_error("usage: cwt plugin host progress <percent> <message>")
                 });
             let message = args.get(5..).unwrap_or_default().join(" ");
             PluginHostRequest::Progress { message, percent }
@@ -690,7 +690,7 @@ fn require_job_reference(args: &[String], command: &str) -> String {
         4 => format!("{}/{}", args[2], args[3]),
         _ => {
             eprintln!(
-                "Usage: cwtctl {} <group>/<job> (or: cwtctl {} <group> <job>)",
+                "Usage: cwt {} <group>/<job> (or: cwt {} <group> <job>)",
                 command, command
             );
             std::process::exit(1);
@@ -709,7 +709,7 @@ async fn main() {
         if raw_args[1] == "telegram" {
             if message_args.first().map(String::as_str) != Some("send") || message_args.len() < 2 {
                 exit_error(
-                    "Usage: cwtctl telegram send TEXT (alias of message send --channel telegram)",
+                    "Usage: cwt telegram send TEXT (alias of message send --channel telegram)",
                 );
             }
             message_args = vec![
@@ -813,7 +813,7 @@ async fn main() {
 
     if !jobs_scope && is_jobs_subcommand(command) {
         eprintln!(
-            "Job commands are under the jobs namespace: cwtctl jobs {}",
+            "Job commands are under the jobs namespace: cwt jobs {}",
             command
         );
         std::process::exit(1);
@@ -826,7 +826,7 @@ async fn main() {
         )
     {
         eprintln!(
-            "Agent commands are under the agent namespace: cwtctl agent {}",
+            "Agent commands are under the agent namespace: cwt agent {}",
             if command == "pane-info" {
                 "info"
             } else {
@@ -837,7 +837,7 @@ async fn main() {
     }
 
     if command == "open" {
-        eprintln!("Pane commands are under the pane namespace: cwtctl pane open");
+        eprintln!("Pane commands are under the pane namespace: cwt pane open");
         std::process::exit(1);
     }
 
@@ -900,7 +900,7 @@ async fn main() {
     }
 
     if command == "run" {
-        run_job_command(&args, if jobs_scope { "cwtctl jobs" } else { "cwtctl" }).await;
+        run_job_command(&args, if jobs_scope { "cwt jobs" } else { "cwt" }).await;
         return;
     }
 
@@ -981,7 +981,7 @@ async fn main() {
         "status" => Target::Daemon(IpcCommand::GetStatus),
         "identities" => {
             if args.len() != 2 {
-                exit_error("Usage: cwtctl agent identities");
+                exit_error("Usage: cwt agent identities");
             }
             match clawtab_lib::agent_session::agent_identities() {
                 Ok(identities) => println!("{}", serde_json::to_string(&identities).unwrap()),
@@ -993,7 +993,7 @@ async fn main() {
             let restore_command = args.get(2).is_some_and(|arg| arg == "restore-command");
             let fast = args.get(2).is_some_and(|arg| arg == "--fast");
             if restore_command && fast {
-                eprintln!("Usage: cwtctl agent info [--fast] [pane_id]");
+                eprintln!("Usage: cwt agent info [--fast] [pane_id]");
                 std::process::exit(1);
             }
             let pane_arg_index = if restore_command || fast { 3 } else { 2 };
@@ -1118,7 +1118,7 @@ async fn main() {
         }
         "rename" => {
             if args.len() < 4 {
-                eprintln!("Usage: cwtctl agent rename <pane_id> <title>");
+                eprintln!("Usage: cwt agent rename <pane_id> <title>");
                 std::process::exit(1);
             }
             let pane_id = args[2].clone();
@@ -1137,7 +1137,7 @@ async fn main() {
         }
         "pin" | "unpin" => {
             if args.len() > 3 {
-                eprintln!("Usage: cwtctl agent {} [pane_id]", command);
+                eprintln!("Usage: cwt agent {} [pane_id]", command);
                 std::process::exit(1);
             }
             let pane_id = args.get(2).cloned().unwrap_or_else(|| {
@@ -1157,7 +1157,7 @@ async fn main() {
         }
         "ai-rename" => {
             if args.len() != 3 {
-                eprintln!("Usage: cwtctl agent ai-rename <pane_id>");
+                eprintln!("Usage: cwt agent ai-rename <pane_id>");
                 std::process::exit(1);
             }
             match generate_pane_title(&args[2]).await {
@@ -1178,7 +1178,7 @@ async fn main() {
                 })
                 .unwrap_or_else(|| {
                     eprintln!(
-                        "Usage: cwtctl agent hooks <status|install> <claude|codex|opencode|antigravity|hermes>"
+                        "Usage: cwt agent hooks <status|install> <claude|codex|opencode|antigravity|hermes>"
                     );
                     std::process::exit(1);
                 });
@@ -1187,7 +1187,7 @@ async fn main() {
                 "install" => Target::Daemon(IpcCommand::InstallAgentIntegration { provider }),
                 _ => {
                     eprintln!(
-                        "Usage: cwtctl agent hooks <status|install> <claude|codex|opencode|antigravity|hermes>"
+                        "Usage: cwt agent hooks <status|install> <claude|codex|opencode|antigravity|hermes>"
                     );
                     std::process::exit(1);
                 }
@@ -1679,7 +1679,7 @@ async fn handle_secrets_command(args: &[String]) {
         Some("insert") => {
             let (yes, positionals) = parse_secret_args(&args[3..]);
             if positionals.len() != 1 {
-                exit_error("usage: cwtctl secrets insert [--yes] <key>");
+                exit_error("usage: cwt secrets insert [--yes] <key>");
             }
             let key = positionals[0].clone();
             if key.trim().is_empty() {
@@ -1707,7 +1707,7 @@ async fn handle_secrets_command(args: &[String]) {
         Some("delete") => {
             let (yes, positionals) = parse_secret_args(&args[3..]);
             if positionals.len() != 1 {
-                exit_error("usage: cwtctl secrets delete [--yes] <key>");
+                exit_error("usage: cwt secrets delete [--yes] <key>");
             }
             let key = positionals[0].clone();
             if key.trim().is_empty() {
@@ -1727,7 +1727,7 @@ async fn handle_secrets_command(args: &[String]) {
         }
         Some(other) => {
             eprintln!("Unknown secrets subcommand: {}", other);
-            eprintln!("Usage: cwtctl secrets [get|insert|delete] ...");
+            eprintln!("Usage: cwt secrets [get|insert|delete] ...");
             std::process::exit(1);
         }
     }
@@ -2190,16 +2190,16 @@ async fn handle_move_command(args: &[String]) -> Result<serde_json::Value, Strin
     };
     if matches!(action, "help" | "--help" | "-h") {
         return Ok(json!({"usage":[
-            "cwtctl move identity",
-            "cwtctl move trust-client <public-identity-json-or-file> --fingerprint <sha256>",
-            "cwtctl move trust-machine <public-identity-json-or-file> --fingerprint <sha256>",
-            "cwtctl move revoke-client <fingerprint> | revoke-machine <machine-id>",
-            "cwtctl move enable",
-            "cwtctl move targets | source <pane-id> | add-machine",
-            "cwtctl move preflight <pane-id> <execution-id> <target-machine-id> <destination>",
-            "cwtctl move start <operation-id> <pane-id> <execution-id> <target-machine-id> <destination> [--setup]",
-            "cwtctl move status <operation-id> | cancel <operation-id> | check <operation-id>",
-            "cwtctl move rollback <operation-id> --confirm-stop-target"
+            "cwt move identity",
+            "cwt move trust-client <public-identity-json-or-file> --fingerprint <sha256>",
+            "cwt move trust-machine <public-identity-json-or-file> --fingerprint <sha256>",
+            "cwt move revoke-client <fingerprint> | revoke-machine <machine-id>",
+            "cwt move enable",
+            "cwt move targets | source <pane-id> | add-machine",
+            "cwt move preflight <pane-id> <execution-id> <target-machine-id> <destination>",
+            "cwt move start <operation-id> <pane-id> <execution-id> <target-machine-id> <destination> [--setup]",
+            "cwt move status <operation-id> | cancel <operation-id> | check <operation-id>",
+            "cwt move rollback <operation-id> --confirm-stop-target"
         ],"trust":"Verify fingerprints through a local console or trusted SSH connection. Enabling secure commands disables unsigned remote commands."}));
     }
     if action == "add-machine" {
@@ -2267,7 +2267,7 @@ async fn handle_move_command(args: &[String]) -> Result<serde_json::Value, Strin
             "check" => HostRequest::MoveRecover { operation_id:parameter(3)? },
             "rollback" if args.iter().any(|argument| argument == "--confirm-stop-target") => HostRequest::MoveRollback { operation_id:parameter(3)? },
             "rollback" => return Err("Rollback stops the remote execution before restoring the source. Add --confirm-stop-target to confirm".into()),
-            _ => return Err("Unknown Move command; use cwtctl move help".into()),
+            _ => return Err("Unknown Move command; use cwt move help".into()),
         };
         IpcCommand::HostRequest { request }
     };
@@ -2295,7 +2295,7 @@ fn handle_daemon_command(args: &[String]) {
         "restart" => daemon_restart(),
         "logs" => daemon_logs(),
         _ => {
-            eprintln!("Usage: cwtctl daemon <install|stop|uninstall|ping|status|restart|logs>");
+            eprintln!("Usage: cwt daemon <install|stop|uninstall|ping|status|restart|logs>");
             std::process::exit(1);
         }
     }

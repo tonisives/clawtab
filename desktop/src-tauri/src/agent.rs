@@ -282,23 +282,23 @@ fn write_configured_jobs(out: &mut String, jobs: &[Job]) {
 
 fn write_cli_help(out: &mut String) {
     out.push_str("\n## Job Management CLI\n\n");
-    out.push_str("`cwtctl` is available for managing ClawTab jobs:\n\n");
+    out.push_str("`cwt` is available for managing ClawTab jobs:\n\n");
     out.push_str("```\n");
-    out.push_str("cwtctl jobs list      # List configured jobs grouped by group\n");
-    out.push_str("cwtctl jobs create    # Schedule a cron or one-time agent job\n");
-    out.push_str("cwtctl jobs status    # Show status of all jobs\n");
-    out.push_str("cwtctl jobs run <group>/<name> # Run a job and attach/follow output\n");
-    out.push_str("cwtctl jobs pause <group>/<name> # Pause a running job\n");
-    out.push_str("cwtctl jobs resume <group>/<name> # Resume a paused job\n");
-    out.push_str("cwtctl jobs restart <group>/<name> # Restart a job\n");
-    out.push_str("cwtctl agent auto-yes [toggle|check] [pane_id] # Manage auto-yes\n");
-    out.push_str("cwtctl agent info [pane_id] # Show agent session info\n");
-    out.push_str("cwtctl agent pin [pane_id] # Pin this agent across desktop, web, and mobile\n");
-    out.push_str("cwtctl agent unpin [pane_id] # Remove the shared pin\n");
-    out.push_str("cwtctl plugin list [pane_id] # List available agent plugins\n");
-    out.push_str("cwtctl plugin <name> run [pane_id] [key=value ...] # Run an agent plugin\n");
-    out.push_str("cwtctl pane open [pane_id] # Open a tmux pane in ClawTab\n");
-    out.push_str("cwtctl daemon ping    # Check if ClawTab daemon is running\n");
+    out.push_str("cwt jobs list      # List configured jobs grouped by group\n");
+    out.push_str("cwt jobs create    # Schedule a cron or one-time agent job\n");
+    out.push_str("cwt jobs status    # Show status of all jobs\n");
+    out.push_str("cwt jobs run <group>/<name> # Run a job and attach/follow output\n");
+    out.push_str("cwt jobs pause <group>/<name> # Pause a running job\n");
+    out.push_str("cwt jobs resume <group>/<name> # Resume a paused job\n");
+    out.push_str("cwt jobs restart <group>/<name> # Restart a job\n");
+    out.push_str("cwt agent auto-yes [toggle|check] [pane_id] # Manage auto-yes\n");
+    out.push_str("cwt agent info [pane_id] # Show agent session info\n");
+    out.push_str("cwt agent pin [pane_id] # Pin this agent across desktop, web, and mobile\n");
+    out.push_str("cwt agent unpin [pane_id] # Remove the shared pin\n");
+    out.push_str("cwt plugin list [pane_id] # List available agent plugins\n");
+    out.push_str("cwt plugin <name> run [pane_id] [key=value ...] # Run an agent plugin\n");
+    out.push_str("cwt pane open [pane_id] # Open a tmux pane in ClawTab\n");
+    out.push_str("cwt daemon ping    # Check if ClawTab daemon is running\n");
     out.push_str("```\n");
 }
 

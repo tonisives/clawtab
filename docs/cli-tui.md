@@ -1,35 +1,36 @@
 # CLI & TUI
 
-`cwt` launches the ClawTab desktop app. Starting with the next release, it
-replaces the `clawtab` shell command. Use `cwtctl` for the control commands below.
+Starting with the next release, `cwt` replaces `cwtctl` for all CLI commands.
+For example, `cwtctl daemon ping` becomes `cwt daemon ping`. The desktop app
+keeps its `clawtab` launcher.
 
-`cwtctl` and `cwttui` communicate over Unix domain sockets. There are two separate sockets, served by two separate processes:
+`cwt` and `cwttui` communicate over Unix domain sockets. There are two separate sockets, served by two separate processes:
 
-- `/tmp/clawtab.sock` -- daemon. Background lifecycle: jobs, scheduling, relay, auto-yes. Always running once installed (`cwtctl daemon install`).
+- `/tmp/clawtab.sock` -- daemon. Background lifecycle: jobs, scheduling, relay, auto-yes. Always running once installed (`cwt daemon install`).
 - `/tmp/clawtab-desktop.sock` -- desktop app. UI actions: focus a pane, open a tmux pane in the GUI. Only available when the desktop window is running.
 
-`cwtctl` selects the right socket per command. The wire format is the same on both: newline-delimited JSON.
+`cwt` selects the right socket per command. The wire format is the same on both: newline-delimited JSON.
 
-## CLI: cwtctl
+## CLI: cwt
 
 ```
-cwtctl <command> [args]
+cwt <command> [args]
 ```
 
 ### Account login
 
-Run `cwtctl login` to sign in with Google in your browser. Choose another account to switch logins. ClawTab saves one account; each successful login overwrites the previous login.
+Run `cwt login` to sign in with Google in your browser. Choose another account to switch logins. ClawTab saves one account; each successful login overwrites the previous login.
 
 ```sh
-cwtctl login
-cwtctl login --provider apple
-cwtctl login --email you@example.com
-cwtctl login --no-browser
+cwt login
+cwt login --provider apple
+cwt login --email you@example.com
+cwt login --no-browser
 ```
 
 Email login prompts for a password with input hidden. `--no-browser` prints the browser sign-in URL for headless hosts. Login uses the configured relay and machine name; override them with `--relay URL` or `--name NAME`.
 
-Login reuses the machine's pairing when the selected account owns it, or pairs this host with the new account. A running daemon reloads the login and reconnects without restarting local agents. If the daemon is stopped, start it with `cwtctl daemon install`. Canceling or failing authentication leaves the saved login unchanged.
+Login reuses the machine's pairing when the selected account owns it, or pairs this host with the new account. A running daemon reloads the login and reconnects without restarting local agents. If the daemon is stopped, start it with `cwt daemon install`. Canceling or failing authentication leaves the saved login unchanged.
 
 ### Managed terminal sessions
 
@@ -95,18 +96,18 @@ when actions are listed or started. See [Local Executable Plugins](./agent-plugi
 for the manifest, host API, capabilities, and approval rules.
 
 ```sh
-cwtctl plugin installed --json
-cwtctl plugin approve <plugin-id> <fingerprint>
-cwtctl plugin revoke <plugin-id>
-cwtctl plugin list
-cwtctl plugin <name> run [pane_id] [key=value ...]
-cwtctl plugin <name> status <run_id>
-cwtctl plugin <name> cancel <run_id>
+cwt plugin installed --json
+cwt plugin approve <plugin-id> <fingerprint>
+cwt plugin revoke <plugin-id>
+cwt plugin list
+cwt plugin <name> run [pane_id] [key=value ...]
+cwt plugin <name> status <run_id>
+cwt plugin <name> cancel <run_id>
 ```
 
 `plugin list` shows actions matching the current pane's provider and version.
 Activation mismatches are hidden. Matching untrusted or invalid actions are not
-available to run. When no pane ID is supplied, `cwtctl` uses `$TMUX_PANE`.
+available to run. When no pane ID is supplied, `cwt` uses `$TMUX_PANE`.
 Plugin runs return a JSON run record immediately; use `status` to poll the
 asynchronous action.
 
@@ -136,7 +137,7 @@ Exit codes: `0` on success, `1` on error (with message on stderr).
 ### Edit a job or disable its schedule
 
 ```bash
-cwtctl jobs edit tskr/data-story-scout
+cwt jobs edit tskr/data-story-scout
 ```
 
 This opens the job's `job.yaml` in `nvim`. Set `enabled: false` to disable future scheduled runs, or `enabled: true` to enable them. You can also edit `cron` and the other job settings. Save and quit with `:wq`; the running daemon reloads saved changes automatically. The edit command works even when the daemon is offline.
@@ -145,14 +146,14 @@ This opens the job's `job.yaml` in `nvim`. Set `enabled: false` to disable futur
 
 ### Create a scheduled agent job
 
-Run `cwtctl jobs create` from the project directory. The interactive form accepts a name and either a cron expression or a one-time date. Press `Tab` to change fields, `Ctrl-R` to switch schedule type, and `Ctrl-K` to toggle one-time config cleanup. Press `Enter` to write the description in `nvim`; `Esc` cancels.
+Run `cwt jobs create` from the project directory. The interactive form accepts a name and either a cron expression or a one-time date. Press `Tab` to change fields, `Ctrl-R` to switch schedule type, and `Ctrl-K` to toggle one-time config cleanup. Press `Enter` to write the description in `nvim`; `Esc` cancels.
 
 For a command without prompts, supply a name, exactly one schedule, and exactly one description source:
 
 ```bash
-cwtctl jobs create --name daily-review --cron '0 9 * * *' --description-file review.md
-cwtctl jobs create --name follow-up --at '2026-10-02 09:00' --description 'Check the results'
-cat task.md | cwtctl jobs create --name task --at '2026-10-02T09:00:00+07:00' --description-stdin --keep-config
+cwt jobs create --name daily-review --cron '0 9 * * *' --description-file review.md
+cwt jobs create --name follow-up --at '2026-10-02 09:00' --description 'Check the results'
+cat task.md | cwt jobs create --name task --at '2026-10-02T09:00:00+07:00' --description-stdin --keep-config
 ```
 
 `--at` accepts a local `YYYY-MM-DD HH:MM` time or RFC 3339 with an explicit offset. The date must be in the future when the job is created. `--description-file` reads a text or Markdown file. These commands create agent jobs with descriptions stored in `job.md`; use the desktop app to configure a Binary job that runs a script directly.
@@ -161,8 +162,8 @@ Scheduling is part of `jobs create`; there is no separate `jobs schedule` comman
 
 ```bash
 opencode models
-cwtctl jobs create --name daily-review --provider opencode --cron '0 9 * * *' --description-file review.md
-cwtctl jobs create --name daily-review-pinned --provider opencode --model 'anthropic/claude-sonnet-4-5' --cron '0 9 * * *' --description-file review.md
+cwt jobs create --name daily-review --provider opencode --cron '0 9 * * *' --description-file review.md
+cwt jobs create --name daily-review-pinned --provider opencode --model 'anthropic/claude-sonnet-4-5' --cron '0 9 * * *' --description-file review.md
 ```
 
 `--model` requires `--provider`. For OpenCode, choose a `provider/model` ID from `opencode models`; the example ID must be available through your configured provider. Without `--model`, a job uses ClawTab's default model only when its provider matches the default provider; otherwise the selected CLI chooses its own model. Install and authenticate that CLI on the machine running the job. Creating a job saves its configuration without starting the agent; the running daemon executes it when due.
@@ -294,7 +295,7 @@ Agent activity events use this shape:
 ```
 
 `GetAgentActivity` is an IPC-only command used by the tmux plugin; it is not a
-user-facing `cwtctl` command. The plugin also requires `jq` to decode the local
+user-facing `cwt` command. The plugin also requires `jq` to decode the local
 JSON response. `working` is true for a short window after the daemon detects
 new terminal scrollback or a repeated color-only animation in the visible
 agent UI; echoed input and layout reflows are ignored. `asking` takes precedence

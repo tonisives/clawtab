@@ -240,9 +240,7 @@ fn load_identity_inner(account: &str, create: bool) -> Result<Identity, String> 
             return serde_json::from_slice(&bytes).map_err(|_| "Invalid machine identity".into())
         }
         Err(error) if create && error.code() == -25300 => {}
-        Err(_) => {
-            return Err("Machine identity unavailable; run cwtctl move identity locally".into())
-        }
+        Err(_) => return Err("Machine identity unavailable; run cwt move identity locally".into()),
     }
     let identity = Identity::generate()?;
     let encoded = serde_json::to_vec(&identity).map_err(|_| "Invalid identity")?;
@@ -260,7 +258,7 @@ fn load_identity_inner(account: &str, create: bool) -> Result<Identity, String> 
         return read_json(&path);
     }
     if !create {
-        return Err("Run cwtctl move identity locally".into());
+        return Err("Run cwt move identity locally".into());
     }
     let identity = Identity::generate()?;
     save_json(&path, &identity)?;

@@ -11,8 +11,8 @@ COPY protocol protocol
 COPY desktop/src-tauri desktop/src-tauri
 RUN --mount=type=cache,id=clawtab-machine-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=clawtab-machine-target,target=/src/desktop/src-tauri/target \
-    cd desktop/src-tauri && cargo build -j4 --locked --release --target x86_64-unknown-linux-gnu --no-default-features --bin clawtab-daemon --bin cwtctl --bin clawtab-hook \
-    && mkdir /out && cp target/x86_64-unknown-linux-gnu/release/clawtab-daemon target/x86_64-unknown-linux-gnu/release/cwtctl target/x86_64-unknown-linux-gnu/release/clawtab-hook /out/
+    cd desktop/src-tauri && cargo build -j4 --locked --release --target x86_64-unknown-linux-gnu --no-default-features --bin clawtab-daemon --bin cwt --bin clawtab-hook \
+    && mkdir /out && cp target/x86_64-unknown-linux-gnu/release/clawtab-daemon target/x86_64-unknown-linux-gnu/release/cwt target/x86_64-unknown-linux-gnu/release/clawtab-hook /out/
 
 # Hermes' sealed runtime includes its Python dependencies and provider SDKs.
 # All four providers live in the image, outside the subscriber's home volume.

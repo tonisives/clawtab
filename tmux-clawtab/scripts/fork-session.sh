@@ -13,8 +13,8 @@ cmd=$(tmux display-message -t "$pane_id" -p '#{pane_current_command}')
 pane_path=$(tmux display-message -t "$pane_id" -p '#{pane_current_path}')
 
 restore_command=""
-if command -v cwtctl >/dev/null 2>&1; then
-    restore_command=$(cwtctl agent info restore-command "$pane_id" 2>/dev/null || true)
+if command -v cwt >/dev/null 2>&1; then
+    restore_command=$(cwt agent info restore-command "$pane_id" 2>/dev/null || true)
 fi
 
 case "$restore_command" in
@@ -25,8 +25,8 @@ case "$restore_command" in
 esac
 
 if echo "$cmd" | grep -qiE 'codex|opencode'; then
-    if ! command -v cwtctl >/dev/null 2>&1; then
-        tmux display-message "clawtab: cwtctl not found in PATH - cannot restore agent session"
+    if ! command -v cwt >/dev/null 2>&1; then
+        tmux display-message "clawtab: cwt not found in PATH - cannot restore agent session"
         exit 1
     fi
     if [ -z "$restore_command" ]; then

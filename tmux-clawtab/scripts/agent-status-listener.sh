@@ -149,14 +149,14 @@ clear_agent_pane_title() {
     display_name="$(tmux show-option -pqv -t "$pane_id" @clawtab-display-name 2>/dev/null || true)"
     [ -n "$display_name" ] || return
 
-    # cwtctl also removes the persisted process override, preventing this
+    # cwt also removes the persisted process override, preventing this
     # agent's title from being reused if another agent starts in the pane.
-    if command -v cwtctl >/dev/null 2>&1 &&
-        cwtctl agent rename "$pane_id" "" >/dev/null 2>&1; then
+    if command -v cwt >/dev/null 2>&1 &&
+        cwt agent rename "$pane_id" "" >/dev/null 2>&1; then
         return
     fi
 
-    # Keep the visible tmux state correct even when cwtctl is unavailable.
+    # Keep the visible tmux state correct even when cwt is unavailable.
     tmux select-pane -t "$pane_id" -T "" 2>/dev/null || true
     tmux set-option -pqu -t "$pane_id" @clawtab-display-name 2>/dev/null || true
 }

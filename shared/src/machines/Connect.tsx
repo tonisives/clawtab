@@ -54,7 +54,7 @@ export let ConnectMachine = ({ approvePairing, initiallyExpanded = false }: Prop
       </Pressable>
       {instructions && <View style={styles.instructions}>
         <Text style={styles.detail}>Install ClawTab and your agent CLI on your computer or server, then run:</Text>
-        <Text selectable style={styles.command}>cwtctl setup</Text>
+        <Text selectable style={styles.command}>cwt setup</Text>
         <Text style={styles.detail}>Leave it running and enter the code shown above.</Text>
         <Pressable accessibilityRole="link" onPress={openGuide} style={styles.help}><Text style={styles.link}>Installation and setup guide</Text></Pressable>
       </View>}

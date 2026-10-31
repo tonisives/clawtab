@@ -8,10 +8,10 @@ sh /usr/local/bin/machine-entrypoint > /tmp/daemon.log 2>&1 &
 daemon_pid=$!
 trap 'kill "$daemon_pid"' EXIT
 for attempt in 1 2 3 4 5; do
- if cwtctl jobs list > /tmp/jobs.log 2>&1; then break; fi
+ if cwt jobs list > /tmp/jobs.log 2>&1; then break; fi
  sleep 1
 done
-cwtctl jobs list
+cwt jobs list
 test ! -e /home/clawtab/.config/clawtab/machine-paired
 printf 'PASS: unpaired daemon responds to readiness probe\n'
 python3 - "$daemon_pid" <<'PYTEST'
@@ -49,14 +49,14 @@ http.server.HTTPServer(('127.0.0.1',18643),Handler).serve_forever()
 PY
 python3 /tmp/pairing-fixture.py &
 sleep 1
-cwtctl setup --name fixture --relay http://127.0.0.1:18643 --no-service > /tmp/setup.log 2>&1
+cwt setup --name fixture --relay http://127.0.0.1:18643 --no-service > /tmp/setup.log 2>&1
 for attempt in 1 2 3 4 5; do
  if test -f /tmp/relay-attempted; then break; fi
  sleep 1
 done
 test -f /tmp/relay-attempted
 kill -0 "$daemon_pid"
-cwtctl jobs list
+cwt jobs list
 python3 - <<'PY'
 import subprocess
 from pathlib import Path

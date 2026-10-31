@@ -9,12 +9,12 @@ fi
 resources="$1/Contents/Resources"
 destination="$2"
 for artifact in "ClawTab Daemon.app/Contents/MacOS/ClawTab Daemon" \
-  "ClawTab Daemon.app/Contents/MacOS/clawtab-hook" cwtctl _cwtctl; do
+  "ClawTab Daemon.app/Contents/MacOS/clawtab-hook" cwt _cwt; do
   [[ -s "$resources/$artifact" ]] || { echo "Missing host artifact: $artifact" >&2; exit 1; }
 done
 [[ ! -e "$destination" ]] || { echo "Package directory already exists: $destination" >&2; exit 1; }
 
 mkdir -p "$destination"
 ditto "$resources/ClawTab Daemon.app" "$destination/ClawTab Daemon.app"
-cp "$resources/cwtctl" "$resources/_cwtctl" "$destination/"
-chmod +x "$destination/cwtctl"
+cp "$resources/cwt" "$resources/_cwt" "$destination/"
+chmod +x "$destination/cwt"

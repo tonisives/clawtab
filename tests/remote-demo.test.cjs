@@ -188,7 +188,7 @@ test('demo leads with included Relay agents and keeps hardware setup below the m
   let press = (label) => nodes.find((node) => node.type === 'Pressable' && all(node).some((child) => child.type === 'Text' && child.props.children === label)).props.onPress();
   let text = nodes.filter((node) => node.type === 'Text').map((node) => node.props.children).join('\n');
   for (let phrase of ['remote workspace', 'existing Claude, Codex', 'automatically', '2 agents at once', 'US$6.99', 'Advanced setup']) assert.ok(text.includes(phrase), phrase);
-  assert.doesNotMatch(text, /two steps|cwtctl setup/);
+  assert.doesNotMatch(text, /two steps|cwt setup/);
   assert.ok(text.indexOf('Get started with Relay') < text.indexOf('Advanced setup'));
   press('Get started with Relay');
   assert.equal(connected, true);

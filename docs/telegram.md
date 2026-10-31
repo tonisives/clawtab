@@ -48,11 +48,11 @@ telegram:
 Use the shared message command to send to Telegram:
 
 ```sh
-cwtctl message send "Build finished" --kind completed --channel telegram
-cwtctl message send "Ship it?" --channel telegram --choice "yes=Ship" --choice "no=Hold" --wait
+cwt message send "Build finished" --kind completed --channel telegram
+cwt message send "Ship it?" --channel telegram --choice "yes=Ship" --choice "no=Hold" --wait
 ```
 
-Repeat `--channel desktop` to also show the card locally. Telegram questions accept button choices or a reply to the bot's message, even when Agent Mode is disabled. Responses resolve the same message on desktop and mobile. `cwtctl telegram send TEXT` remains an alias. See [Messages and notifications](../desktop/docs/enhanced-notifications.md) for mobile delivery and settings.
+Repeat `--channel desktop` to also show the card locally. Telegram questions accept button choices or a reply to the bot's message, even when Agent Mode is disabled. Responses resolve the same message on desktop and mobile. `cwt telegram send TEXT` remains an alias. See [Messages and notifications](../desktop/docs/enhanced-notifications.md) for mobile delivery and settings.
 
 Job notifications are sent automatically when jobs complete:
 
@@ -67,7 +67,7 @@ the final status, not the job's log output.
 Failure alerts use the global `Notify on job failure` setting even when a job's
 routine finish notifications are disabled or its notification target is App or
 None. They cover nonzero process exits, missing panes, and launch errors. Alerts
-include the run ID and a `cwtctl jobs restart <group>/<job>` command; terminal
+include the run ID and a `cwt jobs restart <group>/<job>` command; terminal
 output is not included.
 
 Job failures also show an immediate local macOS notification with the job and

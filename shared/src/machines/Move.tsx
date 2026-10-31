@@ -63,7 +63,7 @@ let MachineIdentityInput = ({ machineId, label, onVerified }: { machineId: strin
   }
   return <View style={styles.section}>
     <Text style={styles.title}>{label}</Text>
-    <Text style={styles.hint}>Run cwtctl move identity through this machine's local console or trusted SSH connection. Paste its public identity here after checking the machine ID and fingerprint.</Text>
+    <Text style={styles.hint}>Run cwt move identity through this machine's local console or trusted SSH connection. Paste its public identity here after checking the machine ID and fingerprint.</Text>
     <TextInput accessibilityLabel={`${label} public identity`} multiline autoCapitalize="none" autoCorrect={false} value={value} onChangeText={setValue} style={styles.input} placeholder="Public machine identity JSON" placeholderTextColor={colors.textMuted} />
     <MachineActionButton label={verified ? "Identity verified" : "Verify machine identity"} disabled={!value.trim()} onPress={verify} />
     {error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
@@ -207,7 +207,7 @@ export let MovePanel = ({ paneId, onClose }: { paneId: string; onClose: () => vo
     <MachineActionButton label={showSecurity ? "Hide identity setup" : "Verify identities"} onPress={toggleSecurity} />
     {showSecurity && <View style={styles.section}>
       <Text style={styles.title}>This client's public identity</Text>
-      <Text style={styles.hint}>On both machines, verify this fingerprint and enroll the public identity with cwtctl move trust-client. Also enroll each machine's identity on the other using trust-machine, then run cwtctl move enable. This disables unsigned remote commands on those machines.</Text>
+      <Text style={styles.hint}>On both machines, verify this fingerprint and enroll the public identity with cwt move trust-client. Also enroll each machine's identity on the other using trust-machine, then run cwt move enable. This disables unsigned remote commands on those machines.</Text>
       {identity && <><Text selectable style={styles.code}>{JSON.stringify(identity.identity)}</Text><Text selectable style={styles.code}>Fingerprint: {identity.fingerprint}</Text></>}
       {sourceMachine && <MachineIdentityInput machineId={sourceMachine} label="Source machine identity" onVerified={refreshTrust} />}
       {target && <MachineIdentityInput key={target} machineId={target} label="Target machine identity" onVerified={refreshTrust} />}

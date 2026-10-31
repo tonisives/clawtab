@@ -94,7 +94,7 @@ class SignatureTests(unittest.TestCase):
                 executable = contents / 'MacOS/clawtab'
                 subprocess.run(['clang', '-x', 'c', '-', '-o', str(executable)],
                                input=f'int main(void) {{ return {version}; }}', text=True, check=True)
-                subprocess.run(['cp', str(executable), str(resources / 'cwtctl')], check=True)
+                subprocess.run(['cp', str(executable), str(resources / 'cwt')], check=True)
                 subprocess.run(['cp', str(executable), str(contents / 'MacOS/clawtab-hook')], check=True)
                 signing.sign_app(app, identity)
                 signature = executable.read_bytes()

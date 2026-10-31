@@ -2,7 +2,7 @@
 
 The local posting runner sends a social-review message containing the exact text and destination. Choose **Post to X** to publish it, **Request changes** to return feedback, or **Reject** to stop. The waiting workflow publishes the selected text once, opens its permalink, checks the author and text, and sends a message with the verified URL.
 
-For new work use [social review bundles](social-review.md), which support long posts, images, video and platform variants. This compatibility runner supports existing text drafts up to 280 weighted characters. It resolves the configured personal X session/window and publishes through BMUX plugin actions after 90 seconds of browsing without likes. It does not change the profile's account or settings. Install BMUX and `cwtctl` on the host; Python 3 uses only its standard library. `cwtctl message` is preferred, with `nfn` compatibility for older installations.
+For new work use [social review bundles](social-review.md), which support long posts, images, video and platform variants. This compatibility runner supports existing text drafts up to 280 weighted characters. It resolves the configured personal X session/window and publishes through BMUX plugin actions after 90 seconds of browsing without likes. It does not change the profile's account or settings. Install BMUX and `cwt` on the host; Python 3 uses only its standard library. `cwt message` is preferred, with `nfn` compatibility for older installations.
 
 Save a draft as JSON:
 

@@ -9,12 +9,12 @@ This first release supports Claude 2.1.296 and Codex 0.162.1. Codex must run wit
 Deploy the relay supporting `secure_peer` and the updated host and clients before enrolling. Existing machines retain their current behavior until secure commands are enabled.
 
 1. Open Move to obtain the client's public identity and fingerprint.
-2. Through each machine's local console or trusted SSH connection, run `cwtctl move identity`.
-3. Verify each machine ID and fingerprint over that trusted connection. Pin the identity in the client's Move view. Enroll each machine's public identity on the other with `cwtctl move trust-machine <public-json-or-file> --fingerprint <sha256>`.
-4. Verify and enroll the client identity on both machines with `cwtctl move trust-client <public-json-or-file> --fingerprint <sha256>`.
-5. Run `cwtctl move enable` on both machines. This disables unsigned remote commands. Older clients will need an update and enrollment to control these machines.
+2. Through each machine's local console or trusted SSH connection, run `cwt move identity`.
+3. Verify each machine ID and fingerprint over that trusted connection. Pin the identity in the client's Move view. Enroll each machine's public identity on the other with `cwt move trust-machine <public-json-or-file> --fingerprint <sha256>`.
+4. Verify and enroll the client identity on both machines with `cwt move trust-client <public-json-or-file> --fingerprint <sha256>`.
+5. Run `cwt move enable` on both machines. This disables unsigned remote commands. Older clients will need an update and enrollment to control these machines.
 
-Private identity keys stay in macOS Keychain, native mobile SecureStore, or owner-only host storage on Linux. Public identities may be displayed and exchanged. Never copy private keys or credential files during enrollment. Key changes require explicit revocation and renewed verification. Use `cwtctl move help` for revocation and recovery commands.
+Private identity keys stay in macOS Keychain, native mobile SecureStore, or owner-only host storage on Linux. Public identities may be displayed and exchanged. Never copy private keys or credential files during enrollment. Key changes require explicit revocation and renewed verification. Use `cwt move help` for revocation and recovery commands.
 
 ## Transfer and handoff
 
@@ -36,7 +36,7 @@ Operations persist independently of the modal, client connection, and daemon res
 
 Source restoration is recorded before processes resume. If interrupted, recovery finishes restoration instead of retrying the old transfer. A durable target commit confirms a successful handoff even when its acknowledgement was lost and the remote has started another turn.
 
-`cwtctl move status <operation-id>` inspects an operation; `check` reconciles the remote handoff. `rollback <operation-id> --confirm-stop-target` explicitly requests target shutdown and source restoration. Do not manually unfreeze a source while its target state is uncertain.
+`cwt move status <operation-id>` inspects an operation; `check` reconciles the remote handoff. `rollback <operation-id> --confirm-stop-target` explicitly requests target shutdown and source restoration. Do not manually unfreeze a source while its target state is uncertain.
 
 ## Validation scope
 

@@ -37,7 +37,7 @@ graph TB
     end
 
     subgraph Clients["Clients"]
-        CLI["cwtctl"]
+        CLI["cwt"]
         TUI["cwttui"]
     end
 
@@ -67,7 +67,7 @@ The daemon owns background lifecycle (cron scheduling, job execution, relay, Tel
 
 The desktop app owns UI state (focused pane, layout tree, splits). Operations that change UI state -- "focus the pane to the left", "open this tmux pane in the GUI" -- belong to the desktop process and are served on a separate socket at `/tmp/clawtab-desktop.sock`.
 
-`cwtctl` picks the right socket per command. `cwtctl jobs status` talks to the daemon; `cwtctl pane focus left` talks to the desktop app. Both sockets share the same wire format (newline-delimited JSON) and the same `IpcResponse` type, but each has its own command enum (`IpcCommand` for the daemon, `DesktopIpcCommand` for the desktop) so neither side ever deserializes the other's variants.
+`cwt` picks the right socket per command. `cwt jobs status` talks to the daemon; `cwt pane focus left` talks to the desktop app. Both sockets share the same wire format (newline-delimited JSON) and the same `IpcResponse` type, but each has its own command enum (`IpcCommand` for the daemon, `DesktopIpcCommand` for the desktop) so neither side ever deserializes the other's variants.
 
 ## Tech Stack
 
@@ -175,7 +175,7 @@ src-tauri/src/
   tools/mod.rs              # Tool detection
   terminal/mod.rs           # Terminal emulator integration
   bin/
-    ctl.rs                  # cwtctl CLI
+    ctl.rs                  # cwt CLI
     tui.rs                  # cwttui TUI
 
 src/
