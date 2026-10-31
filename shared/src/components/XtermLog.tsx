@@ -1,3 +1,4 @@
+import type { ComponentRef } from "react";
 import { encodeTerminalInput } from "../util/terminalInput";
 import { useRef, useImperativeHandle, forwardRef, useCallback, useEffect, useMemo } from "react";
 import { View, StyleSheet, TextInput, Platform, Pressable } from "react-native";
@@ -445,7 +446,7 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
     }), [extendedViewport, extendedViewportHeight]);
     const useNativeKeyboard = Platform.OS === "ios";
     const webViewRef = useRef<any>(null);
-    const nativeInputRef = useRef<TextInput | null>(null);
+    const nativeInputRef = useRef<ComponentRef<typeof TextInput> | null>(null);
     const dimsRef = useRef({ cols: 0, rows: 0 });
     const lastResizeRef = useRef({ cols: 0, rows: 0 });
     const readyRef = useRef(false);

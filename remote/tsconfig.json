@@ -6,10 +6,21 @@
       "@/*": [
         "./src/*"
       ],
-      "react-native": ["./node_modules/react-native"],
-      "react-native/*": ["./node_modules/react-native/*"],
-      "@clawtab/shared": ["../shared/src"],
-      "@clawtab/shared/*": ["../shared/src/*"]
+      "react-native": [
+        "./node_modules/react-native/types_generated/index.d.ts"
+      ],
+      "@clawtab/shared": [
+        "../shared/src"
+      ],
+      "@clawtab/shared/*": [
+        "../shared/src/*"
+      ],
+      "react": [
+        "./node_modules/@types/react"
+      ],
+      "react/*": [
+        "./node_modules/@types/react/*"
+      ]
     }
   },
   "include": [

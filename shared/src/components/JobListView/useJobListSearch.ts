@@ -1,10 +1,11 @@
+import type { ComponentRef } from "react";
 import { useCallback, useEffect, useState } from "react";
 import type * as React from "react";
 import { Platform, type TextInput, type View } from "react-native";
 
 interface UseJobListSearchRefs {
-  containerRef: React.RefObject<View | null>;
-  searchRef: React.RefObject<TextInput | null>;
+  containerRef: React.RefObject<ComponentRef<typeof View> | null>;
+  searchRef: React.RefObject<ComponentRef<typeof TextInput> | null>;
 }
 
 interface UseJobListSearchState {

@@ -1,3 +1,4 @@
+import type { ComponentRef } from "react";
 import { useRef, useEffect, useMemo, useCallback } from "react";
 import { ScrollView, Text, StyleSheet, View, Platform } from "react-native";
 import { colors } from "../theme/colors";
@@ -9,7 +10,7 @@ import { collapseSeparators, truncateLogLines } from "../util/logs";
  * the element to the bottom. Works on web (DOM) and native (ScrollView).
  */
 function useAutoScroll(dep: string) {
-  const nativeRef = useRef<ScrollView>(null);
+  const nativeRef = useRef<ComponentRef<typeof ScrollView>>(null);
   const domNode = useRef<HTMLElement | null>(null);
   const first = useRef(true);
 

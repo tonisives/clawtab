@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentType, type PropsWithChildren } from "react";
+import { useCallback, useEffect } from "react";
 import { Platform, View, Text } from "react-native";
 import { Tabs, usePathname, useRouter } from "expo-router";
-import { NativeTabs } from "expo-router/unstable-native-tabs";
+import { NativeTabs } from "expo-router/native-tabs";
 import { Ionicons } from "@expo/vector-icons";
 import { Image, Pressable, Linking } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -11,15 +11,12 @@ import { registerNotificationCategories } from "../../src/lib/notifications";
 import { NotificationsMenuButton } from "../../src/components/NotificationsMenuButton";
 import { useJobFilterStore } from "../../src/store/jobFilter";
 import { useMobileHeaderStore } from "../../src/store/mobileHeader";
-import { useLandscapeShellStore } from "../../src/store/landscapeShell";
 import {
   IpadBottomBar,
   type IpadNavigationItem,
 } from "../../src/components/IpadBottomBar";
 
 type IoniconsName = keyof typeof Ionicons.glyphMap;
-const NativeTabsRoot = NativeTabs as ComponentType<PropsWithChildren<any>>;
-
 const tabIcons: Record<string, { focused: IoniconsName; default: IoniconsName }> = {
   Jobs: { focused: "briefcase", default: "briefcase-outline" },
   Settings: { focused: "settings", default: "settings-outline" },
@@ -66,14 +63,15 @@ function TabsContent({
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const settingsActive = pathname.endsWith("/settings");
+  const isIosPhone = Platform.OS === "ios" && !Platform.isPad;
 
   useEffect(() => {
     setMobileHeaderTab(settingsActive ? "settings" : "jobs");
   }, [settingsActive, setMobileHeaderTab]);
 
   useEffect(() => {
-    if (isSplitView && settingsActive) router.replace("/(tabs)");
-  }, [isSplitView, router, settingsActive]);
+    if (!isIosPhone && isSplitView && settingsActive) router.replace("/(tabs)");
+  }, [isIosPhone, isSplitView, router, settingsActive]);
 
   const handleIpadNavigation = useCallback(
     (item: IpadNavigationItem) => {
@@ -93,10 +91,10 @@ function TabsContent({
     [openSearch, router, settingsActive],
   );
 
-  if (Platform.OS !== "web" && !isWide && !isSplitView && !isIosPadPortrait) {
+  if (isIosPhone || (Platform.OS !== "web" && !isWide && !isSplitView && !isIosPadPortrait)) {
     return (
       <View style={styles.nativeTabsFrame}>
-        <NativeTabsRoot
+        <NativeTabs
           tintColor={colors.accent}
           iconColor={{ default: colors.textMuted, selected: colors.accent }}
           backgroundColor={colors.bg}
@@ -140,14 +138,13 @@ function TabsContent({
           <NativeTabs.Trigger name="agent" hidden />
           <NativeTabs.Trigger name="connection" hidden />
           <NativeTabs.Trigger name="devices" hidden />
-        </NativeTabsRoot>
+        </NativeTabs>
       </View>
     );
   }
 
   const tabs = (
     <Tabs
-      initialRouteName="(jobs)"
       screenOptions={{
         headerShown:
           Platform.OS !== "web" && !isWide && !isSplitView && !isIosPadPortrait,
@@ -265,26 +262,7 @@ const styles = {
 } as const;
 
 export default function TabLayout() {
-  const { isIosPadPortrait, isIosPhoneLandscape, isSplitView, isWide } = useResponsive();
-  const previousPhoneLandscape = useRef(isIosPhoneLandscape);
-  const [portraitHandoffPending, setPortraitHandoffPending] = useState(false);
-  const pathname = usePathname();
-  const router = useRouter();
-
-  useLayoutEffect(() => {
-    const rotatedToPortrait = previousPhoneLandscape.current && !isIosPhoneLandscape;
-    previousPhoneLandscape.current = isIosPhoneLandscape;
-    if (pathname !== "/" && pathname !== "/(tabs)" && !pathname.endsWith("/index")) {
-      setPortraitHandoffPending(false);
-    }
-    if (!rotatedToPortrait || !(pathname === "/" || pathname === "/(tabs)" || pathname.endsWith("/index"))) return;
-    const shell = useLandscapeShellStore.getState().focusedShell;
-    if (!shell) return;
-    setPortraitHandoffPending(true);
-    useLandscapeShellStore.getState().showSidebar(shell);
-    if (shell.kind === "job") router.push({ pathname: "/job/[name]", params: { name: shell.slug, landscapeHandoff: "1" } });
-    else router.push({ pathname: "/process/[pane_id]", params: { pane_id: shell.paneId.replace(/%/g, "_pct_"), landscapeHandoff: "1" } });
-  }, [isIosPhoneLandscape, pathname, router]);
+  const { isIosPadPortrait, isSplitView, isWide } = useResponsive();
 
   useEffect(() => {
     registerNotificationCategories();
@@ -297,9 +275,6 @@ export default function TabLayout() {
         isSplitView={isSplitView}
         isWide={isWide}
       />
-      {portraitHandoffPending && !isIosPhoneLandscape ? (
-        <View pointerEvents="none" style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0, backgroundColor: colors.bg }} />
-      ) : null}
     </View>
   );
 }

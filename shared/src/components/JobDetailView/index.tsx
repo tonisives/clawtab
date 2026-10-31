@@ -1,3 +1,4 @@
+import type { ComponentRef } from "react";
 import { agentAlertTitle } from "../../util/alert";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -266,9 +267,9 @@ export function JobDetailView({
     if (paneOverviewVisibleProp === undefined) setInternalPaneOverviewVisible(visible);
   }, [onPaneOverviewVisibleChange, paneOverviewVisibleProp]);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
-  const dupMenuRef = useRef<View>(null);
-  const settingsMenuRef = useRef<View>(null);
-  const settingsDropdownRef = useRef<View>(null);
+  const dupMenuRef = useRef<ComponentRef<typeof View>>(null);
+  const settingsMenuRef = useRef<ComponentRef<typeof View>>(null);
+  const settingsDropdownRef = useRef<ComponentRef<typeof View>>(null);
   const settingsBtnRef = useRef<any>(null);
 
   const tokenLabel = formatTokenCount(tokenCount);
@@ -276,7 +277,7 @@ export function JobDetailView({
   const [zoomRun, setZoomRun] = useState<{ run: RunRecord; logContent: string } | null>(null);
   const [liveRunZoom, setLiveRunZoom] = useState<{ run: RunRecord; pane: ShellPane } | null>(null);
   const [freetextOptionNumber, setFreetextOptionNumber] = useState<string | null>(null);
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
   const [headerWidth, setHeaderWidth] = useState(0);
 
   useEffect(() => {

@@ -10,7 +10,7 @@ import type { MessageSurfaceProps, SurfaceMessage } from "./messageSurfaceTypes"
 export function MessageSurface(props: MessageSurfaceProps) {
   const source = useRef<{ html: string } | null>(null);
   if (!source.current) source.current = { html: messageSurfaceInitialDocument(document, props) };
-  const view = useRef<WebView>(null);
+  const view = useRef<WebView<object>>(null);
   const insets = useSafeAreaInsets();
   const keyboard = useMessageKeyboard();
   const latest = useRef(props);
@@ -53,8 +53,8 @@ export function MessageSurface(props: MessageSurfaceProps) {
     catch (error) { send({ type: "response", token: value.token, error: error instanceof Error ? error.message : String(error) }); }
   };
 
-  return <View ref={keyboard.host} onLayout={keyboard.onLayout} style={{ flex: 1, minHeight: 0, backgroundColor: "#161616", paddingBottom: keyboard.overlap }}>
-    <WebView ref={view} source={source.current} style={{ flex: 1, backgroundColor: "#161616" }}
+  return <View ref={keyboard.host} onLayout={keyboard.onLayout} style={{ flex: 1, minHeight: 0, backgroundColor: "#161616", paddingBottom: keyboard.overlap, paddingLeft: keyboard.horizontalInsets.left, paddingRight: keyboard.horizontalInsets.right }}>
+    <WebView<object> ref={view} source={source.current} style={{ flex: 1, backgroundColor: "#161616" }}
     javaScriptEnabled originWhitelist={["*"]} allowsInlineMediaPlayback mediaPlaybackRequiresUserAction
     keyboardDisplayRequiresUserAction={false} hideKeyboardAccessoryView
     automaticallyAdjustContentInsets={false} contentInsetAdjustmentBehavior="never" bounces={false}

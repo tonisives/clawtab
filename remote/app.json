@@ -3,7 +3,7 @@
     "name": "ClawTab",
     "slug": "clawtab",
     "version": "1.3.1",
-    "runtimeVersion": "1.3.1-iap1",
+    "runtimeVersion": "1.3.1-duo1",
     "updates": {
       "enabled": true,
       "checkAutomatically": "ON_LOAD",
@@ -13,7 +13,7 @@
         "expo-channel-name": "production"
       }
     },
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "scheme": "clawtab",
@@ -40,7 +40,7 @@
     },
     "android": {
       "versionCode": 4,
-      "runtimeVersion": "1.3.1-android-play1",
+      "runtimeVersion": "1.3.1-android-sdk58",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0a0a0a"
@@ -49,21 +49,14 @@
     },
     "web": {
       "favicon": "./assets/favicon.png",
-      "bundler": "metro"
+      "bundler": "metro",
+      "output": "single"
     },
     "plugins": [
       "./plugins/withIapPreflightFix",
       "./plugins/with-native-answer",
       "./plugins/with-ios-simulator-keychain",
       "expo-router",
-      [
-        "expo-build-properties",
-        {
-          "ios": {
-            "enableSceneSupport": true
-          }
-        }
-      ],
       [
         "expo-splash-screen",
         {
@@ -99,7 +92,8 @@
           }
         }
       ],
-      "expo-font"
+      "expo-font",
+      "expo-status-bar"
     ],
     "extra": {
       "eas": {
@@ -119,6 +113,9 @@
           }
         }
       }
+    },
+    "experiments": {
+      "tsconfigPaths": false
     }
   }
 }

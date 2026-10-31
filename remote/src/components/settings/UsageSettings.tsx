@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { View, Text, Pressable, ActivityIndicator } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
-import { useIsFocused } from "expo-router/react-navigation"
+import { useIsFocused } from "@react-navigation/native"
 import { useMachines } from "@clawtab/shared"
 import { colors } from "../../theme/colors"
 import { useModelUsage } from "../../hooks/useModelUsage"

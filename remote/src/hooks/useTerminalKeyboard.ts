@@ -1,3 +1,4 @@
+import type { ComponentRef } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { AppState, Dimensions, Keyboard, Platform, type KeyboardEvent, type LayoutChangeEvent, type View } from "react-native";
@@ -20,7 +21,7 @@ export let useTerminalKeyboard = ({
 }: UseTerminalKeyboardOptions) => {
   let [keyboardVisible, setKeyboardVisible] = useState(false);
   let [keyboardHeight, setKeyboardHeight] = useState(0);
-  let terminalSurfaceRef = useRef<View | null>(null);
+  let terminalSurfaceRef = useRef<ComponentRef<typeof View> | null>(null);
   let keyboardTopRef = useRef<number | null>(null);
   let menuOpenRef = useRef(menuOpen);
 

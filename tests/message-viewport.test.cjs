@@ -69,11 +69,15 @@ test("native keyboard resize uses host overlap and clears stale offsets on hide/
     useRef: current => { const ref = { current }; refs.push(ref); return ref; },
     useState: value => [value, next => values.push(next)], useCallback: callback => callback,
     useEffect: effect => cleanups.push(effect()),
-  } : { Platform: { OS: "ios" }, Dimensions: { get: () => ({ height: 844 }) },
+  } : name === "react-native-safe-area-context" ? { useSafeAreaInsets: () => ({ left: 40, right: 0 }) } : { useWindowDimensions: () => ({ width: 390 }), Platform: { OS: "ios" }, Dimensions: { get: () => ({ height: 844 }) },
     Keyboard: { addListener: subscribe, isVisible: () => false }, AppState: { addEventListener: subscribe } } });
   const hook = exports.useMessageKeyboard();
-  let bottom = 844;
-  hook.host.current = { measureInWindow: callback => callback(0, 100, 390, bottom - 100) };
+  let bottom = 844, hostX = 0;
+  hook.host.current = { measureInWindow: callback => callback(hostX, 100, 390 - hostX, bottom - 100) };
+  hook.onLayout();
+  assert.equal(values.at(-2).left, 40, "full-width content clears the rail");
+  hostX = 40; hook.onLayout();
+  assert.equal(values.at(-2).left, 0, "an already inset parent is not padded twice");
   const frame = (screenY, height) => events.keyboardWillChangeFrame({ endCoordinates: { screenY, height } });
   frame(500, 344); assert.equal(values.at(-1), 344);
   hook.onLayout(); assert.equal(values.at(-1), 344); // Never adds another keyboard height.
@@ -81,7 +85,7 @@ test("native keyboard resize uses host overlap and clears stale offsets on hide/
   bottom = 844; frame(500, 344); events.keyboardWillHide(); assert.equal(values.at(-1), 0);
   frame(500, 344); events.change("background"); assert.equal(values.at(-1), 0);
   frame(844, 0); assert.equal(values.at(-1), 0);
-  cleanups.forEach(cleanup => cleanup()); assert.deepEqual(Object.keys(events), []);
+  cleanups.forEach(cleanup => cleanup?.()); assert.deepEqual(Object.keys(events), []);
 });
 
 test("web host keeps full height through route entry and follows the outer keyboard viewport", () => {

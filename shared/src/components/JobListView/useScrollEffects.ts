@@ -1,3 +1,4 @@
+import type { ComponentRef } from "react";
 import { useEffect, useRef } from "react";
 import type * as React from "react";
 import { Platform, type ScrollView } from "react-native";
@@ -17,7 +18,7 @@ interface UseScrollEffectsParams {
     groupTabView?: Record<string, "tabs" | "jobs">;
   };
   refs: {
-    scrollRef: React.RefObject<ScrollView | null>;
+    scrollRef: React.RefObject<ComponentRef<typeof ScrollView> | null>;
   };
   scroll: {
     initialScrollOffset?: number;

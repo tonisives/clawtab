@@ -145,8 +145,8 @@ test('closing and reopening details clears action configuration', () => {
 test('machine sheets use UIKit presentation and headers without an RN Modal touch wrapper', () => {
   let closed = 0, pushed = [], focused = true;
   let view = harness('../remote/src/components/MachineNavigationModal.tsx', {
-    'expo-router/react-navigation': { NavigationIndependentTree: 'NavigationIndependentTree', NavigationContainer: 'NavigationContainer', DarkTheme: {}, useIsFocused: () => focused },
-    'expo-router/build/react-navigation/native-stack': { createNativeStackNavigator: () => ({ Navigator: 'SheetNavigator', Screen: 'SheetScreen' }) },
+    '@react-navigation/native': { NavigationIndependentTree: 'NavigationIndependentTree', NavigationContainer: 'NavigationContainer', DarkTheme: {}, useIsFocused: () => focused },
+    '@react-navigation/native-stack': { createNativeStackNavigator: () => ({ Navigator: 'SheetNavigator', Screen: 'SheetScreen' }) },
   });
   let props = { title: 'Add group / machine', children: { type: 'GroupForm', props: { version: 1 } }, overlay: { type: 'Overlay', props: {} }, onClose: () => closed++ };
   let render = () => view.render(view.exports.MachineNavigationModal, props);
@@ -154,8 +154,8 @@ test('machine sheets use UIKit presentation and headers without an RN Modal touc
   assert.equal(tree.type, 'View');
   assert.equal(find(tree, (node) => node.type === 'Modal'), undefined);
   let container = find(tree, (node) => node.type === 'NavigationContainer');
-  assert.equal(container.props.initialState.index, 1);
-  assert.equal(Array.from(container.props.initialState.routes, (route) => route.name).join(','), 'anchor,sheet');
+  assert.equal(container.props.initialState, undefined);
+  assert.equal(typeof find(tree, (node) => node.type === 'SheetScreen' && node.props.name === 'anchor').props.component, 'function');
   let sheet = find(tree, (node) => node.type === 'SheetScreen' && node.props.name === 'sheet');
   assert.equal(sheet.props.options.presentation, 'modal');
   let sheetTree = view.expand(sheet.props.children());
@@ -167,7 +167,9 @@ test('machine sheets use UIKit presentation and headers without an RN Modal touc
   assert.equal(screen.props.options.headerBackVisible, false);
   let childScreen = find(sheetTree, (node) => node.type === 'SheetScreen' && node.props.name === 'page');
   assert.equal(childScreen.props.options({ route: { params: { title: 'Agent actions' } } }).headerLeft, undefined);
-  let { StackRouter, StackActions } = require('../remote/node_modules/expo-router/build/react-navigation/routers/StackRouter.js');
+  let navigationPath = path.dirname(require.resolve('@react-navigation/native', { paths: [path.resolve(__dirname, '../remote')] }));
+  let corePath = path.dirname(require.resolve('@react-navigation/core', { paths: [navigationPath] }));
+  let { StackRouter, StackActions } = require(require.resolve('@react-navigation/routers', { paths: [corePath] }));
   let router = StackRouter({ initialRouteName: 'root' });
   let options = { routeNames: ['root', 'page'], routeParamList: { root: screen.props.initialParams }, routeGetIdList: { page: childScreen.props.getId } };
   let state = router.getInitialState(options);

@@ -1,3 +1,4 @@
+import type { ComponentRef } from "react";
 import { useEffect, useRef, useState } from "react"
 import {
   ActivityIndicator,
@@ -98,7 +99,7 @@ export function NotificationCard({
   const prevQuestionId = useRef(question.question_id)
   const flyAnim = useRef(new Animated.Value(0)).current
   const webCardHeight = useRef(0)
-  const previewScrollRef = useRef<ScrollView>(null)
+  const previewScrollRef = useRef<ComponentRef<typeof ScrollView>>(null)
 
   // Reset answered state when question changes
   useEffect(() => {

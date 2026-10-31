@@ -1,3 +1,4 @@
+import type { ComponentRef } from "react";
 import { useMobileListAppearance, mobileListStyles } from "./ListAppearance";
 import { agentAlertTitle, sessionSizeAlertLabel } from "../util/alert";
 import { compactAgentSelectionLabel } from "../util/agent";
@@ -107,7 +108,7 @@ export function ProcessCard({
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState("");
   const menuBtnRef = useRef<any>(null);
-  const editInputRef = useRef<TextInput>(null);
+  const editInputRef = useRef<ComponentRef<typeof TextInput>>(null);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
 
   const canRename = !!(onRename || onSaveName) && !transient;

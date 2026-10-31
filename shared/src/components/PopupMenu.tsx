@@ -1,3 +1,4 @@
+import type { ComponentRef } from "react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Animated, Modal, SafeAreaView, ScrollView, Pressable, View, Text, TouchableOpacity, StyleSheet, Platform, useWindowDimensions } from "react-native";
 import { colors } from "../theme/colors";
@@ -57,7 +58,7 @@ interface PopupMenuProps {
   items: PopupMenuItem[];
   position?: { top: number; left: number } | null;
   onClose: () => void;
-  dropdownRef?: React.RefObject<View | null>;
+  dropdownRef?: React.RefObject<ComponentRef<typeof View> | null>;
   /** Ref to the trigger button - clicks on it are ignored so the button's own toggle works */
   triggerRef?: React.RefObject<any>;
   autoFocus?: boolean;
@@ -145,7 +146,7 @@ export function PopupMenu({ items, content, headerAction, footer, position, onCl
     animation.start();
     return () => animation.stop();
   }, [isSheet, sheetAnimation]);
-  const localRef = useRef<View>(null);
+  const localRef = useRef<ComponentRef<typeof View>>(null);
   const ref = dropdownRef ?? localRef;
   const windowSize = useWindowDimensions();
   const [submenu, setSubmenu] = useState<{ label: string; items: PopupMenuItem[] } | null>(null);
@@ -316,10 +317,11 @@ export function PopupMenu({ items, content, headerAction, footer, position, onCl
     item.onPress();
   };
 
-  const handleKeyDown = (e: KeyboardEvent) => {
+  const handleKeyDown = (e: { key?: string; nativeEvent?: { key?: string }; target: unknown; preventDefault: () => void; stopPropagation: () => void }) => {
     if (!isWeb) return;
+    const key = e.key ?? e.nativeEvent?.key;
     if (isSheet && e.target !== ref.current) return;
-    if (e.key === "Escape") {
+    if (key === "Escape") {
       e.preventDefault();
       if (submenu) {
         setSubmenu(null);
@@ -328,32 +330,32 @@ export function PopupMenu({ items, content, headerAction, footer, position, onCl
       }
       return;
     }
-    if (e.key === "ArrowDown") {
+    if (key === "ArrowDown") {
       e.preventDefault();
       stepHighlight(1);
       return;
     }
-    if (e.key === "ArrowUp") {
+    if (key === "ArrowUp") {
       e.preventDefault();
       stepHighlight(-1);
       return;
     }
-    if (e.key === "Home") {
+    if (key === "Home") {
       e.preventDefault();
       setHighlightedIndex(actionableIndexes[0] ?? -1);
       return;
     }
-    if (e.key === "End") {
+    if (key === "End") {
       e.preventDefault();
       setHighlightedIndex(actionableIndexes[actionableIndexes.length - 1] ?? -1);
       return;
     }
-    if (e.key === "ArrowLeft" && submenu) {
+    if (key === "ArrowLeft" && submenu) {
       e.preventDefault();
       setSubmenu(null);
       return;
     }
-    if (e.key === "ArrowRight" && highlightedIndex >= 0) {
+    if (key === "ArrowRight" && highlightedIndex >= 0) {
       const item = activeItems[highlightedIndex];
       if (item?.type === "submenu") {
         e.preventDefault();
@@ -361,7 +363,7 @@ export function PopupMenu({ items, content, headerAction, footer, position, onCl
       }
       return;
     }
-    if (e.key === "Enter" || e.key === " ") {
+    if (key === "Enter" || key === " ") {
       if (highlightedIndex < 0) return;
       e.preventDefault();
       activateIndex(highlightedIndex);

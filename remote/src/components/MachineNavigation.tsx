@@ -1,11 +1,12 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react"
-import { useNavigation, useRoute } from "expo-router/react-navigation"
+import { useLocalSearchParams, useRouter } from "expo-router"
 import { MachineNavigationProvider, useMachineNavigation, type MachineOnboardingContent } from "../../../shared/src/machines/Onboarding"
 import { SettingsPage } from "./settings/SettingsPage"
 
 type MachinePage = { title: string; content: MachineOnboardingContent }
 export type MachinePageParams = { id: string; title: string }
 type Navigation = { push: (name: "machine-page", params: MachinePageParams) => void; goBack: () => void }
+export let EmbeddedMachineNavigation = createContext<(Navigation & { params?: MachinePageParams }) | null>(null)
 let pages = new Map<string, MachinePage>()
 let nextPage = 0
 let PageHistory = createContext<{ back: () => void; pages: Set<string> } | null>(null)
@@ -18,25 +19,29 @@ export let MachinePageHistoryProvider = ({ children, onBack }: { children: React
 }
 
 export let MachineNavigation = ({ children }: { children: ReactNode }) => {
-  let navigation = useNavigation<Navigation>()
+  let embedded = useContext(EmbeddedMachineNavigation)
+  let router = useRouter()
   let parent = useMachineNavigation()
   let history = useContext(PageHistory)
   let push = (page: MachinePage) => {
     let id = String(++nextPage)
     pages.set(id, page)
     history?.pages.add(id)
-    navigation.push("machine-page", { id, title: page.title })
+    if (embedded) embedded.push("machine-page", { id, title: page.title })
+    else router.push({ pathname: "/machine-page", params: { id, title: page.title } })
   }
   return <MachineNavigationProvider value={parent ?? { push }}>{children}</MachineNavigationProvider>
 }
 
 export let MachinePageScreen = () => {
-  let navigation = useNavigation<Navigation>()
-  let route = useRoute() as { params: MachinePageParams }
-  let [page] = useState(() => pages.get(route.params.id))
+  let embedded = useContext(EmbeddedMachineNavigation)
+  let router = useRouter()
+  let params = useLocalSearchParams<{ id: string; title: string }>()
+  let id = embedded?.params?.id ?? params.id
+  let [page] = useState(() => pages.get(id))
   let history = useContext(PageHistory)
-  useEffect(() => () => { if (!history) pages.delete(route.params.id) }, [route.params.id, history])
-  let close = history?.back ?? (() => navigation.goBack())
+  useEffect(() => () => { if (!history) pages.delete(id) }, [id, history])
+  let close = history?.back ?? (() => embedded ? embedded.goBack() : router.back())
   let body = typeof page?.content === "function" ? page.content(close) : page?.content
   return <MachineNavigation><SettingsPage>{body}</SettingsPage></MachineNavigation>
 }

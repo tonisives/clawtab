@@ -1,3 +1,4 @@
+import type { ComponentRef } from "react";
 import { useCallback, useEffect, useRef } from "react";
 import type * as React from "react";
 import { Platform, type ScrollView, type TextInput, type View } from "react-native";
@@ -8,11 +9,11 @@ interface UseJobListRefsParams {
 }
 
 export function useJobListRefs({ dragActive, sidebarFocusRef }: UseJobListRefsParams) {
-  const scrollRef = useRef<ScrollView>(null);
-  const searchRef = useRef<TextInput>(null);
-  const containerRef = useRef<View>(null);
+  const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
+  const searchRef = useRef<ComponentRef<typeof TextInput>>(null);
+  const containerRef = useRef<ComponentRef<typeof View>>(null);
   const hoverSwitchTimerRef = useRef<number | null>(null);
-  const groupMenuDropdownRef = useRef<View>(null);
+  const groupMenuDropdownRef = useRef<ComponentRef<typeof View>>(null);
   const groupMenuTriggerRef = useRef<any>(null);
   const groupMenuTriggerRefs = useRef<Record<string, any>>({});
   const sortTriggerRef = useRef<any>(null);

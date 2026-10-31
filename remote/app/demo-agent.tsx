@@ -1,3 +1,4 @@
+import type { ComponentRef } from "react";
 import { useEffect, useRef, useState } from "react"
 import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native"
 import { useHeaderHeight } from "expo-router/react-navigation"
@@ -13,7 +14,7 @@ let DemoAgentScreen = () => {
   let { id, kind } = useLocalSearchParams<{ id: string; kind?: string }>()
   let router = useRouter()
   let terminal = useRef<XtermLogHandle | null>(null)
-  let input = useRef<TextInput | null>(null)
+  let input = useRef<ComponentRef<typeof TextInput> | null>(null)
   let [draft, setDraft] = useState("")
   let headerHeight = useHeaderHeight()
   let process = kind === "process" ? DEMO_PROCESSES.find((item) => item.pane_id === id) : undefined

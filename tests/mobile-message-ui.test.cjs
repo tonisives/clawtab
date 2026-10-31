@@ -396,7 +396,7 @@ for (const variant of ["MessageSurface.web.tsx", "MessageSurface.tsx"]) {
       "react-native-webview": { default: "WebView" },
       "react-native": { View: "View" },
       "react-native-safe-area-context": { useSafeAreaInsets: () => ({ bottom: 34 }) },
-      "../hooks/useMessageKeyboard": { useMessageKeyboard: () => ({ host: { current: null }, overlap: 0, onLayout() {} }) },
+      "../hooks/useMessageKeyboard": { useMessageKeyboard: () => ({ host: { current: null }, overlap: 0, horizontalInsets: { left: 0, right: 0 }, onLayout() {} }) },
       "../lib/messageSurfaceDocument.generated": { default: "<html><body></body></html>" },
       "../lib/messageSurfaceBootstrap": load("messageSurfaceBootstrap"),
     };

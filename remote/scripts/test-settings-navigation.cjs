@@ -4,7 +4,9 @@ const path = require("node:path")
 const vm = require("node:vm")
 const { test } = require("node:test")
 const ts = require("typescript")
-const { StackRouter } = require("expo-router/build/react-navigation/routers/StackRouter")
+const navigationPath = path.dirname(require.resolve("@react-navigation/native"))
+const corePath = path.dirname(require.resolve("@react-navigation/core", { paths: [navigationPath] }))
+const { StackRouter } = require(require.resolve("@react-navigation/routers", { paths: [corePath] }))
 
 const elements = (node) => {
   if (Array.isArray(node)) return node.flatMap(elements)
@@ -20,8 +22,9 @@ function settingsFixture(inModal = false) {
     react: { useEffect: () => {}, useRef: (current) => ({ current }) },
     "react/jsx-runtime": { jsx, jsxs: jsx },
     "expo-router": { useRouter: () => ({ push: (route) => pushes.push(route) }) },
-    "expo-router/build/react-navigation/native-stack": { createNativeStackNavigator: () => ({ Navigator: "Navigator", Screen: "Screen" }) },
-    "expo-router/react-navigation": {
+    "@react-navigation/native-stack": { createNativeStackNavigator: () => ({ Navigator: "Navigator", Screen: "Screen" }) },
+    "expo-router/react-navigation": { useIsFocused: () => true },
+    "@react-navigation/native": {
       NavigationContainer: "NavigationContainer", NavigationIndependentTree: "NavigationIndependentTree", DarkTheme: {},
       useIsFocused: () => true, useNavigationContainerRef: () => ({}),
     },
@@ -31,7 +34,7 @@ function settingsFixture(inModal = false) {
     "../../../src/store/auth": { useAuthStore: (select) => select({ email: "test@example.invalid" }) },
     "../../../src/hooks/useResponsive": { useResponsive: () => ({ isWide: false, isSplitView: false, isIosPadPortrait: false }) },
     "../../../src/components/ApiTokensSection": { ApiTokensSection: "ApiTokensSection" },
-    "../../../src/components/MachineNavigation": { MachinePageHistoryProvider: "MachinePageHistoryProvider", MachinePageScreen: "MachinePageScreen" },
+    "../../../src/components/MachineNavigation": { EmbeddedMachineNavigation: { Provider: "EmbeddedMachineNavigation" }, MachinePageHistoryProvider: "MachinePageHistoryProvider", MachinePageScreen: "MachinePageScreen" },
     "../../../src/components/MachineSetup": { MachineSetup: "MachineSetup" },
     "../../../src/components/settings/AccountSettings": { AccountSettings: "AccountSettings" },
     "../../../src/components/settings/SharingSettings": { SharingSettings: "SharingSettings" },
@@ -64,7 +67,7 @@ function settingsFixture(inModal = false) {
     render: () => {
       let screen = screens.find((screen) => screen.props.name === state.routes[state.index].name)
       let provider = screen.props.children({ navigation: { navigate } })
-      let page = provider.props.children
+      let page = elements(provider).find((element) => element.type === "SettingsNavigation").props.children
       return typeof page.type === "function" ? page.type() : page
     },
   }

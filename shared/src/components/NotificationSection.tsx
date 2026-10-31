@@ -1,3 +1,4 @@
+import type { ComponentRef } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
@@ -65,7 +66,7 @@ export function NotificationSection({
   cardBottomInset = 0,
   cardBottomRadius,
 }: NotificationSectionProps) {
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [cardWidth, setCardWidth] = useState(0);
   const [optionScrollActive, setOptionScrollActive] = useState(false);

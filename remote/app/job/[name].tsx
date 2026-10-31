@@ -1,3 +1,4 @@
+import type { ComponentRef } from "react";
 import { toggleAutoYes } from "../../src/lib/autoYes"
 import { NextNotification } from "../../src/components/NextNotification";
 import { notificationProcessRoute } from "../../src/lib/notificationRoutes";
@@ -137,7 +138,7 @@ export default function JobDetailScreen() {
   const loaded = useJobsStore((s) => s.loaded);
   const statusTmuxSession = status?.state === "running" ? (status as any).tmux_session ?? "" : "";
   const termRef = useRef<XtermLogHandle | null>(null);
-  const keyboardDismissRef = useRef<TextInput | null>(null);
+  const keyboardDismissRef = useRef<ComponentRef<typeof TextInput> | null>(null);
   const {
     sendInput,
     sendResize,

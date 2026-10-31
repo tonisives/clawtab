@@ -1,3 +1,4 @@
+import type { ComponentRef } from "react";
 import { DemoAgentPane, type DemoSelection } from "../../../src/components/DemoAgentPane"
 import { DemoOverview } from "../../../src/components/DemoOverview"
 import { ConnectionLoadingView } from "../../../src/components/ConnectionLoadingView"
@@ -20,9 +21,13 @@ import {
   KeyboardAvoidingView,
   Image,
   Linking,
+  useWindowDimensions,
 } from "react-native"
+import { ReservedRegionsProvider, useReservedRegions, useReservedRegionsReady } from "react-native-reserved-regions"
+import { workspaceLayout } from "../../../src/lib/workspaceLayout"
 import { useLocalSearchParams, useRouter } from "expo-router"
-import { useIsFocused, type NavigationState } from "expo-router/react-navigation"
+import { useIsFocused } from "expo-router/react-navigation"
+import type { NavigationState } from "@react-navigation/native"
 import { useWebBackStack } from "../../../src/hooks/useWebBackStack"
 import type { NotificationDetailTarget } from "../../../src/components/notificationTypes"
 import { Ionicons } from "@expo/vector-icons"
@@ -38,7 +43,6 @@ import SettingsScreen from "../(settings)/settings"
 import { JobDetailPane } from "../../../src/components/JobDetailPane"
 import { ProcessDetailPane } from "../../../src/components/ProcessDetailPane"
 import {
-  LiquidSectionSwitcher,
   type SidebarSection as LiquidSidebarSection,
 } from "../../../src/components/LiquidSectionSwitcher"
 import {
@@ -236,6 +240,14 @@ function saveListMode(value: JobListMode) {
 }
 
 export default function JobsScreen() {
+  const [bounds, setBounds] = useState({ width: 0, height: 0 })
+  return <ReservedRegionsProvider style={{ flex: 1 }} onLayout={({ nativeEvent }) => {
+    const { width, height } = nativeEvent.layout
+    setBounds((previous) => previous.width === width && previous.height === height ? previous : { width, height })
+  }}><JobsWorkspace bounds={bounds} /></ReservedRegionsProvider>
+}
+
+function JobsWorkspace({ bounds }: { bounds: { width: number; height: number } }) {
   const realJobs = useJobsStore((s) => s.jobs)
   const realStatuses = useJobsStore((s) => s.statuses)
   const detectedProcesses = useJobsStore((s) => s.detectedProcesses)
@@ -270,7 +282,18 @@ export default function JobsScreen() {
   const [settingsMounted, setSettingsMounted] = useState(false)
   const [sidebarSection, setSidebarSection] = useState<SidebarSection>("jobs")
   const [stoppingJobSlugs, setStoppingJobSlugs] = useState<Set<string>>(() => new Set())
-  const { width, isIosPad, isIosPadPortrait, isIosPhoneLandscape, isSplitView, isWide } = useResponsive()
+  const { width, isIosPad, isIosPadPortrait, isIosPhone, isSplitView: responsiveSplit, isWide } = useResponsive()
+  const windowSize = useWindowDimensions()
+  const regions = useReservedRegions()
+  const regionsReady = useReservedRegionsReady()
+  const insets = useSafeAreaInsets()
+  const phoneLayout = workspaceLayout(
+    (bounds.width || width) - insets.left - insets.right,
+    (bounds.height || windowSize.height) - insets.bottom,
+    windowSize.fontScale,
+    regions.filter((region) => region.kind === "division").map(({ frame }) => ({ ...frame, x: frame.x - insets.left, y: frame.y })),
+  )
+  const isSplitView = isIosPhone ? phoneLayout.split : responsiveSplit
   const router = useRouter()
   const screenFocused = useIsFocused()
   const { section } = useLocalSearchParams<{ section?: string }>()
@@ -280,11 +303,9 @@ export default function JobsScreen() {
     setSidebarSection("notifications")
     router.setParams({ section: undefined })
   }, [isSplitView, router, section])
-  const insets = useSafeAreaInsets()
   const setFocusedShell = useLandscapeShellStore((s) => s.setFocusedShell)
   const showSidebar = useLandscapeShellStore((s) => s.showSidebar)
   const pendingSidebarShell = useLandscapeShellStore((s) => s.pendingSidebarShell)
-  const focusedLandscapeShell = useLandscapeShellStore((s) => s.focusedShell)
   const clearPendingSidebarShell = useLandscapeShellStore((s) => s.clearPendingSidebarShell)
   const searchQuery = useJobFilterStore((s) => s.query)
   const openSearch = useJobFilterStore((s) => s.openSearch)
@@ -292,7 +313,7 @@ export default function JobsScreen() {
   const searchOpen = useJobFilterStore((s) => s.searchOpen)
   const closeSearch = useJobFilterStore((s) => s.closeSearch)
   const clearSearch = useJobFilterStore((s) => s.clear)
-  const searchInputRef = useRef<TextInput>(null)
+  const searchInputRef = useRef<ComponentRef<typeof TextInput>>(null)
   const searchAnimation = useRef(new Animated.Value(0)).current
   const pinnedItems = usePinsStore((s) => s.pinnedItems)
   const sharedPinsActive = usePinsStore((s) => s.sharedActive)
@@ -458,7 +479,7 @@ export default function JobsScreen() {
 
   const handleSelectJob = useCallback(
     (job: RemoteJob) => {
-      if (isSplitView) {
+      if (isSplitView || isIosPhone) {
         setSidebarSection("jobs")
         setSelectedJob(job.slug)
         setSelectedProcess(null)
@@ -470,12 +491,12 @@ export default function JobsScreen() {
         router.push(jobRoute(job))
       }
     },
-    [router, isSplitView, showSidebar],
+    [router, isIosPhone, isSplitView, showSidebar],
   )
 
   const handleSelectProcess = useCallback(
     (process: DetectedProcess) => {
-      if (isSplitView) {
+      if (isSplitView || isIosPhone) {
         setSidebarSection("jobs")
         setSelectedProcess(process.pane_id)
         setSelectedJob(null)
@@ -487,7 +508,7 @@ export default function JobsScreen() {
         router.push(processRoute(process.pane_id))
       }
     },
-    [router, isSplitView, showSidebar],
+    [router, isIosPhone, isSplitView, showSidebar],
   )
 
   // Restore URL ?params after expo-router finishes its initial URL rewrite
@@ -536,7 +557,7 @@ export default function JobsScreen() {
     currentContent,
   })
   useEffect(() => {
-    if (!isIosPhoneLandscape || sidebarSection !== "jobs") return
+    if (!isIosPhone || sidebarSection !== "jobs") return
     if (pendingSidebarShell) {
       if (pendingSidebarShell.kind === "job") {
         setSelectedJob(pendingSidebarShell.slug)
@@ -548,15 +569,10 @@ export default function JobsScreen() {
       clearPendingSidebarShell()
       return
     }
-    if (!currentContent && focusedLandscapeShell) {
-      if (focusedLandscapeShell.kind === "job") setSelectedJob(focusedLandscapeShell.slug)
-      else setSelectedProcess(focusedLandscapeShell.paneId)
-      return
-    }
     const content = focusedPaneContent(split.tree, split.focusedLeafId) ?? currentContent
     if (content?.kind === "job") setFocusedShell({ kind: "job", slug: content.slug })
     else if (content?.kind === "process" || content?.kind === "terminal") setFocusedShell({ kind: "process", paneId: content.paneId })
-  }, [isIosPhoneLandscape, sidebarSection, split.tree, split.focusedLeafId, currentContent, pendingSidebarShell, focusedLandscapeShell, clearPendingSidebarShell, setFocusedShell])
+  }, [isIosPhone, sidebarSection, split.tree, split.focusedLeafId, currentContent, pendingSidebarShell, clearPendingSidebarShell, setFocusedShell])
   const initialUrlSelectionPendingRef = useRef(
     Platform.OS === "web" && !!(_initParams?.get("job") || _initParams?.get("process")),
   )
@@ -983,7 +999,7 @@ export default function JobsScreen() {
     }
     return 380
   })
-  const handleRef = useRef<View>(null)
+  const handleRef = useRef<ComponentRef<typeof View>>(null)
 
   useEffect(() => {
     if (Platform.OS !== "web" || !handleRef.current || !isSplitView) return
@@ -1151,7 +1167,7 @@ export default function JobsScreen() {
     </Modal>
   ) : null
 
-  if (!isSplitView) {
+  if (!isSplitView && !isIosPhone) {
     if (Platform.OS !== "web" && !isIosPadPortrait) {
       return (
         <>
@@ -1177,9 +1193,11 @@ export default function JobsScreen() {
     <JobDetailPane
       key={selectedJob}
       jobName={selectedJob}
+      embedded={isIosPhone}
 
       onClose={() => {
         setSelectedJob(null)
+        setFocusedShell(null)
         setSelection("job", null)
       }}
     />
@@ -1187,8 +1205,10 @@ export default function JobsScreen() {
     <ProcessDetailPane
       key={selectedProcess}
       paneId={selectedProcess}
+      embedded={isIosPhone}
       onClose={() => {
         setSelectedProcess(null)
+        setFocusedShell(null)
         setSelection("process", null)
       }}
     />
@@ -1269,14 +1289,6 @@ export default function JobsScreen() {
 
       {Platform.OS !== "web" && !isIosPad && (
         <>
-          <LiquidSectionSwitcher
-            activeSection={sidebarSection === "settings" ? "settings" : "jobs"}
-            onChange={(section) => {
-              if (section === "settings") handleOpenSidebarSettings()
-              else handleOpenSidebarJobs()
-            }}
-          />
-
           <View style={styles.sidebarSearchField}>
             <Ionicons name="search" size={17} color={colors.textMuted} />
             <TextInput
@@ -1306,14 +1318,21 @@ export default function JobsScreen() {
     </View>
   )
 
-  const splitListWidth = isIosPhoneLandscape
-    ? Math.max(240, Math.min(300, (width - insets.left - insets.right) * 0.37))
-    : listWidth
+  const splitListWidth = isIosPhone ? phoneLayout.listWidth : listWidth
+  const compactPhone = isIosPhone && !isSplitView
+  const phoneDetailVisible = !!(demoSelection || selectedJob || selectedProcess || sidebarSection !== "jobs")
+  const closePhoneDetail = () => {
+    setDemoSelection(null)
+    setSelectedJob(null)
+    setSelectedProcess(null)
+    setFocusedShell(null)
+    setSidebarSection("jobs")
+  }
 
   const splitContent = (
     <View style={styles.splitContainer}>
-      <View style={[styles.listPane, { width: splitListWidth }]}>
-        {!isIosPad && !isIosPhoneLandscape ? sidebarHeader : null}
+      <View style={[styles.listPane, { width: splitListWidth }, compactPhone && { width: "100%", display: phoneDetailVisible ? "none" : "flex" }]}>
+        {!isIosPad && !isIosPhone ? sidebarHeader : null}
         <View style={styles.listPaneScrollArea}>
           {connectionLoading ?? (demoMode ? <DemoJobList onConnect={connectRelay} onShowOverview={() => setDemoSelection(null)} selectedSlug={demoSelection?.id} onSelectJob={(job) => setDemoSelection({ id: job.slug, kind: "job" })} onSelectProcess={(process) => setDemoSelection({ id: process.pane_id, kind: "process" })} /> : <JobListView
             machineOnboarding={machineOnboardingContent}
@@ -1356,7 +1375,7 @@ export default function JobsScreen() {
             onSetAllGroupTabView={handleSetAllGroupTabView}
             headerContent={
               <>
-                {isIosPhoneLandscape ? sidebarHeader : null}
+                {isIosPhone ? sidebarHeader : null}
                 {isIosPad ? (
                   <View style={[styles.scrollableSidebarTitle, { marginTop: insets.top }]}>
                     <Pressable
@@ -1380,8 +1399,8 @@ export default function JobsScreen() {
             searchQuery={searchQuery}
             onSearchQueryChange={setSearchQuery}
             hideSearchBar
-            contentContainerStyle={isIosPad ? { paddingBottom: insets.bottom + 96 } : isIosPhoneLandscape ? { paddingHorizontal: 0 } : undefined}
-            edgeToEdge={isIosPhoneLandscape}
+            contentContainerStyle={isIosPad ? { paddingBottom: insets.bottom + 96 } : isIosPhone ? { paddingHorizontal: 0 } : undefined}
+            edgeToEdge={isIosPhone}
             scrollEnabled={Platform.OS !== "web" || !split.isDragging}
             scrollEventThrottle={16}
             renderJobCard={renderDraggableJobCard}
@@ -1394,8 +1413,15 @@ export default function JobsScreen() {
           </View>
         )}
       </View>
-      <View ref={handleRef} style={styles.resizeHandle} />
-      <View ref={split.detailPaneRef as unknown as React.Ref<View>} style={styles.detailPane}>
+      <View ref={handleRef} style={[styles.resizeHandle, isIosPhone && { width: phoneLayout.gutterWidth }, compactPhone && { display: "none" }]} />
+      <View ref={split.detailPaneRef as unknown as React.Ref<ComponentRef<typeof View>>} style={[styles.detailPane, compactPhone && !phoneDetailVisible && { display: "none" }]}>
+        {compactPhone && phoneDetailVisible ? (
+          <View style={styles.navigationToolbar}>
+            <Pressable onPress={closePhoneDetail} style={styles.navigationBack} accessibilityRole="button" accessibilityLabel="Back to jobs">
+              <Ionicons name="chevron-back" size={20} color={colors.text} /><Text style={styles.navigationBackText}>Jobs</Text>
+            </Pressable>
+          </View>
+        ) : null}
         {webSplit && navigationHistory.canGoBack && (
           <View style={styles.navigationToolbar}>
             <Pressable onPress={navigationHistory.goBack} style={styles.navigationBack} accessibilityRole="button" accessibilityLabel="Go back">
@@ -1415,7 +1441,7 @@ export default function JobsScreen() {
           <NotificationsPanel mode="screen" detailTarget={notificationDetail} onDetailTargetChange={setNotificationDetail} onBack={webSplit && navigationHistory.canGoBack ? navigationHistory.goBack : undefined} />
         ) : (
           <SplitDetailArea
-            tree={demoMode || connectionLoading ? null : split.tree}
+            tree={isIosPhone || demoMode || connectionLoading ? null : split.tree}
             renderLeaf={renderLeaf}
             onRatioChange={split.handleSplitRatioChange}
             onFocusLeaf={(leafId) => {
@@ -1436,9 +1462,12 @@ export default function JobsScreen() {
 
   if (Platform.OS !== "web") {
     return (
-      <View style={[styles.screenRoot, isIosPhoneLandscape && {
-        paddingLeft: insets.left,
-        paddingRight: insets.right,
+      <View style={[styles.screenRoot, isIosPhone && {
+        opacity: regionsReady ? 1 : 0,
+        paddingLeft: insets.left + phoneLayout.clearance.left,
+        paddingRight: insets.right + phoneLayout.clearance.right,
+        paddingTop: phoneLayout.clearance.top,
+        paddingBottom: phoneLayout.clearance.bottom,
       }]}>
         {splitContent}
         {searchModal}

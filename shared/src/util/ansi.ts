@@ -88,7 +88,7 @@ export function parseAnsi(
 
   const push = (value: string) => {
     if (!value) return;
-    const style: TextStyle = {};
+    const style: { -readonly [K in keyof TextStyle]: TextStyle[K] } = {};
     if (fg) style.color = fg;
     if (bg) style.backgroundColor = bg;
     if (inverse) {

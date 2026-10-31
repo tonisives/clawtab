@@ -1,3 +1,4 @@
+import type { ComponentRef } from "react";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState, memo } from "react";
 import { View, Text, TouchableOpacity, ScrollView, Platform } from "react-native";
@@ -51,7 +52,7 @@ export const RunRow = memo(function RunRow({
   const [paneLookupPending, setPaneLookupPending] = useState(false);
   const [stopPending, setStopPending] = useState(false);
   const [sigintPending, setSigintPending] = useState(false);
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
   const runWebRef = useRef<HTMLElement | null>(null);
   const paneId = run.pane_id ?? detail?.pane_id ?? null;
   const [liveLog, setLiveLog] = useState<string>("");

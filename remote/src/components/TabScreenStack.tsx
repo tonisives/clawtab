@@ -1,18 +1,20 @@
-import { Stack } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import { Platform } from "react-native";
 import { useResponsive } from "../hooks/useResponsive";
 import { colors } from "../theme/colors";
 import { NotificationsMenuButton } from "./NotificationsMenuButton";
 
 export function TabScreenStack({ screen, title }: { screen: string; title: string }) {
-  const { isIosPadPortrait, isSplitView, isWide } = useResponsive();
-  const showHeader = Platform.OS !== "web" && !isWide && !isSplitView && !isIosPadPortrait;
-  const largeTitle = showHeader && Platform.OS === "ios";
+  const router = useRouter();
+  const { isIosPhone, isIosPadPortrait, isSplitView, isWide } = useResponsive();
+  const showHeader = Platform.OS !== "web" && !isWide && (isIosPhone || (!isSplitView && !isIosPadPortrait));
+  const largeTitle = showHeader && Platform.OS === "ios" && !isSplitView;
 
   return (
     <Stack
       screenOptions={{
         headerShown: showHeader,
+        headerTransparent: false,
         headerLargeTitleEnabled: largeTitle,
         // Opaque large-title backgrounds hide the expanded title on iOS 26.
         // Let the native stack choose its large-title appearance.
@@ -23,7 +25,13 @@ export function TabScreenStack({ screen, title }: { screen: string; title: strin
         headerTintColor: colors.text,
         headerShadowVisible: false,
         headerLargeTitleShadowVisible: false,
-        headerRight: () => <NotificationsMenuButton countOnly />,
+        ...(Platform.OS === "ios" ? {
+          unstable_headerRightItems: () => [{
+            type: "button" as const, label: "Messages",
+            icon: { type: "sfSymbol" as const, name: "bell" as const },
+            onPress: () => router.push("/notifications"),
+          }],
+        } : { headerRight: () => <NotificationsMenuButton countOnly /> }),
       }}
     >
       <Stack.Screen name={screen} options={{ title }} />

@@ -71,7 +71,7 @@ test('usage immediately offers machines without a global selection and switches 
   let h = harness('remote/src/components/settings/UsageSettings.tsx', {
     'react-native': { View: 'View', Text: 'Text', Pressable: 'Pressable', ActivityIndicator: 'ActivityIndicator' },
     '@expo/vector-icons': { Ionicons: 'Ionicons' },
-    'expo-router/react-navigation': { useIsFocused: () => true },
+    '@react-navigation/native': { useIsFocused: () => true },
     '@clawtab/shared': { useMachines: () => state },
     '../../theme/colors': { colors: {} },
     '../../hooks/useModelUsage': { useModelUsage: (machine, enabled) => { queried.push({ machine, enabled }); return {}; } },
@@ -100,7 +100,7 @@ test('settings keeps Setup available and shows the Demo banner until both steps 
   let complete = false, navigated = [];
   let h = harness('remote/app/(tabs)/(settings)/settings.tsx', {
     '@clawtab/shared': { useMachines: () => relay },
-    'expo-router/build/react-navigation/native-stack': { createNativeStackNavigator: () => ({}) },
+    '@react-navigation/native-stack': { createNativeStackNavigator: () => ({}) },
     'expo-router/react-navigation': {},
     '../../../src/hooks/useSetupProgress': { useSetupProgress: () => ({ complete }) },
     '../../../src/components/DemoOverview': {},

@@ -165,7 +165,7 @@ export default function RootLayout() {
     <MachineOnboardingProvider chrome={machineOnboardingChrome} content={machineOnboardingContent} management={machineManagementContent}>
     <ThemeProvider value={navTheme}>
       <View style={styles.root}>
-        <Stack screenOptions={{ headerShown: false, animation: "none", orientation: Platform.OS === "ios" && !Platform.isPad ? "portrait_up" : undefined }}>
+        <Stack screenOptions={{ headerShown: false, animation: "none", orientation: "default" }}>
           <Stack.Screen
             name="(tabs)"
             options={{

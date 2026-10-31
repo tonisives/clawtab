@@ -1,3 +1,4 @@
+import type { ComponentRef } from "react";
 import { useRef, useCallback, useEffect } from "react";
 import { View, Text, Pressable, StyleSheet, Platform, Image, Linking } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -23,7 +24,7 @@ export function ResizableSidebar({ children }: { children: React.ReactNode }) {
   const setWidth = useSidebarStore((s) => s.setWidth);
   const pathname = usePathname();
   const router = useRouter();
-  const handleRef = useRef<View>(null);
+  const handleRef = useRef<ComponentRef<typeof View>>(null);
 
   const collapsed = width < 100;
 

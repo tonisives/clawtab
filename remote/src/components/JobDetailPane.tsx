@@ -1,3 +1,4 @@
+import type { ComponentRef } from "react";
 import { toggleAutoYes } from "../lib/autoYes"
 import { MachineTerminalControls } from "@clawtab/shared";
 import { useCallback, useEffect, useRef, useState } from "react"
@@ -119,7 +120,7 @@ export function JobDetailPane({ jobName, onClose, embedded = false }: JobDetailP
   // PTY streaming for running jobs
   const statusTmuxSession = status?.state === "running" ? (status as any).tmux_session ?? "" : ""
   const termRef = useRef<XtermLogHandle | null>(null)
-  const keyboardDismissRef = useRef<TextInput | null>(null)
+  const keyboardDismissRef = useRef<ComponentRef<typeof TextInput> | null>(null)
   const { sendInput, sendResize, connecting: ptyConnecting, error: ptyError } = usePty(statusPaneId, statusTmuxSession, termRef)
   const isRunningWithPty = !!statusPaneId && !!statusTmuxSession
   const landscapeHeader = useLandscapeTerminalHeader(isRunningWithPty)

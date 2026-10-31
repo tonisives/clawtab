@@ -1,3 +1,4 @@
+import type { ComponentRef } from "react";
 import { toggleAutoYes } from "../../src/lib/autoYes"
 import { NextNotification } from "../../src/components/NextNotification";
 import type { ClaudeQuestion } from "@clawtab/shared";
@@ -164,7 +165,7 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification, f
 
   // PTY streaming terminal
   const termRef = useRef<XtermLogHandle | null>(null);
-  const keyboardDismissRef = useRef<TextInput | null>(null);
+  const keyboardDismissRef = useRef<ComponentRef<typeof TextInput> | null>(null);
   const {
     keyboardVisible,
     keyboardHeight,

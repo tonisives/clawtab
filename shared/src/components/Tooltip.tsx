@@ -1,3 +1,4 @@
+import type { ComponentRef } from "react";
 import { useState, useRef, useCallback } from "react";
 import { View, Text, StyleSheet, Platform } from "react-native";
 import { colors } from "../theme/colors";
@@ -17,7 +18,7 @@ export function Tooltip({ label, children }: TooltipProps) {
 
 function WebTooltip({ label, children }: TooltipProps) {
   const [visible, setVisible] = useState(false);
-  const containerRef = useRef<View>(null);
+  const containerRef = useRef<ComponentRef<typeof View>>(null);
 
   const show = useCallback(() => setVisible(true), []);
   const hide = useCallback(() => setVisible(false), []);

@@ -1,3 +1,4 @@
+import type { ComponentRef } from "react";
 import { toggleAutoYes } from "../lib/autoYes"
 import { MachineTerminalControls } from "@clawtab/shared";
 import { useCallback, useEffect, useRef, useState, useMemo } from "react"
@@ -216,7 +217,7 @@ export function ProcessDetailPane({ paneId, onClose, embedded = false }: Process
 
   // PTY streaming terminal
   const termRef = useRef<XtermLogHandle | null>(null)
-  const keyboardDismissRef = useRef<TextInput | null>(null)
+  const keyboardDismissRef = useRef<ComponentRef<typeof TextInput> | null>(null)
   const tmuxSession = activeProcess?.tmux_session ?? ""
   const { sendInput, sendResize, connecting: ptyConnecting, error: ptyError } = usePty(paneId, tmuxSession, termRef)
   const landscapeHeader = useLandscapeTerminalHeader(!!activeProcess)
