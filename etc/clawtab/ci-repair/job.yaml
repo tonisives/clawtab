@@ -1,0 +1,33 @@
+name: ci-repair
+job_type: claude
+enabled: true
+path: /Users/tonis/.config/clawtab/jobs/clawtab/ci-repair/job.md
+args: []
+secret_keys: []
+env: {}
+work_dir: /Users/tonis/workspace/tgs/clawtab
+tmux_session: null
+terminal_backend: tmux
+aerospace_workspace: null
+folder_path: /Users/tonis/workspace/tgs/clawtab
+job_id: ci-repair
+telegram_chat_id: null
+telegram_log_mode: on_prompt
+notify:
+  start: false
+  working: true
+  logs: true
+  finish: true
+notify_target: none
+group: clawtab
+slug: clawtab/ci-repair
+skill_paths: []
+params:
+- name: commit
+  value: ''
+- name: smoke
+  value: 'false'
+kill_on_end: true
+auto_yes: false
+agent_provider: shell
+max_history: 3
