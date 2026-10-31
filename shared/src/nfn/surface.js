@@ -490,7 +490,7 @@
     const height = Math.min(geometry.max_height || 860, Math.max(280, needed));
     host.style.height = `${height}px`;
   }
-  new ResizeObserver(() => { fitReviewHeight(); size(); syncNativePointerHover(); }).observe(host);
+  new ResizeObserver(() => { fitReviewHeight(); positionAcknowledgementMenu(); size(); syncNativePointerHover(); }).observe(host);
   const cardSizeObserver = new ResizeObserver(() => { fitReviewHeight(); size(); });
   let observedCard = null;
   function observeCardSize() {
@@ -1537,6 +1537,15 @@
     } catch (error) { queueError = String(error.message || error); }
     finally { loadingQueue = false; render(); }
   }
+  function positionAcknowledgementMenu() {
+    const overlay = host.querySelector(".acknowledge-overlay"), panel = overlay?.querySelector(".acknowledge-menu");
+    const trigger = card?.querySelector("[aria-haspopup=menu]");
+    if (!panel || !trigger) return;
+    const anchor = trigger.getBoundingClientRect(), bounds = overlay.getBoundingClientRect();
+    const left = Math.max(0, Math.min(anchor.left + anchor.width / 2 - bounds.left - panel.offsetWidth / 2, bounds.width - panel.offsetWidth));
+    panel.style.left = `${left}px`;
+    panel.style.bottom = `${Math.max(0, bounds.bottom - anchor.top + 8)}px`;
+  }
   function renderMenu() {
     const existing = host.querySelector(".menu-overlay");
     if (!menu || !current || settingsOpen) { existing?.remove(); return; }
@@ -1577,7 +1586,7 @@
     } else if (menu === "agent") panel.append(el("div", "agent-controls", "Loading..."));
     const notice = el("div", "notice menu-notice"); notice.setAttribute("role", "status"); panel.append(notice);
     overlay.append(panel); overlay.addEventListener("click", event => { if (event.target === overlay) toggleMenu(menu); }); host.append(overlay);
-    if (menu === "acknowledge") panel.querySelector("[role=menuitem]").focus({ preventScroll: true });
+    if (menu === "acknowledge") { positionAcknowledgementMenu(); panel.querySelector("[role=menuitem]").focus({ preventScroll: true }); }
     updateAutoYes();
   }
   function leaveSettings() {
@@ -1745,7 +1754,8 @@
   }
   function resizeTo(width, height, origin) {
     const east = placement !== "notch" && origin.edge.includes("e");
-    const maxWidth = (east ? geometry.max_width_e : geometry.max_width) || geometry.max_width || 1000;
+    // Native geometry arrives asynchronously as the right edge moves.
+    const maxWidth = origin.maxWidth || (east ? geometry.max_width_e : geometry.max_width) || geometry.max_width || 1000;
     const maxHeight = Math.min(geometry.max_height || 860, geometry.list_max_height || Infinity);
     width = Math.round(Math.max(Math.min(520, maxWidth), Math.min(width, maxWidth)));
     height = Math.round(Math.max(Math.min(280, maxHeight), Math.min(height, maxHeight)));
@@ -1763,9 +1773,10 @@
     document.removeEventListener("pointercancel", finishResize);
     if (control.hasPointerCapture(pointerId)) control.releasePointerCapture(pointerId);
     host.classList.remove("resizing");
+    setPointerFocus(pointerInside);
   }
   function moveResize(event) {
-    if (!resizing || event.pointerId !== resizing.pointerId) return;
+    if (!resizing || event.pointerId !== resizing.pointerId || resizing.native && !event.nativeResize) return;
     const { x, y, width, height, edge } = resizing;
     const dx = event.screenX - x, dy = event.screenY - y;
     if (!resizing.started && Math.hypot(dx, dy) < 3) return;
@@ -1787,8 +1798,9 @@
           if (event.button !== 0 || !canResize()) return;
           event.preventDefault(); event.stopPropagation(); finishResize(); stopAnimation();
           const bounds = host.getBoundingClientRect();
-          resizing = { control, edge, pointerId: event.pointerId, x: event.screenX, y: event.screenY, width: bounds.width, height: bounds.height, normal: normalResizeSize(), rightOffset: resizeRightOffset, started: false };
+          resizing = { control, edge, pointerId: event.pointerId, x: event.screenX, y: event.screenY, width: bounds.width, height: bounds.height, normal: normalResizeSize(), rightOffset: resizeRightOffset, native: Boolean(geometry.native_resize), maxWidth: (placement !== "notch" && edge.includes("e") ? geometry.max_width_e : geometry.max_width), started: false };
           host.dataset.resizeEdge = edge;
+          setPointerFocus(pointerInside);
           control.setPointerCapture(event.pointerId);
           document.addEventListener("pointermove", moveResize);
           document.addEventListener("pointerup", finishResize);
@@ -1911,10 +1923,16 @@
       }
       updateCard(); syncCardDetails(records.get(current));
     } else { host.querySelector(".card")?.remove(); host.querySelector(".queue")?.remove(); renderedId = null; card = null; }
-    renderMenu(); cleanupRemoteMedia(); observeCardSize(); fitReviewHeight(); if (resizing || !animate) size(); else if (!continuingAnimation) animateLayout(before, !queue && !menu && !settingsOpen);
+    renderMenu(); positionAcknowledgementMenu(); cleanupRemoteMedia(); observeCardSize(); fitReviewHeight(); if (resizing || !animate) size(); else if (!continuingAnimation) animateLayout(before, !queue && !menu && !settingsOpen);
     syncNativePointerHover();
   }
   function receive(value) {
+    if (value.type === "resize_pointer") {
+      if (!resizing?.native) return;
+      moveResize({ pointerId: resizing.pointerId, screenX: resizing.x + value.dx, screenY: resizing.y + value.dy, nativeResize: true, preventDefault() {} });
+      if (value.end) finishResize();
+      return;
+    }
     if (value.type === "pointer_focus") {
       nativePointer = value.active && Number.isFinite(value.x) && Number.isFinite(value.y) ? { x: value.x, y: value.y } : null;
       if (nativePointer) host.dataset.nativePointer = "true";
@@ -2025,6 +2043,7 @@
   const hintOverlay = el("div", "keyboard-hints");
   hintOverlay.setAttribute("aria-hidden", "true"); document.body.append(hintOverlay);
   function hasWindowFocus() { return nativeWindowFocus ?? document.hasFocus(); }
+  let pointerInside = false;
   let nativePointer = null, nativeCursor = "default", nativeHovered = new Set();
   // WebKit suppresses CSS hover in non-key macOS windows. Share the native
   // pointer path used by the title bar while preserving passive keyboard focus.
@@ -2043,6 +2062,8 @@
     if (cursor !== nativeCursor) { nativeCursor = cursor; native({ native: "cursor", value: cursor }); }
   }
   function setPointerFocus(active) {
+    pointerInside = active;
+    active = active || Boolean(resizing);
     const entered = active && !hovering;
     hovering = active;
     host.dataset.pointerActive = String(Boolean(active && !snapshot.remote && !preview));

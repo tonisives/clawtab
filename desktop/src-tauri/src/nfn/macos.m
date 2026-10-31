@@ -281,7 +281,8 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
     self.mouseMonitor = [NSEvent addGlobalMonitorForEventsMatchingMask:pointerEvents handler:^(NSEvent *event) {
         NfnSurface *self = weakSelf;
         [self handleDragEvent:event];
-        if (event.type == NSEventTypeLeftMouseUp) self.pointerDown = NO;
+        [self handleResizeEvent:event];
+        if (event.type == NSEventTypeLeftMouseUp) { self.pointerDown = NO; self.panel.dragResizeCursor = nil; }
         [self updateMousePassthrough];
         if ((event.type == NSEventTypeLeftMouseDown || event.type == NSEventTypeRightMouseDown) && self.panel.visible && !NSPointInRect(NSEvent.mouseLocation, [self surfaceFrame])) {
             [self endKeyboardFocus:NO];
@@ -295,6 +296,7 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
             self.pointerDown = YES;
             self.dragPointerOrigin = [self.panel convertPointToScreen:event.locationInWindow];
         }
+        [self handleResizeEvent:event];
         BOOL moved = [self handleDragEvent:event];
         if (event.type == NSEventTypeLeftMouseUp) self.pointerDown = NO;
         [self updateMousePassthrough];
@@ -497,13 +499,26 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
     NSDictionary *geometry = @{@"placement":notch ? @"notch" : @"right", @"overlap":@(overlap),
         @"notch_width":@(MAX(0, notchWidth)), @"max_width":@(w),
         @"shadow_inset":@(shadowInset), @"shadow_bottom":@(shadowBottom),
-        @"max_width_e":@(MIN(w, width + NSMaxX(available) - shadowInset - (x + w))),
+        @"max_width_e":@(MIN(w, width + NSMaxX(available) - shadowInset - (x + w))), @"native_resize":@YES,
         @"max_height":@(h), @"list_max_height":@(available.size.height * .8), @"reduce_motion":@(NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion)};
     NSString *json = [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:geometry options:NSJSONWritingSortedKeys error:nil] encoding:NSUTF8StringEncoding];
     if (self.ready && ![json isEqual:self.lastGeometry]) {
         self.lastGeometry = json;
         [self.web evaluateJavaScript:[NSString stringWithFormat:@"window.nfn.setPlacement(%@)", json] completionHandler:nil];
     }
+}
+
+- (void)handleResizeEvent:(NSEvent *)event {
+    if (!self.panel.dragResizeCursor || !self.pointerDown) return;
+    if (event.type != NSEventTypeLeftMouseDragged && event.type != NSEventTypeLeftMouseUp) return;
+    // Read the event's original screen position before moving the WebKit canvas.
+    NSPoint pointer = event.window ? [event.window convertPointToScreen:event.locationInWindow] : NSEvent.mouseLocation;
+    if (event.CGEvent) {
+        CGPoint location = CGEventGetLocation(event.CGEvent);
+        pointer = NSMakePoint(location.x, NSMaxY(NSScreen.screens.firstObject.frame) - location.y);
+    }
+    [self push:@{@"type":@"resize_pointer", @"dx":@(pointer.x - self.dragPointerOrigin.x),
+        @"dy":@(self.dragPointerOrigin.y - pointer.y), @"end":@(event.type == NSEventTypeLeftMouseUp)}];
 }
 
 - (BOOL)handleDragEvent:(NSEvent *)event {
@@ -578,7 +593,8 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
 }
 
 - (void)updateMousePassthrough {
-    BOOL inside = self.panel.visible && NSPointInRect(NSEvent.mouseLocation, [self surfaceFrame]);
+    // A held drag remains active while the surface catches up with the pointer.
+    BOOL inside = self.panel.visible && (self.panel.dragResizeCursor || self.dragging || NSPointInRect(NSEvent.mouseLocation, [self surfaceFrame]));
     self.panel.ignoresMouseEvents = !self.pointerDown && !self.dragging && !inside;
     surfacePointerInside = inside;
     updateBackgroundCursorPermission();
