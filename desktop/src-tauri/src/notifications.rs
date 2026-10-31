@@ -109,14 +109,14 @@ impl Notifier for TauriNotifier {
 pub struct OsascriptNotifier;
 
 impl OsascriptNotifier {
-    fn send_notification(title: &str, body: &str, sound: bool) -> Result<(), String> {
+    fn send_notification(title: &str, body: &str, _sound: bool) -> Result<(), String> {
         // Preferred path: UNUserNotificationCenter via objc2-user-notifications.
         // Works whenever the daemon is launched from inside ClawTab Daemon.app
         // (the launchd plist points at the .app's binary). No subprocess, no
         // leak, native ClawTab icon from the bundle's Info.plist.
         #[cfg(target_os = "macos")]
         {
-            if crate::native_notifications::send_with_sound(title, body, sound).is_ok() {
+            if crate::native_notifications::send_with_sound(title, body, _sound).is_ok() {
                 return Ok(());
             }
         }
