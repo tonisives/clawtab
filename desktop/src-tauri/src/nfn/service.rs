@@ -1683,7 +1683,12 @@ pub fn resolve_source(pane: &str, client_tty: Option<String>) -> Result<NfnSourc
         Some(&snapshot),
         Some(&cwd),
     );
-    let meta = crate::config::settings::AppSettings::load()
+    let settings = crate::config::settings::AppSettings::load();
+    let task_title = settings
+        .session_task_titles
+        .get(provider, info.session_id.as_deref())
+        .map(str::to_owned);
+    let meta = settings
         .process_overrides
         .get(pane)
         .filter(|meta| meta.matches_identity(&pid, info.session_id.as_deref()))
@@ -1704,6 +1709,7 @@ pub fn resolve_source(pane: &str, client_tty: Option<String>) -> Result<NfnSourc
         task: meta
             .as_ref()
             .and_then(|meta| meta.display_name.clone())
+            .or(task_title)
             .or(info.title),
         group: meta.and_then(|meta| meta.group_override),
         client_tty,

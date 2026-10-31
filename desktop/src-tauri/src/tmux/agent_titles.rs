@@ -20,7 +20,10 @@ struct TitlePane<'a> {
 
 /// Refresh generated labels separately from OSC pane titles, which Codex uses
 /// to identify daemon-backed sessions. Run even when no UI client is connected.
-pub fn sync_agent_titles(snapshot: &ProcessSnapshot) -> Result<(), String> {
+pub fn sync_agent_titles(
+    snapshot: &ProcessSnapshot,
+    task_titles: &crate::task_titles::TaskTitles,
+) -> Result<(), String> {
     let output = super::run(
         &["list-panes", "-a", "-F", "#{pane_id}|CT|#{pane_pid}|CT|#{pane_current_path}|CT|#{window_id}|CT|#{window_name}|CT|#{automatic-rename}|CT|#{@clawtab-auto-window-name}|CT|#{@clawtab-manual-window-name}|CT|#{@clawtab-agent-title}|CT|#{@clawtab-display-name}|CT|#{session_name}|CT|#{@clawtab-pane-border-cache-command}"],
         "tmux::sync_agent_titles::list_panes",
@@ -49,7 +52,10 @@ pub fn sync_agent_titles(snapshot: &ProcessSnapshot) -> Result<(), String> {
                 );
                 // Explicit pane names take priority over provider-generated names.
                 let name = if fields[9].is_empty() {
-                    info.title
+                    task_titles
+                        .get(provider, info.session_id.as_deref())
+                        .map(str::to_owned)
+                        .or(info.title)
                 } else {
                     Some(fields[9].to_string())
                 };

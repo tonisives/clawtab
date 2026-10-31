@@ -65,6 +65,9 @@ fn main() {
                 ) {
                     let _ = write_event(&event);
                 }
+                if let Some(output) = task_title_context(provider, event_name, &payload) {
+                    print!("{output}");
+                }
             }
         }
     }
@@ -73,9 +76,96 @@ fn main() {
     }
 }
 
+// Reuse the prompt hook; the active agent already understands the task. No
+// additional model invocation, transcript read, or background observer is needed.
+fn task_title_context(
+    provider: ProcessProvider,
+    event_name: &str,
+    payload: &Value,
+) -> Option<Value> {
+    if event_name != "user_prompt_submit"
+        || !matches!(provider, ProcessProvider::Codex | ProcessProvider::Claude)
+        || payload.get("agent_id").and_then(Value::as_str).is_some()
+    {
+        return None;
+    }
+    let session_id = payload.get("session_id")?.as_str()?;
+    if session_id.is_empty()
+        || session_id.len() > 128
+        || !session_id
+            .bytes()
+            .all(|ch| ch.is_ascii_alphanumeric() || b"-_".contains(&ch))
+    {
+        return None;
+    }
+    let prompt = payload.get("prompt")?.as_str()?.trim();
+    let acknowledgement = prompt.trim_end_matches(['.', '!']);
+    if prompt.chars().take(12).count() < 12
+        || [
+            "please continue",
+            "keep going please",
+            "yes please continue",
+        ]
+        .iter()
+        .any(|value| acknowledgement.eq_ignore_ascii_case(value))
+        || prompt.starts_with('/')
+    {
+        return None;
+    }
+    let context = format!(
+        "ClawTab task label: if this request starts a new objective or materially changes the current one, \
+         update the short task label once using `cwt agent task-title {} {} \"Short task title\"`. \
+         Use your existing understanding of the request; do not inspect transcripts, other agents, or invoke a model for this. \
+         Skip acknowledgements, continuation, and refinements of the same task. This updates labels for this conversation \
+         across its panes and preserves manual pane names. It does not rename the saved agent conversation.",
+        provider.as_str(), session_id
+    );
+    Some(serde_json::json!({"hookSpecificOutput": {
+        "hookEventName": "UserPromptSubmit", "additionalContext": context
+    }}))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn task_title_instructions_only_accompany_substantive_parent_prompts() {
+        let mut payload =
+            serde_json::json!({"session_id":"session-1", "prompt":"Fix the pane routing issue"});
+        let output =
+            task_title_context(ProcessProvider::Codex, "user_prompt_submit", &payload).unwrap();
+        assert!(output["hookSpecificOutput"]["additionalContext"]
+            .as_str()
+            .unwrap()
+            .contains("cwt agent task-title codex session-1"));
+        assert!(task_title_context(ProcessProvider::Codex, "stop", &payload).is_none());
+        assert!(
+            task_title_context(ProcessProvider::Hermes, "user_prompt_submit", &payload).is_none()
+        );
+        for prompt in [
+            "continue",
+            "please continue",
+            "yes please continue.",
+            "/rename Something",
+        ] {
+            payload["prompt"] = prompt.into();
+            assert!(
+                task_title_context(ProcessProvider::Codex, "user_prompt_submit", &payload)
+                    .is_none()
+            );
+        }
+        payload["prompt"] = "Fix the pane routing issue".into();
+        payload["agent_id"] = "child-agent".into();
+        assert!(
+            task_title_context(ProcessProvider::Codex, "user_prompt_submit", &payload).is_none()
+        );
+        payload.as_object_mut().unwrap().remove("agent_id");
+        payload["session_id"] = "session; command".into();
+        assert!(
+            task_title_context(ProcessProvider::Codex, "user_prompt_submit", &payload).is_none()
+        );
+    }
 
     #[test]
     fn hermes_long_history_is_streamed_without_retaining_content() {

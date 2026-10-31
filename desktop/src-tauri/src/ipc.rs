@@ -82,6 +82,11 @@ pub enum IpcCommand {
         key: String,
         pinned: bool,
     },
+    SetSessionTaskTitle {
+        provider: crate::agent_session::ProcessProvider,
+        session_id: String,
+        title: String,
+    },
     SetPaneDisplayName {
         pane_id: String,
         display_name: Option<String>,

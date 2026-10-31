@@ -40,7 +40,7 @@ fn detect_processes(
     trace_panes(&stdout, pane_lines);
 
     let process_snapshot = crate::agent_session::ProcessSnapshot::capture();
-    let overrides = crate::config::settings::AppSettings::load().process_overrides;
+    let settings = crate::config::settings::AppSettings::load();
     let running_panes = collect_running_panes(jobs_config, job_status);
     let slug_to_group = collect_slug_to_group(jobs_config);
     let match_entries = collect_match_entries(jobs_config);
@@ -76,7 +76,7 @@ fn detect_processes(
             matched_group,
             matched_job,
             &process_snapshot,
-            overrides.get(row.pane_id),
+            &settings,
         ));
     }
 
@@ -90,14 +90,7 @@ fn detect_processes(
         let provider = crate::agent_session::detect_process_provider(&pid, Some(&process_snapshot))
             .unwrap_or(crate::agent_session::ProcessProvider::Shell);
         let (group, job) = resolve_group_job(&row, &running_panes, &slug_to_group, &match_entries);
-        let mut process = build_remote(
-            &row,
-            provider,
-            group,
-            job,
-            &process_snapshot,
-            overrides.get(&info.id),
-        );
+        let mut process = build_remote(&row, provider, group, job, &process_snapshot, &settings);
         apply_managed_fallbacks(&mut process, &info);
         results.push(process);
     }
@@ -356,7 +349,7 @@ fn build_remote(
     matched_group: Option<String>,
     matched_job: Option<String>,
     snapshot: &crate::agent_session::ProcessSnapshot,
-    override_meta: Option<&crate::config::settings::DetectedProcessOverride>,
+    settings: &crate::config::settings::AppSettings,
 ) -> DetectedProcess {
     let log_lines = String::new();
     let session_info = crate::agent_session::resolve_session_info_for_provider_with_cwd(
@@ -378,7 +371,9 @@ fn build_remote(
             }
         }
     }
-    let override_meta = override_meta
+    let override_meta = settings
+        .process_overrides
+        .get(row.pane_id)
         .filter(|meta| meta.matches_identity(row.pane_pid, session_info.session_id.as_deref()));
     let (can_fork_session, can_send_skills, can_inject_secrets) = match provider {
         crate::agent_session::ProcessProvider::Claude => (true, true, true),
@@ -401,6 +396,12 @@ fn build_remote(
             .display_name
             .clone()
             .or_else(|| override_meta.and_then(|meta| meta.display_name.clone()))
+            .or_else(|| {
+                settings
+                    .session_task_titles
+                    .get(Some(provider), session_info.session_id.as_deref())
+                    .map(str::to_owned)
+            })
             .or(session_info.title),
         pane_title: row.pane_title.clone(),
         version: if is_semver(row.command) {
