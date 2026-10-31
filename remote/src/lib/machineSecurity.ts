@@ -1,4 +1,5 @@
 import nacl from "tweetnacl"
+import { Buffer } from "buffer"
 import * as Crypto from "expo-crypto"
 import { Platform } from "react-native"
 import { configureMachineSecurity, configureMoveNavigation, resourceKey, type ClientIdentity, type MachineIdentity } from "@clawtab/shared"
@@ -11,8 +12,7 @@ let setItem = (key: string, value: string) => SecureStore.setItemAsync(key, valu
 
 let encode = (bytes: Uint8Array) => btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""))
 let decode = (text: string) => Uint8Array.from(atob(text), (char) => char.charCodeAt(0))
-let utf8 = (text: string) => new TextEncoder().encode(text)
-let decoder = new TextDecoder()
+let utf8 = (text: string) => new Uint8Array(Buffer.from(text, "utf8"))
 configureMoveNavigation(({ machine, pane }) => router.push({ pathname: "/process/[pane_id]", params: { pane_id: resourceKey(machine, pane).replace(/%/g, "_pct_") } }))
 let creation: Promise<{ signing: Uint8Array; box: Uint8Array }> | null = null
 let loadKeys = () => creation ??= (async () => {
@@ -82,6 +82,6 @@ configureMachineSecurity({
     let keys = await loadKeys()
     let plaintext = nacl.box.open(decode(value.ciphertext), decode(value.nonce), await keyFor(machine), keys.box)
     if (!plaintext) throw new Error("Encrypted response authentication failed")
-    return JSON.parse(decoder.decode(plaintext))
+    return JSON.parse(Buffer.from(plaintext).toString("utf8"))
   },
 })
