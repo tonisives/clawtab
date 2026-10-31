@@ -230,12 +230,21 @@ fn read_pane_title_sessions() -> Option<HashMap<String, PaneTitleSession>> {
         .ok();
     let output = output.filter(|output| output.status.success());
     let stdout = output.map(|output| output.stdout).unwrap_or_default();
+    let snapshot = ProcessSnapshot::capture();
     for line in String::from_utf8_lossy(&stdout).lines() {
         let mut parts = line.splitn(3, '\t');
         let (Some(pid), Some(cwd), Some(title)) = (parts.next(), parts.next(), parts.next()) else {
             continue;
         };
-        if let Some(session) = session_for_title(&conn, title, cwd) {
+        let session = session_for_title(&conn, title, cwd).or_else(|| {
+            let codex_pid = if is_codex_process_with_snapshot(pid, Some(&snapshot)) {
+                pid.to_string()
+            } else {
+                find_codex_child(pid, Some(&snapshot))?
+            };
+            session_for_resumed_title(&conn, title, snapshot.command_for_pid(&codex_pid)?)
+        });
+        if let Some(session) = session {
             sessions.insert(pid.to_string(), session);
         }
     }
@@ -250,7 +259,7 @@ fn read_pane_title_sessions() -> Option<HashMap<String, PaneTitleSession>> {
     Some(sessions)
 }
 
-fn session_for_title(conn: &Connection, title: &str, cwd: &str) -> Option<PaneTitleSession> {
+fn session_name_from_title(title: &str) -> Option<&str> {
     let (name, _) = title.rsplit_once(" | ")?;
     // The TUI replaces its spinner with either phase of a blinking marker
     // while a permission prompt is waiting for an answer.
@@ -269,6 +278,32 @@ fn session_for_title(conn: &Connection, title: &str, cwd: &str) -> Option<PaneTi
     if name.is_empty() {
         return None;
     }
+    Some(name)
+}
+
+fn session_for_resumed_title(conn: &Connection, title: &str, command: &str) -> Option<PaneTitleSession> {
+    let name = session_name_from_title(title)?;
+    let words: Vec<_> = command.split_whitespace().collect();
+    let id = words.windows(2).find(|pair| pair[0] == "resume")?[1];
+    uuid::Uuid::parse_str(id).ok()?;
+    // A resumed TUI can run outside the conversation's original directory.
+    // Its explicit ID must still agree with the currently displayed name.
+    let id = conn
+        .query_row(
+            "select id from threads where id = ?1 and name = ?2 and archived = 0",
+            params![id, name],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .ok()??;
+    Some(PaneTitleSession {
+        name: name.into(),
+        thread_id: Some(id),
+    })
+}
+
+fn session_for_title(conn: &Connection, title: &str, cwd: &str) -> Option<PaneTitleSession> {
+    let name = session_name_from_title(title)?;
     let mut query = conn
         .prepare("select id from threads where name = ?1 and cwd = ?2 and archived = 0 limit 2")
         .ok()?;
@@ -1062,6 +1097,29 @@ mod tests {
         cwd: &str,
     ) -> Option<String> {
         super::session_for_title(conn, title, cwd)?.thread_id
+    }
+
+    #[test]
+    fn resumed_sessions_in_another_directory_require_a_matching_id_and_visible_name() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        let id = "01a15d2f-67df-79c1-a979-04764b3494b1";
+        conn.execute_batch("create table threads (id text, name text, cwd text, archived integer);")
+            .unwrap();
+        conn.execute("insert into threads values (?1, 'Inspect healthcheck failures', '/deployments/k3s', 0)", [id]).unwrap();
+        let title = "Inspect healthcheck failures | deployments";
+        assert!(super::session_for_title(&conn, title, "/bmux").is_none());
+        let command = format!("/opt/homebrew/bin/codex resume {id}");
+        assert_eq!(
+            super::session_for_resumed_title(&conn, title, &command)
+                .unwrap()
+                .thread_id
+                .as_deref(),
+            Some(id)
+        );
+        assert!(super::session_for_resumed_title(&conn, "Another session | bmux", &command).is_none());
+        assert!(super::session_for_resumed_title(&conn, title, "codex resume --last").is_none());
+        conn.execute("update threads set archived = 1", []).unwrap();
+        assert!(super::session_for_resumed_title(&conn, title, &command).is_none());
     }
 
     #[test]
