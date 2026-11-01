@@ -44,7 +44,9 @@ button.auto-yes-button{min-height:44px;padding:8px 16px;border-radius:999px}
 .native-mobile .logs{white-space:pre;overflow-wrap:normal;border:0;border-radius:0;background:#161616;padding:8px;margin:0}
 .native-mobile.details-open>.card{flex:1;min-height:0}
 .native-mobile.shell-reply>.card{padding:0;display:flex;flex:1;min-height:0;overflow:hidden}
-.native-mobile.shell-reply .card>:not(.heading):not(.message-content):not(.shell-keyboard):not(.shell-keyboard-tools){display:none}
+.native-mobile.shell-reply .card>:not(.heading):not(.message-content):not(.shell-keyboard):not(.shell-keyboard-tools):not(.notice){display:none}
+.native-mobile.shell-reply .notice{flex:none;padding:0 12px}
+.native-mobile.shell-reply .notice:empty{display:none}
 .native-mobile.shell-reply .heading{display:flex;padding:8px 12px}
 .native-mobile.shell-reply .heading h1,.native-mobile.shell-reply .heading-tools>:not(.options-toggle){display:none}
 .native-mobile.shell-reply .source-group{flex:1;font-size:14px}

@@ -26,6 +26,12 @@
   document.querySelector('[aria-label="Up arrow"]').click(); await wait();
   check('arrow sends terminal sequence', fixture.calls.some(command=>command.op==='shell_input' && command.text==='\x1b[A'));
   check('reply does not restart shell context', fixture.contextCalls < calls+4);
+  fixture.heldOps.add('shell_input');
+  document.querySelector('[aria-label="Up arrow"]').click(); await wait();
+  fixture.deferred.find(item=>item.command.op==='shell_input').complete('Shell input unavailable'); await wait();
+  fixture.heldOps.delete('shell_input');
+  const notice=document.querySelector('.notice');
+  check('reply shows shell input errors', notice?.textContent==='Shell input unavailable' && getComputedStyle(notice).display!=='none');
   document.querySelector('[aria-label="Back to notification"]').click();
   check('close retains shell and restores message', !document.querySelector('#surface').classList.contains('shell-reply') && document.querySelector('.logs')===original);
   window.nfn.receive({type:'mobile_action',action:'list'});
