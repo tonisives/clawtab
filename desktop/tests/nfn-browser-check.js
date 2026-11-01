@@ -8,6 +8,7 @@
   const click = text => { buttons().find(button => (button.textContent === text || button.getAttribute("aria-label") === text)).click(); if (text === "Got it") keepAlive(); };
   const nav = label => document.querySelector(`[aria-label="${label} notification"]`).click();
   const draft = text => { if (document.querySelector(".reply")?.hidden) document.querySelector(".reply-toggle").click(); const input = document.querySelector("textarea"); input.value = text; input.dispatchEvent(new Event("input")); return input; };
+  const detailsVisible = () => Boolean(document.querySelector(".details-content:not([hidden])"));
   window.nfn.setPlacement({ placement: "right", max_width: 1000, max_height: 860, reduce_motion: true });
   window.nfn.collapse();
   window.fixture.calls.length = 0; window.fixture.contextCalls = 0;
@@ -107,7 +108,7 @@
   assert(document.querySelector(".card") === detailCard && !document.querySelector(".message-content").hidden && document.querySelector("textarea") === detailInput, "Hide details restores the original message and composer without rebuilding the card");
   assert(!document.querySelector("#surface").style.height && document.querySelector("#surface").offsetHeight < detailSize.height, "Hide details shrinks the surface to its message and composer");
   const contextCalls = window.fixture.contextCalls; await sleep(1150);
-  assert(window.fixture.contextCalls === contextCalls && !document.querySelector(".logs, select"), "closing details stops polling and hides extra controls");
+  assert(window.fixture.contextCalls === contextCalls && document.querySelector(".details-content").hidden && !document.querySelector("select"), "closing details stops polling and hides extra controls");
   assert(document.querySelectorAll(".actions button").length === 4, "additional choices are available without opening details");
   const surface = document.querySelector("#surface");
   const resizeDrag = (edge, dx, dy, cancel = false) => {
@@ -144,22 +145,22 @@
   assert(!surface.querySelector('[data-resize="se"]').hidden, "right-side cards expose the bottom-right resize corner");
   assert(getComputedStyle(surface.querySelector('[data-resize="se"]')).cursor === "nwse-resize" && window.fixture.surfaces.at(-1).resizable === true, "expanded cards advertise their resize cursor and native resize capability");
   resizeDrag("se", 180, 200); await sleep(30);
-  assert(surface.offsetWidth === 700 && !document.querySelector(".logs") && window.fixture.surfaces.at(-1).right_offset === 180, "bottom-right dragging grows the content without opening shell output");
+  assert(surface.offsetWidth === 700 && !detailsVisible() && window.fixture.surfaces.at(-1).right_offset === 180, "bottom-right dragging grows the content without opening shell output");
   resizeDrag("se", -180, -200); await sleep(30);
-  assert(surface.offsetWidth === 520 && !document.querySelector(".details-content") && window.fixture.surfaces.at(-1).right_offset === 0, "shrinking back to the normal size hides Details and restores the right edge");
+  assert(surface.offsetWidth === 520 && !detailsVisible() && window.fixture.surfaces.at(-1).right_offset === 0, "shrinking back to the normal size hides Details and restores the right edge");
   nav("Next"); await sleep(30);
-  assert(!document.querySelector(".details-content"), "navigation keeps Details hidden after shrinking the message bar");
+  assert(!detailsVisible(), "navigation keeps Details hidden after shrinking the message bar");
   nav("Previous"); await sleep(30);
   window.fixture.records.get("first").details_available = false; window.nfn.receive(window.fixture.snapshot());
   resizeDrag("se", 180, 200); await sleep(30);
-  assert(!document.querySelector(".details-content"), "resizing a message with unavailable details keeps the shell hidden");
+  assert(!detailsVisible(), "resizing a message with unavailable details keeps the shell hidden");
   resizeDrag("se", -180, -200);
   window.fixture.records.get("first").details_available = true; window.nfn.receive(window.fixture.snapshot());
 
   resizeDrag("sw", -180, 200);
   await sleep(30);
   const draggedSize = surface.getBoundingClientRect();
-  assert(draggedSize.width === 700 && draggedSize.height === Math.round(normalSize.height + 200) && !document.querySelector(".logs"), "resizing preserves the message at the dragged width and height");
+  assert(draggedSize.width === 700 && draggedSize.height === Math.round(normalSize.height + 200) && !detailsVisible(), "resizing preserves the message at the dragged width and height");
   assert(!surface.getAnimations().length && !surface.classList.contains("resizing"), "drag resizing is immediate and releases pointer state");
   click("Details"); await sleep(30);
   const expandedDraggedSize = surface.getBoundingClientRect();
@@ -191,7 +192,7 @@
   assert(surface.offsetHeight === 640 && document.querySelector(".actions").getBoundingClientRect().bottom <= surface.getBoundingClientRect().bottom, "desktop manual resizing respects the monitor eighty-percent height cap and keeps actions visible");
   window.nfn.setPlacement({ placement: "right", max_width: 1000, max_height: 860, reduce_motion: true });
   window.nfn.collapse(); document.querySelector(".bar-toggle").click(); await sleep(30);
-  assert(surface.offsetWidth === 520 && !surface.style.height && !document.querySelector(".logs"), "collapsing and expanding restores the normal size without Details");
+  assert(surface.offsetWidth === 520 && !surface.style.height && !detailsVisible(), "collapsing and expanding restores the normal size without Details");
   if (document.querySelector("h1").textContent !== "Review the launch post") nav("Previous");
   window.nfn.setPlacement({ placement: "notch", overlap: 38, max_width: 1000, max_height: 860, reduce_motion: true });
   resizeDrag("se", 70, 120);
@@ -915,11 +916,12 @@
   window.fixture.log = "Fresh Details output\n".repeat(60); freshDetails.complete(); await sleep(30);
   const freshScroller = document.querySelector(".details-content");
   assert(document.querySelector(".logs")._raw === window.fixture.log && freshScroller.scrollTop > 0 && freshScroller.scrollHeight - freshScroller.scrollTop - freshScroller.clientHeight < 2, "fresh Details context opens at the latest line before the next polling interval");
+  const retainedOutput = document.querySelector(".logs")._raw;
   click("Hide details"); document.querySelector('[aria-label="Notification options"]').click(); click("Agent controls");
   const oldFailure = takeContext();
   document.querySelector('[aria-label="Close menu"]').click(); click("Details");
   const afterFailure = takeContext(); oldFailure.complete("Stale controls failure"); await sleep(20);
-  assert(!document.querySelector(".notice").textContent && document.querySelector(".logs")._raw == null, "an invalidated context failure cannot overwrite the current card");
+  assert(!document.querySelector(".notice").textContent && document.querySelector(".logs")._raw === retainedOutput, "an invalidated context failure cannot overwrite the current card");
   afterFailure.complete(); await sleep(20);
   window.nfn.receive(window.fixture.snapshot()); const beforeReplacement = takeContext();
   contextRecord.request.body = "Updated context request"; window.nfn.receive(window.fixture.snapshot());
