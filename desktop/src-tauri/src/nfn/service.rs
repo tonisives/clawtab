@@ -618,6 +618,18 @@ impl Service {
                 return Ok(json!({"template": template}));
             }
             NfnCommand::Context { id } => return self.context(&id).await,
+            NfnCommand::ShellInput { id, text } => {
+                let record = self.store.get(&id)?;
+                validate_source(&record.request.source)?;
+                let pane = record
+                    .request
+                    .source
+                    .pane_id
+                    .as_deref()
+                    .ok_or("Message has no shell")?;
+                crate::terminal_backend::send_literal_to_pane(pane, &text)?;
+                return Ok(json!({"sent": true}));
+            }
             NfnCommand::Platform { state } => {
                 *self.platform.lock() = state;
                 self.push(None, false);

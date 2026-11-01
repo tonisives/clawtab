@@ -534,6 +534,10 @@ pub enum NfnCommand {
     Context {
         id: String,
     },
+    ShellInput {
+        id: String,
+        text: String,
+    },
     AutoYes {
         id: String,
     },

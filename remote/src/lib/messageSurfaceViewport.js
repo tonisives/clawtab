@@ -11,7 +11,7 @@
     root.style.setProperty("--message-height", `${height}px`);
     root.style.setProperty("--message-safe-bottom", keyboard ? "0px" : safeBottom === null ? "env(safe-area-inset-bottom,0px)" : `${safeBottom}px`);
     const field = document.activeElement;
-    if (!editable(field)) return;
+    if (!editable(field) || field.classList?.contains("shell-keyboard")) return;
     const composer = field.closest(".reply") ?? field;
     const target = composer.getBoundingClientRect().height < height - 16 ? composer : field;
     target.scrollIntoView({ block: "nearest", inline: "nearest" });
@@ -40,7 +40,7 @@
     const start = pointer; pointer = null;
     if (!start || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 8) return;
     if (event.target.closest("button,a,input,textarea,select,label,video,audio,[contenteditable='true']")) return;
-    if (editable(document.activeElement)) document.activeElement.blur();
+    if (editable(document.activeElement) && !document.activeElement.classList?.contains("shell-keyboard")) document.activeElement.blur();
   }, true);
   schedule();
 })();

@@ -1,7 +1,5 @@
-import { NotificationShellReply } from "./NotificationShellReply";
-import { useJobsStore } from "../store/jobs";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter, useNavigation } from "expo-router";
+import { useRouter } from "expo-router";
 import { Platform, Text, View } from "react-native";
 import { machineHostRequest, machineRequest, messagePending, useMachines, type MessageRecord } from "@clawtab/shared";
 import { useMessageStore } from "../store/messages";
@@ -26,31 +24,6 @@ export function MessageInbox({ selection, popup = false, active = true, arrival,
   onNative?: (message: SurfaceMessage) => void;
 }) {
   const router = useRouter();
-  const navigation = useNavigation();
-  const [replyPane, setReplyPane] = useState<{ paneId: string; tmuxSession: string } | null>(null);
-  const [replyError, setReplyError] = useState("");
-  useEffect(() => {
-    if (!replyPane) return;
-    navigation.setOptions({ headerShown: false });
-    return () => navigation.setOptions({ headerShown: true });
-  }, [navigation, replyPane]);
-  const receiveNative = async (message: SurfaceMessage) => {
-    if (message.native === "shell_reply" && message.id && Platform.OS !== "web") {
-      setReplyError("");
-      try {
-        const record = await controller.execute({ op: "get", id: message.id });
-        const paneId = record.request.source.pane_id as string | undefined;
-        const process = useJobsStore.getState().detectedProcesses.find(process => process.pane_id === paneId);
-        const question = useNotificationStore.getState().questions.find(question => question.pane_id === paneId);
-        const tmuxSession = process?.tmux_session ?? question?.tmux_session ?? "";
-        if (!paneId || (!tmuxSession && !paneId.split("::").at(-1)?.startsWith("managed:")))
-          throw new Error("The session is unavailable. Reconnect its machine and try Reply again.");
-        setReplyPane({ paneId, tmuxSession });
-      } catch (error) { setReplyError(error instanceof Error ? error.message : String(error)); }
-      return;
-    }
-    onNative?.(message);
-  };
   const records = useMessageStore(state => state.records);
   const autoYes = useNotificationStore(state => state.autoYesPaneIds);
   const { machines, selected } = useMachines();
@@ -147,7 +120,7 @@ export function MessageInbox({ selection, popup = false, active = true, arrival,
     return isMessageTodoCommand(command) ? todoCommand(command) : controller.execute(command);
   }, [controller, todoCommand]);
   const snapshot = useMemo(() => ({
-    type: "snapshot", remote: true, visible: active, preview: false, arrival: popup && active ? arrival : undefined,
+    type: "snapshot", remote: true, native_chrome: Platform.OS !== "web" && !popup, visible: active, preview: false, arrival: popup && active ? arrival : undefined,
     records: records.map(surfaceRecord), pending_count: records.filter(messagePending).length,
     auto_yes_panes: [...autoYes], templates_by_machine: templates, todos,
     settings: { preview_seconds: 8, hover_expand: false, placement: "right" },
@@ -159,8 +132,6 @@ export function MessageInbox({ selection, popup = false, active = true, arrival,
     {!selectionReady && <Text accessibilityLiveRegion="polite" style={{ color: "#98989d", padding: 12, fontSize: 13 }}>
       Waiting for this message's machine to connect...
     </Text>}
-    <MessageSurface snapshot={snapshot} active={active} selection={selectionReady ? selection : null} popup={popup} onCommand={command} onNative={receiveNative} />
-    {replyError ? <Text accessibilityLiveRegion="polite" style={{ color: "#ff453a", padding: 12 }}>{replyError}</Text> : null}
-    {replyPane && <NotificationShellReply {...replyPane} onClose={() => setReplyPane(null)} />}
+    <MessageSurface snapshot={snapshot} active={active} selection={selectionReady ? selection : null} popup={popup} onCommand={command} onNative={onNative} />
   </View>;
 }

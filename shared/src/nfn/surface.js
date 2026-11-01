@@ -112,13 +112,13 @@
   }
   reducedMotion.addEventListener('change', () => { if (reducedMotion.matches) stopArrivalAnimation(); });
 
-  let todosOpen = false, todoData = { items: [] }, todoError = "", todoBusy = false, todoOptionsOpen = false;
+  let todosOpen = false, todoData = { items: [] }, todoError = "", todoBusy = false, todoOptionsOpen = false, todoAddOpen = false;
   const todoDraft = { text: "", group: "", cwd: "", note: null, agents: null };
   function todoItems() { return todoData.items || []; }
   function toggleTodos() {
     if (todosOpen) { todosOpen = false; collapse(true); return; }
     leaveSettings(); pauseTimer(); stopContext();
-    todosOpen = true; hiddenByUser = false; explicitOpen = true; expanded = true;
+    todoAddOpen = false; todosOpen = true; hiddenByUser = false; explicitOpen = true; expanded = true;
     queue = false; current = null; details = false; menu = null;
     native({ native: "presentation", active: true }); render();
     if (!preview) call({ op: "todos" }).then(value => { todoData = value; render(); }).catch(error => { todoError = error.message; render(); });
@@ -129,7 +129,7 @@
     try {
       const result = await call(command);
       if (result.items) todoData = result;
-      if (command.op === "todo_add") todoDraft.text = "";
+      if (command.op === "todo_add") { todoDraft.text = ""; todoAddOpen = false; }
     } catch (error) { todoError = String(error.message || error); }
     finally { todoBusy = false; render(); }
   }
@@ -142,7 +142,7 @@
   }
   function renderTodos() {
     let view = host.querySelector(".todo-view");
-    const signature = JSON.stringify([todoData, todoBusy, todoError]);
+    const signature = JSON.stringify([todoData, todoBusy, todoError, todoAddOpen]);
     if (view?._signature === signature) return view;
     const scroll = view?.querySelector(".todo-items")?.scrollTop || 0;
     const focusedKey = document.activeElement?.getAttribute("aria-label"), selection = document.activeElement?.selectionStart;
@@ -152,8 +152,10 @@
     const heading = el("div", "todo-heading");
     heading.append(el("h1", "", "Tasks"), el("span", "hint", `${done} / ${items.length} complete`)); view.append(heading);
     const refresh = button(todoBusy ? "Refreshing..." : "Refresh agents", () => todoAction({ op: "todo_refresh" }), "utility todo-refresh");
-    refresh.disabled = todoBusy; heading.append(refresh);
-    if (todoData.linked) {
+    refresh.disabled = todoBusy; if (!mobileHost()) heading.append(refresh);
+    heading.append(button(todoAddOpen ? "Cancel" : "+", () => { todoAddOpen = !todoAddOpen; render(); if (todoAddOpen) host.querySelector('.todo-add input')?.focus(); }, "utility todo-add-toggle"));
+    heading.querySelector(".todo-add-toggle")?.setAttribute("aria-label", todoAddOpen ? "Cancel new task" : "Add task");
+    if (todoData.linked && !mobileHost()) {
       const source = el("div", "hint todo-source", `Synced with ${todoData.note}`); source.title = todoData.note; view.append(source);
     }
     const notice = el("div", "notice", todoError || todoData.error); notice.setAttribute("role", "status"); view.append(notice);
@@ -182,7 +184,7 @@
         const open = button("Open agent", () => todoAction({ op: "todo_focus", id: item.id }), "utility todo-agent"); open.disabled = todoBusy; row.append(open);
       } else if (!item.checked) {
         const start = button("Start agent", () => {
-          if (!todoDraft.cwd.trim()) { todoOptionsOpen = true; todoError = "Enter the agent working directory below first"; render(); return; }
+          if (!todoDraft.cwd.trim()) { todoOptionsOpen = true; todoAddOpen = true; todoError = "Enter the agent working directory below first"; render(); return; }
           todoAction({ op: "todo_start", id: item.id, cwd: todoDraft.cwd });
         }, "utility todo-agent"); start.disabled = todoBusy; row.append(start);
       }
@@ -197,8 +199,9 @@
     for (const name of new Set(items.map(item => item.group))) { const option = el("option"); option.value = name; groups.append(option); }
     const add = button(todoBusy ? "Saving..." : "Add task", () => {}, "primary"); add.type = "submit"; add.disabled = todoBusy;
     form.append(text, groupInput, groups, add);
+    if (mobileHost()) form.append(todoInput("Agent working directory", "cwd", "Working directory"));
     form.addEventListener("submit", event => { event.preventDefault(); todoAction({ op: "todo_add", text: todoDraft.text, group: todoDraft.group }); });
-    view.append(form);
+    form.hidden = !todoAddOpen; view.append(form);
     const options = el("details", "todo-options"); options.open = todoOptionsOpen; options.addEventListener("toggle", () => { todoOptionsOpen = options.open; }); options.append(el("summary", "hint", "Source and agent settings"));
     options.append(el("label", "hint", "Working directory for new Codex agents"), todoInput("Agent working directory", "cwd", "/path/to/project"));
     options.append(el("p", "hint", "Start agent opens a tmux window in the task's group using Codex Sol 6.1 with high reasoning."));
@@ -206,7 +209,7 @@
       options.append(todoInput("Markdown source path", "note", todoData.note || "/path/to/tasks.md"), todoInput("Agent mapping path", "agents", "Optional /path/to/agents.json"));
       const link = button("Link Markdown checklist", () => todoAction({ op: "todo_link", note: todoDraft.note || "", agents: todoDraft.agents || null })); link.disabled = todoBusy; options.append(link);
     }
-    view.append(options);
+    if (!mobileHost()) view.append(options);
     view._restoreFocus = () => {
       list.scrollTop = scroll;
       if (focusedKey) {
@@ -327,6 +330,91 @@
     pendingOffset = result.next_offset || pendingOffset + 50;
     if ((result.records?.length || 0) < 50) unseenPending = 0;
   }
+  const mobileShellCache = new Map();
+  let shellReply = false, shellSending = false, shellInputTimer = null, lastMobileChrome = "";
+  const shellInputQueue = [];
+  const mobileHost = () => Boolean(window.ReactNativeWebView);
+  function syncMobileChrome() {
+    if (!mobileHost()) return;
+    const items = pendingCards(), index = items.findIndex(record => record.id === current);
+    const state = { screen: todosOpen ? "tasks" : settingsOpen ? "settings" : queue ? "list" : current ? "message" : "list",
+      counter: current && index >= 0 ? (index + 1) + " / " + pendingCount() : pendingCount() + " pending",
+      canNavigate: Boolean(current && items.length > 1), reply: shellReply };
+    const signature = JSON.stringify(state);
+    if (signature !== lastMobileChrome) { lastMobileChrome = signature; native({ native: "chrome", ...state }); }
+  }
+  function fitMobileShell() {
+    if (!mobileHost() || !card?._logs || hasLogSelection(card._logs)) return;
+    const logs = card._logs;
+    const canvas = document.createElement("canvas"), context = canvas.getContext("2d");
+    context.font = "11px monospace";
+    const width = Math.max(1, ...stripAnsi(logs._raw || "").split("\n").map(line => context.measureText(line.trimEnd()).width));
+    const available = Math.max(1, card._content.clientWidth - 16);
+    logs.style.fontSize = Math.min(11, 11 * available / width) + "px";
+  }
+  async function flushShellInput() {
+    shellInputTimer = null;
+    if (shellSending || !shellInputQueue.length) return;
+    shellSending = true;
+    const item = shellInputQueue.shift();
+    try { await call({ op: "shell_input", ...item }); }
+    catch (error) { showError(error, item.id); }
+    finally {
+      shellSending = false;
+      if (shellInputQueue.length) flushShellInput();
+      else if (current === item.id) refreshContext();
+    }
+  }
+  function sendShellInput(text) {
+    if (!text || !current) return;
+    const last = shellInputQueue.at(-1);
+    if (last?.id === current) last.text += text;
+    else shellInputQueue.push({ id: current, text });
+    if (!shellSending && !shellInputTimer) shellInputTimer = setTimeout(flushShellInput, 20);
+  }
+  function setShellReply(open) {
+    if (!card || !records.get(current)?.request.source?.pane_id) return;
+    shellReply = open;
+    if (open) {
+      clearTimeout(completionTimer); pauseTimer(); expanded = true; details = true; syncCardDetails(records.get(current));
+      if (!card._shellInput) {
+        const input = el("textarea", "shell-keyboard");
+        input.setAttribute("aria-label", "Type into shell");
+        input.setAttribute("autocapitalize", "none"); input.setAttribute("autocorrect", "off"); input.spellcheck = false;
+        let previous = "";
+        input.addEventListener("input", event => {
+          if (event.isComposing) return;
+          const value = input.value;
+          let prefix = 0; while (prefix < value.length && prefix < previous.length && value[prefix] === previous[prefix]) prefix++;
+          sendShellInput("\x7f".repeat(Array.from(previous.slice(prefix)).length) + value.slice(prefix).replace(/\n/g, "\r"));
+          previous = value;
+        });
+        input.addEventListener("keydown", event => {
+          const keys = { Enter: "\r", ArrowUp: "\x1b[A", ArrowDown: "\x1b[B", ArrowRight: "\x1b[C", ArrowLeft: "\x1b[D", Escape: "\x1b", Tab: "\t" };
+          if (keys[event.key]) { event.preventDefault(); sendShellInput(keys[event.key]); }
+          else if (event.key === "Backspace" && !input.value) { event.preventDefault(); sendShellInput("\x7f"); }
+        });
+        const toolbar = el("div", "shell-keyboard-tools");
+        const key = (label, value, title) => {
+          const control = button(label, () => { if (value === null) setShellReply(false); else { sendShellInput(value); input.focus({ preventScroll: true }); } }, "utility");
+          control.setAttribute("aria-label", title);
+          control.addEventListener("pointerdown", event => event.preventDefault());
+          toolbar.append(control);
+        };
+        key("×", null, "Back to notification"); key("Esc", "\x1b", "Escape");
+        key("←", "\x1b[D", "Left arrow"); key("↓", "\x1b[B", "Down arrow");
+        key("↑", "\x1b[A", "Up arrow"); key("→", "\x1b[C", "Right arrow"); key("Enter", "\r", "Enter");
+        card.append(input, toolbar); card._shellInput = input;
+      }
+    }
+    host.classList.toggle("shell-reply", open);
+    if (open) {
+      card._content.scrollTop = 0; card._followLogs = false;
+      fitMobileShell(); card._shellInput.focus({ preventScroll: true }); startContext();
+    } else card._shellInput?.blur();
+    syncMobileChrome(); size();
+  }
+  window.addEventListener("resize", () => { fitMobileShell(); });
   function stripAnsi(text) { return String(text || "").replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "").replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, ""); }
   function renderAnsi(parent, raw) {
     // Match the palette in shared/util/ansi.ts, using text nodes for terminal output.
@@ -594,11 +682,12 @@
   function openRecord(id) {
     const record = records.get(id), key = record && threadKey(record);
     if (record && pending(record) && !record.dismissed_at && !record.ignored && key) id = pendingCards().find(item => threadKey(item) === key)?.id || id;
+    shellReply = false;
     todosOpen = false;
     if (actionsInProgress.has(id)) return;
     leaveSettings();
     const replyFocused = card?._reply && document.activeElement === card._reply;
-    clearTimeout(completionTimer); pauseTimer(); stopContext(); current = id; queueReturnId = id; expanded = true; details = Boolean(resizedSize?.showDetails); queue = false; renderedId = null; menu = null;
+    clearTimeout(completionTimer); pauseTimer(); stopContext(); current = id; queueReturnId = id; expanded = true; details = Boolean(resizedSize?.showDetails) || (mobileHost() && innerHeight > 480 && record?.request.source?.pane_id); queue = false; renderedId = null; menu = null;
     call({ op: "read", id }).catch(error => showError(error, id)); render();
     startContext();
     if (replyFocused && card?._reply) card._reply.focus({ preventScroll: true });
@@ -651,6 +740,7 @@
     if (menu === "agent") refreshContext(); else startContext();
   }
   function showQueue(showHistory = false, restore = null) {
+    shellReply = false;
     todosOpen = false;
     resetHandledActions();
     leaveSettings();
@@ -1128,9 +1218,7 @@
       const replyLabel = revision ? "Changes to the draft" : toAgent ? "Reply to agent" : "Your reply";
       const open = replyStates.get(record.id) ?? Boolean(drafts.get(record.id));
       const toggle = button("Reply", () => {
-        if (window.ReactNativeWebView && record.request.source?.pane_id) {
-          native({ native: "shell_reply", id: record.id }); return;
-        }
+        if (mobileHost() && record.request.source?.pane_id) { setShellReply(true); return; }
         const next = !(replyStates.get(record.id) ?? Boolean(drafts.get(record.id)));
         const previousReplyHeight = reply.hidden ? 0 : reply.offsetHeight + 12;
         replyStates.set(record.id, next); pauseTimer(); expanded = true;
@@ -1224,16 +1312,19 @@
     const content = card._content;
     if (!details) {
       if (content.isConnected) {
-        content.remove(); content.replaceChildren(); card._logs = null;
+        content.hidden = true;
       }
       return;
     }
+    content.hidden = false;
     if (content.isConnected) return;
     const node = card, layout = template(record).layout, primitives = {};
     if (hasBlock(layout, "logs")) {
       const section = el("div", "log-output");
       section.append(el("div", "block-label", "Recent output"));
-      const logs = el("pre", "logs", "Loading recent output...");
+      const cached = mobileHost() ? mobileShellCache.get(record.id) : null;
+      const logs = el("pre", "logs", cached == null ? "Loading recent output..." : "");
+      if (cached != null) { logs._raw = cached; renderAnsi(logs, cached); }
       node._logs = logs; section.append(logs); primitives.logs = section;
     }
     // Keep the message and inline media mounted while Details shows the output.
@@ -1247,7 +1338,7 @@
     if (!card || !current) return;
     const record = records.get(current); if (!record) return;
     const wasPending = card._wasPending;
-    if (card._signature !== cardSignature(record)) {
+    if (card._signature !== cardSignature(record) && !shellReply) {
       const scroll = card._content.scrollTop, active = document.activeElement === card._reply;
       const selection = card._reply ? [card._reply.selectionStart, card._reply.selectionEnd] : null;
       stopContext();
@@ -1259,7 +1350,7 @@
     const isPending = pending(record) && !record.dismissed_at && !record.ignored;
     if (card._thread && !card._thread._positioned) { card._thread.scrollTop = card._thread.scrollHeight; card._thread._positioned = true; }
     card._wasPending = isPending;
-    if (wasPending && !isPending && !preview) {
+    if (wasPending && !isPending && !preview && !shellReply) {
       clearTimeout(completionTimer);
       const id = current;
       completionTimer = setTimeout(() => {
@@ -1303,12 +1394,13 @@
     try {
       const value = await call({ op: "context", id });
       if (!ownsContext()) return;
+      if (mobileHost()) mobileShellCache.set(id, value.log);
       const changedLogs = card._logs && card._logs._raw !== value.log;
       const before = changedLogs ? host.getBoundingClientRect() : null;
       if (changedLogs && !hasLogSelection(card._logs)) {
         const logs = card._logs, scroller = card._content;
-        const atBottom = logs._raw == null || scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 30;
-        logs._raw = value.log; renderAnsi(logs, value.log || "No output yet");
+        const atBottom = logs._raw == null ? !shellReply : card._followLogs && scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 30;
+        logs._raw = value.log; renderAnsi(logs, value.log || "No output yet"); fitMobileShell();
         card._followLogs = atBottom;
         if (atBottom) scroller.scrollTop = scroller.scrollHeight;
       }
@@ -1933,7 +2025,7 @@
     toggle.title = `${isOpen ? "Collapse" : "Open"} notifications. Drag to move.`;
     let countButton = top.querySelector(".count");
     if (isOpen !== (countButton.tagName === "BUTTON")) {
-      const label = isOpen ? button("", () => queue && !settingsOpen ? toggleQueue() : settingsOpen ? openLatest() : toggleBar(), "utility count") : el("span", "count");
+      const label = isOpen ? button("", () => mobileHost() ? showQueue() : queue && !settingsOpen ? toggleQueue() : settingsOpen ? openLatest() : toggleBar(), "utility count") : el("span", "count");
       if (isOpen) draggableBar(label);
       countButton.replaceWith(label); countButton = label;
     }
@@ -1964,9 +2056,24 @@
       updateCard(); syncCardDetails(records.get(current));
     } else { host.querySelector(".card")?.remove(); host.querySelector(".queue")?.remove(); renderedId = null; card = null; }
     renderMenu(); positionAcknowledgementMenu(); cleanupRemoteMedia(); observeCardSize(); fitReviewHeight(); if (resizing || !animate) size(); else if (!continuingAnimation) animateLayout(before, !queue && !menu && !settingsOpen);
+    host.classList.toggle("native-mobile", mobileHost()); host.classList.toggle("native-chrome", Boolean(mobileHost() && snapshot.native_chrome)); host.classList.toggle("shell-reply", shellReply); fitMobileShell(); syncMobileChrome();
     syncNativePointerHover();
   }
   function receive(value) {
+    if (value.type === "mobile_action" && mobileHost()) {
+      if (value.action === "list") showQueue();
+      else if (value.action === "previous") navigate(-1);
+      else if (value.action === "next") navigate(1);
+      else if (value.action === "tasks") toggleTodos();
+      else if (value.action === "settings") openSettings();
+      else if (value.action === "reply") {
+        if (records.get(current)?.request.source?.pane_id) setShellReply(true);
+        else card?.querySelector(".reply-toggle")?.click();
+      }
+      else if (value.action === "open") card?.querySelector(".open-session")?.click();
+      else if (value.action === "got_it") card?.querySelector(".acknowledge,[data-action-id=acknowledge]")?.click();
+      return;
+    }
     if (value.type === "resize_pointer") {
       if (!resizing?.native) return;
       moveResize({ pointerId: resizing.pointerId, screenX: resizing.x + value.dx, screenY: resizing.y + value.dy, nativeResize: true, preventDefault() {} });
@@ -2038,7 +2145,7 @@
     const incoming = new Set();
     for (const record of value.records || []) { records.set(record.id, record); incoming.add(record.id); }
     const activeRecord = records.get(current), activeKey = activeRecord && threadKey(activeRecord);
-    if (activeRecord && pending(activeRecord) && !activeRecord.dismissed_at && !activeRecord.ignored && activeKey && !actionsInProgress.has(current)) {
+    if (!shellReply && activeRecord && pending(activeRecord) && !activeRecord.dismissed_at && !activeRecord.ignored && activeKey && !actionsInProgress.has(current)) {
       const latest = pendingCards().find(item => threadKey(item) === activeKey);
       if (latest && latest.id !== current) {
         pauseTimer(); stopContext(); current = latest.id; queueReturnId = current; renderedId = null; menu = null;
@@ -2057,7 +2164,7 @@
     for (const id of records.keys()) if (id !== current && !incoming.has(id) && !selectedNotifications.has(id) && !actionsInProgress.has(id) && !retryIds.has(id)) records.delete(id);
     updateUnseenPending();
     pendingOffset = 50;
-    closeResumedCompletion(previousCurrent);
+    if (!shellReply) closeResumedCompletion(previousCurrent);
     if (current && !incoming.has(current) && !preview) {
       const id = current;
       call({ op: "get", id }).then(record => {
@@ -2070,7 +2177,7 @@
       clearTimeout(completionTimer); pauseTimer(); stopContext();
       const arrival = records.get(value.arrival), key = threadKey(arrival);
       current = (key && pendingCards().find(record => threadKey(record) === key)?.id) || value.arrival;
-      queueReturnId = current; queue = false; history = false; details = Boolean(resizedSize?.showDetails); menu = null;
+      queueReturnId = current; queue = false; history = false; details = Boolean(resizedSize?.showDetails) || Boolean(mobileHost() && innerHeight > 480 && records.get(current)?.request.source?.pane_id); menu = null;
       remaining = (value.settings?.preview_seconds || 8) * 1000; renderedId = null;
     }
     render(); resumeTimer();

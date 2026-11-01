@@ -200,8 +200,8 @@ export default function RootLayout() {
             <Stack.Screen
               name="notifications"
               options={{
-                animation: "none",
-                presentation: "fullScreenModal",
+                animation: "slide_from_bottom",
+                presentation: "modal",
                 headerShown: false,
               }}
             />

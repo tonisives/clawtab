@@ -37,6 +37,26 @@ button.auto-yes-button{min-height:44px;padding:8px 16px;border-radius:999px}
 .icon-button{min-height:36px}
 .footer-actions.segmented-control{display:flex;padding:4px;border:1px solid var(--line);border-radius:999px;background:#202020;gap:4px}
 .footer-actions.segmented-control button{border-radius:999px;flex:1}
+
+.native-chrome>.top{display:none}
+.native-chrome .footer-actions{display:none}
+.native-mobile .details-content{margin-top:8px;min-height:120px;max-height:none;flex:1 1 120px}
+.native-mobile .logs{white-space:pre;overflow-wrap:normal;border:0;border-radius:0;background:#161616;padding:8px;margin:0}
+.native-mobile.details-open>.card{flex:1;min-height:0}
+.native-mobile.shell-reply>.card{padding:0;display:flex;flex:1;min-height:0;overflow:hidden}
+.native-mobile.shell-reply .card>:not(.heading):not(.message-content):not(.shell-keyboard):not(.shell-keyboard-tools){display:none}
+.native-mobile.shell-reply .heading{display:flex;padding:8px 12px}
+.native-mobile.shell-reply .heading h1,.native-mobile.shell-reply .heading-tools>:not(.options-toggle){display:none}
+.native-mobile.shell-reply .source-group{flex:1;font-size:14px}
+.native-mobile.shell-reply .message-content{flex:1;min-height:0;display:flex;flex-direction:column}
+.native-mobile.shell-reply .message-content>:not(.details-content){display:none}
+.native-mobile.shell-reply .details-content{margin:0;min-height:0;flex:1;overflow:auto}
+.native-mobile.shell-reply .block-label{display:none}
+.shell-keyboard{position:absolute;width:1px;height:1px;opacity:0;left:0;top:0;font-size:16px}
+.shell-keyboard-tools{display:none}
+.shell-reply .shell-keyboard-tools{display:flex;flex:none;gap:4px;padding:8px 4px;border-top:1px solid var(--line);background:#202020}
+.shell-keyboard-tools button{flex:1;padding:4px;min-height:38px}
+.todo-add[hidden]{display:none}
 .message{max-height:35dvh}
 .message-thread{max-height:35dvh}
 .details-content{max-height:50dvh}

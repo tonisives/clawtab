@@ -55,6 +55,7 @@ fn allowed(command: &NfnCommand) -> bool {
             | NfnCommand::IgnoredAgents
             | NfnCommand::Cancel { .. }
             | NfnCommand::Context { .. }
+            | NfnCommand::ShellInput { .. }
             | NfnCommand::SessionTargets { .. }
             | NfnCommand::Templates
             | NfnCommand::Todos
@@ -176,6 +177,12 @@ mod tests {
         assert!(allowed(&NfnCommand::Context {
             id: "review".into()
         }));
+        let input: NfnCommand = serde_json::from_value(json!({
+            "op": "shell_input", "id": "message", "text": "hello\r\u{1b}[A"
+        }))
+        .unwrap();
+        assert!(allowed(&input));
+        assert!(matches!(input, NfnCommand::ShellInput { text, .. } if text == "hello\r\u{1b}[A"));
         assert!(allowed(&NfnCommand::Templates));
         assert!(allowed(&NfnCommand::SessionTargets { id: "message".into() }));
         assert!(allowed(&NfnCommand::Todos));

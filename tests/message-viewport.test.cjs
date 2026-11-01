@@ -122,3 +122,14 @@ test("web host keeps full height through route entry and follows the outer keybo
   assert.equal(frame.style.maxHeight, "", "layout viewport resizing already constrains the frame");
   cleanup(); assert.deepEqual(Object.keys(listeners), []);
 });
+
+test("inline shell input retains focus and its cached scroll position during keyboard layout", () => {
+  const v = viewport();
+  v.field.classList = { contains: name => name === "shell-keyboard" };
+  v.document.activeElement = v.field;
+  v.window.nfnMobile.setInsets(34, true);
+  v.flush();
+  assert.deepEqual(v.scrolled, []);
+  v.tap(false);
+  assert.equal(v.document.activeElement, v.field);
+});
