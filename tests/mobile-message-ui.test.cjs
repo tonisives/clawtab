@@ -400,7 +400,7 @@ test("initial message data cannot terminate the bootstrap script and inactive po
 for (const variant of ["MessageSurface.web.tsx", "MessageSurface.tsx"]) {
   test(`${variant}: clearing and restoring a deep link cannot retain the previous message`, () => {
     const refs = [], effects = [], sent = [];
-    let cursor = 0, lastRoot;
+    let cursor = 0, lastRoot, keyboardOverlap = 0;
     const react = {
       useRef: value => refs[cursor++] ??= { current: value },
       useState: value => { const state = refs[cursor++] ??= { value }; return [state.value, next => { state.value=next; }]; },
@@ -415,7 +415,7 @@ for (const variant of ["MessageSurface.web.tsx", "MessageSurface.tsx"]) {
       "react-native-webview": { default: "WebView" },
       "react-native": { View: "View" },
       "react-native-safe-area-context": { useSafeAreaInsets: () => ({ bottom: 34 }) },
-      "../hooks/useMessageKeyboard": { useMessageKeyboard: () => ({ host: { current: null }, overlap: 0, horizontalInsets: { left: 0, right: 0 }, onLayout() {} }) },
+      "../hooks/useMessageKeyboard": { useMessageKeyboard: () => ({ host: { current: null }, overlap: keyboardOverlap, horizontalInsets: { left: 0, right: 0 }, onLayout() {} }) },
       "../lib/messageSurfaceDocument.generated": { default: "<html><body></body></html>" },
       "../lib/messageSurfaceBootstrap": load("messageSurfaceBootstrap"),
       "./NotificationChrome": { initialNotificationChrome: { screen: "list", reply: false }, NotificationChrome: "NotificationChrome" },
@@ -465,6 +465,11 @@ for (const variant of ["MessageSurface.web.tsx", "MessageSurface.tsx"]) {
       assert.ok(toolbar, "reply renders the keyboard controls");
       assert.equal(toolbar.props.inline,true,"controls take space in the visible layout");
       assert.equal(lastRoot.props.style.paddingTop,undefined,"native header owns the top inset during reply");
+      keyboardOverlap = 344; render("mac-b::other");
+      assert.equal(lastRoot.props.style.paddingBottom,344,"the shell and inline toolbar move above the keyboard together");
+      assert.ok(lastRoot.props.children.find(child=>child?.type==="TerminalKeyboardToolbar"));
+      keyboardOverlap = 0; render("mac-b::other");
+      assert.equal(lastRoot.props.style.paddingBottom,34,"dismissal restores the bottom safe area");
       toolbar.props.onDismiss(); assert.equal(sent.at(-1).action,"reply_close");
       toolbar.props.onSend("\x1b[A"); assert.equal(sent.at(-1).text,"\x1b[A");
       dependencies["../lib/messageSurfaceDocument.generated"].default="<html><body>Updated surface</body></html>";

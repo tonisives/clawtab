@@ -59,9 +59,9 @@ test("background taps dismiss editing while controls and scrolling keep their in
   v.tap(false); assert.equal(v.document.activeElement, null);
 });
 
-test("native keyboard resize uses host overlap and clears stale offsets on hide/background", () => {
+function nativeKeyboard({ bottomAnchored = true, current } = {}) {
   const ts = require("../desktop/node_modules/typescript");
-  const events = {}, cleanups = [], values = [], refs = [], exports = {};
+  const events = {}, cleanups = [], values = [], refs = [], animations = [], exports = {};
   const source = ts.transpileModule(fs.readFileSync(path.resolve(__dirname, "../remote/src/hooks/useMessageKeyboard.ts"), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText;
@@ -71,22 +71,54 @@ test("native keyboard resize uses host overlap and clears stale offsets on hide/
     useState: value => [value, next => values.push(next)], useCallback: callback => callback,
     useEffect: effect => cleanups.push(effect()),
   } : name === "react-native-safe-area-context" ? { useSafeAreaInsets: () => ({ left: 40, right: 0 }) } : { useWindowDimensions: () => ({ width: 390 }), Platform: { OS: "ios" }, Dimensions: { get: () => ({ height: 844 }) },
-    Keyboard: { addListener: subscribe, isVisible: () => false }, AppState: { addEventListener: subscribe } } });
-  const hook = exports.useMessageKeyboard();
+    Keyboard: { addListener: subscribe, isVisible: () => false, metrics: () => current, scheduleLayoutAnimation: event => animations.push(event) }, AppState: { addEventListener: subscribe } } });
+  const hook = exports.useMessageKeyboard(bottomAnchored);
+  const frame = (name, screenY, height) => {
+    const event = { endCoordinates: { screenY, height }, duration: 250, easing: "keyboard" };
+    events[name](event); return event;
+  };
+  return { hook, frame, events, values, animations, cleanup: () => cleanups.forEach(cleanup => cleanup?.()) };
+}
+
+test("popup keyboard resize uses host overlap and clears stale offsets on hide/background", () => {
+  const { hook, frame, events, values, cleanup } = nativeKeyboard({ bottomAnchored: false });
   let bottom = 844, hostX = 0;
   hook.host.current = { measureInWindow: callback => callback(hostX, 100, 390 - hostX, bottom - 100) };
   hook.onLayout();
   assert.equal(values.at(-2).left, 40, "full-width content clears the rail");
   hostX = 40; hook.onLayout();
   assert.equal(values.at(-2).left, 0, "an already inset parent is not padded twice");
-  const frame = (screenY, height) => events.keyboardWillChangeFrame({ endCoordinates: { screenY, height } });
-  frame(500, 344); assert.equal(values.at(-1), 344);
-  hook.onLayout(); assert.equal(values.at(-1), 344); // Never adds another keyboard height.
-  bottom = 430; hook.onLayout(); assert.equal(values.at(-1), 0); // Popup already above keyboard.
-  bottom = 844; frame(500, 344); events.keyboardWillHide(); assert.equal(values.at(-1), 0);
-  frame(500, 344); events.change("background"); assert.equal(values.at(-1), 0);
-  frame(844, 0); assert.equal(values.at(-1), 0);
-  cleanups.forEach(cleanup => cleanup?.()); assert.deepEqual(Object.keys(events), []);
+  frame("keyboardWillChangeFrame", 500, 344); assert.equal(values.at(-1), 344);
+  hook.onLayout(); assert.equal(values.at(-1), 344);
+  bottom = 430; hook.onLayout(); assert.equal(values.at(-1), 0);
+  bottom = 844; frame("keyboardWillShow", 500, 344); events.keyboardWillHide(); assert.equal(values.at(-1), 0);
+  frame("keyboardWillShow", 500, 344); events.change("background"); assert.equal(values.at(-1), 0);
+  frame("keyboardWillChangeFrame", 844, 0); assert.equal(values.at(-1), 0);
+  cleanup(); assert.deepEqual(Object.keys(events), []);
+});
+
+test("modal reply lifts controls on keyboard show even with a sheet-local origin or delayed measurement", () => {
+  const { hook, frame, events, values, animations, cleanup } = nativeKeyboard();
+  let measure;
+  hook.host.current = { measureInWindow: callback => { measure = callback; } };
+  const show = frame("keyboardWillShow", 500, 344);
+  assert.equal(values.at(-1), 344, "toolbar moves without waiting for a frame-change event or measurement");
+  assert.equal(animations.at(-1), show, "layout follows the native keyboard animation");
+  measure(0, 0, 390, 450);
+  assert.equal(values.at(-1), 344, "sheet-local coordinates cannot reset the keyboard lift to zero");
+  frame("keyboardWillChangeFrame", 460, 384); assert.equal(values.at(-1), 384);
+  frame("keyboardDidShow", 460, 384); assert.equal(values.at(-1), 384);
+  const hide = { duration: 250, easing: "keyboard" };
+  events.keyboardWillHide(hide); assert.equal(values.at(-1), 0); assert.equal(animations.at(-1), hide);
+  measure(0, 0, 390, 450); assert.equal(values.filter(value => typeof value === "number").at(-1), 0, "late measurement cannot restore a dismissed keyboard");
+  cleanup();
+});
+
+test("mounting the message surface with an open keyboard restores its toolbar clearance", () => {
+  const view = nativeKeyboard({ current: { screenY: 500, height: 344 } });
+  assert.equal(view.values.at(-1), 344);
+  view.events.keyboardDidHide(); assert.equal(view.values.at(-1), 0);
+  view.cleanup();
 });
 
 test("web host keeps full height through route entry and follows the outer keyboard viewport", () => {

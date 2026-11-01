@@ -9,7 +9,7 @@
     element.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,clientX:40,clientY:100}));
   };
   const record = fixture.record('inline-shell', 1);
-  record.request.template = 'update'; record.request.source.group = 'clawtab'; record.request.body='Ready for review';
+  record.request.template = 'update'; record.request.source.group = 'clawtab'; record.request.body='Ready for review'; record.request.actions=[];
   fixture.records.set(record.id, record);
   fixture.log = Array.from({length:100},(_,i)=>'Shell row '+i+' '+ 'content '.repeat(12)).join(String.fromCharCode(10))+'\n'+'x'.repeat(2000);
   const snapshot = {...fixture.snapshot(), remote:true,native_chrome:true,arrival:undefined};
@@ -18,6 +18,9 @@
   window.nfn.receive({type:'open_record',id:record.id}); await wait(1300);
   const shell = document.querySelector('.logs'), content = document.querySelector('.details-content');
   check('tall notification loads shell by default', Boolean(shell?.textContent.includes('Shell row')));
+  const surfaceBounds=document.querySelector('#surface').getBoundingClientRect(), shellBounds=content.getBoundingClientRect();
+  check('shell spans the message width', Math.abs(shellBounds.left-surfaceBounds.left)<1 && Math.abs(shellBounds.right-surfaceBounds.right)<1 && getComputedStyle(content).backgroundColor==='rgb(0, 0, 0)');
+  check('shell reaches the native section buttons without a card gap', Math.abs(content.getBoundingClientRect().bottom-surfaceBounds.bottom)<1);
   const style=getComputedStyle(shell);
   check('shell is readable on black with wrapped text', style.fontSize==='12px' && style.backgroundColor==='rgb(0, 0, 0)' && style.whiteSpace==='pre-wrap');
   check('shell has no horizontal scrolling at iPhone width', content.scrollWidth<=content.clientWidth && shell.scrollWidth<=shell.clientWidth && document.body.scrollWidth<=414);

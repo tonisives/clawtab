@@ -1,41 +1,55 @@
 import type { ComponentRef } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AppState, Dimensions, Keyboard, Platform, type KeyboardEvent, type View, useWindowDimensions } from "react-native";
+import { AppState, Dimensions, Keyboard, Platform, type KeyboardEvent, type KeyboardMetrics, type View, useWindowDimensions } from "react-native";
 
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-// Measure the unchanged host, rather than subtracting the keyboard twice after
-// the WebView has resized. This also works for the smaller arrival popup.
-export function useMessageKeyboard() {
+// Native message routes reach the bottom of the modal. Use the keyboard height
+// there; a sheet's measured origin can differ from the keyboard's window origin.
+// Smaller popup hosts still need their actual intersection with the keyboard.
+export function useMessageKeyboard(bottomAnchored = true) {
   const host = useRef<ComponentRef<typeof View>>(null);
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const [horizontalInsets, setHorizontalInsets] = useState({ left: 0, right: 0 });
-  const keyboardTop = useRef<number | null>(null);
+  const keyboardFrame = useRef<KeyboardMetrics | null>(null);
   const [overlap, setOverlap] = useState(0);
   const measure = useCallback(() => {
-    const top = keyboardTop.current;
+    const frame = keyboardFrame.current;
     host.current?.measureInWindow((x, y, hostWidth, height) => {
       setHorizontalInsets({ left: Math.max(0, insets.left - x), right: Math.max(0, x + hostWidth - width + insets.right) });
-      if (keyboardTop.current === top) setOverlap(top === null ? 0 : Math.max(0, Math.min(height, y + height - top)));
+      if (keyboardFrame.current === frame) setOverlap(frame === null ? 0 : bottomAnchored ? frame.height : Math.max(0, Math.min(height, y + height - frame.screenY)));
     });
-  }, [width, insets.left, insets.right]);
+  }, [width, insets.left, insets.right, bottomAnchored]);
   useEffect(measure, [measure]);
   useEffect(() => {
     if (Platform.OS !== "ios") return;
-    const reset = () => { keyboardTop.current = null; setOverlap(0); };
-    const change = (event: KeyboardEvent) => {
-      const { screenY, height } = event.endCoordinates;
+    const reset = (event?: KeyboardEvent) => {
+      if (event) Keyboard.scheduleLayoutAnimation(event);
+      keyboardFrame.current = null; setOverlap(0);
+    };
+    const apply = (frame: KeyboardMetrics) => {
+      const { screenY, height } = frame;
       if (height <= 0 || screenY >= Dimensions.get("screen").height) { reset(); return; }
-      keyboardTop.current = screenY;
+      keyboardFrame.current = frame;
+      if (bottomAnchored) setOverlap(height);
       measure();
     };
+    const change = (event: KeyboardEvent) => {
+      Keyboard.scheduleLayoutAnimation(event);
+      apply(event.endCoordinates);
+    };
     const subscriptions = [
+      Keyboard.addListener("keyboardWillShow", change),
       Keyboard.addListener("keyboardWillChangeFrame", change),
+      Keyboard.addListener("keyboardDidShow", change),
       Keyboard.addListener("keyboardWillHide", reset),
+      Keyboard.addListener("keyboardDidHide", reset),
       AppState.addEventListener("change", state => { if (state === "background" || !Keyboard.isVisible()) reset(); }),
     ];
+    const current = Keyboard.metrics();
+    if (current) apply(current);
     return () => subscriptions.forEach(subscription => subscription.remove());
-  }, [measure]);
+  }, [measure, bottomAnchored]);
   return { host, overlap, horizontalInsets, onLayout: measure };
 }

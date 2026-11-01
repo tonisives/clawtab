@@ -19,7 +19,7 @@ export function MessageSurface(props: MessageSurfaceProps) {
   if (!source.current || source.current.document !== document) source.current = { document, value: { html: messageSurfaceInitialDocument(document, props) } };
   const view = useRef<WebView<object>>(null);
   const insets = useSafeAreaInsets();
-  const keyboard = useMessageKeyboard();
+  const keyboard = useMessageKeyboard(!props.popup);
   const latest = useRef(props);
   latest.current = props;
   const ready = useRef(false);

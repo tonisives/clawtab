@@ -44,6 +44,10 @@ button.auto-yes-button{min-height:44px;padding:8px 16px;border-radius:999px}
 .native-mobile .card,.native-mobile .message-content,.native-mobile .details-content,.native-mobile .log-output{min-width:0;max-width:100%;overflow-x:hidden}
 .native-mobile .logs{box-sizing:border-box;width:100%;min-width:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;line-height:16px;border:0;border-radius:0;background:#000000;padding:8px;margin:0}
 .native-mobile.details-open>.card{flex:1;min-height:0}
+.native-chrome.details-open:not(.shell-reply)>.card{padding:12px 0 0}
+.native-chrome.details-open:not(.shell-reply)>.card>.heading,.native-chrome.details-open:not(.shell-reply) .message-content>:not(.details-content),.native-chrome.details-open:not(.shell-reply)>.card>.answer-row,.native-chrome.details-open:not(.shell-reply)>.card>.reply,.native-chrome.details-open:not(.shell-reply)>.card>.notice{margin-left:12px;margin-right:12px}
+.native-chrome.details-open>.card>.controls{display:none}
+.native-chrome.details-open .details-content{background:#000000}
 .native-mobile.shell-reply>.card{padding:0;display:flex;flex:1;min-height:0;overflow:hidden}
 .native-mobile.shell-reply .card>:not(.heading):not(.message-content):not(.shell-keyboard):not(.notice){display:none}
 .native-mobile.shell-reply .notice{flex:none;padding:0 12px}
