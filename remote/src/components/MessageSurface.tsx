@@ -7,7 +7,7 @@ import { useMessageKeyboard } from "../hooks/useMessageKeyboard";
 import document from "../lib/messageSurfaceDocument.generated";
 import { messageSurfaceDefaultView, messageSurfaceInitialDocument } from "../lib/messageSurfaceBootstrap";
 import type { MessageSurfaceProps, SurfaceMessage } from "./messageSurfaceTypes";
-import { TerminalKeyboardToolbar, TERMINAL_KEYBOARD_TOOLBAR_HEIGHT } from "./TerminalKeyboardToolbar";
+import { TerminalKeyboardToolbar } from "./TerminalKeyboardToolbar";
 import { TerminalWriteDialog } from "./TerminalWriteDialog";
 
 export function MessageSurface(props: MessageSurfaceProps) {
@@ -15,12 +15,11 @@ export function MessageSurface(props: MessageSurfaceProps) {
   const [terminalMenuOpen, setTerminalMenuOpen] = useState(false);
   const [writeOpen, setWriteOpen] = useState(false);
   const [writeDraft, setWriteDraft] = useState("");
-  const source = useRef<{ html: string } | null>(null);
-  if (!source.current) source.current = { html: messageSurfaceInitialDocument(document, props) };
+  const source = useRef<{ document: string; value: { html: string } } | null>(null);
+  if (!source.current || source.current.document !== document) source.current = { document, value: { html: messageSurfaceInitialDocument(document, props) } };
   const view = useRef<WebView<object>>(null);
   const insets = useSafeAreaInsets();
   const keyboard = useMessageKeyboard();
-  const toolbarBottom = Math.max(keyboard.overlap, insets.bottom);
   const latest = useRef(props);
   latest.current = props;
   const ready = useRef(false);
@@ -72,8 +71,8 @@ export function MessageSurface(props: MessageSurfaceProps) {
     catch (error) { send({ type: "response", token: value.token, error: error instanceof Error ? error.message : String(error) }); }
   };
 
-  return <View ref={keyboard.host} onLayout={keyboard.onLayout} style={{ flex: 1, minHeight: 0, backgroundColor: "#161616", paddingBottom: chrome.reply ? toolbarBottom + TERMINAL_KEYBOARD_TOOLBAR_HEIGHT : keyboard.overlap, paddingTop: chrome.reply ? insets.top : 0, paddingLeft: keyboard.horizontalInsets.left, paddingRight: keyboard.horizontalInsets.right }}>
-    <WebView<object> ref={view} source={source.current} style={{ flex: 1, backgroundColor: "#161616" }}
+  return <View ref={keyboard.host} onLayout={keyboard.onLayout} style={{ flex: 1, minHeight: 0, backgroundColor: "#161616", paddingBottom: chrome.reply ? Math.max(keyboard.overlap, insets.bottom) : keyboard.overlap, paddingLeft: keyboard.horizontalInsets.left, paddingRight: keyboard.horizontalInsets.right }}>
+    <WebView<object> ref={view} source={source.current.value} style={{ flex: 1, backgroundColor: "#161616" }}
     javaScriptEnabled originWhitelist={["*"]} allowsInlineMediaPlayback mediaPlaybackRequiresUserAction
     keyboardDisplayRequiresUserAction={false} hideKeyboardAccessoryView
     automaticallyAdjustContentInsets={false} contentInsetAdjustmentBehavior="never" bounces={false}
@@ -82,7 +81,7 @@ export function MessageSurface(props: MessageSurfaceProps) {
     onLoadStart={() => { ready.current = false; }} />
     {!props.popup && props.active !== false ? <NotificationChrome state={chrome} send={action} bottom={insets.bottom} enabled /> : null}
     {chrome.reply && props.active !== false ? <TerminalKeyboardToolbar
-      bottom={toolbarBottom}
+      bottom={0} inline
       dismissIcon="close"
       onDismiss={() => action("reply_close")}
       onSend={sendTerminalText}

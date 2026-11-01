@@ -400,10 +400,10 @@ test("initial message data cannot terminate the bootstrap script and inactive po
 for (const variant of ["MessageSurface.web.tsx", "MessageSurface.tsx"]) {
   test(`${variant}: clearing and restoring a deep link cannot retain the previous message`, () => {
     const refs = [], effects = [], sent = [];
-    let cursor = 0;
+    let cursor = 0, lastRoot;
     const react = {
       useRef: value => refs[cursor++] ??= { current: value },
-      useState: value => { const state = refs[cursor++] ??= { value }; return [state.value, () => {}]; },
+      useState: value => { const state = refs[cursor++] ??= { value }; return [state.value, next => { state.value=next; }]; },
       useCallback: callback => callback,
       useEffect: effect => effects.push(effect),
     };
@@ -426,10 +426,11 @@ for (const variant of ["MessageSurface.web.tsx", "MessageSurface.tsx"]) {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
     }).outputText;
     const exports = {};
-    vm.runInNewContext(source, { exports, require: name => dependencies[name], window: { addEventListener() {}, removeEventListener() {} } });
+    vm.runInNewContext(source, { exports, require: name => dependencies[name], setTimeout: () => 1, clearTimeout() {}, window: { addEventListener() {}, removeEventListener() {} } });
     const render = (selection, active = true, pendingCount = 0) => {
       cursor = 0; effects.length = 0;
       const root = exports.MessageSurface({ snapshot: { type: "snapshot", pending_count: pendingCount }, selection, active, onCommand: async () => ({}) });
+      lastRoot = root;
       const node = root.type === "View" ? root.props.children.find(child => child?.type === "WebView") : root;
       node.props.ref.current = frame;
       effects.forEach(effect => effect());
@@ -457,5 +458,49 @@ for (const variant of ["MessageSurface.web.tsx", "MessageSurface.tsx"]) {
     assert.equal(sent.at(-1).id, "mac-b::other");
     assert.equal(variant.includes(".web") ? reopened.props.srcDoc : reopened.props.source, initialSource, "the warm renderer document is not reloaded on activation or selection changes");
     assert.equal(variant.includes(".web") ? inactive.props.srcDoc : inactive.props.source, initialSource);
+    if (!variant.includes(".web")) {
+      reopened.props.onMessage({nativeEvent:{data:JSON.stringify({nfn:{native:"chrome",screen:"message",reply:true}})}});
+      render("mac-b::other");
+      const toolbar=lastRoot.props.children.find(child=>child?.type==="TerminalKeyboardToolbar");
+      assert.ok(toolbar, "reply renders the keyboard controls");
+      assert.equal(toolbar.props.inline,true,"controls take space in the visible layout");
+      assert.equal(lastRoot.props.style.paddingTop,undefined,"native header owns the top inset during reply");
+      toolbar.props.onDismiss(); assert.equal(sent.at(-1).action,"reply_close");
+      toolbar.props.onSend("\x1b[A"); assert.equal(sent.at(-1).text,"\x1b[A");
+      dependencies["../lib/messageSurfaceDocument.generated"].default="<html><body>Updated surface</body></html>";
+      const updated=render("mac-b::other");
+      assert.notEqual(updated.props.source,initialSource,"updated renderer code refreshes the native document");
+    }
   });
 }
+
+test("reply keeps native navigation and lays the shared keyboard controls in flow", () => {
+  const options = [], sent = [];
+  let dismissed = 0;
+  const jsx = (type, props) => ({ type, props });
+  const dependencies = {
+    react: { useEffect: effect => effect(), useState: value => [value, () => {}], useCallback: value => value },
+    "react/jsx-runtime": { jsx, jsxs: jsx },
+    "react-native": { View: "View", Modal: "Modal", Pressable: "Pressable", Text: "Text", TouchableOpacity: "TouchableOpacity", StyleSheet: { create: value => value } },
+    "expo-router": { useNavigation: () => ({ setOptions: value => options.push(value) }), useRouter: () => ({}) },
+    "@expo/vector-icons": { Ionicons: "Ionicons" },
+    "@clawtab/shared": { colors: {}, SegmentedControl: "SegmentedControl" },
+    "../theme/spacing": { radius: { sm: 4 } },
+    "./TerminalPasteButton": { TerminalPasteButton: "TerminalPasteButton" },
+  };
+  const component = name => {
+    const source=ts.transpileModule(fs.readFileSync(path.resolve(base, `../components/${name}.tsx`), "utf8"), {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
+    }).outputText;
+    const exports={}; vm.runInNewContext(source,{exports,require:name=>dependencies[name]}); return exports[name];
+  };
+  component("NotificationChrome")({state:{screen:"message",counter:"1 / 4",canNavigate:true,reply:true},send:value=>sent.push(value),bottom:34,enabled:true});
+  assert.equal(options.at(-1).headerShown,true,"reply retains the native title bar and its close button");
+  assert.ok(options.at(-1).headerTitle());
+  const toolbar=component("TerminalKeyboardToolbar")({bottom:0,inline:true,dismissIcon:"close",onDismiss:()=>dismissed++,onSend:value=>sent.push(value),onWrite(){},menuOpen:false,onMenuOpenChange(){}});
+  const style=Object.assign({},...toolbar.props.style);
+  assert.equal(style.position,"relative");
+  toolbar.props.children.find(child=>child?.props.accessibilityLabel==="Dismiss keyboard").props.onPress();
+  toolbar.props.children.find(child=>child?.props.accessibilityLabel==="Up arrow").props.onPress();
+  assert.equal(dismissed,1); assert.equal(sent.at(-1),"\x1b[A");
+});

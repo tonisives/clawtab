@@ -49,8 +49,10 @@ button.auto-yes-button{min-height:44px;padding:8px 16px;border-radius:999px}
 .native-mobile.shell-reply .notice{flex:none;padding:0 12px}
 .native-mobile.shell-reply .notice:empty{display:none}
 .native-mobile.shell-reply .heading{display:flex;padding:8px 12px}
-.native-mobile.shell-reply .heading h1,.native-mobile.shell-reply .heading-tools>:not(.options-toggle){display:none}
-.native-mobile.shell-reply .source-group{flex:1;font-size:14px}
+.native-mobile.shell-reply .heading h1{min-width:0;white-space:normal;text-align:left}
+.native-mobile.shell-reply .heading-tools>:not(.options-toggle){display:none}
+.native-mobile.shell-reply .source-group{max-width:25%;font-size:12px}
+.native-mobile.details-open .details-toggle{display:none}
 .native-mobile.shell-reply .message-content{flex:1;min-height:0;display:flex;flex-direction:column}
 .native-mobile.shell-reply .message-content>:not(.details-content){display:none}
 .native-mobile.shell-reply .details-content{margin:0;min-height:0;flex:1;overflow-y:auto;overflow-x:hidden}

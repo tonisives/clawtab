@@ -27,7 +27,7 @@ export function NotificationChrome({ state, send, bottom, enabled }: {
   useEffect(() => {
     if (!enabled) return;
     navigation.setOptions({
-      headerShown: !state.reply,
+      headerShown: true,
       headerLeft: () => <Pressable accessibilityLabel="Notification menu" onPress={() => setMenuOpen(true)} hitSlop={12}>
         <Ionicons name="ellipsis-horizontal" size={24} color={colors.text} />
       </Pressable>,

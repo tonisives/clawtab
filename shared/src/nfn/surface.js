@@ -7,6 +7,7 @@
   const socialDrafts = new Map();
   // Submitted cards stay out of this pass until the daemon confirms their state.
   const actionsInProgress = new Map(), actionErrors = new Map(), retryIds = new Set();
+  const contextErrors = new Map(), shellInputErrors = new Set();
   let reviewVersion = 0;
   let snapshot = {}, current = null, expanded = false, details = false, queue = false, history = false, preview = false;
   let renderedId = null, card = null, logTimer = null, collapseTimer = null, remaining = 8000, timerStarted = 0;
@@ -353,8 +354,11 @@
     if (shellSending || !shellInputQueue.length) return;
     shellSending = true;
     const item = shellInputQueue.shift();
-    try { await call({ op: "shell_input", ...item }); }
-    catch (error) { showError(error, item.id); }
+    try {
+      await call({ op: "shell_input", ...item });
+      if (shellInputErrors.delete(item.id)) { actionErrors.delete(item.id); if (current === item.id) updateCard(); }
+    }
+    catch (error) { shellInputErrors.add(item.id); showError(new Error("Input was not sent: " + String(error.message || error)), item.id); }
     finally {
       shellSending = false;
       if (shellInputQueue.length) flushShellInput();
@@ -1372,6 +1376,7 @@
     for (const control of card._socialControls || []) control.disabled = !isPending || busy;
     card._updateSocial?.();
     if (actionErrors.has(current)) card._notice.textContent = actionErrors.get(current);
+    else if (contextErrors.has(current)) card._notice.textContent = contextErrors.get(current);
     else if (record.error) card._notice.textContent = record.error;
     else if (record.ignored) card._notice.textContent = "Agent ignored";
     else if (!isPending) card._notice.textContent = record.response ? (update ? "Acknowledged" : "Reply sent") : `Request ${record.status}`;
@@ -1391,6 +1396,9 @@
     try {
       const value = await call({ op: "context", id });
       if (!ownsContext()) return;
+      contextErrors.delete(id);
+      if (actionErrors.get(id) === "Machine is offline") actionErrors.delete(id);
+      updateCard();
       if (mobileHost()) mobileShellCache.set(id, value.log);
       const changedLogs = card._logs && card._logs._raw !== value.log;
       const before = changedLogs ? host.getBoundingClientRect() : null;
@@ -1418,7 +1426,13 @@
         animateLayout(beforeMenu, false);
       }
       if (before && !layoutAnimation) animateLayout(before, false);
-    } catch (error) { if (ownsContext()) { if (card._logs) card._logs.textContent = String(error.message || error); showError(error); } }
+    } catch (error) {
+      if (ownsContext()) {
+        const message = String(error.message || error); contextErrors.set(id, message);
+        if (card._logs && card._logs._raw == null) card._logs.textContent = message;
+        updateCard();
+      }
+    }
     finally { if (contextRequest === request) contextRequest = null; }
   }
   function buildPlugins(parent, plugins, models, id) {

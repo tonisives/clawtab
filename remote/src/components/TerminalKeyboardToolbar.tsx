@@ -9,6 +9,7 @@ export const TERMINAL_KEYBOARD_TOOLBAR_HEIGHT = 48;
 
 type Props = {
   bottom: number;
+  inline?: boolean;
   dismissIcon?: "close" | "chevron-down";
   onDismiss: () => void;
   onSend: (text: string) => void;
@@ -17,10 +18,10 @@ type Props = {
   onMenuOpenChange: (open: boolean) => void;
 };
 
-export function TerminalKeyboardToolbar({ bottom, dismissIcon = "chevron-down", onDismiss, onSend, onWrite, menuOpen, onMenuOpenChange }: Props) {
+export function TerminalKeyboardToolbar({ bottom, inline = false, dismissIcon = "chevron-down", onDismiss, onSend, onWrite, menuOpen, onMenuOpenChange }: Props) {
   const closeMenu = useCallback(() => onMenuOpenChange(false), [onMenuOpenChange]);
   return (
-    <View style={[styles.toolbar, { bottom }]}>
+    <View style={[styles.toolbar, inline ? styles.inlineToolbar : { bottom }]}>
       <TouchableOpacity style={styles.button} onPress={onDismiss} accessibilityLabel="Dismiss keyboard">
         <Ionicons name={dismissIcon} size={20} color={colors.text} />
       </TouchableOpacity>
@@ -54,6 +55,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6, borderTopWidth: 1, borderBottomWidth: 1,
     borderColor: colors.border, backgroundColor: colors.surface,
   },
+  inlineToolbar: { position: "relative", flexShrink: 0 },
   button: { width: 36, height: 34, alignItems: "center", justifyContent: "center", borderRadius: radius.sm, backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.border },
   wideButton: { minWidth: 44, height: 34, paddingHorizontal: 6, alignItems: "center", justifyContent: "center", borderRadius: radius.sm, backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.border },
   buttonText: { color: colors.text, fontSize: 13, fontWeight: "600" },

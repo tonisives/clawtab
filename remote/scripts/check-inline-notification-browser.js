@@ -22,6 +22,7 @@
   check('shell is readable on black with wrapped text', style.fontSize==='12px' && style.backgroundColor==='rgb(0, 0, 0)' && style.whiteSpace==='pre-wrap');
   check('shell has no horizontal scrolling at iPhone width', content.scrollWidth<=content.clientWidth && shell.scrollWidth<=shell.clientWidth && document.body.scrollWidth<=414);
   check('recent output heading is absent', !document.querySelector('.log-output .block-label'));
+  check('automatic shell output has no collapse chevron', getComputedStyle(document.querySelector('.details-toggle')).display==='none');
   const selection=window.getSelection(),range=document.createRange(),textNode=document.createTreeWalker(shell,NodeFilter.SHOW_TEXT).nextNode(); range.setStart(textNode,0); range.setEnd(textNode,Math.min(5,textNode.length)); selection.removeAllRanges(); selection.addRange(range);
   const selected=selection.toString(); fixture.log+='\nLive output'; await wait(1200);
   tap(shell);
@@ -44,6 +45,8 @@
   content.scrollTop=0; content.dispatchEvent(new Event('scroll')); window.dispatchEvent(new Event('message_layout'));
   check('reading older output keeps its scroll position', content.scrollTop===0);
   check('reply focuses inline input', document.activeElement?.classList.contains('shell-keyboard'));
+  const heading=document.querySelector('.heading h1');
+  check('reply keeps the message title visible', Boolean(heading?.textContent) && getComputedStyle(heading).display!=='none');
   record.request.title = "Updated while replying";
   window.nfn.receive({...fixture.snapshot(), remote:true, native_chrome:true, arrival:undefined});
   check('live message metadata preserves the shell and input', document.querySelector('.logs')===original && document.activeElement?.classList.contains('shell-keyboard'));
@@ -57,7 +60,15 @@
   fixture.deferred.find(item=>item.command.op==='shell_input').complete('Shell input unavailable'); await wait();
   fixture.heldOps.delete('shell_input');
   const notice=document.querySelector('.notice');
-  check('reply shows shell input errors', notice?.textContent==='Shell input unavailable' && getComputedStyle(notice).display!=='none');
+  check('reply shows shell input errors', notice?.textContent==='Input was not sent: Shell input unavailable' && getComputedStyle(notice).display!=='none');
+  action('shell_input','\x1b[A'); await wait();
+  check('successful input clears the previous input failure', notice.textContent==='');
+  fixture.heldOps.add('context'); await wait(1100);
+  const heldContext=fixture.deferred.filter(item=>item.command.op==='context').at(-1), beforeDisconnect=shell.textContent;
+  heldContext.complete('Machine is offline'); await wait();
+  check('temporary offline errors preserve cached output', shell.textContent===beforeDisconnect && notice.textContent==='Machine is offline');
+  fixture.heldOps.delete('context'); await wait(1100);
+  check('live output recovery clears the offline error', shell.textContent===beforeDisconnect && notice.textContent==='');
   action('reply_close');
   check('close retains shell and restores message', !document.querySelector('#surface').classList.contains('shell-reply') && document.querySelector('.logs')===original);
   content.scrollTop=0; action('reply'); await wait(60);
