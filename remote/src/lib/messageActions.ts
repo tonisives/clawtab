@@ -1,3 +1,4 @@
+import { trackFunnel } from "./funnel"
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import { machineHostRequest, machineState, resourceKey, messagePending, type MessageRecord, type SocialDecision } from "@clawtab/shared"
 import { useMessageStore } from "../store/messages"
@@ -52,6 +53,7 @@ export async function flushMessageActions() {
       try {
         const result = await machineHostRequest(action.machine, { action: "message", command: { op: action.op, id: action.id, ...(action.action_id ? { action_id: action.action_id } : {}), ...(action.text ? { text: action.text } : {}), ...(action.decisions ? { decisions: action.decisions } : {}) } })
         if (generation !== revision) return
+        if (action.op === "respond") void trackFunnel("agent_answer_sent")
         const record = (result.record ?? result) as MessageRecord
         useMessageStore.getState().updateRecord({ ...record, machine_id: action.machine, request: { ...record.request, source: {
           ...record.request.source,

@@ -1,3 +1,4 @@
+import { trackFunnel } from "../lib/funnel";
 import { onMachineEvent } from "@clawtab/shared";
 import { machineRequest, machineSend, machineState, splitResource } from "@clawtab/shared";
 import { terminalCache } from "../lib/terminalCache";
@@ -241,6 +242,8 @@ export function usePty(
   const [error, setError] = useState<string | undefined>(undefined);
   const [hasOutput, setHasOutput] = useState(false);
   const gotDataRef = useRef(false);
+  const liveOutputRef = useRef(false);
+  const terminalViewedRef = useRef(false);
   const tmuxSessionRef = useRef(tmuxSession);
   const pendingOutputRef = useRef<string[]>([]);
   const lastResizeRef = useRef<{ cols: number; rows: number } | null>(null);
@@ -257,6 +260,10 @@ export function usePty(
       }
     }
     pendingOutputRef.current = [];
+    if (liveOutputRef.current && !terminalViewedRef.current) {
+      terminalViewedRef.current = true;
+      void trackFunnel("terminal_viewed");
+    }
     return true;
   }, [termRef]);
 
@@ -271,6 +278,7 @@ export function usePty(
     if (!paneId || (!activeTmuxSession && !(splitResource(paneId)?.id ?? paneId).startsWith("managed:"))) return;
 
     gotDataRef.current = false;
+    liveOutputRef.current = false;
     pendingOutputRef.current = [];
     setHasOutput(false);
     if (termRef.current) termRef.current.clear();
@@ -287,7 +295,8 @@ export function usePty(
       if (controlled && size?.cols && size.rows && (size.cols !== message.cols || size.rows !== message.rows)) getWsSend()?.({ type: "pty_resize", pane_id: paneId, ...size });
     });
 
-    const onOutput = (data: string) => {
+    const onOutput = (data: string, live = true) => {
+      if (live && data && !isTerminalReset(data)) liveOutputRef.current = true;
       if (!gotDataRef.current && data && !isTerminalReset(data)) {
         gotDataRef.current = true;
         setHasOutput(true);
@@ -301,12 +310,16 @@ export function usePty(
           return;
         }
         termRef.current.write(data);
+        if (liveOutputRef.current && !terminalViewedRef.current) {
+          terminalViewedRef.current = true;
+          void trackFunnel("terminal_viewed");
+        }
       } else {
         pendingOutputRef.current.push(data);
       }
     };
 
-    for (let data of terminalCache.get(paneId)) onOutput(data);
+    for (let data of terminalCache.get(paneId)) onOutput(data, false);
 
     const onExit = () => {
       // Could notify parent component

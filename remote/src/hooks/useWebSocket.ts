@@ -1,3 +1,5 @@
+import { trackFunnel } from "../lib/funnel"
+import { createAnswerTracker } from "../lib/activation"
 import { trackConnectedHost } from "../lib/analytics"
 import { useEffect, useCallback } from "react"
 import { AppState, Platform } from "react-native"
@@ -43,7 +45,13 @@ import type { ClientMessage } from "../types/messages"
 import { loadMessageCache, resetMessages, useMessageStore } from "../store/messages"
 import { flushMessageActions, loadMessageActions, resetMessageActions } from "../lib/messageActions"
 
+let answers = createAnswerTracker(() => { void trackFunnel("agent_answer_sent") })
+let sendTrackedResource = (message: ClientMessage) => {
+  if (message.type === "answer_question") answers.sent(message.id)
+  sendResource(message)
+}
 let resetAccountState = () => {
+  answers = createAnswerTracker(() => { void trackFunnel("agent_answer_sent") })
   resetMessages()
   resetMessageActions()
   useNotificationStore.getState().reset()
@@ -133,7 +141,7 @@ export let useWebSocket = () => {
       void loadMessageActions(userId).then(() => { if (active) return flushMessageActions() }).catch(() => {})
     }
     void useTerminalSettings.getState().hydrate()
-    setWsSend(sendResource)
+    setWsSend(sendTrackedResource)
     let wasConnected = false
     let hostConnections = new Map<string, string | undefined>()
     let executions = new Map<string, string | undefined>()
@@ -145,7 +153,7 @@ export let useWebSocket = () => {
         if (nextExecutions.get(pane) !== execution) terminalCache.delete(pane)
       executions = nextExecutions
       let connected = machineState().connected && machineState().machines.some((m) => m.online)
-      if (machineState().connected && machineState().machines.some((machine) => machine.owned && machine.online)) trackConnectedHost()
+      if (machineState().connected && machineState().machines.some((machine) => machine.owned && machine.online)) { trackConnectedHost(); void trackFunnel("host_connected") }
       let nextHosts = new Map(
         machineState()
           .machines.filter((machine) => machine.online)
@@ -164,6 +172,7 @@ export let useWebSocket = () => {
       if (replay) replayActivePtySubscriptions()
     })
     let unlisten = onMachineEvent((machine, raw) => {
+      if (raw.id) answers.acknowledged(raw.id, raw.success === true)
       let message = scopedMessage(machine, raw)
       if (raw.id) resolveRequest(raw.id, message.type === "run_history" ? message.runs : message)
       switch (message.type) {
@@ -230,7 +239,7 @@ export let useWebSocket = () => {
       resetAccountState()
     }
   }, [authenticated, userId])
-  let send = useCallback((message: ClientMessage) => sendResource(message), [])
+  let send = useCallback((message: ClientMessage) => sendTrackedResource(message), [])
   return { send }
 }
 import "../lib/machineSecurity"
