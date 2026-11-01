@@ -7,9 +7,10 @@ const ts = require('../desktop/node_modules/typescript');
 const record = (id, status = 'pending') => ({ id, status, request: { source: {}, actions: [] } });
 function harness(storage = new Map()) {
   const state = { connected: false, machines: [{ id: 'host', online: false }] };
-  const records = [], calls = [];
+  const records = [], calls = [], events = [];
   let request = async (_, value) => record(value.command.id, 'resolved');
   const modules = {
+    './funnel': { trackFunnel: async event => { events.push(event); } },
     '@react-native-async-storage/async-storage': {
       getItem: async key => storage.get(key) ?? null,
       setItem: async (key, value) => { storage.set(key, value); },
@@ -33,7 +34,7 @@ function harness(storage = new Map()) {
     assert.ok(name in modules, `Unexpected import: ${name}`);
     return modules[name];
   } });
-  return { ...exports, storage, state, records, calls, request: value => { request = value; }, online: () => { state.connected = true; state.machines[0].online = true; } };
+  return { ...exports, storage, state, records, calls, events, request: value => { request = value; }, online: () => { state.connected = true; state.machines[0].online = true; } };
 }
 
 test('an offline reply survives restart and is delivered once after reconnect', async () => {
@@ -99,4 +100,17 @@ test('offline platform decisions retain revision and scoped comments after resta
   await next.flushMessageActions();
   assert.deepEqual(JSON.parse(JSON.stringify(next.calls[0][1].command.decisions)), decisions);
   await next.flushMessageActions(); assert.equal(next.calls.length, 1);
+});
+
+
+test('reply activation waits for successful delivery and excludes dismissals', async () => {
+  const app = harness(); await app.loadMessageActions('alice'); app.online();
+  app.request(async () => { throw new Error('Host disconnected'); });
+  await assert.rejects(app.messageAction({ machine: 'host', id: 'reply', op: 'respond', action_id: 'yes' }), /disconnected/);
+  assert.deepEqual(app.events, []);
+  app.request(async (_, value) => record(value.command.id, 'resolved'));
+  await app.flushMessageActions(); await app.flushMessageActions();
+  assert.deepEqual(app.events, ['agent_answer_sent']);
+  await app.messageAction({ machine: 'host', id: 'notice', op: 'dismiss' });
+  assert.deepEqual(app.events, ['agent_answer_sent']);
 });
