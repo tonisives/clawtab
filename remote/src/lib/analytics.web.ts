@@ -1,5 +1,6 @@
+import type { FunnelEvent } from "../../../shared/src/funnel"
 type AnalyticsWindow = Window & { gtag?: (...args: unknown[]) => void; dataLayer?: unknown[] }
-type RemoteEvent = "login" | "remote_pairing_complete" | "remote_host_connected" | "remote_app_view"
+type RemoteEvent = FunnelEvent | "login" | "remote_pairing_complete" | "remote_host_connected" | "remote_app_view"
 const MEASUREMENT_ID = "G-01CG8GHYTS"
 let initialized = false
 let connectedHostTracked = false
@@ -49,6 +50,7 @@ export let initializeWebAnalytics = () => {
 
 let sendEvent = (event: RemoteEvent) => {
   ;(window as AnalyticsWindow).gtag?.("event", event, {
+    client_platform: "web",
     entry_page: entryPage(),
     source_page: "/web-remote",
     page_location: "https://remote.clawtab.cc/",
@@ -80,4 +82,14 @@ export let trackConnectedHost = () => {
     // account conversion. Reconnecting an existing host does not repeat it.
     sendEvent("remote_host_connected")
   } catch { /* Analytics cannot affect the machine connection. */ }
+}
+
+let funnelSent = new Set<FunnelEvent>()
+export let trackFunnelEvent = (event: FunnelEvent) => {
+  try {
+    if (!analyticsAllowed() || funnelSent.has(event)) return
+    initializeWebAnalytics()
+    sendEvent(event)
+    funnelSent.add(event)
+  } catch { /* Analytics cannot block the app. */ }
 }
