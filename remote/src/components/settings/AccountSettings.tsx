@@ -2,22 +2,25 @@ import { useEffect } from "react"
 import * as storage from "../../lib/storage"
 import { FUNNEL_DISABLED_KEY } from "../../lib/funnel"
 import { useState } from "react"
-import { View, Text, Pressable, StyleSheet } from "react-native"
+import { View, Text, Pressable, StyleSheet, Switch } from "react-native"
 import { useRouter } from "expo-router"
 import { useAuthStore } from "../../store/auth"
 import * as api from "../../api/client"
 import { confirm, alertError } from "../../lib/platform"
 import { colors } from "../../theme/colors"
 import { spacing } from "../../theme/spacing"
-import { SettingsButton, SettingsGroup, SettingsRow, SettingsPage, styles } from "./SettingsPage"
+import { SettingsButton, SettingsGroup, SettingsPage, styles } from "./SettingsPage"
 
 export let AccountSettings = () => {
   let [analyticsEnabled, setAnalyticsEnabled] = useState(false)
   useEffect(() => { void storage.getItem(FUNNEL_DISABLED_KEY).then((value) => setAnalyticsEnabled(value !== "1")).catch(() => {}) }, [])
-  let toggleAnalytics = async () => {
-    let enabled = !analyticsEnabled
-    await storage.setItem(FUNNEL_DISABLED_KEY, enabled ? "0" : "1")
-    setAnalyticsEnabled(enabled)
+  let toggleAnalytics = async (enabled: boolean) => {
+    try {
+      await storage.setItem(FUNNEL_DISABLED_KEY, enabled ? "0" : "1")
+      setAnalyticsEnabled(enabled)
+    } catch (error) {
+      alertError("Could not save analytics preference", error instanceof Error ? error.message : String(error))
+    }
   }
 
   let email = useAuthStore((s) => s.email)
@@ -74,7 +77,13 @@ export let AccountSettings = () => {
       <SettingsButton title="Sign out" onPress={handleLogout} disabled={deleteLoading} />
     </View>
     <SettingsGroup>
-      <SettingsRow title={analyticsEnabled ? "Usage analytics: on" : "Usage analytics: off"} detail="Share anonymous app opens, Relay screen views, and purchase steps with ClawTab." onPress={toggleAnalytics} chevron={false} />
+      <View style={styles.row}>
+        <View style={styles.rowText}>
+          <Text style={styles.rowTitle}>Usage analytics</Text>
+          <Text style={styles.rowDetail}>Share anonymous app opens, setup progress, terminal views, replies, and purchase steps with ClawTab.</Text>
+        </View>
+        <Switch value={analyticsEnabled} onValueChange={toggleAnalytics} accessibilityLabel="Usage analytics" trackColor={{ false: colors.borderLight, true: colors.accent }} ios_backgroundColor={colors.borderLight} />
+      </View>
     </SettingsGroup>
     <View style={accountStyles.divider} />
     <View style={styles.section}>
