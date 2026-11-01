@@ -14,11 +14,12 @@ type Props = {
   onDismiss: () => void;
   onSend: (text: string) => void;
   onWrite: () => void;
+  onSelect?: () => void;
   menuOpen: boolean;
   onMenuOpenChange: (open: boolean) => void;
 };
 
-export function TerminalKeyboardToolbar({ bottom, inline = false, dismissIcon = "chevron-down", onDismiss, onSend, onWrite, menuOpen, onMenuOpenChange }: Props) {
+export function TerminalKeyboardToolbar({ bottom, inline = false, dismissIcon = "chevron-down", onDismiss, onSend, onWrite, onSelect, menuOpen, onMenuOpenChange }: Props) {
   const closeMenu = useCallback(() => onMenuOpenChange(false), [onMenuOpenChange]);
   return (
     <View style={[styles.toolbar, inline ? styles.inlineToolbar : { bottom }]}>
@@ -40,6 +41,7 @@ export function TerminalKeyboardToolbar({ bottom, inline = false, dismissIcon = 
         {menuOpen ? (
           <View style={styles.popover}>
             <TerminalPasteButton onPaste={onSend} onDone={closeMenu} />
+            {onSelect ? <TouchableOpacity style={styles.writeButton} onPress={onSelect}><Text style={styles.writeText}>Select text</Text></TouchableOpacity> : null}
             <TouchableOpacity style={styles.writeButton} onPress={onWrite}><Text style={styles.writeText}>Write</Text></TouchableOpacity>
           </View>
         ) : null}

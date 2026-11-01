@@ -1,3 +1,4 @@
+import { terminalSelectionDocument } from "../lib/terminalSelectionDocument";
 import { radius } from "../theme/spacing"
 import * as Clipboard from "expo-clipboard";
 import { useEffect, useMemo, useState } from "react";
@@ -6,21 +7,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import WebView from "react-native-webview";
 import { colors } from "@clawtab/shared";
 
-const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (character) => ({
-  "&": "&amp;",
-  "<": "&lt;",
-  ">": "&gt;",
-  '"': "&quot;",
-  "'": "&#39;",
-})[character] ?? character);
-
-const copyHtml = (value: string) => `<!doctype html>
-<html><head><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<style>
-html,body{margin:0;min-height:100%;background:${colors.bg};color:${colors.text}}
-body{padding:12px 0;font:13px/18px Menlo,monospace;-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
-pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;-webkit-user-select:text;user-select:text}
-</style></head><body><pre>${escapeHtml(value)}</pre></body></html>`;
 
 type TerminalCopySheetProps = {
   text: string | null;
@@ -31,7 +17,7 @@ export let TerminalCopySheet = ({ text, onClose }: TerminalCopySheetProps) => {
   let insets = useSafeAreaInsets();
   let { width, height } = useWindowDimensions();
   let isLandscape = width > height;
-  let source = useMemo(() => ({ html: copyHtml(text ?? "") }), [text]);
+  let source = useMemo(() => ({ html: terminalSelectionDocument(text ?? "") }), [text]);
   let [copied, setCopied] = useState<string | null>(null);
   let link = text?.match(/https?:\/\/[^\s<>"']+/)?.[0]?.replace(/[),.;]+$/, "") ?? null;
   let code = text?.match(/\b[A-Z0-9]{4}-[A-Z0-9]{4,5}\b/)?.[0] ?? null;
