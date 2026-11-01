@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import document from "../lib/messageSurfaceDocument.generated";
-import { messageSurfaceInitialDocument } from "../lib/messageSurfaceBootstrap";
+import { messageSurfaceDefaultView, messageSurfaceInitialDocument } from "../lib/messageSurfaceBootstrap";
 import type { MessageSurfaceProps, SurfaceMessage } from "./messageSurfaceTypes";
 
 export function MessageSurface(props: MessageSurfaceProps) {
@@ -48,12 +48,13 @@ export function MessageSurface(props: MessageSurfaceProps) {
     }
     send(latest.current.snapshot);
     const selection = latest.current.selection ?? null;
+    const defaultView = messageSurfaceDefaultView(latest.current.snapshot);
     if (selection && selected.current !== selection) {
       send({ type: "open_record", id: selection, popup: latest.current.popup });
       selected.current = selection;
-    } else if (!selection && selected.current !== "") {
-      send({ type: "show" });
-      selected.current = "";
+    } else if (!selection && selected.current !== defaultView) {
+      send({ type: defaultView });
+      selected.current = defaultView;
     }
   }, [send]);
 

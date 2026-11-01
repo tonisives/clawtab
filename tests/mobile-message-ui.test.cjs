@@ -391,6 +391,16 @@ test("the local document paints its exact initial message before the ready bridg
   assert.equal(JSON.stringify(sent[1]), JSON.stringify({ type: "open_record", id: "mac-b::same-id", popup: true }));
 });
 
+test("opening Messages starts with pending cards before the bridge is ready", () => {
+  const { messageSurfaceInitialDocument } = load("messageSurfaceBootstrap");
+  const html = messageSurfaceInitialDocument("<html><body></body></html>", {
+    snapshot: { type: "snapshot", pending_count: 4 },
+  });
+  const sent = [];
+  vm.runInNewContext(html.match(/<script>([\s\S]*?)<\/script>/)[1], { window: { nfn: { receive: value => sent.push(value) } } });
+  assert.equal(sent.at(-1).type, "latest");
+});
+
 test("initial message data cannot terminate the bootstrap script and inactive popups stay empty", () => {
   const { messageSurfaceInitialDocument } = load("messageSurfaceBootstrap");
   const document = "<html><body></body></html>", text = "</script><script>window.injected=true</script>\u2028\u2029";
@@ -408,6 +418,7 @@ for (const variant of ["MessageSurface.web.tsx", "MessageSurface.tsx"]) {
     const refs = [], effects = [], sent = [];
     let cursor = 0;
     const react = {
+      useState: value => [value, () => {}],
       useRef: value => refs[cursor++] ??= { current: value },
       useCallback: callback => callback,
       useEffect: effect => effects.push(effect),
@@ -415,7 +426,8 @@ for (const variant of ["MessageSurface.web.tsx", "MessageSurface.tsx"]) {
     const target = { postMessage: value => sent.push(value) };
     const frame = { contentWindow: target, injectJavaScript: source => vm.runInNewContext(source, { window: { nfn: { receive: value => sent.push(value) } } }) };
     const dependencies = {
-      react, "react/jsx-runtime": { jsx: (type, props) => ({ type, props }) },
+      react, "react/jsx-runtime": { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
+      "./NotificationChrome": { NotificationChrome: "NotificationChrome", initialNotificationChrome: { screen: "queue", reply: false } },
       "react-native-webview": { default: "WebView" },
       "react-native": { View: "View" },
       "react-native-safe-area-context": { useSafeAreaInsets: () => ({ bottom: 34 }) },
@@ -428,10 +440,10 @@ for (const variant of ["MessageSurface.web.tsx", "MessageSurface.tsx"]) {
     }).outputText;
     const exports = {};
     vm.runInNewContext(source, { exports, require: name => dependencies[name], window: { addEventListener() {}, removeEventListener() {} } });
-    const render = (selection, active = true) => {
+    const render = (selection, active = true, pendingCount = 0) => {
       cursor = 0; effects.length = 0;
-      const root = exports.MessageSurface({ snapshot: { type: "snapshot" }, selection, active, onCommand: async () => ({}) });
-      const node = root.type === "View" ? root.props.children : root;
+      const root = exports.MessageSurface({ snapshot: { type: "snapshot", pending_count: pendingCount }, selection, active, onCommand: async () => ({}) });
+      const node = root.type === "View" ? root.props.children.find(child => child?.type === "WebView") : root;
       node.props.ref.current = frame;
       effects.forEach(effect => effect());
       return node;
@@ -446,6 +458,8 @@ for (const variant of ["MessageSurface.web.tsx", "MessageSurface.tsx"]) {
     assert.equal(sent.at(-1).id, "mac-a::review");
     render(null);
     assert.equal(sent.at(-1).type, "show");
+    render(null, true, 4);
+    assert.equal(sent.at(-1).type, "latest", "host hydration opens pending cards");
     render("mac-a::review");
     assert.equal(sent.at(-1).type, "open_record");
     assert.equal(sent.at(-1).id, "mac-a::review");

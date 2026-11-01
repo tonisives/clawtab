@@ -5,11 +5,8 @@ import { usePathname, useRouter } from "expo-router";
 
 import { colors, useMachines } from "@clawtab/shared";
 import { useAuthStore } from "../store/auth";
-import { useNotificationStore } from "../store/notifications";
-import { useJobsStore } from "../store/jobs";
 import { useResponsive } from "../hooks/useResponsive";
-import { questionMessage, uncoveredAlerts, useMessageStore } from "../store/messages";
-import { messagePending } from "@clawtab/shared";
+import { usePendingMessageCount } from "../hooks/usePendingMessageCount";
 
 export function NotificationsMenuButton({
   hideWhenEmpty = false,
@@ -30,14 +27,7 @@ export function NotificationsMenuButton({
   const authenticated = useAuthStore(state => state.isAuthenticated);
   const authLoading = useAuthStore(state => state.loading);
   const machines = useMachines();
-  const questions = useNotificationStore((s) => s.questions);
-
-  const records = useMessageStore(state => state.records);
-  const processes = useJobsStore(state => state.detectedProcesses);
-  const alertCount = uncoveredAlerts(records, processes).filter(process => process._agent_alert?.trim()).length;
-  const represented = new Set(questions.map(question => questionMessage(records, question)));
-  const messageCount = records.filter(record => messagePending(record) && !represented.has(record)).length;
-  const activeNotificationCount = questions.length + alertCount + messageCount;
+  const activeNotificationCount = usePendingMessageCount();
 
   const openMenu = () => {
     if (onOpen) {

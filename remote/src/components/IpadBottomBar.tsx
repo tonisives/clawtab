@@ -12,6 +12,7 @@ import {
 
 import { colors } from "@clawtab/shared";
 import { useNotificationStore } from "../store/notifications";
+import { usePendingMessageCount } from "../hooks/usePendingMessageCount";
 
 export type IpadNavigationItem = "jobs" | "settings" | "search" | "notifications";
 export type IpadBarSection = Exclude<IpadNavigationItem, "search">;
@@ -25,9 +26,8 @@ export function IpadBottomBar({
   onSelect: (item: IpadNavigationItem) => void;
   style?: StyleProp<ViewStyle>;
 }) {
-  const questions = useNotificationStore((s) => s.questions);
   const autoYesPaneIds = useNotificationStore((s) => s.autoYesPaneIds);
-  const notificationCount = questions.length;
+  const notificationCount = usePendingMessageCount();
   const hasAutoYes = autoYesPaneIds.size > 0;
   const glassAvailable =
     Platform.OS === "ios" &&

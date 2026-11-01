@@ -3,9 +3,12 @@ import { Platform } from "react-native";
 import { useResponsive } from "../hooks/useResponsive";
 import { colors } from "../theme/colors";
 import { NotificationsMenuButton } from "./NotificationsMenuButton";
+import { usePendingMessageCount } from "../hooks/usePendingMessageCount";
 
 export function TabScreenStack({ screen, title }: { screen: string; title: string }) {
   const router = useRouter();
+  const pendingCount = usePendingMessageCount();
+  const nativeBadgeAvailable = Platform.OS === "ios" && Number.parseInt(String(Platform.Version), 10) >= 26;
   const { isIosPhone, isIosPadPortrait, isSplitView, isWide } = useResponsive();
   const showHeader = Platform.OS !== "web" && !isWide && (isIosPhone || (!isSplitView && !isIosPadPortrait));
   const largeTitle = showHeader && Platform.OS === "ios" && !isSplitView;
@@ -25,10 +28,17 @@ export function TabScreenStack({ screen, title }: { screen: string; title: strin
         headerTintColor: colors.text,
         headerShadowVisible: false,
         headerLargeTitleShadowVisible: false,
-        ...(Platform.OS === "ios" ? {
+        ...(nativeBadgeAvailable ? {
           unstable_headerRightItems: () => [{
             type: "button" as const, label: "Messages",
             icon: { type: "sfSymbol" as const, name: "bell" as const },
+            badge: pendingCount > 0 ? {
+              value: pendingCount,
+              style: { backgroundColor: colors.warning, color: colors.bg },
+            } : undefined,
+            accessibilityLabel: pendingCount > 0
+              ? `${pendingCount} pending notification${pendingCount === 1 ? "" : "s"}`
+              : "Notifications",
             onPress: () => router.push("/notifications"),
           }],
         } : { headerRight: () => <NotificationsMenuButton countOnly /> }),
