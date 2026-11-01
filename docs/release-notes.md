@@ -1,3 +1,30 @@
+# ClawTab 0.6.2: the message bar
+
+Agent questions, permission prompts, updates, and completion messages now come together in one macOS message bar. Reply from the card, read recent output in Details, or open the originating session. The daemon owns the bar, so the desktop app is optional.
+
+- Focus the bar with Ctrl+Option+W. Browse cards with h/l, use keyboard hints, and send replies with Command+Enter.
+- Keep replies and drafts while moving between cards. New messages queue behind the card being read; failed actions return with their error and draft intact.
+- Search Pending and History, group messages by conversation, dismiss a selection, or ignore a noisy agent.
+- Read terminal output and attachments in an expanded, resizable card, with terminal colors and reflowing soft wraps.
+- Continue through web and iOS message cards. Pending messages escalate to mobile after 60 seconds of Mac inactivity, or immediately when locked or asleep, with delivery configured.
+- Keep a task checklist beside the queue, optionally linked to a Markdown note and agent progress.
+- Send questions and choices from scripts with `cwt message send ... --wait`.
+
+## CLI and installation
+
+The CLI is now `cwt`, replacing the installed `cwtctl` executable. Update scripts and shell completion references. The desktop app keeps its `clawtab` launcher. macOS packages include the daemon-owned message bar; the separate desktop cask remains optional.
+
+```sh
+brew update
+brew upgrade --cask tonisives/tap/clawtab
+```
+
+If you use the desktop app, also upgrade `tonisives/tap/clawtab-desktop`.
+
+The macOS message bar requires macOS 12 or later. Web Remote is deployed separately. This host/desktop release does not publish an iPhone or Android store build.
+
+[Message bar guide](https://clawtab.cc/docs#messages) · [Demo](https://cdn.clawtab.cc/assets/home/message-bar-hero-v12e-narrated.mp4) · [Full changelog](https://github.com/tonisives/clawtab/compare/v0.6.1...v0.6.2)
+
 # ClawTab 0.6.1
 
 The default macOS install now contains the headless daemon, `cwt`, agent hooks, and Zsh completion. Install the desktop app separately:

@@ -29,7 +29,7 @@ For split workspaces, the Mind Map, and visual settings, install the optional de
 brew install --cask tonisives/tap/clawtab-desktop
 ```
 
-Starting with the next release, `cwt` replaces `cwtctl` as the CLI command.
+Starting with 0.6.2, `cwt` replaces `cwtctl` as the CLI command.
 The desktop app keeps its `clawtab` launcher.
 
 ### Build from source
@@ -47,6 +47,10 @@ Source builds can produce these binaries:
 | `clawtab` | GUI app (Tauri window) |
 | `cwt` | CLI for headless control |
 | `cwttui` | Terminal UI (ratatui) |
+
+## Open the message bar
+
+Press **Ctrl+Option+W** on macOS 12 or later. Agent questions and completion messages arrive as cards. Reply directly, choose an answer, or open the originating session. The daemon owns the bar, so the desktop app can stay closed. See the [message bar guide](messages.md).
 
 ## Start an agent from your terminal
 
