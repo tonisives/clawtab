@@ -405,15 +405,21 @@ for (const variant of ["MessageSurface.web.tsx", "MessageSurface.tsx"]) {
       useRef: value => refs[cursor++] ??= { current: value },
       useState: value => { const state = refs[cursor++] ??= { value }; return [state.value, next => { state.value=next; }]; },
       useCallback: callback => callback,
-      useEffect: effect => effects.push(effect),
+      useEffect: (effect, dependencies) => {
+        const index = cursor++;
+        const previous = refs[index];
+        if (!previous || !dependencies || dependencies.some((value, i) => !Object.is(value, previous.dependencies?.[i]))) {
+          refs[index] = { dependencies }; effects.push(effect);
+        }
+      },
     };
     const target = { postMessage: value => sent.push(value) };
-    const frame = { contentWindow: target, injectJavaScript: source => vm.runInNewContext(source, { window: { nfn: { receive: value => sent.push(value) } } }) };
+    const frame = { contentWindow: target, injectJavaScript: source => vm.runInNewContext(source, { document: { querySelector: () => null, querySelectorAll: () => [], activeElement: null }, window: { ReactNativeWebView: { postMessage() {} }, nfn: { receive: value => sent.push(value) } } }) };
     const dependencies = {
       react, "react/jsx-runtime": { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
 
       "react-native-webview": { default: "WebView" },
-      "react-native": { View: "View" },
+      "react-native": { View: "View", Keyboard: { dismiss() {} } },
       "react-native-safe-area-context": { useSafeAreaInsets: () => ({ bottom: 34 }) },
       "../hooks/useMessageKeyboard": { useMessageKeyboard: () => ({ host: { current: null }, overlap: keyboardOverlap, horizontalInsets: { left: 0, right: 0 }, onLayout() {} }) },
       "../lib/messageSurfaceDocument.generated": { default: "<html><body></body></html>" },
@@ -421,6 +427,8 @@ for (const variant of ["MessageSurface.web.tsx", "MessageSurface.tsx"]) {
       "./NotificationChrome": { initialNotificationChrome: { screen: "list", reply: false }, NotificationChrome: "NotificationChrome" },
       "./TerminalKeyboardToolbar": { TERMINAL_KEYBOARD_TOOLBAR_HEIGHT: 48, TerminalKeyboardToolbar: "TerminalKeyboardToolbar" },
       "./TerminalWriteDialog": { TerminalWriteDialog: "TerminalWriteDialog" },
+      "./MessageTextSelection": { MessageTextSelection: "MessageTextSelection" },
+      "../lib/messageSelection": load("messageSelection"),
     };
     const source = ts.transpileModule(fs.readFileSync(path.resolve(base, `../components/${variant}`), "utf8"), {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
@@ -472,6 +480,21 @@ for (const variant of ["MessageSurface.web.tsx", "MessageSurface.tsx"]) {
       assert.equal(lastRoot.props.style.paddingBottom,34,"dismissal restores the bottom safe area");
       toolbar.props.onDismiss(); assert.equal(sent.at(-1).action,"reply_close");
       toolbar.props.onSend("\x1b[A"); assert.equal(sent.at(-1).text,"\x1b[A");
+      toolbar.props.onSelect();
+      lastRoot.props.children.find(child => child?.type === "NotificationChrome").props.send("reply_focus");
+      reopened.props.onMessage({ nativeEvent: { data: JSON.stringify({ nfn: { native: "selection_text", text: "Frozen shell output" } }) } });
+      const selecting = render("mac-b::other", true, 4);
+      const selectionView = lastRoot.props.children.find(child => child?.type === "MessageTextSelection");
+      assert.equal(selectionView.props.text, "Frozen shell output");
+      assert.equal(selecting.props.style.display, "none", "the interactive shell stays mounted behind the selection view");
+      assert.equal(lastRoot.props.children.some(child => child?.type === "TerminalKeyboardToolbar"), false);
+      assert.equal(selecting.props.source, initialSource);
+      render("mac-b::other", true, 2);
+      assert.equal(lastRoot.props.children.find(child => child?.type === "MessageTextSelection").props.text, "Frozen shell output", "live snapshots cannot alter the selected text");
+      selectionView.props.onDone();
+      const restored = render("mac-b::other");
+      assert.equal(restored.props.style.display, "flex");
+      assert.equal(restored.props.source, initialSource, "Done restores the same cached shell");
       dependencies["../lib/messageSurfaceDocument.generated"].default="<html><body>Updated surface</body></html>";
       const updated=render("mac-b::other");
       assert.notEqual(updated.props.source,initialSource,"updated renderer code refreshes the native document");
@@ -503,7 +526,7 @@ test("reply keeps native navigation and lays the shared keyboard controls in flo
   const labels=[];
   const collect=node=>{ if(Array.isArray(node)) node.forEach(collect); else if(node?.props) { if(node.type==="Text") labels.push(node.props.children); collect(node.props.children); } };
   collect(chrome);
-  assert.deepEqual(labels,["Pending notifications","Tasks"],"mobile notification menu omits local message settings");
+  assert.deepEqual(labels,["Pending notifications","Tasks","Select text"],"message menu offers text selection");
   assert.equal(options.at(-1).headerShown,true,"reply retains the native title bar and its close button");
   assert.ok(options.at(-1).headerTitle());
   const toolbar=component("TerminalKeyboardToolbar")({bottom:0,inline:true,dismissIcon:"close",onDismiss:()=>dismissed++,onSend:value=>sent.push(value),onWrite(){},menuOpen:false,onMenuOpenChange(){}});

@@ -54,7 +54,7 @@ export function NotificationChrome({ state, send, bottom, enabled }: {
     <Modal transparent visible={menuOpen} animationType="fade" onRequestClose={() => setMenuOpen(false)}>
       <Pressable onPress={() => setMenuOpen(false)} style={{ flex: 1, backgroundColor: "#00000080", justifyContent: "center", padding: 24 }}>
         <View accessibilityViewIsModal style={{ backgroundColor: colors.surface, borderRadius: 16, padding: 8, borderWidth: 1, borderColor: colors.border }}>
-          {[{ action: "list", label: "Pending notifications" }, { action: "tasks", label: "Tasks" }].map(item =>
+          {[{ action: "list", label: "Pending notifications" }, { action: "tasks", label: "Tasks" }, ...(state.screen === "message" ? [{ action: "select_text", label: "Select text" }] : [])].map(item =>
             <Pressable key={item.action} onPress={() => { setMenuOpen(false); send(item.action); }} style={{ padding: 16 }}>
               <Text style={{ color: colors.text, fontSize: 16 }}>{item.label}</Text>
             </Pressable>)}
