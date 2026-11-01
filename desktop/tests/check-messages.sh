@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ "${BUILD_SERVICE_WORKER:-}" != 1 ]]; then
+if [[ "${BUILD_SERVICE_WORKER:-}" != 1 && "${CI:-}" != true ]]; then
   echo 'Run this check with buildctl run --cwd desktop --prepare-node -- bash tests/check-messages.sh' >&2
   exit 2
 fi
