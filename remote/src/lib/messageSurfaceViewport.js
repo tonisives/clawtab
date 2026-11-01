@@ -10,6 +10,7 @@
     const keyboard = nativeKeyboard || innerHeight - height > 100;
     root.style.setProperty("--message-height", `${height}px`);
     root.style.setProperty("--message-safe-bottom", keyboard ? "0px" : safeBottom === null ? "env(safe-area-inset-bottom,0px)" : `${safeBottom}px`);
+    window.dispatchEvent(new Event("message_layout"));
     const field = document.activeElement;
     if (!editable(field) || field.classList?.contains("shell-keyboard")) return;
     const composer = field.closest(".reply") ?? field;

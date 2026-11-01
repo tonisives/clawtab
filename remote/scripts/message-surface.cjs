@@ -6,7 +6,7 @@ function messageDocument(root = path.resolve(__dirname, "../../shared/src/nfn"))
   const read = name => fs.readFileSync(path.join(root, name), "utf8");
   return read("surface.html")
     .replace("/* NFN_CSS */", read("surface.css") + `
-html,body{width:100%;height:var(--message-height,100%);background:#161616;overflow:hidden}
+html,body{width:100%;height:var(--message-height,100%);background:#161616;overflow:hidden;-webkit-text-size-adjust:100%;text-size-adjust:100%}
 body{display:flex;justify-content:center}
 #surface,#surface.details-open,#surface.pill{width:100%;height:100%;max-width:100%;max-height:100%;border:0;border-radius:0;box-shadow:none}
 #surface{height:100%;min-height:0;--surface-max-height:var(--message-height,100dvh)}
@@ -41,10 +41,11 @@ button.auto-yes-button{min-height:44px;padding:8px 16px;border-radius:999px}
 .native-chrome>.top{display:none}
 .native-chrome .footer-actions{display:none}
 .native-mobile .details-content{margin-top:8px;min-height:120px;max-height:none;flex:1 1 120px}
-.native-mobile .logs{white-space:pre;overflow-wrap:normal;border:0;border-radius:0;background:#161616;padding:8px;margin:0}
+.native-mobile .card,.native-mobile .message-content,.native-mobile .details-content,.native-mobile .log-output{min-width:0;max-width:100%;overflow-x:hidden}
+.native-mobile .logs{box-sizing:border-box;width:100%;min-width:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;line-height:16px;border:0;border-radius:0;background:#000000;padding:8px;margin:0}
 .native-mobile.details-open>.card{flex:1;min-height:0}
 .native-mobile.shell-reply>.card{padding:0;display:flex;flex:1;min-height:0;overflow:hidden}
-.native-mobile.shell-reply .card>:not(.heading):not(.message-content):not(.shell-keyboard):not(.shell-keyboard-tools):not(.notice){display:none}
+.native-mobile.shell-reply .card>:not(.heading):not(.message-content):not(.shell-keyboard):not(.notice){display:none}
 .native-mobile.shell-reply .notice{flex:none;padding:0 12px}
 .native-mobile.shell-reply .notice:empty{display:none}
 .native-mobile.shell-reply .heading{display:flex;padding:8px 12px}
@@ -52,12 +53,9 @@ button.auto-yes-button{min-height:44px;padding:8px 16px;border-radius:999px}
 .native-mobile.shell-reply .source-group{flex:1;font-size:14px}
 .native-mobile.shell-reply .message-content{flex:1;min-height:0;display:flex;flex-direction:column}
 .native-mobile.shell-reply .message-content>:not(.details-content){display:none}
-.native-mobile.shell-reply .details-content{margin:0;min-height:0;flex:1;overflow:auto}
+.native-mobile.shell-reply .details-content{margin:0;min-height:0;flex:1;overflow-y:auto;overflow-x:hidden}
 .native-mobile.shell-reply .block-label{display:none}
 .shell-keyboard{position:absolute;width:1px;height:1px;opacity:0;left:0;top:0;font-size:16px}
-.shell-keyboard-tools{display:none}
-.shell-reply .shell-keyboard-tools{display:flex;flex:none;gap:4px;padding:8px 4px;border-top:1px solid var(--line);background:#202020}
-.shell-keyboard-tools button{flex:1;padding:4px;min-height:38px}
 .todo-add[hidden]{display:none}
 .message{max-height:35dvh}
 .message-thread{max-height:35dvh}

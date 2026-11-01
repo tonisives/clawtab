@@ -343,14 +343,10 @@
     const signature = JSON.stringify(state);
     if (signature !== lastMobileChrome) { lastMobileChrome = signature; native({ native: "chrome", ...state }); }
   }
-  function fitMobileShell() {
-    if (!mobileHost() || !card?._logs || hasLogSelection(card._logs)) return;
-    const logs = card._logs;
-    const canvas = document.createElement("canvas"), context = canvas.getContext("2d");
-    context.font = "11px monospace";
-    const width = Math.max(1, ...stripAnsi(logs._raw || "").split("\n").map(line => context.measureText(line.trimEnd()).width));
-    const available = Math.max(1, card._content.clientWidth - 16);
-    logs.style.fontSize = Math.min(11, 11 * available / width) + "px";
+  function followMobileShell() {
+    if (mobileHost() && shellReply && card?._followLogs && !hasLogSelection(card._logs)) {
+      card._content.scrollTop = card._content.scrollHeight;
+    }
   }
   async function flushShellInput() {
     shellInputTimer = null;
@@ -394,27 +390,19 @@
           if (keys[event.key]) { event.preventDefault(); sendShellInput(keys[event.key]); }
           else if (event.key === "Backspace" && !input.value) { event.preventDefault(); sendShellInput("\x7f"); }
         });
-        const toolbar = el("div", "shell-keyboard-tools");
-        const key = (label, value, title) => {
-          const control = button(label, () => { if (value === null) setShellReply(false); else { sendShellInput(value); input.focus({ preventScroll: true }); } }, "utility");
-          control.setAttribute("aria-label", title);
-          control.addEventListener("pointerdown", event => event.preventDefault());
-          toolbar.append(control);
-        };
-        key("×", null, "Back to notification"); key("Esc", "\x1b", "Escape");
-        key("←", "\x1b[D", "Left arrow"); key("↓", "\x1b[B", "Down arrow");
-        key("↑", "\x1b[A", "Up arrow"); key("→", "\x1b[C", "Right arrow"); key("Enter", "\r", "Enter");
-        card.append(input, toolbar); card._shellInput = input;
+        card.append(input); card._shellInput = input;
       }
     }
     host.classList.toggle("shell-reply", open);
     if (open) {
-      card._content.scrollTop = 0; card._followLogs = false;
-      fitMobileShell(); card._shellInput.focus({ preventScroll: true }); startContext();
+      card._followLogs = true; followMobileShell();
+      card._shellInput.focus({ preventScroll: true }); startContext();
+      requestAnimationFrame(followMobileShell);
     } else card._shellInput?.blur();
     syncMobileChrome(); size();
   }
-  window.addEventListener("resize", () => { fitMobileShell(); });
+  window.addEventListener("resize", () => { requestAnimationFrame(followMobileShell); });
+  window.addEventListener("message_layout", followMobileShell);
   function stripAnsi(text) { return String(text || "").replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "").replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, ""); }
   function renderAnsi(parent, raw) {
     // Match the palette in shared/util/ansi.ts, using text nodes for terminal output.
@@ -1321,10 +1309,19 @@
     const node = card, layout = template(record).layout, primitives = {};
     if (hasBlock(layout, "logs")) {
       const section = el("div", "log-output");
-      section.append(el("div", "block-label", "Recent output"));
+      if (!mobileHost()) section.append(el("div", "block-label", "Recent output"));
       const cached = mobileHost() ? mobileShellCache.get(record.id) : null;
       const logs = el("pre", "logs", cached == null ? "Loading recent output..." : "");
       if (cached != null) { logs._raw = cached; renderAnsi(logs, cached); }
+      if (mobileHost() && record.request.source?.pane_id) {
+        let tap = null;
+        logs.addEventListener("pointerdown", event => { tap = { x: event.clientX, y: event.clientY, at: performance.now() }; });
+        logs.addEventListener("pointercancel", () => { tap = null; });
+        logs.addEventListener("pointerup", event => {
+          const start = tap; tap = null;
+          if (start && performance.now() - start.at < 350 && Math.hypot(event.clientX - start.x, event.clientY - start.y) < 8 && !hasLogSelection(logs)) setShellReply(true);
+        });
+      }
       node._logs = logs; section.append(logs); primitives.logs = section;
     }
     // Keep the message and inline media mounted while Details shows the output.
@@ -1399,8 +1396,8 @@
       const before = changedLogs ? host.getBoundingClientRect() : null;
       if (changedLogs && !hasLogSelection(card._logs)) {
         const logs = card._logs, scroller = card._content;
-        const atBottom = logs._raw == null ? !shellReply : card._followLogs && scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 30;
-        logs._raw = value.log; renderAnsi(logs, value.log || "No output yet"); fitMobileShell();
+        const atBottom = logs._raw == null || card._followLogs && scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 30;
+        logs._raw = value.log; renderAnsi(logs, value.log || "No output yet");
         card._followLogs = atBottom;
         if (atBottom) scroller.scrollTop = scroller.scrollHeight;
       }
@@ -2056,7 +2053,7 @@
       updateCard(); syncCardDetails(records.get(current));
     } else { host.querySelector(".card")?.remove(); host.querySelector(".queue")?.remove(); renderedId = null; card = null; }
     renderMenu(); positionAcknowledgementMenu(); cleanupRemoteMedia(); observeCardSize(); fitReviewHeight(); if (resizing || !animate) size(); else if (!continuingAnimation) animateLayout(before, !queue && !menu && !settingsOpen);
-    host.classList.toggle("native-mobile", mobileHost()); host.classList.toggle("native-chrome", Boolean(mobileHost() && snapshot.native_chrome)); host.classList.toggle("shell-reply", shellReply); fitMobileShell(); syncMobileChrome();
+    host.classList.toggle("native-mobile", mobileHost()); host.classList.toggle("native-chrome", Boolean(mobileHost() && snapshot.native_chrome)); host.classList.toggle("shell-reply", shellReply); syncMobileChrome();
     syncNativePointerHover();
   }
   function receive(value) {
@@ -2066,6 +2063,11 @@
       else if (value.action === "next") navigate(1);
       else if (value.action === "tasks") toggleTodos();
       else if (value.action === "settings") openSettings();
+      else if (value.action === "reply_close") setShellReply(false);
+      else if (value.action === "reply_focus") card?._shellInput?.focus({ preventScroll: true });
+      else if (value.action === "shell_input" && shellReply && typeof value.text === "string") {
+        sendShellInput(value.text); card?._shellInput?.focus({ preventScroll: true });
+      }
       else if (value.action === "reply") {
         if (records.get(current)?.request.source?.pane_id) setShellReply(true);
         else card?.querySelector(".reply-toggle")?.click();

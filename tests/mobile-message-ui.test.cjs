@@ -117,10 +117,9 @@ test("arrival tracking initializes hosts independently and ignores replayed hist
   assert.equal(tracker.observe([a, b, fresh], snapshots), fresh);
 });
 
-test("the warm popup presents new records while preserving its current message", () => {
-  const states = [], effects = [];
-  let cursor = 0, changed = false, records = [], snapshots = {}, pathname = "/";
-  const inbox = Symbol("MessageInbox");
+test("new arrivals open the shared message modal and leave an open conversation in place", () => {
+  const states = [], effects = [], opened = [];
+  let cursor = 0, records = [], snapshots = {}, pathname = "/";
   const exports = {};
   const dependencies = {
     react: {
@@ -128,52 +127,37 @@ test("the warm popup presents new records while preserving its current message",
       useState: initial => {
         const index = cursor++;
         if (!(index in states)) states[index] = typeof initial === "function" ? initial() : initial;
-        return [states[index], value => {
-          const next = typeof value === "function" ? value(states[index]) : value;
-          if (!Object.is(next, states[index])) { states[index] = next; changed = true; }
-        }];
+        return [states[index], () => {}];
       },
     },
-    "react/jsx-runtime": { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
     "@clawtab/shared": { useMachines: () => ({ snapshots }) },
-    "expo-router": { useGlobalSearchParams: () => ({}), usePathname: () => pathname, useRouter: () => ({ push() {} }) },
-    "react-native": { View: "View", Text: "Text", Pressable: "Pressable", StyleSheet: { create: value => value }, useWindowDimensions: () => ({ width: 390, height: 844 }) },
-    "react-native-safe-area-context": { useSafeAreaInsets: () => ({ top: 0, left: 0, right: 0, bottom: 0 }) },
+    "expo-router": { useGlobalSearchParams: () => ({}), usePathname: () => pathname, useRouter: () => ({ push: route => opened.push(route) }) },
     "../store/messages": { useMessageStore: select => select({ records }) },
     "../lib/messagePresentation": presentation,
     "../lib/messageRoutes": routes,
-    "./MessageInbox": { MessageInbox: inbox },
   };
   const source = ts.transpileModule(fs.readFileSync(path.resolve(base, "../components/MessageArrival.tsx"), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
   vm.runInNewContext(source, { exports, require: name => {
-    assert.ok(name in dependencies, `Unexpected popup dependency ${name}`); return dependencies[name];
+    assert.ok(name in dependencies, `Unexpected arrival dependency ${name}`); return dependencies[name];
   } });
   const render = () => {
-    let tree;
-    do {
-      changed = false; cursor = 0; effects.length = 0;
-      tree = exports.MessageArrival();
-      for (const effect of effects) effect();
-    } while (changed);
-    return tree?.props.children.find(child => child.type === inbox)?.props ?? null;
+    cursor = 0; effects.length = 0;
+    assert.equal(exports.MessageArrival(), null, "there is no second message surface");
+    for (const effect of effects) effect();
   };
-  assert.equal(render().active, false);
+  render();
   const old = record("mac-a", "old");
   records = [old]; snapshots = { "mac-a": { messages_changed: { records } } };
-  assert.equal(render().active, false);
+  render(); assert.equal(opened.length, 0);
   const first = record("mac-a", "first"); records = [old, first];
-  assert.equal(render().arrival, "mac-a::first");
-  assert.equal(render().active, true);
-  const second = record("mac-a", "second"); records = [old, first, second];
-  const popup = render();
-  assert.equal(popup.selection, "mac-a::first");
-  assert.equal(popup.arrival, "mac-a::second");
+  render(); assert.deepEqual(opened, ["/notifications/message/first?machine=mac-a"]);
   pathname = "/notifications/message/first";
-  assert.equal(render().active, false);
+  const second = record("mac-a", "second"); records = [old, first, second];
+  render(); assert.equal(opened.length, 1);
   pathname = "/";
-  assert.equal(render().active, false);
+  render(); assert.equal(opened.length, 1, "closing does not reopen arrivals already seen in the modal");
 });
 
 function harness(records = [record("mac-a"), record("mac-b")]) {
@@ -418,8 +402,8 @@ for (const variant of ["MessageSurface.web.tsx", "MessageSurface.tsx"]) {
     const refs = [], effects = [], sent = [];
     let cursor = 0;
     const react = {
-      useState: value => [value, () => {}],
       useRef: value => refs[cursor++] ??= { current: value },
+      useState: value => { const state = refs[cursor++] ??= { value }; return [state.value, () => {}]; },
       useCallback: callback => callback,
       useEffect: effect => effects.push(effect),
     };
@@ -427,13 +411,16 @@ for (const variant of ["MessageSurface.web.tsx", "MessageSurface.tsx"]) {
     const frame = { contentWindow: target, injectJavaScript: source => vm.runInNewContext(source, { window: { nfn: { receive: value => sent.push(value) } } }) };
     const dependencies = {
       react, "react/jsx-runtime": { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
-      "./NotificationChrome": { NotificationChrome: "NotificationChrome", initialNotificationChrome: { screen: "queue", reply: false } },
+
       "react-native-webview": { default: "WebView" },
       "react-native": { View: "View" },
       "react-native-safe-area-context": { useSafeAreaInsets: () => ({ bottom: 34 }) },
       "../hooks/useMessageKeyboard": { useMessageKeyboard: () => ({ host: { current: null }, overlap: 0, horizontalInsets: { left: 0, right: 0 }, onLayout() {} }) },
       "../lib/messageSurfaceDocument.generated": { default: "<html><body></body></html>" },
       "../lib/messageSurfaceBootstrap": load("messageSurfaceBootstrap"),
+      "./NotificationChrome": { initialNotificationChrome: { screen: "list", reply: false }, NotificationChrome: "NotificationChrome" },
+      "./TerminalKeyboardToolbar": { TERMINAL_KEYBOARD_TOOLBAR_HEIGHT: 48, TerminalKeyboardToolbar: "TerminalKeyboardToolbar" },
+      "./TerminalWriteDialog": { TerminalWriteDialog: "TerminalWriteDialog" },
     };
     const source = ts.transpileModule(fs.readFileSync(path.resolve(base, `../components/${variant}`), "utf8"), {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },

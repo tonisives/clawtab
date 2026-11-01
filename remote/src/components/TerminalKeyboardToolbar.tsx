@@ -28,7 +28,7 @@ export function TerminalKeyboardToolbar({ bottom, dismissIcon = "chevron-down", 
       <TouchableOpacity style={styles.wideButton} onPress={() => onSend("\x03")}><Text style={styles.buttonText}>C-c</Text></TouchableOpacity>
       <View style={styles.spacer} />
       <TouchableOpacity style={styles.button} onPress={() => onSend("\x1b[D")} accessibilityLabel="Left arrow"><Ionicons name="chevron-back" size={20} color={colors.text} /></TouchableOpacity>
-      <TouchableOpacity style={styles.button} onPress={() => onSend("\x1b[B")} accessibilityLabel="Down arrow"><Ionicons name={dismissIcon} size={20} color={colors.text} /></TouchableOpacity>
+      <TouchableOpacity style={styles.button} onPress={() => onSend("\x1b[B")} accessibilityLabel="Down arrow"><Ionicons name="chevron-down" size={20} color={colors.text} /></TouchableOpacity>
       <TouchableOpacity style={styles.button} onPress={() => onSend("\x1b[A")} accessibilityLabel="Up arrow"><Ionicons name="chevron-up" size={20} color={colors.text} /></TouchableOpacity>
       <TouchableOpacity style={styles.button} onPress={() => onSend("\x1b[C")} accessibilityLabel="Right arrow"><Ionicons name="chevron-forward" size={20} color={colors.text} /></TouchableOpacity>
       <View style={styles.spacer} />

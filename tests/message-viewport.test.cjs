@@ -10,11 +10,12 @@ function viewport() {
   const document = { documentElement: root, activeElement: null,
     addEventListener: (name, callback) => listeners[name] = callback };
   const window = { addEventListener: (name, callback) => listeners[name] = callback,
+    dispatchEvent: event => listeners[event.type]?.(event),
     visualViewport: { height: 800, addEventListener: (name, callback) => listeners[`viewport:${name}`] = callback } };
   const composer = { getBoundingClientRect: () => ({ height: 150 }), scrollIntoView: () => scrolled.push("composer") };
   const field = { matches: () => true, closest: () => composer,
     scrollIntoView: () => scrolled.push("field"), blur: () => { document.activeElement = null; } };
-  const context = { window, document, innerHeight: 800, Math, requestAnimationFrame: callback => frames.push(callback) };
+  const context = { window, document, innerHeight: 800, Math, Event, requestAnimationFrame: callback => frames.push(callback) };
   vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, "../remote/src/lib/messageSurfaceViewport.js"), "utf8"), context);
   const flush = () => { while (frames.length) frames.shift()(); };
   const tap = (interactive, distance = 0) => {

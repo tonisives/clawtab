@@ -7,20 +7,26 @@ import { useMessageKeyboard } from "../hooks/useMessageKeyboard";
 import document from "../lib/messageSurfaceDocument.generated";
 import { messageSurfaceDefaultView, messageSurfaceInitialDocument } from "../lib/messageSurfaceBootstrap";
 import type { MessageSurfaceProps, SurfaceMessage } from "./messageSurfaceTypes";
+import { TerminalKeyboardToolbar, TERMINAL_KEYBOARD_TOOLBAR_HEIGHT } from "./TerminalKeyboardToolbar";
+import { TerminalWriteDialog } from "./TerminalWriteDialog";
 
 export function MessageSurface(props: MessageSurfaceProps) {
   const [chrome, setChrome] = useState(initialNotificationChrome);
+  const [terminalMenuOpen, setTerminalMenuOpen] = useState(false);
+  const [writeOpen, setWriteOpen] = useState(false);
+  const [writeDraft, setWriteDraft] = useState("");
   const source = useRef<{ html: string } | null>(null);
   if (!source.current) source.current = { html: messageSurfaceInitialDocument(document, props) };
   const view = useRef<WebView<object>>(null);
   const insets = useSafeAreaInsets();
   const keyboard = useMessageKeyboard();
+  const toolbarBottom = Math.max(keyboard.overlap, insets.bottom);
   const latest = useRef(props);
   latest.current = props;
   const ready = useRef(false);
   const selected = useRef<string | null>(null);
   const applyInsets = useCallback(() => {
-    view.current?.injectJavaScript(`window.nfnMobile?.setInsets(${props.popup || chrome.screen === "message" && !chrome.reply ? 0 : insets.bottom},${keyboard.overlap > 0});true;`);
+    view.current?.injectJavaScript(`window.nfnMobile?.setInsets(${props.popup || chrome.screen === "message" ? 0 : insets.bottom},${keyboard.overlap > 0});true;`);
   }, [insets.bottom, props.popup, keyboard.overlap, chrome.screen, chrome.reply]);
   useEffect(applyInsets, [applyInsets]);
   const send = useCallback((value: unknown) => {
@@ -28,6 +34,14 @@ export function MessageSurface(props: MessageSurfaceProps) {
     view.current?.injectJavaScript(`window.nfn?.receive(${json});true;`);
   }, []);
   const action = useCallback((action: string) => send({ type: "mobile_action", action }), [send]);
+  const sendTerminalText = useCallback((text: string) => send({ type: "mobile_action", action: "shell_input", text }), [send]);
+  useEffect(() => {
+    if (!chrome.reply) { setTerminalMenuOpen(false); setWriteOpen(false); return; }
+    if (!writeOpen) {
+      const timer = setTimeout(() => action("reply_focus"), 350);
+      return () => clearTimeout(timer);
+    }
+  }, [action, chrome.reply, writeOpen]);
   const synchronize = useCallback(() => {
     if (!ready.current) return;
     if (latest.current.active === false) {
@@ -58,7 +72,7 @@ export function MessageSurface(props: MessageSurfaceProps) {
     catch (error) { send({ type: "response", token: value.token, error: error instanceof Error ? error.message : String(error) }); }
   };
 
-  return <View ref={keyboard.host} onLayout={keyboard.onLayout} style={{ flex: 1, minHeight: 0, backgroundColor: "#161616", paddingBottom: keyboard.overlap, paddingTop: chrome.reply ? insets.top : 0, paddingLeft: keyboard.horizontalInsets.left, paddingRight: keyboard.horizontalInsets.right }}>
+  return <View ref={keyboard.host} onLayout={keyboard.onLayout} style={{ flex: 1, minHeight: 0, backgroundColor: "#161616", paddingBottom: chrome.reply ? toolbarBottom + TERMINAL_KEYBOARD_TOOLBAR_HEIGHT : keyboard.overlap, paddingTop: chrome.reply ? insets.top : 0, paddingLeft: keyboard.horizontalInsets.left, paddingRight: keyboard.horizontalInsets.right }}>
     <WebView<object> ref={view} source={source.current} style={{ flex: 1, backgroundColor: "#161616" }}
     javaScriptEnabled originWhitelist={["*"]} allowsInlineMediaPlayback mediaPlaybackRequiresUserAction
     keyboardDisplayRequiresUserAction={false} hideKeyboardAccessoryView
@@ -67,5 +81,20 @@ export function MessageSurface(props: MessageSurfaceProps) {
     onShouldStartLoadWithRequest={request => request.url === "about:blank"}
     onLoadStart={() => { ready.current = false; }} />
     {!props.popup && props.active !== false ? <NotificationChrome state={chrome} send={action} bottom={insets.bottom} enabled /> : null}
+    {chrome.reply && props.active !== false ? <TerminalKeyboardToolbar
+      bottom={toolbarBottom}
+      dismissIcon="close"
+      onDismiss={() => action("reply_close")}
+      onSend={sendTerminalText}
+      onWrite={() => { setTerminalMenuOpen(false); setWriteOpen(true); }}
+      menuOpen={terminalMenuOpen}
+      onMenuOpenChange={setTerminalMenuOpen}
+    /> : null}
+    <TerminalWriteDialog visible={writeOpen} draft={writeDraft} onDraftChange={setWriteDraft}
+      onClose={() => setWriteOpen(false)} onDone={() => {
+        const text = writeDraft.replace(/\r\n|\n/g, "\r");
+        sendTerminalText(text.endsWith("\r") ? text : text + "\r");
+        setWriteDraft(""); setWriteOpen(false);
+      }} />
   </View>;
 }
