@@ -40,37 +40,38 @@
   const selecting = () => window.getSelection()?.isCollapsed === false;
   document.addEventListener("touchstart", event => {
     swipe = null;
-    if (event.touches.length !== 1 || selecting() || editable(document.activeElement)) return;
-    const card = event.target.closest("#surface:not(.shell-reply):not(.menu-open) > .card");
+    if (event.touches.length !== 1 || selecting()) return;
+    const card = event.target.closest("#surface:not(.menu-open) > .card");
     if (!card || event.target.closest(swipeControl)) return;
     for (let node = event.target; node && node !== card; node = node.parentElement) {
       if (node.scrollWidth > node.clientWidth + 1 && /auto|scroll/.test(getComputedStyle(node).overflowX)) return;
     }
     const touch = event.touches[0];
-    swipe = { card, id: touch.identifier, x: touch.clientX, y: touch.clientY, at: performance.now() };
-  }, { passive: true });
+    swipe = { card, id: touch.identifier, x: touch.clientX, y: touch.clientY, horizontal: false };
+  }, { passive: true, capture: true });
   document.addEventListener("touchmove", event => {
     if (!swipe) return;
     const touch = event.touches[0];
-    if (event.touches.length !== 1 || touch.identifier !== swipe.id || selecting() || performance.now() - swipe.at > 350) {
+    if (event.touches.length !== 1 || touch.identifier !== swipe.id || selecting()) {
       swipe = null; return;
     }
     const dx = Math.abs(touch.clientX - swipe.x), dy = Math.abs(touch.clientY - swipe.y);
-    if (dy > 12 && dy >= dx) { swipe = null; return; }
-    if (dx > 12 && dx > dy * 1.5) event.preventDefault();
-  }, { passive: false });
-  document.addEventListener("touchcancel", () => { swipe = null; }, { passive: true });
+    if (!swipe.horizontal && dy > 12 && dy >= dx) { swipe = null; return; }
+    if (dx > 12 && dx > dy * 1.5) swipe.horizontal = true;
+    if (swipe.horizontal) event.preventDefault();
+  }, { passive: false, capture: true });
+  document.addEventListener("touchcancel", () => { swipe = null; }, { passive: true, capture: true });
   document.addEventListener("touchend", event => {
     const start = swipe; swipe = null;
-    if (!start || event.touches.length || selecting() || performance.now() - start.at > 350
-      || !start.card.isConnected || !start.card.matches("#surface:not(.shell-reply):not(.menu-open) > .card")) return;
+    if (!start || event.touches.length || selecting()
+      || !start.card.isConnected || !start.card.matches("#surface:not(.menu-open) > .card")) return;
     const touch = Array.from(event.changedTouches).find(touch => touch.identifier === start.id);
     if (!touch) return;
     const dx = touch.clientX - start.x, dy = touch.clientY - start.y;
     if (Math.abs(dx) < 60 || Math.abs(dx) <= Math.abs(dy) * 1.5) return;
     const step = start.card.parentElement.querySelector(dx < 0 ? ".nav-step.next" : ".nav-step.previous");
     if (step && !step.hidden) step.click();
-  }, { passive: true });
+  }, { passive: true, capture: true });
   document.addEventListener("pointerdown", event => { pointer = { x: event.clientX, y: event.clientY }; }, true);
   document.addEventListener("pointercancel", () => { pointer = null; }, true);
   document.addEventListener("pointerup", event => {

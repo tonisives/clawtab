@@ -29,6 +29,12 @@
   assert(swipe(-100).defaultPrevented && title() === "swipe-c", "left swipe opens the next notification without scrolling sideways");
   swipe(100);
   assert(title() === "swipe-b", "right swipe opens the previous notification");
+  const slowMessage = document.querySelector(".message");
+  touch(slowMessage, "touchstart", 160, 150);
+  await sleep(450);
+  touch(slowMessage, "touchmove", 60, 150); touch(slowMessage, "touchend", 60, 150);
+  assert(title() === "swipe-c", "a swipe still navigates when the first movement event arrives after 350 ms");
+  swipe(100);
   window.nfn.receive({ type: "mobile_action", action: "next" });
   assert(title() === "swipe-c", "chevron navigation still uses the same notification order");
   swipe(-100);
@@ -46,7 +52,7 @@
   assert(title() === "swipe-b", "cancelled touch gestures do not navigate");
   touch(message, "touchstart", 160, 150); touch(message, "touchstart", 160, 150, true); touch(message, "touchend", 60, 150);
   assert(title() === "swipe-b", "multitouch gestures do not navigate");
-  touch(message, "touchstart", 160, 150); await sleep(400); touch(message, "touchend", 60, 150);
+  touch(message, "touchstart", 160, 150); await sleep(400); touch(message, "touchend", 160, 150);
   assert(title() === "swipe-b", "long presses remain available for text selection");
   const range = document.createRange(); range.selectNodeContents(message);
   window.getSelection().addRange(range); swipe(-100);
@@ -55,9 +61,12 @@
   await sleep(40);
   swipe(-100, 0, document.querySelector(".logs"));
   assert(title() === "swipe-c" && !surface.classList.contains("shell-reply"), "swiping shell output navigates without entering reply");
-  window.nfn.receive({ type: "mobile_action", action: "reply" }); swipe(100);
-  assert(title() === "swipe-c" && surface.classList.contains("shell-reply"), "reply mode keeps its input and notification during swipes");
-  window.nfn.receive({ type: "mobile_action", action: "reply_close" });
+  window.nfn.receive({ type: "mobile_action", action: "reply" });
+  const shellInput = document.querySelector(".shell-keyboard");
+  swipe(100, 0, shellInput);
+  assert(title() === "swipe-c" && surface.classList.contains("shell-reply"), "swipes within the reply input preserve editing");
+  swipe(100, 0, document.querySelector(".logs"));
+  assert(title() === "swipe-b" && !surface.classList.contains("shell-reply"), "swiping shell output while replying navigates like the chevrons");
   window.nfn.receive({ type: "mobile_action", action: "list" });
   swipe(-100, 0, document.querySelector(".queue"));
   assert(document.querySelector(".queue"), "the pending list keeps its normal touch behavior");
