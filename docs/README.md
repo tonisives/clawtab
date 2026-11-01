@@ -2,9 +2,7 @@
 
 # ClawTab Documentation
 
-ClawTab brings questions, permission prompts, updates, and completion messages from your coding agents into one message bar. Reply from a card, inspect recent output, or open the agent's session. Claude Code, Codex, and OpenCode keep running in their terminals while you handle what needs your attention.
-
-The message bar runs on macOS 12 or later and is owned by the background daemon. The desktop app is optional. Web Remote and iPhone provide access to the same message queue, with replies routed to the originating host.
+ClawTab connects Claude Code, Codex, OpenCode, and Hermes in one workspace. A background daemon tracks every session, and the message bar, tmux plugin, CLI, desktop app, and phone and web apps all work with the same sessions. These pages cover each part in detail.
 
 ## Table of Contents
 
@@ -18,6 +16,7 @@ The message bar runs on macOS 12 or later and is owned by the background daemon.
 4. [Secrets](./secrets.md) -- Keychain and gopass integration
 5. [Telegram](./telegram.md) -- Notifications and agent mode
 6. [CLI & TUI](./cli-tui.md) -- Command-line and terminal UI
+- [Tmux plugin](./tmux.md) -- Status markers, task titles, floating menu, keybindings
 7. [Vim / Tmux Navigation](./vim-tmux-navigation.md) -- Share Ctrl-hjkl across vim, tmux, and ClawTab panes
 8. [Local Executable Plugins](./agent-plugins.md) -- Add trusted local actions for agent panes
 
