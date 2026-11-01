@@ -69,7 +69,7 @@
   click("Details");
   assert(document.querySelector(".card") === detailCard && document.querySelector(".actions") === detailActions && document.querySelector("textarea") === detailInput, "Details retains the card, actions, and reply field on the first press");
   const expansion = document.querySelector("#surface").getAnimations()[0];
-  assert(expansion && !detailCard.getAnimations().length && getComputedStyle(detailCard).opacity === "1", "Details animates the frame while retaining readable content");
+  assert(expansion && !detailCard.getAnimations().length && getComputedStyle(detailCard).opacity === "1", "Details animates the frame while retaining readable content: " + JSON.stringify({ frameAnimations: document.querySelector("#surface").getAnimations().length, cardAnimations: detailCard.getAnimations().length, opacity: getComputedStyle(detailCard).opacity, reducedMotion: matchMedia("(prefers-reduced-motion: reduce)").matches, compact: { width: compactSize.width, height: compactSize.height }, expanded: { width: document.querySelector("#surface").offsetWidth, height: document.querySelector("#surface").offsetHeight } }));
   const expansionFrames = expansion.effect.getKeyframes();
   assert(parseFloat(expansionFrames[0].width) < parseFloat(expansionFrames[1].width) && parseFloat(expansionFrames[0].height) < parseFloat(expansionFrames[1].height), "Details grows width and height in the same animation");
   assert(!document.querySelector(".message-content").hidden && document.querySelector(".message-content > .details-content"), "Details appends output below the existing message");
