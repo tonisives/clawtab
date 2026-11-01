@@ -1,4 +1,4 @@
-export type FunnelEvent = "app_open" | "upgrade_view" | "checkout_attempt" | "checkout_opened" | "purchase_confirmed"
+export type FunnelEvent = "setup_started" | "host_connected" | "terminal_viewed" | "agent_answer_sent" | "app_open" | "upgrade_view" | "checkout_attempt" | "checkout_opened" | "purchase_confirmed"
 export type FunnelPlatform = "ios" | "android" | "web" | "desktop"
 export const FUNNEL_DISABLED_KEY = "clawtab_analytics_disabled"
 

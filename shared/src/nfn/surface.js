@@ -332,9 +332,32 @@
     if ((result.records?.length || 0) < 50) unseenPending = 0;
   }
   const mobileShellCache = new Map();
+  const mobileContextRequests = new Map(), mobileShellCapturedAt = new Map(), mobilePreloadAttempts = new Map();
+  let mobilePreloads = 0;
   let shellReply = false, shellSending = false, shellInputTimer = null, lastMobileChrome = "";
   const shellInputQueue = [];
   const mobileHost = () => Boolean(window.ReactNativeWebView);
+  function captureMobileShell(id) {
+    if (mobileContextRequests.has(id)) return mobileContextRequests.get(id);
+    const request = call({ op: "context", id }).then(value => {
+      mobileShellCache.set(id, value.log); mobileShellCapturedAt.set(id, Date.now());
+      return value;
+    }).finally(() => mobileContextRequests.delete(id));
+    mobileContextRequests.set(id, request);
+    return request;
+  }
+  function preloadMobileShells() {
+    if (!mobileHost() || preview || document.hidden || !snapshot.visible || hiddenByUser || settingsOpen || todosOpen || !queue && !current) return;
+    const now = Date.now();
+    for (const record of pendingCards().reverse()) {
+      if (mobilePreloads >= 2) break;
+      const id = record.id;
+      if (id === current || !record.request.source?.pane_id || record.details_available === false || mobileContextRequests.has(id)
+        || now - (mobileShellCapturedAt.get(id) || 0) < 15000 || now - (mobilePreloadAttempts.get(id) || 0) < 15000) continue;
+      mobilePreloadAttempts.set(id, now); mobilePreloads++;
+      captureMobileShell(id).catch(() => {}).finally(() => { mobilePreloads--; preloadMobileShells(); });
+    }
+  }
   function syncMobileChrome() {
     if (!mobileHost()) return;
     const items = pendingCards(), index = items.findIndex(record => record.id === current);
@@ -1394,12 +1417,11 @@
     const ownsContext = () => contextRequest === request && id === current && card === request.card
       && (details || menu === "agent") && !queue && !settingsOpen;
     try {
-      const value = await call({ op: "context", id });
+      const value = await (mobileHost() ? captureMobileShell(id) : call({ op: "context", id }));
       if (!ownsContext()) return;
       contextErrors.delete(id);
       if (actionErrors.get(id) === "Machine is offline") actionErrors.delete(id);
       updateCard();
-      if (mobileHost()) mobileShellCache.set(id, value.log);
       const changedLogs = card._logs && card._logs._raw !== value.log;
       const before = changedLogs ? host.getBoundingClientRect() : null;
       if (changedLogs && !hasLogSelection(card._logs)) {
@@ -2067,7 +2089,7 @@
       updateCard(); syncCardDetails(records.get(current));
     } else { host.querySelector(".card")?.remove(); host.querySelector(".queue")?.remove(); renderedId = null; card = null; }
     renderMenu(); positionAcknowledgementMenu(); cleanupRemoteMedia(); observeCardSize(); fitReviewHeight(); if (resizing || !animate) size(); else if (!continuingAnimation) animateLayout(before, !queue && !menu && !settingsOpen);
-    host.classList.toggle("native-mobile", mobileHost()); host.classList.toggle("native-chrome", Boolean(mobileHost() && snapshot.native_chrome)); host.classList.toggle("shell-reply", shellReply); syncMobileChrome();
+    host.classList.toggle("native-mobile", mobileHost()); host.classList.toggle("native-chrome", Boolean(mobileHost() && snapshot.native_chrome)); host.classList.toggle("shell-reply", shellReply); syncMobileChrome(); preloadMobileShells();
     syncNativePointerHover();
   }
   function receive(value) {

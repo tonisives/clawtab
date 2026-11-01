@@ -1,3 +1,4 @@
+import { trackFunnel } from "../lib/funnel"
 import { useEffect, useState } from "react"
 import { Linking, Platform, Pressable, StyleSheet, Text, View } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
@@ -38,6 +39,7 @@ export let machineOnboardingChrome: MachineOnboardingChrome = {
 }
 
 export let MachineSetup = ({ onNavigate, manage = false, setup }: { onNavigate?: () => void; manage?: boolean; setup?: "connect" | "rent" }) => {
+  useEffect(() => { if (!manage && setup === "connect") void trackFunnel("setup_started") }, [manage, setup])
   let authenticated = useAuthStore((state) => state.isAuthenticated)
   let router = useRouter()
   let [ordering, setOrdering] = useState(false)

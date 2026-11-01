@@ -1,0 +1,2 @@
+ALTER TABLE funnel_events DROP CONSTRAINT funnel_events_event_check;
+ALTER TABLE funnel_events ADD CONSTRAINT funnel_events_event_check CHECK (event IN ('app_open', 'upgrade_view', 'checkout_attempt', 'checkout_opened', 'purchase_confirmed', 'page_view', 'install_section_view', 'install_cta_click', 'app_store_click', 'download_click', 'install_command_copy', 'remote_app_open', 'setup_started', 'host_connected', 'terminal_viewed', 'agent_answer_sent', 'remote_demo_open', 'remote_setup_click', 'remote_demo_video_play', 'remote_demo_video_complete'));

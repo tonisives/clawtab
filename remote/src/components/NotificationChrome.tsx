@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Modal, Pressable, Text, View } from "react-native";
-import { useNavigation, useRouter } from "expo-router";
+import { useNavigation } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { colors, SegmentedControl } from "@clawtab/shared";
 
@@ -22,7 +22,6 @@ export function NotificationChrome({ state, send, bottom, enabled }: {
   enabled: boolean;
 }) {
   const navigation = useNavigation();
-  const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
   useEffect(() => {
     if (!enabled) return;
@@ -55,8 +54,8 @@ export function NotificationChrome({ state, send, bottom, enabled }: {
     <Modal transparent visible={menuOpen} animationType="fade" onRequestClose={() => setMenuOpen(false)}>
       <Pressable onPress={() => setMenuOpen(false)} style={{ flex: 1, backgroundColor: "#00000080", justifyContent: "center", padding: 24 }}>
         <View accessibilityViewIsModal style={{ backgroundColor: colors.surface, borderRadius: 16, padding: 8, borderWidth: 1, borderColor: colors.border }}>
-          {[{ action: "list", label: "Pending notifications" }, { action: "tasks", label: "Tasks" }, { action: "settings", label: "Settings" }].map(item =>
-            <Pressable key={item.action} onPress={() => { setMenuOpen(false); if (item.action === "settings") router.dismissTo("/settings"); else send(item.action); }} style={{ padding: 16 }}>
+          {[{ action: "list", label: "Pending notifications" }, { action: "tasks", label: "Tasks" }].map(item =>
+            <Pressable key={item.action} onPress={() => { setMenuOpen(false); send(item.action); }} style={{ padding: 16 }}>
               <Text style={{ color: colors.text, fontSize: 16 }}>{item.label}</Text>
             </Pressable>)}
         </View>

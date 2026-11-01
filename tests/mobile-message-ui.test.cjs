@@ -499,7 +499,11 @@ test("reply keeps native navigation and lays the shared keyboard controls in flo
     }).outputText;
     const exports={}; vm.runInNewContext(source,{exports,require:name=>dependencies[name]}); return exports[name];
   };
-  component("NotificationChrome")({state:{screen:"message",counter:"1 / 4",canNavigate:true,reply:true},send:value=>sent.push(value),bottom:34,enabled:true});
+  const chrome=component("NotificationChrome")({state:{screen:"message",counter:"1 / 4",canNavigate:true,reply:true},send:value=>sent.push(value),bottom:34,enabled:true});
+  const labels=[];
+  const collect=node=>{ if(Array.isArray(node)) node.forEach(collect); else if(node?.props) { if(node.type==="Text") labels.push(node.props.children); collect(node.props.children); } };
+  collect(chrome);
+  assert.deepEqual(labels,["Pending notifications","Tasks"],"mobile notification menu omits local message settings");
   assert.equal(options.at(-1).headerShown,true,"reply retains the native title bar and its close button");
   assert.ok(options.at(-1).headerTitle());
   const toolbar=component("TerminalKeyboardToolbar")({bottom:0,inline:true,dismissIcon:"close",onDismiss:()=>dismissed++,onSend:value=>sent.push(value),onWrite(){},menuOpen:false,onMenuOpenChange(){}});
