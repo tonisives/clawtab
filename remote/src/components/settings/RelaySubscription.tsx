@@ -1,7 +1,9 @@
+import { trackFunnel } from "../../lib/funnel"
 import { HostedWorkspacePanel, machineState, reconnectMachines } from "@clawtab/shared"
 import { useIap } from "../../hooks/useIap"
 import { useEffect, useRef, useState } from "react"
 import { AppState, Platform, View, Text, ActivityIndicator } from "react-native"
+import { useIsFocused } from "@react-navigation/native"
 import { useRouter } from "expo-router"
 import { useAuthStore } from "../../store/auth"
 import * as api from "../../api/client"
@@ -17,7 +19,12 @@ export let RelaySubscription = () => {
   let [actionLoading, setActionLoading] = useState(false)
   let [subscriptionError, setSubscriptionError] = useState<string | null>(null)
   let [subscriptionCheckFailed, setSubscriptionCheckFailed] = useState(false)
+  let focused = useIsFocused()
   let iap = useIap()
+  useEffect(() => {
+    if (focused && !subLoading && sub && !sub.subscribed) void trackFunnel("upgrade_view")
+  }, [focused, subLoading, sub])
+
   let router = useRouter()
   let openMachines = () => router.push("/machines")
   let [diagnosticsExpanded, setDiagnosticsExpanded] = useState(false)
@@ -52,6 +59,7 @@ export let RelaySubscription = () => {
     if (actionLoading || iap.purchasing) return
     setActionLoading(true)
     setSubscriptionError(null)
+    void trackFunnel("checkout_attempt")
     try {
       if (Platform.OS === "ios") {
         let result = await iap.purchase()
@@ -60,6 +68,7 @@ export let RelaySubscription = () => {
           setSubscriptionError(result.message ?? "Purchase was not completed. Try again or restore an existing purchase.")
           return
         }
+        void trackFunnel("purchase_confirmed")
         let updated = await refreshSubscription()
         if (updated && !updated.subscribed) {
           setSubscriptionError("Your purchase is still being confirmed. Retry the subscription check in a moment.")
@@ -68,6 +77,7 @@ export let RelaySubscription = () => {
       } else {
         let { url } = await api.createCheckout()
         await openUrl(url)
+        void trackFunnel("checkout_opened")
         await refreshSubscription()
       }
     } catch { setSubscriptionError("Could not complete the subscription. Please try again.") }

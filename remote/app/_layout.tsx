@@ -1,4 +1,5 @@
 import { useIapRecovery } from "../src/hooks/useIap";
+import { trackFunnel } from "../src/lib/funnel";
 import { initializeWebAnalytics } from "../src/lib/analytics";
 import { MachineOnboardingProvider } from "@clawtab/shared";
 import { machineOnboardingChrome, machineOnboardingContent, machineManagementContent } from "../src/components/MachineSetup";
@@ -148,6 +149,7 @@ export default function RootLayout() {
 
   useEffect(() => {
     initializeWebAnalytics();
+    void trackFunnel("app_open");
     init();
     handleColdStartAnswer();
   }, [init]);

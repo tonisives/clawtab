@@ -1,3 +1,4 @@
+import { FUNNEL_DISABLED_KEY } from "../../../shared/src/funnel"
 import { useEffect, useRef, useState } from "react"
 import { invoke } from "@tauri-apps/api/core"
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow"
@@ -242,6 +243,9 @@ let GeneralSettingsContent = ({ onAddJob }: { onAddJob: () => void }) => {
   const [lastChecked, setLastChecked] = useState<Date | null>(null)
   const [agentIntegrations, setAgentIntegrations] = useState<AgentIntegrationStatus[]>([])
   const [integrationBusy, setIntegrationBusy] = useState<ProcessProvider | null>(null)
+  const [analyticsEnabled, setAnalyticsEnabled] = useState(() => {
+    try { return localStorage.getItem(FUNNEL_DISABLED_KEY) !== "1" } catch { return false }
+  })
   const [integrationError, setIntegrationError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -480,6 +484,19 @@ let GeneralSettingsContent = ({ onAddJob }: { onAddJob: () => void }) => {
             Automatically check for updates
           </label>
         </div>
+      </div>
+
+      <div className="field-group">
+        <span className="field-group-title">Usage analytics</span>
+        <label className="checkbox-label">
+          <input type="checkbox" checked={analyticsEnabled} onChange={(event) => {
+            try {
+              localStorage.setItem(FUNNEL_DISABLED_KEY, event.target.checked ? "0" : "1")
+              setAnalyticsEnabled(event.target.checked)
+            } catch { /* Keep the saved preference when storage is unavailable. */ }
+          }} />
+          Share anonymous app opens with ClawTab
+        </label>
       </div>
 
       <div className="field-group">

@@ -1,3 +1,6 @@
+import { useEffect } from "react"
+import * as storage from "../../lib/storage"
+import { FUNNEL_DISABLED_KEY } from "../../lib/funnel"
 import { useState } from "react"
 import { View, Text, Pressable, StyleSheet } from "react-native"
 import { useRouter } from "expo-router"
@@ -6,9 +9,17 @@ import * as api from "../../api/client"
 import { confirm, alertError } from "../../lib/platform"
 import { colors } from "../../theme/colors"
 import { spacing } from "../../theme/spacing"
-import { SettingsButton, SettingsGroup, SettingsPage, styles } from "./SettingsPage"
+import { SettingsButton, SettingsGroup, SettingsRow, SettingsPage, styles } from "./SettingsPage"
 
 export let AccountSettings = () => {
+  let [analyticsEnabled, setAnalyticsEnabled] = useState(false)
+  useEffect(() => { void storage.getItem(FUNNEL_DISABLED_KEY).then((value) => setAnalyticsEnabled(value !== "1")).catch(() => {}) }, [])
+  let toggleAnalytics = async () => {
+    let enabled = !analyticsEnabled
+    await storage.setItem(FUNNEL_DISABLED_KEY, enabled ? "0" : "1")
+    setAnalyticsEnabled(enabled)
+  }
+
   let email = useAuthStore((s) => s.email)
   let logout = useAuthStore((s) => s.logout)
   let [deleteLoading, setDeleteLoading] = useState(false)
@@ -62,6 +73,9 @@ export let AccountSettings = () => {
       <Text style={styles.sectionTitle}>Session</Text>
       <SettingsButton title="Sign out" onPress={handleLogout} disabled={deleteLoading} />
     </View>
+    <SettingsGroup>
+      <SettingsRow title={analyticsEnabled ? "Usage analytics: on" : "Usage analytics: off"} detail="Share anonymous app opens, Relay screen views, and purchase steps with ClawTab." onPress={toggleAnalytics} chevron={false} />
+    </SettingsGroup>
     <View style={accountStyles.divider} />
     <View style={styles.section}>
       <Pressable accessibilityRole="button" accessibilityState={{ expanded: dangerExpanded }} aria-expanded={dangerExpanded} style={styles.sectionHeadingRow} onPress={() => setDangerExpanded((value) => !value)}>

@@ -1,4 +1,6 @@
 import React from "react";
+import { trackFunnel } from "./funnel";
+void trackFunnel("app_open");
 import ReactDOM from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
 import { SettingsApp } from "./components/SettingsApp";
