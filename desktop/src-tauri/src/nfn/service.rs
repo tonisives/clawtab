@@ -155,14 +155,19 @@ impl Service {
             }
             // Session discovery must not hold the action lock while checking
             // every pending card. Re-read records after taking the lock below.
-            let invalid_sources = if ticks.is_multiple_of(10) {
-                let records = self.store.pending().unwrap_or_default();
-                tokio::task::spawn_blocking(move || invalid_pending_sources(&records))
-                    .await
-                    .unwrap_or_default()
-            } else {
-                HashSet::new()
-            };
+            let records = self.store.pending().unwrap_or_default();
+            let check_identity = ticks.is_multiple_of(10);
+            let invalid_sources = tokio::task::spawn_blocking(move || {
+                let mut invalid = closed_pending_sources(&records, || {
+                    tmux(&["list-panes", "-a", "-F", "#{pane_id}"])
+                });
+                if check_identity {
+                    invalid.extend(invalid_pending_sources(&records));
+                }
+                invalid
+            })
+            .await
+            .unwrap_or_default();
             let _guard = self.mutation.lock().await;
             let current_auto_yes = self.ctx.auto_yes_panes.lock().clone();
             let mut changed = current_auto_yes != auto_yes_panes;
@@ -1289,6 +1294,7 @@ fn job_notice(record: &NfnRecord) -> bool {
     record.question_id.is_none()
         && record.request.template == "update"
         && record.request.source.job_id.is_some()
+        && record.request.data["event"] != "agent_finished"
 }
 
 fn local_enabled(settings: &crate::config::settings::AppSettings, record: &NfnRecord) -> bool {
@@ -1909,6 +1915,44 @@ fn invalid_pending_sources(records: &[NfnRecord]) -> HashSet<String> {
         .collect()
 }
 
+fn closed_pending_sources(
+    records: &[NfnRecord],
+    list_panes: impl FnOnce() -> Result<String, String>,
+) -> HashSet<String> {
+    let candidates: Vec<_> = records
+        .iter()
+        .filter(|record| {
+            record.status == "pending"
+                && record.dismissed_at.is_none()
+                && !record.ignored
+                && record.question_id.is_none()
+                && !job_notice(record)
+        })
+        .filter_map(|record| {
+            let pane = record.request.source.pane_id.as_deref()?;
+            pane.starts_with('%').then_some((record, pane))
+        })
+        .collect();
+    if candidates.is_empty() {
+        return HashSet::new();
+    }
+    // One tmux query catches closed windows without repeating process/session
+    // discovery for every card on every tick. Retry failed queries next tick.
+    let panes = match list_panes() {
+        Ok(panes) => panes,
+        Err(error) if error.starts_with("no server running on ") || error == "no sessions" => {
+            String::new()
+        }
+        Err(_) => return HashSet::new(),
+    };
+    let live: HashSet<_> = panes.lines().map(str::trim).collect();
+    candidates
+        .into_iter()
+        .filter(|(_, pane)| !live.contains(pane))
+        .map(|(record, _)| record.id.clone())
+        .collect()
+}
+
 fn same_source(source: &NfnSource, current: &NfnSource) -> bool {
     source.pane_pid == current.pane_pid
         && source.process_started_at == current.process_started_at
@@ -2118,6 +2162,73 @@ mod tests {
             "request": {"title": "Run checks?", "source": {"pane_id": "%10"}}
         }))
         .unwrap()
+    }
+
+    #[test]
+    fn closed_tmux_windows_expire_completions_before_the_identity_scan() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = Store::open(&directory.path().join("notifications.sqlite")).unwrap();
+        let source = NfnSource {
+            pane_id: Some("%10".into()),
+            job_id: Some("project/job".into()),
+            ..Default::default()
+        };
+        let (completion, _) = store
+            .send(request_for_completion(source.clone()), None)
+            .unwrap();
+        let (job, _) = store
+            .send(job_request("project/job", "failed", Some("run"), source), None)
+            .unwrap();
+        let (live, _) = store
+            .send(
+                request_for_completion(NfnSource {
+                    pane_id: Some("%11".into()),
+                    ..Default::default()
+                }),
+                None,
+            )
+            .unwrap();
+        let records = store.pending().unwrap();
+        let invalid = closed_pending_sources(&records, || Ok("%11\n%100\n".into()));
+        assert_eq!(invalid, HashSet::from([completion.id.clone()]));
+        assert_eq!(
+            closed_pending_sources(&records, || {
+                Err("no server running on /tmp/tmux-test/default".into())
+            }),
+            HashSet::from([completion.id.clone(), live.id.clone()])
+        );
+        for mut record in records {
+            let invalid_source = invalid.contains(&record.id);
+            if refresh_pending_record(&mut record, None, &HashSet::new(), now(), |_| {
+                !invalid_source
+            }) {
+                store.save(&mut record).unwrap();
+            }
+        }
+        assert_eq!(store.get(&completion.id).unwrap().status, "expired");
+        assert_eq!(store.get(&job.id).unwrap().status, "pending");
+        assert_eq!(store.get(&live.id).unwrap().status, "pending");
+        assert_eq!(store.pending_count().unwrap(), 2);
+        assert!(closed_pending_sources(&store.pending().unwrap(), || {
+            Err("tmux unavailable".into())
+        }).is_empty());
+    }
+
+    #[test]
+    fn closed_pane_scan_skips_prompts_jobs_and_managed_sessions() {
+        let prompt = pending_permission();
+        let mut job = prompt.clone();
+        job.question_id = None;
+        job.request = job_request(
+            "project/job", "completed", Some("run"), NfnSource {
+                pane_id: Some("%10".into()),
+                ..Default::default()
+            },
+        );
+        let mut managed = prompt.clone();
+        managed.question_id = None;
+        managed.request.source.pane_id = Some("managed-session".into());
+        assert!(closed_pending_sources(&[prompt, job, managed], || panic!("no tmux candidates")).is_empty());
     }
 
     #[test]
