@@ -11,7 +11,7 @@ cd "$root"
 results="$root/dist/message-checks"
 temporary="$(mktemp -d)"
 mkdir -p "$results"
-node desktop/tests/nfn-fixture.mjs "$temporary/renderer.html"
+node desktop/tests/nfn-fixture.mjs "$temporary/renderer.html" --enable-motion
 node desktop/tests/nfn-fixture.mjs "$temporary/native.html" --native
 clang -fobjc-arc -fblocks desktop/tests/nfn-webkit.m -framework AppKit -framework WebKit -o "$temporary/renderer-check"
 clang -fobjc-arc -fblocks desktop/tests/nfn-native.m -framework AppKit -framework WebKit -framework Intents -framework UserNotifications -framework ApplicationServices -framework Carbon -o "$temporary/native-check"

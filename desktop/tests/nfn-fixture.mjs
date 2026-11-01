@@ -138,6 +138,14 @@ const reviewImage = `data:image/png;base64,${readFileSync(new URL("../../docs/re
 const mediaFileIndex = process.argv.indexOf("--media-file");
 const portraitFileIndex = process.argv.indexOf("--portrait-media-file");
 const videoSetup = [[mediaFileIndex, "videoBytes"], [portraitFileIndex, "portraitVideoBytes"]].map(([index, key]) => index < 0 ? "" : `window.fixture.${key} = Uint8Array.from(atob(${JSON.stringify(readFileSync(process.argv[index + 1]).toString("base64"))}), c => c.charCodeAt(0));`).join("\n");
+// Animation assertions use a fixed preference, including on CI's reduced-motion desktop.
+const motionSetup = process.argv.includes("--enable-motion") ? `
+const systemMatchMedia = window.matchMedia.bind(window);
+window.matchMedia = query => {
+  const result = systemMatchMedia(query);
+  if (query === "(prefers-reduced-motion: reduce)") Object.defineProperty(result, "matches", { get: () => false });
+  return result;
+};` : "";
 const document = read("surface.html").replace("/* NFN_CSS */", read("surface.css") + (native ? "" : "\nbody{background:#202126;padding:24px;display:flex;justify-content:center}"))
-  .replace("/* NFN_JS */", visibility + fixtureSetup + videoSetup + `\nwindow.fixture.reviewImage = ${JSON.stringify(reviewImage)};\n` + read("surface.js") + "\n" + (process.argv.includes("--video-preview") ? videoReady : ready) + "\n" + todoSetup);
+  .replace("/* NFN_JS */", visibility + fixtureSetup + videoSetup + motionSetup + `\nwindow.fixture.reviewImage = ${JSON.stringify(reviewImage)};\n` + read("surface.js") + "\n" + (process.argv.includes("--video-preview") ? videoReady : ready) + "\n" + todoSetup);
 writeFileSync(process.argv[2] || fileURLToPath(new URL("./nfn-fixture.html", import.meta.url)), document);
