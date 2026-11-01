@@ -1128,6 +1128,9 @@
       const replyLabel = revision ? "Changes to the draft" : toAgent ? "Reply to agent" : "Your reply";
       const open = replyStates.get(record.id) ?? Boolean(drafts.get(record.id));
       const toggle = button("Reply", () => {
+        if (window.ReactNativeWebView && record.request.source?.pane_id) {
+          native({ native: "shell_reply", id: record.id }); return;
+        }
         const next = !(replyStates.get(record.id) ?? Boolean(drafts.get(record.id)));
         const previousReplyHeight = reply.hidden ? 0 : reply.offsetHeight + 12;
         replyStates.set(record.id, next); pauseTimer(); expanded = true;
@@ -1287,6 +1290,11 @@
     else card._notice.textContent = "";
     updateAutoYes();
   }
+  function hasLogSelection(logs) {
+    const selection = window.getSelection();
+    return Boolean(logs && selection && !selection.isCollapsed
+      && (logs.contains(selection.anchorNode) || logs.contains(selection.focusNode)));
+  }
   async function refreshContext() {
     if ((!details && menu !== "agent") || queue || settingsOpen || !current || !card || contextRequest?.card === card) return;
     const id = current, request = { card }; contextRequest = request;
@@ -1297,7 +1305,7 @@
       if (!ownsContext()) return;
       const changedLogs = card._logs && card._logs._raw !== value.log;
       const before = changedLogs ? host.getBoundingClientRect() : null;
-      if (changedLogs) {
+      if (changedLogs && !hasLogSelection(card._logs)) {
         const logs = card._logs, scroller = card._content;
         const atBottom = logs._raw == null || scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 30;
         logs._raw = value.log; renderAnsi(logs, value.log || "No output yet");

@@ -497,7 +497,7 @@ function JobsWorkspace({ bounds }: { bounds: { x: number; y: number; width: numb
 
   const handleSelectJob = useCallback(
     (job: RemoteJob) => {
-      if (isSplitView || isIosPhone) {
+      if (isSplitView) {
         setSidebarSection("jobs")
         setSelectedJob(job.slug)
         setSelectedProcess(null)
@@ -514,7 +514,7 @@ function JobsWorkspace({ bounds }: { bounds: { x: number; y: number; width: numb
 
   const handleSelectProcess = useCallback(
     (process: DetectedProcess) => {
-      if (isSplitView || isIosPhone) {
+      if (isSplitView) {
         setSidebarSection("jobs")
         setSelectedProcess(process.pane_id)
         setSelectedJob(null)
@@ -1185,7 +1185,7 @@ function JobsWorkspace({ bounds }: { bounds: { x: number; y: number; width: numb
     </Modal>
   ) : null
 
-  if (!isSplitView && !isIosPhone) {
+  if (!isSplitView) {
     if (Platform.OS !== "web" && !isIosPadPortrait) {
       return (
         <>

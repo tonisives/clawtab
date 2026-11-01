@@ -35,6 +35,7 @@ let react = {
 test('native startup preserves writes, resets, and text in order', () => {
   let jsx = (type, props) => ({ type, props });
   let { XtermLog } = load('../../shared/src/components/XtermLog.tsx', {
+    './smoothTerminalScript': load('../../shared/src/components/smoothTerminalScript.ts', {}),
     react,
     'react/jsx-runtime': { jsx, jsxs: jsx },
     'react-native': { Platform: { OS: 'ios' }, StyleSheet: { create: (s) => s } },
@@ -44,7 +45,8 @@ test('native startup preserves writes, resets, and text in order', () => {
   });
   let ref = {};
   let resize;
-  let tree = XtermLog({ onResize: (cols, rows) => { resize = [cols, rows]; } }, ref);
+  let input = [];
+  let tree = XtermLog({ onData: value => input.push(value), onResize: (cols, rows) => { resize = [cols, rows]; } }, ref);
   let webview = tree.props.children[0].props;
   let inlineScript = webview.source.html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
   assert.ok(inlineScript);
@@ -72,6 +74,13 @@ test('native startup preserves writes, resets, and text in order', () => {
   ref.current.clear();
   ref.current.write('live');
   assert.deepEqual(operations.slice(-2), [['reset'], ['write', 'live']]);
+  let keyboard = tree.props.children[1].props;
+  keyboard.onChangeText('hel');
+  keyboard.onChangeText('hello');
+  keyboard.onChangeText('hell');
+  keyboard.onChangeText('hell\n');
+  assert.deepEqual(input, ['hel', 'lo', '\x7f', '\r']);
+
 });
 
 test('PTY waits for the native grid and subscribes once using measured dimensions', () => {
@@ -80,13 +89,13 @@ test('PTY waits for the native grid and subscribes once using measured dimension
   let id = 0;
   let { usePty, dispatchPtyOutput } = load('../src/hooks/usePty.ts', {
     react: { ...react, useEffect: (effect) => effects.push(effect) },
-    '@clawtab/shared': { splitResource: () => null, machineState: () => ({}) },
+    '@clawtab/shared': { splitResource: () => null, machineState: () => ({}), onMachineEvent: () => () => {} },
     '../lib/terminalCache': { terminalCache: { get: () => [], append: () => {} } },
     '../lib/wsRuntime': { getWsSend: () => (message) => sent.push(message), nextId: () => String(++id) },
     '../lib/useRequestMap': { clearRequest: () => {}, registerRequest: () => new Promise(() => {}) },
   }, { setTimeout: () => 1, clearTimeout: () => {}, setInterval: () => 1, clearInterval: () => {} });
   let dims = { cols: 0, rows: 0 };
-  let term = { current: { dimensions: () => dims, clear: () => {} } };
+  let term = { current: { dimensions: () => dims, clear: () => {}, setScreenSize: () => {} } };
   let hook = usePty('%test', 'test', term);
   let cleanups = effects.map((effect) => effect());
   assert.equal(sent.length, 0);
@@ -139,7 +148,7 @@ let subscriptionFixture = () => {
       states.push(initial);
       return [initial, (value) => { states[index] = value; }];
     } },
-    '@clawtab/shared': { splitResource: () => null, machineState: () => ({}) },
+    '@clawtab/shared': { splitResource: () => null, machineState: () => ({}), onMachineEvent: () => () => {} },
     '../lib/terminalCache': { terminalCache: { get: () => [], append: () => {} } },
     '../lib/wsRuntime': { getWsSend: () => (message) => sent.push(message), nextId: () => String(++id) },
     '../lib/useRequestMap': {

@@ -337,7 +337,7 @@ export default function JobDetailScreen() {
           onBack={goBack}
           showBackButton={false}
           hidePath={isRunningWithPty}
-          hideInfoPanels={landscapeHeader.isLandscape && isRunningWithPty}
+          hideInfoPanels={isRunningWithPty}
           onReloadRuns={loadRuns}
           expandRunId={run_id}
           options={jobQuestion?.options}

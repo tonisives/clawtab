@@ -3,6 +3,7 @@ export type SurfaceMessage = {
   token?: string;
   command?: Record<string, unknown>;
   native?: string;
+  id?: string;
   active?: boolean;
   height?: number;
 };

@@ -1,7 +1,8 @@
+import { smoothTerminalScript } from "./smoothTerminalScript";
 import type { ComponentRef } from "react";
 import { encodeTerminalInput } from "../util/terminalInput";
 import { useRef, useImperativeHandle, forwardRef, useCallback, useEffect, useMemo } from "react";
-import { View, StyleSheet, TextInput, Platform, Pressable } from "react-native";
+import { View, StyleSheet, TextInput, Platform } from "react-native";
 import { TERMINAL_CUSTOM_GLYPHS, TERMINAL_FONT_FAMILY, TERMINAL_FONT_SIZE, TERMINAL_LINE_HEIGHT } from "../theme/terminal";
 
 export interface XtermLogHandle {
@@ -430,6 +431,7 @@ window.focusTerminal = function() {
   try { term.focus(); } catch (e) {}
   setTimeout(configureIosKeyboardContext, 0);
 };
+${smoothTerminalScript}
 </script>
 </body>
 </html>`;
@@ -439,10 +441,11 @@ window.focusTerminal = function() {
  * Requires react-native-webview in the consuming app.
  */
 export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
-  function XtermLog({ onData, onResize, interactive = true, extendedViewport = false, extendedViewportHeight = 250, onLongPressCopyText, fontSize = TERMINAL_FONT_SIZE, onScrollGesture }, ref) {
+  function XtermLog({ onData, onResize, interactive = true, extendedViewport = Platform.OS === "ios", extendedViewportHeight = 250, onLongPressCopyText, fontSize = TERMINAL_FONT_SIZE, onScrollGesture }, ref) {
     const terminalSource = useMemo(() => ({
       html: XTERM_HTML.replace("__VIEWPORT_HEIGHT__", extendedViewport ? String(extendedViewportHeight) : "100")
-        .replace("__EXTENDED_VIEWPORT__", extendedViewport ? "true" : "false"),
+        .replace("__EXTENDED_VIEWPORT__", extendedViewport ? "true" : "false")
+        .replace("__SMOOTH_SCROLL__", Platform.OS === "ios" ? "true" : "false"),
     }), [extendedViewport, extendedViewportHeight]);
     const useNativeKeyboard = Platform.OS === "ios";
     const webViewRef = useRef<any>(null);
@@ -452,12 +455,6 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
     const readyRef = useRef(false);
     const pendingWritesRef = useRef<string[]>([]);
     const nativeInputValueRef = useRef("");
-    const lastTouchYRef = useRef<number | null>(null);
-    const touchOriginYRef = useRef<number | null>(null);
-    const touchMovedRef = useRef(false);
-    const longPressedRef = useRef(false);
-    const lastTouchTimeRef = useRef(0);
-    const touchVelocityRef = useRef(0);
 
     const sendNativeInput = useCallback(
       (text: string) => {
@@ -589,6 +586,8 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
               webViewRef.current?.injectJavaScript(`window.setNativeKeyboardMode && window.setNativeKeyboardMode(true);true;`);
             }
             flushPendingWrites();
+          } else if (msg.type === "scroll") {
+            onScrollGesture?.(msg.direction);
           } else if (msg.type === "focus") {
             focusNativeInput();
           } else if (msg.type === "copy-text" && typeof msg.text === "string") {
@@ -598,7 +597,7 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
           // ignore parse errors
         }
       },
-      [onData, onResize, interactive, useNativeKeyboard, flushPendingWrites, focusNativeInput, onLongPressCopyText],
+      [onData, onResize, interactive, useNativeKeyboard, flushPendingWrites, focusNativeInput, onLongPressCopyText, onScrollGesture],
     );
 
     // Dynamic import of WebView - it's a peer dependency
@@ -619,54 +618,12 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
           onMessage={handleMessage}
           javaScriptEnabled
           originWhitelist={["*"]}
-          scrollEnabled={false}
+          scrollEnabled={Platform.OS === "ios"}
+          automaticallyAdjustContentInsets={false}
+          contentInsetAdjustmentBehavior="never"
           bounces={false}
           hideKeyboardAccessoryView
         />
-        {useNativeKeyboard ? (
-          <Pressable
-            style={styles.nativeKeyboardTapLayer}
-            onPress={() => { if (!touchMovedRef.current && !longPressedRef.current) focusNativeInput(); }}
-            onLongPress={() => {
-              longPressedRef.current = true;
-              touchMovedRef.current = true;
-              nativeInputRef.current?.blur();
-              webViewRef.current?.injectJavaScript("window.copyVisibleTerminalText && window.copyVisibleTerminalText();true;");
-            }}
-            onTouchStart={(event) => {
-              lastTouchYRef.current = event.nativeEvent.touches[0]?.pageY ?? null;
-              touchOriginYRef.current = lastTouchYRef.current;
-              touchMovedRef.current = false;
-              longPressedRef.current = false;
-              lastTouchTimeRef.current = Date.now();
-              touchVelocityRef.current = 0;
-              webViewRef.current?.injectJavaScript("window.stopTerminalFling && window.stopTerminalFling();true;");
-            }}
-            onTouchMove={(event) => {
-              const y = event.nativeEvent.touches[0]?.pageY;
-              const previous = lastTouchYRef.current;
-              if (y === undefined || previous === null) return;
-              lastTouchYRef.current = y;
-              if (touchOriginYRef.current !== null && Math.abs(touchOriginYRef.current - y) > 8) touchMovedRef.current = true;
-              if (!extendedViewport) return;
-              const delta = previous - y;
-              if (touchMovedRef.current && Math.abs(delta) > 2) onScrollGesture?.(delta > 0 ? "down" : "up");
-              const now = Date.now();
-              const elapsed = now - lastTouchTimeRef.current;
-              if (elapsed > 0 && elapsed < 100) touchVelocityRef.current = Math.max(-4, Math.min(4, delta / elapsed));
-              lastTouchTimeRef.current = now;
-              if (delta) webViewRef.current?.injectJavaScript(`window.scrollTerminalViewport && window.scrollTerminalViewport(${delta});true;`);
-            }}
-            onTouchEnd={() => {
-              if (touchMovedRef.current && Date.now() - lastTouchTimeRef.current < 100) {
-                webViewRef.current?.injectJavaScript(`window.flingTerminalViewport && window.flingTerminalViewport(${touchVelocityRef.current});true;`);
-              }
-              lastTouchYRef.current = null;
-              touchOriginYRef.current = null;
-            }}
-            accessible={false}
-          />
-        ) : null}
         {useNativeKeyboard ? (
           <TextInput
             ref={nativeInputRef}

@@ -9,6 +9,7 @@ export const TERMINAL_KEYBOARD_TOOLBAR_HEIGHT = 48;
 
 type Props = {
   bottom: number;
+  dismissIcon?: "close" | "chevron-down";
   onDismiss: () => void;
   onSend: (text: string) => void;
   onWrite: () => void;
@@ -16,18 +17,18 @@ type Props = {
   onMenuOpenChange: (open: boolean) => void;
 };
 
-export function TerminalKeyboardToolbar({ bottom, onDismiss, onSend, onWrite, menuOpen, onMenuOpenChange }: Props) {
+export function TerminalKeyboardToolbar({ bottom, dismissIcon = "chevron-down", onDismiss, onSend, onWrite, menuOpen, onMenuOpenChange }: Props) {
   const closeMenu = useCallback(() => onMenuOpenChange(false), [onMenuOpenChange]);
   return (
     <View style={[styles.toolbar, { bottom }]}>
       <TouchableOpacity style={styles.button} onPress={onDismiss} accessibilityLabel="Dismiss keyboard">
-        <Ionicons name="chevron-down" size={20} color={colors.text} />
+        <Ionicons name={dismissIcon} size={20} color={colors.text} />
       </TouchableOpacity>
       <TouchableOpacity style={styles.wideButton} onPress={() => onSend("\x1b")}><Text style={styles.buttonText}>Esc</Text></TouchableOpacity>
       <TouchableOpacity style={styles.wideButton} onPress={() => onSend("\x03")}><Text style={styles.buttonText}>C-c</Text></TouchableOpacity>
       <View style={styles.spacer} />
       <TouchableOpacity style={styles.button} onPress={() => onSend("\x1b[D")} accessibilityLabel="Left arrow"><Ionicons name="chevron-back" size={20} color={colors.text} /></TouchableOpacity>
-      <TouchableOpacity style={styles.button} onPress={() => onSend("\x1b[B")} accessibilityLabel="Down arrow"><Ionicons name="chevron-down" size={20} color={colors.text} /></TouchableOpacity>
+      <TouchableOpacity style={styles.button} onPress={() => onSend("\x1b[B")} accessibilityLabel="Down arrow"><Ionicons name={dismissIcon} size={20} color={colors.text} /></TouchableOpacity>
       <TouchableOpacity style={styles.button} onPress={() => onSend("\x1b[A")} accessibilityLabel="Up arrow"><Ionicons name="chevron-up" size={20} color={colors.text} /></TouchableOpacity>
       <TouchableOpacity style={styles.button} onPress={() => onSend("\x1b[C")} accessibilityLabel="Right arrow"><Ionicons name="chevron-forward" size={20} color={colors.text} /></TouchableOpacity>
       <View style={styles.spacer} />

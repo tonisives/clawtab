@@ -35,6 +35,8 @@ button.auto-yes-button{min-height:44px;padding:8px 16px;border-radius:999px}
 .todo-heading,.todo-row{align-items:center}
 .todo-add{grid-template-columns:minmax(0,1fr) auto}
 .icon-button{min-height:36px}
+.footer-actions.segmented-control{display:flex;padding:4px;border:1px solid var(--line);border-radius:999px;background:#202020;gap:4px}
+.footer-actions.segmented-control button{border-radius:999px;flex:1}
 .message{max-height:35dvh}
 .message-thread{max-height:35dvh}
 .details-content{max-height:50dvh}
