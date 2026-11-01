@@ -1,22 +1,16 @@
-<h3 align="center">ClawTab - Tmux-Native Agent Control Plane</h3>
+<h3 align="center">ClawTab: one message bar for your coding agents</h3>
+
+ClawTab brings questions, permission prompts, updates, and completion messages from your coding agents into one message bar. Reply from a card, inspect recent output, or open the agent's session. Claude Code, Codex, and OpenCode keep running in their terminals while you handle what needs your attention.
+
+The message bar runs on macOS 12 or later and is owned by the background daemon. The desktop app is optional. Web Remote and iPhone provide access to the same message queue, with replies routed to the originating host.
 
 <p align="center">
-  Run Claude Code, Codex, OpenCode, Hermes, and shell jobs in durable tmux panes or managed terminals, then control the same sessions from your terminal, desktop, web, or phone.
-</p>
-
-<p align="center">
-  <a href="https://cdn.clawtab.cc/assets/home/tmux-main.mp4?v=20260716">
-    <img src="https://cdn.clawtab.cc/assets/home/tmux-main-readme.webp?v=20260717" alt="ClawTab managing live agents in tmux" width="1000" />
+  <a href="https://cdn.clawtab.cc/assets/home/message-bar-hero-v12e-narrated.mp4">
+    <img src="https://cdn.clawtab.cc/assets/home/message-bar-hero-v12e-poster.jpg" alt="ClawTab message bar showing an agent question with actions" width="1000" />
   </a>
 </p>
 
-<p align="center">
-  <a href="https://clawtab.cc">Website</a> &middot;
-  <a href="./docs/">Documentation</a> &middot;
-  <a href="https://clawtab.cc/articles/daemon-tmux-control-plane">Tmux architecture</a>
-</p>
-
----
+[Website](https://clawtab.cc) · [Message bar guide](docs/messages.md) · [Documentation](docs/) · [Release notes](docs/release-notes.md)
 
 ## Downloads
 
@@ -44,6 +38,9 @@ A headless daemon adds the agent-aware layer: schedules, session metadata, task 
 <p align="center"><em>Two Codex agents work side by side in the same tmux window.</em></p>
 
 ## Features
+
+- **One message bar**: answer agent questions and permission prompts, read recent output, and open the session from a card.
+- **Keyboard navigation**: focus the bar with Ctrl+Option+W, browse cards, and reply without searching through terminals.
 
 - **Durable tmux sessions** - Agents remain ordinary, inspectable tmux panes with their real terminal state intact.
 - **Headless control plane** - The launchd daemon keeps jobs, monitoring, relay connections, and auto-yes running without the desktop window.
@@ -269,7 +266,7 @@ The default package installs the daemon, `cwt`, agent hooks, and Zsh completion.
 brew install --cask tonisives/tap/clawtab-desktop
 ```
 
-Starting with the next release, use `cwt` in place of `cwtctl` for CLI commands.
+Starting with 0.6.2, use `cwt` in place of `cwtctl` for CLI commands.
 The desktop app keeps its `clawtab` launcher.
 
 ### Build from Source

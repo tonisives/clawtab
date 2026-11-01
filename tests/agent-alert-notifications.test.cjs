@@ -49,6 +49,12 @@ test('notification cards use live alerts, preserve machine identity, and clear o
 });
 
 test('mobile notification count includes alerts even when auto-yes hides questions', () => {
+  const countModules = {
+    '@clawtab/shared': { messagePending: record => record.status === 'pending' },
+    '../store/messages': { useMessageStore: select => select({ records: [] }), uncoveredAlerts: (_, processes) => processes, questionMessage: () => null },
+    '../store/notifications': { useNotificationStore: select => select({ questions: [] }) },
+    '../store/jobs': { useJobsStore: select => select({ detectedProcesses: [{ _agent_alert: 'Capacity error' }, {}] }) },
+  };
   const { NotificationsMenuButton } = load('remote/src/components/NotificationsMenuButton.tsx', {
     'react/jsx-runtime': { jsx: element, jsxs: element },
     'react-native': { Platform: { OS: 'web' }, StyleSheet: { create: styles => styles }, Pressable: 'Pressable', View: 'View', Text: 'Text' },
@@ -57,9 +63,7 @@ test('mobile notification count includes alerts even when auto-yes hides questio
     'expo-router': { useRouter: () => ({}), usePathname: () => '/' },
     '@clawtab/shared': { colors: {}, messagePending: record => record.status === 'pending', useMachines: () => ({ connected: true }) },
     '../store/auth': { useAuthStore: select => select({ isAuthenticated: true, loading: false }) },
-    '../store/messages': { useMessageStore: select => select({ records: [] }), uncoveredAlerts: (_, processes) => processes, questionMessage: () => null },
-    '../store/notifications': { useNotificationStore: select => select({ questions: [] }) },
-    '../store/jobs': { useJobsStore: select => select({ detectedProcesses: [{ _agent_alert: 'Capacity error' }, {}] }) },
+    '../hooks/usePendingMessageCount': load('remote/src/hooks/usePendingMessageCount.ts', countModules),
     '../hooks/useResponsive': { useResponsive: () => ({ isSplitView: false }) },
   });
   const button = nodes(NotificationsMenuButton({ countOnly: true, hideWhenEmpty: true })).find(node => node.type === 'Pressable');

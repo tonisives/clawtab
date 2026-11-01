@@ -672,7 +672,7 @@ dependencies = [
 
 [[package]]
 name = "clawtab"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "alacritty_terminal",
  "anyhow",

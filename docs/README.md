@@ -2,11 +2,14 @@
 
 # ClawTab Documentation
 
-ClawTab is a macOS desktop app for scheduling and managing automated jobs -- shell scripts, Claude Code prompts, and project-based AI agents -- using tmux or managed terminals. Managed terminals also support Linux and Windows hosts.
+ClawTab brings questions, permission prompts, updates, and completion messages from your coding agents into one message bar. Reply from a card, inspect recent output, or open the agent's session. Claude Code, Codex, and OpenCode keep running in their terminals while you handle what needs your attention.
+
+The message bar runs on macOS 12 or later and is owned by the background daemon. The desktop app is optional. Web Remote and iPhone provide access to the same message queue, with replies routed to the originating host.
 
 ## Table of Contents
 
 ### Getting Started
+- [Message bar](./messages.md): handle agent questions, approvals, updates, and replies
 1. [Quick Start](./quick-start.md) -- Installation, setup wizard, first job
 2. [Configuration](./configuration.md) -- Settings, job definitions, file locations
 
@@ -34,4 +37,4 @@ ClawTab is a macOS desktop app for scheduling and managing automated jobs -- she
 - [Sessions without tmux](managed-sessions.md) -- Start, detach, reconnect, and control a managed terminal
 - [Enhanced notifications](../desktop/docs/enhanced-notifications.md) -- Daemon cards, decisions, and custom layouts
 - [Platform installation](platform-builds.md) -- macOS, Linux, and Windows host packages
-- [0.6.0 release notes](release-notes.md) -- Managed sessions, Windows hosting, and other changes
+- [Release notes](release-notes.md) -- Managed sessions, Windows hosting, and other changes

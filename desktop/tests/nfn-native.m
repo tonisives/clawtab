@@ -498,8 +498,10 @@ static void verifyExpansion(void (^finish)(void)) {
                     previousWidth = width; previousHeight = height;
                 }
                 CGFloat maxHeight = [surface selectedScreen].visibleFrame.size.height * .8;
-                if (fabs(expanded.size.width - 620) > 1 || expanded.size.height <= compact.size.height + 100 || expanded.size.height > maxHeight + 1 || !anchored || !simultaneous || !continuous || !fixedCanvas) {
-                    fprintf(stderr,"Expansion failed: compact=%.0fx%.0f drawn=%s expanded=%.0fx%.0f maxHeight=%.0f anchored=%d simultaneous=%d\n",compact.size.width,compact.size.height,widths.description.UTF8String,expanded.size.width,expanded.size.height,maxHeight,anchored,simultaneous); exit(1);
+                BOOL reducedMotion = NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion;
+                BOOL expectedMotion = reducedMotion ? !simultaneous : simultaneous;
+                if (fabs(expanded.size.width - 620) > 1 || expanded.size.height <= compact.size.height + 100 || expanded.size.height > maxHeight + 1 || !anchored || !expectedMotion || !continuous || !fixedCanvas) {
+                    fprintf(stderr,"Expansion failed: compact=%.0fx%.0f drawn=%s expanded=%.0fx%.0f maxHeight=%.0f anchored=%d simultaneous=%d reducedMotion=%d\n",compact.size.width,compact.size.height,widths.description.UTF8String,expanded.size.width,expanded.size.height,maxHeight,anchored,simultaneous,reducedMotion); exit(1);
                 }
                 [surface.web takeSnapshotWithConfiguration:nil completionHandler:^(NSImage *image, NSError *snapshotError) {
                     if (snapshotError || !image) { fprintf(stderr,"Expanded snapshot failed\n"); exit(1); }
@@ -591,7 +593,7 @@ int main(int argc, const char **argv) {
                         [[bitmap representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:@"/tmp/clawtab-nfn-native.png" atomically:YES];
                         if (geometryOnly) {
                             verifyExpansion(^{
-                                printf("Native geometry checks passed: passive arrival, notch overlap, window cycling excluded, animated expansion and fixed top anchor.\n");
+                                printf("Native geometry checks passed: passive arrival, notch overlap, window cycling excluded, expansion follows Reduce Motion, and fixed top anchor.\n");
                                 verifyResizeCorners(^{ verifyMenuLayout(^{ verifyDragging(^{ verifyPresentationLifetime(^{ verifyInlineSettings(^{ clawtab_nfn_stop(); }); }); }); }); });
                             });
                             return;
@@ -602,7 +604,7 @@ int main(int argc, const char **argv) {
                                 verifyEditing(^{ verifyKeyboardControl(^{
                                     clawtab_nfn_activate(previousApplication);
                                     verifyExpansion(^{
-                                        printf("Native checks passed: platform JSON booleans, passive panel, foreground preserved, notch overlap, window cycling excluded, reply focus, Command-A selection, animated expansion and fixed top anchor. Screenshots: /tmp/clawtab-nfn-native.png, /tmp/clawtab-nfn-expanded.png\n");
+                                        printf("Native checks passed: platform JSON booleans, passive panel, foreground preserved, notch overlap, window cycling excluded, reply focus, Command-A selection, expansion follows Reduce Motion, and fixed top anchor. Screenshots: /tmp/clawtab-nfn-native.png, /tmp/clawtab-nfn-expanded.png\n");
                                         verifyResizeCorners(^{ verifyMenuLayout(^{ verifyDragging(^{ verifyPresentationLifetime(^{ verifyInlineSettings(^{ clawtab_nfn_stop(); }); }); }); }); });
                                     });
                                 }); });
