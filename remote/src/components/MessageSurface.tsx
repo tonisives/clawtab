@@ -73,6 +73,7 @@ export function MessageSurface(props: MessageSurfaceProps) {
 
   return <View ref={keyboard.host} onLayout={keyboard.onLayout} style={{ flex: 1, minHeight: 0, backgroundColor: "#161616", paddingBottom: chrome.reply ? Math.max(keyboard.overlap, insets.bottom) : keyboard.overlap, paddingLeft: keyboard.horizontalInsets.left, paddingRight: keyboard.horizontalInsets.right }}>
     <WebView<object> ref={view} source={source.current.value} style={{ flex: 1, backgroundColor: "#161616" }}
+    textInteractionEnabled dataDetectorTypes="none"
     javaScriptEnabled originWhitelist={["*"]} allowsInlineMediaPlayback mediaPlaybackRequiresUserAction
     keyboardDisplayRequiresUserAction={false} hideKeyboardAccessoryView
     automaticallyAdjustContentInsets={false} contentInsetAdjustmentBehavior="never" bounces={false}

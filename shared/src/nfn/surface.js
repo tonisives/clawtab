@@ -1340,15 +1340,7 @@
       const cached = mobileHost() ? mobileShellCache.get(record.id) : null;
       const logs = el("pre", "logs", cached == null ? "Loading recent output..." : "");
       if (cached != null) { logs._raw = cached; renderAnsi(logs, cached); }
-      if (mobileHost() && record.request.source?.pane_id) {
-        let tap = null;
-        logs.addEventListener("pointerdown", event => { tap = { x: event.clientX, y: event.clientY, at: performance.now() }; });
-        logs.addEventListener("pointercancel", () => { tap = null; });
-        logs.addEventListener("pointerup", event => {
-          const start = tap; tap = null;
-          if (start && performance.now() - start.at < 350 && Math.hypot(event.clientX - start.x, event.clientY - start.y) < 8 && !hasLogSelection(logs)) setShellReply(true);
-        });
-      }
+      if (mobileHost()) installLogSelection(logs, Boolean(record.request.source?.pane_id));
       node._logs = logs; section.append(logs); primitives.logs = section;
     }
     // Keep the message and inline media mounted while Details shows the output.
@@ -1362,7 +1354,7 @@
     if (!card || !current) return;
     const record = records.get(current); if (!record) return;
     const wasPending = card._wasPending;
-    if (card._signature !== cardSignature(record) && !shellReply) {
+    if (card._signature !== cardSignature(record) && !shellReply && !hasLogSelection(card._logs)) {
       const scroll = card._content.scrollTop, active = document.activeElement === card._reply;
       const selection = card._reply ? [card._reply.selectionStart, card._reply.selectionEnd] : null;
       stopContext();
@@ -1406,10 +1398,43 @@
     else card._notice.textContent = "";
     updateAutoYes();
   }
+  function installLogSelection(logs, canReply) {
+    let touch = null, holdTimer = null, releaseTimer = null;
+    const release = () => {
+      clearTimeout(holdTimer); clearTimeout(releaseTimer);
+      // WebKit can cancel pointer events when its native selection gesture wins.
+      // Keep the DOM stable until selectionchange has established the range.
+      releaseTimer = setTimeout(() => { logs._selecting = false; }, 1000);
+    };
+    logs.addEventListener("pointerdown", event => {
+      clearTimeout(holdTimer); clearTimeout(releaseTimer);
+      logs._selecting = true;
+      touch = { x: event.clientX, y: event.clientY, at: performance.now() };
+      holdTimer = setTimeout(() => {
+        if (card?._logs === logs && card._shellInput === document.activeElement) card._shellInput.blur();
+      }, 350);
+    });
+    logs.addEventListener("pointermove", event => {
+      if (touch && Math.hypot(event.clientX - touch.x, event.clientY - touch.y) >= 8) {
+        touch = null; release();
+      }
+    });
+    logs.addEventListener("pointercancel", () => { touch = null; release(); });
+    logs.addEventListener("pointerup", event => {
+      const start = touch; touch = null;
+      release();
+      const selection = window.getSelection();
+      if (canReply && start && performance.now() - start.at < 350
+        && Math.hypot(event.clientX - start.x, event.clientY - start.y) < 8
+        && (!selection || selection.isCollapsed)) {
+        logs._selecting = false; clearTimeout(releaseTimer); setShellReply(true);
+      }
+    });
+  }
   function hasLogSelection(logs) {
     const selection = window.getSelection();
-    return Boolean(logs && selection && !selection.isCollapsed
-      && (logs.contains(selection.anchorNode) || logs.contains(selection.focusNode)));
+    return Boolean(logs && (logs._selecting || selection && !selection.isCollapsed
+      && (logs.contains(selection.anchorNode) || logs.contains(selection.focusNode))));
   }
   async function refreshContext() {
     if ((!details && menu !== "agent") || queue || settingsOpen || !current || !card || contextRequest?.card === card) return;
@@ -2100,7 +2125,7 @@
       else if (value.action === "tasks") toggleTodos();
       else if (value.action === "settings") openSettings();
       else if (value.action === "reply_close") setShellReply(false);
-      else if (value.action === "reply_focus") card?._shellInput?.focus({ preventScroll: true });
+      else if (value.action === "reply_focus" && !hasLogSelection(card?._logs)) card?._shellInput?.focus({ preventScroll: true });
       else if (value.action === "shell_input" && shellReply && typeof value.text === "string") {
         sendShellInput(value.text); card?._shellInput?.focus({ preventScroll: true });
       }
