@@ -1,6 +1,7 @@
 import { Children, createContext, useContext, type ReactNode } from "react"
 import { View, Text, Pressable, ScrollView, StyleSheet } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
+import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { ContentContainer } from "../ContentContainer"
 import { colors } from "../../theme/colors"
 import { radius, spacing } from "../../theme/spacing"
@@ -9,7 +10,16 @@ export let SettingsBottomInset = createContext(0)
 
 export let SettingsPage = ({ children, wide = false }: { children: ReactNode; wide?: boolean }) => {
   let bottomInset = useContext(SettingsBottomInset)
-  return <ScrollView style={styles.scrollContainer} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={bottomInset ? { paddingBottom: bottomInset } : undefined} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
+  let safeArea = useSafeAreaInsets()
+  return <ScrollView
+    style={styles.scrollContainer}
+    contentInsetAdjustmentBehavior="automatic"
+    contentContainerStyle={bottomInset ? { paddingBottom: bottomInset } : undefined}
+    scrollIndicatorInsets={{ bottom: Math.max(bottomInset, safeArea.bottom) }}
+    indicatorStyle="white"
+    keyboardShouldPersistTaps="handled"
+    automaticallyAdjustKeyboardInsets
+  >
     <ContentContainer wide={wide}><View style={styles.container}>{children}</View></ContentContainer>
   </ScrollView>
 }
