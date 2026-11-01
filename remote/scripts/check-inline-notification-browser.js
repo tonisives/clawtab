@@ -15,7 +15,13 @@
   const snapshot = {...fixture.snapshot(), remote:true,native_chrome:true,arrival:undefined};
   window.nfn.receive(snapshot); window.nfn.receive({type:'show'}); await wait();
   check('notifications open pending list', Boolean(document.querySelector('.queue')));
-  window.nfn.receive({type:'open_record',id:record.id}); await wait(1300);
+  check('pending shell output preloads before opening a message', fixture.calls.some(command=>command.op==='context' && command.id===record.id));
+  fixture.heldOps.add('context');
+  window.nfn.receive({type:'open_record',id:record.id});
+  check('opening a preloaded message paints shell output immediately', document.querySelector('.logs')?.textContent.includes('Shell row'));
+  fixture.deferred.find(item=>item.command.op==='context' && item.command.id===record.id).complete();
+  fixture.heldOps.delete('context');
+  await wait(1300);
   const shell = document.querySelector('.logs'), content = document.querySelector('.details-content');
   check('tall notification loads shell by default', Boolean(shell?.textContent.includes('Shell row')));
   const surfaceBounds=document.querySelector('#surface').getBoundingClientRect(), shellBounds=content.getBoundingClientRect();
@@ -86,10 +92,21 @@
   check('plus reveals task form', !document.querySelector('.todo-add')?.hidden);
   const fast=fixture.record('fast-reply',1); fast.request.template='update'; fixture.records.set(fast.id,fast);
   fixture.heldOps.add('context');
+  window.nfn.receive({...fixture.snapshot(),remote:true,native_chrome:true,arrival:undefined}); action('list'); await wait(100);
   window.nfn.receive({type:'open_record',id:fast.id}); await wait(100); action('reply');
+  check('opening during preload reuses the in-flight shell capture', fixture.calls.filter(command=>command.op==='context' && command.id===fast.id).length===1);
   fixture.deferred.find(item=>item.command.op==='context' && item.command.id===fast.id).complete();
   fixture.heldOps.delete('context'); await wait();
   const fastContent=document.querySelector('.details-content');
   check('reply before first capture also opens at the bottom', fastContent.scrollHeight-fastContent.scrollTop-fastContent.clientHeight<2);
+  const batch=Array.from({length:3},(_,i)=>fixture.record('preload-batch-'+i,0));
+  for (const record of batch) fixture.records.set(record.id,record);
+  fixture.heldOps.add('context');
+  window.nfn.receive({...fixture.snapshot(),remote:true,native_chrome:true,arrival:undefined}); action('list'); await wait();
+  const batchRequests=()=>fixture.deferred.filter(item=>item.command.op==='context' && item.command.id.startsWith('preload-batch-'));
+  check('shell preloading limits simultaneous captures', batchRequests().length===2);
+  batchRequests()[0].complete(); await wait();
+  check('preloading continues through the pending list', batchRequests().length===3);
+  batchRequests().slice(1).forEach(item=>item.complete()); fixture.heldOps.delete('context');
   return checks;
 })()
