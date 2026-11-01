@@ -5,10 +5,19 @@ const MEASUREMENT_ID = "G-01CG8GHYTS"
 let initialized = false
 let connectedHostTracked = false
 
-export let analyticsAllowed = () => typeof window !== "undefined"
-  && window.location.hostname === "remote.clawtab.cc"
-  && navigator.doNotTrack !== "1"
-  && !(navigator as Navigator & { globalPrivacyControl?: boolean }).globalPrivacyControl
+export let analyticsAllowed = () => {
+  try {
+    return typeof window !== "undefined" && window.location.hostname === "remote.clawtab.cc"
+      && navigator.doNotTrack !== "1"
+      && !(navigator as Navigator & { globalPrivacyControl?: boolean }).globalPrivacyControl
+      && localStorage.getItem("clawtab_analytics_disabled") !== "1"
+  } catch { return false }
+}
+
+export let applyAnalyticsPreference = () => {
+  ;(window as unknown as Record<string, unknown>)[`ga-disable-${MEASUREMENT_ID}`] = !analyticsAllowed()
+  if (analyticsAllowed()) initializeWebAnalytics()
+}
 
 export let safeEntryPage = (value: string) => /^\/(?:articles(?:\/[a-z0-9-]+)?|remote|mobile|tmux|docs|privacy|ios-demo|author)?$/.test(value) ? value : "/other"
 

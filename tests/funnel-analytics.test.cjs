@@ -18,10 +18,11 @@ function load(file, modules, globals = {}) {
 
 test('web funnel events use the existing tag once and fixed app context', () => {
   const calls = [];
+  let disabled = false;
   const browser = { location: { hostname: 'remote.clawtab.cc' }, gtag: (...args) => calls.push(args) };
   const navigator = { doNotTrack: '0' };
   const analytics = load('../remote/src/lib/analytics.web.ts', {}, {
-    window: browser, navigator,
+    window: browser, navigator, localStorage: { getItem: () => disabled ? '1' : null },
     document: { cookie: 'ct_entry=%2Farticles%2Fauto-yes', createElement: () => ({}), head: { appendChild: () => {} } },
   });
   analytics.trackFunnelEvent('setup_started'); analytics.trackFunnelEvent('setup_started');
@@ -31,6 +32,12 @@ test('web funnel events use the existing tag once and fixed app context', () => 
   assert.equal(events[0][2].source_page, '/web-remote');
   assert.equal(events[0][2].page_location, 'https://remote.clawtab.cc/');
   assert.equal(events[0][2].entry_page, '/articles/auto-yes');
+  disabled = true; analytics.applyAnalyticsPreference();
+  assert.equal(browser['ga-disable-G-01CG8GHYTS'], true);
+  analytics.trackRemoteEvent('login'); analytics.trackFunnelEvent('terminal_viewed');
+  assert.equal(calls.filter(call => call[1] === 'login').length, 0);
+  disabled = false; analytics.applyAnalyticsPreference();
+  assert.equal(browser['ga-disable-G-01CG8GHYTS'], false);
   navigator.doNotTrack = '1'; analytics.trackFunnelEvent('terminal_viewed');
   assert.equal(calls.filter(call => call[1] === 'terminal_viewed').length, 0);
   navigator.doNotTrack = '0'; browser.location.hostname = 'own-relay.example';

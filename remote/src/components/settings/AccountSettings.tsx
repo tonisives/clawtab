@@ -1,6 +1,7 @@
 import { useEffect } from "react"
 import * as storage from "../../lib/storage"
 import { FUNNEL_DISABLED_KEY } from "../../lib/funnel"
+import { applyAnalyticsPreference } from "../../lib/analytics"
 import { useState } from "react"
 import { View, Text, Pressable, StyleSheet, Switch } from "react-native"
 import { useRouter } from "expo-router"
@@ -17,6 +18,7 @@ export let AccountSettings = () => {
   let toggleAnalytics = async (enabled: boolean) => {
     try {
       await storage.setItem(FUNNEL_DISABLED_KEY, enabled ? "0" : "1")
+      applyAnalyticsPreference()
       setAnalyticsEnabled(enabled)
     } catch (error) {
       alertError("Could not save analytics preference", error instanceof Error ? error.message : String(error))
