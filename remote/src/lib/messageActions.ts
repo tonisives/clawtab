@@ -47,7 +47,7 @@ export async function flushMessageActions() {
       attempted.add(action)
       if (!machineState().machines.some(machine => machine.id === action.machine && machine.online)) continue
       const existing = useMessageStore.getState().records.find(record => record.machine_id === action.machine && record.id === action.id)
-      if (existing && !messagePending(existing)) {
+      if (existing && (existing.dismissed_at || action.op === "respond" && !messagePending(existing))) {
         queue = queue.filter(item => item !== action); await save(); continue
       }
       try {

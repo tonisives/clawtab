@@ -431,6 +431,7 @@
     } else {
       card._shellInput?.blur();
       if (snapshot.native_keyboard) native({ native: "shell_keyboard", active: false });
+      render(false);
     }
     syncMobileChrome(); size();
   }
@@ -1188,9 +1189,12 @@
   function updateAutoYes(root = host) {
     for (const control of root.querySelectorAll(".auto-yes-switch")) {
       const enabled = (snapshot.auto_yes_panes || []).includes(control.dataset.pane);
-      control.setAttribute("aria-checked", String(enabled));
-      control.querySelector(".switch-state").textContent = control.classList.contains("auto-yes-button") ? enabled ? "! Auto ON" : "! Yes all" : enabled ? "On" : "Off";
-      control.disabled = autoYesBusy.has(control.dataset.pane);
+      if (control.getAttribute("aria-checked") !== String(enabled)) control.setAttribute("aria-checked", String(enabled));
+      const label = control.querySelector(".switch-state");
+      const text = control.classList.contains("auto-yes-button") ? enabled ? "! Auto ON" : "! Yes all" : enabled ? "On" : "Off";
+      if (label.textContent !== text) label.textContent = text;
+      const disabled = autoYesBusy.has(control.dataset.pane);
+      if (control.disabled !== disabled) control.disabled = disabled;
     }
   }
   function createCard(record, readOnly = false) {
@@ -1440,10 +1444,11 @@
     card.querySelector("[aria-haspopup=menu]")?.setAttribute("aria-expanded", String(menu === "acknowledge"));
     card._options?.setAttribute("aria-expanded", String(menu === "options" || menu === "agent"));
     const feedback = Boolean(drafts.get(record.id)?.trim());
-    for (const control of card._actions.querySelectorAll("button")) control.disabled = !isPending || busy
-      || Boolean(record.question_id && feedback) || Boolean(revisionChoice(record) && control.dataset.actionId === "post" && feedback);
+    for (const control of card._actions.querySelectorAll("button")) control.disabled = control.dataset.actionId === "acknowledge"
+      ? busy || Boolean(record.dismissed_at || record.ignored)
+      : !isPending || busy || Boolean(record.question_id && feedback) || Boolean(revisionChoice(record) && control.dataset.actionId === "post" && feedback);
     if (card._openSession) card._openSession.disabled = busy;
-    if (card._acknowledge) card._acknowledge.disabled = !isPending || busy;
+    if (card._acknowledge) card._acknowledge.disabled = busy || Boolean(record.dismissed_at || record.ignored);
     if (card._send) card._send.disabled = !isPending || busy || !card._reply.value.trim();
     if (card._reply) card._reply.readOnly = !isPending || busy;
     for (const control of card._socialControls || []) control.disabled = !isPending || busy;
@@ -1798,9 +1803,11 @@
     const trigger = card?.querySelector("[aria-haspopup=menu]");
     if (!panel || !trigger) return;
     const anchor = trigger.getBoundingClientRect(), bounds = overlay.getBoundingClientRect();
-    const left = Math.max(0, Math.min(anchor.left + anchor.width / 2 - bounds.left - panel.offsetWidth / 2, bounds.width - panel.offsetWidth));
+    const nativeFooter = mobileHost() && snapshot.native_chrome;
+    const center = nativeFooter ? bounds.width / 2 : anchor.left + anchor.width / 2 - bounds.left;
+    const left = Math.max(0, Math.min(center - panel.offsetWidth / 2, bounds.width - panel.offsetWidth));
     panel.style.left = `${left}px`;
-    panel.style.bottom = `${Math.max(0, bounds.bottom - anchor.top + 8)}px`;
+    panel.style.bottom = `${nativeFooter ? 8 : Math.max(0, bounds.bottom - anchor.top + 8)}px`;
   }
   function renderMenu() {
     const existing = host.querySelector(".menu-overlay");

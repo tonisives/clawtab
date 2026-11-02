@@ -66,6 +66,16 @@ test('a second reply added during delivery is drained in the same flush', async 
   assert.deepEqual(app.calls.map(([, value]) => value.command.id), ['first', 'second']);
 });
 
+test('an answer sent in the shell can still be dismissed from Got it', async () => {
+  const app = harness(); await app.loadMessageActions('alice'); app.online();
+  app.records.push({ ...record('answered', 'resolved'), machine_id: 'host' });
+  await app.messageAction({ machine: 'host', id: 'answered', op: 'dismiss' });
+  assert.equal(app.calls.length, 1);
+  assert.equal(app.calls[0][1].command.op, 'dismiss');
+  assert.equal(app.calls[0][1].command.id, 'answered');
+  assert.equal(JSON.parse(app.storage.get('clawtab_message_actions_alice')).length, 0);
+});
+
 test('resolved questions are discarded and transient failures remain queued', async () => {
   const app = harness(); await app.loadMessageActions('alice');
   await app.messageAction({ machine: 'host', id: 'old', op: 'respond', action_id: 'yes' });
