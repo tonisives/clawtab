@@ -11,10 +11,9 @@ const record = { id: "selection", status: "pending", created_at: Date.now(), req
   title: "Selection fixture", body: "", template: "shell", source: { pane_id: "%fixture" }, actions: [],
 } };
 
-function Screen({ details = false }: { details?: boolean }) {
+function Screen({ details = false, plain = false }: { details?: boolean; plain?: boolean }) {
   const router = useRouter();
   const [copied, setCopied] = useState("");
-  const [plain, setPlain] = useState(false);
   const log = plain ? plainLog : coloredLog;
   const id = plain ? "plain" : "selection";
   return <View style={{ flex: 1, backgroundColor: "#161616" }}>
@@ -22,7 +21,7 @@ function Screen({ details = false }: { details?: boolean }) {
       {!details ? <Button title="Details" onPress={() => router.push("/details")} /> : null}
       <Button title="Read clipboard" onPress={() => { void Clipboard.getStringAsync().then(setCopied); }} />
       <Button title="Clear" onPress={() => { setCopied(""); void Clipboard.setStringAsync(""); }} />
-      <Button title="Plain" onPress={() => setPlain(true)} />
+      {!plain ? <Button title="Plain" onPress={() => router.replace("/plain")} /> : null}
     </View>
     <Text accessible accessibilityLabel="Clipboard contents" accessibilityValue={{ text: copied }} style={{ color: "white", height: 24 }}>{copied}</Text>
     <MessageSurface selection={id} snapshot={{ type: "snapshot", remote: true, native_chrome: true,
@@ -34,12 +33,15 @@ function Screen({ details = false }: { details?: boolean }) {
 }
 const Notifications = () => <Screen />;
 const Details = () => <Screen details />;
+const Plain = () => <Screen plain />;
 const Layout = () => <Stack screenOptions={{ animation: "none", headerStyle: { backgroundColor: "#161616" }, headerTintColor: "white" }}>
   <Stack.Screen name="index" options={{ title: "Notifications" }} />
   <Stack.Screen name="details" options={{ title: "Details" }} />
+  <Stack.Screen name="plain" options={{ title: "Plain shell" }} />
 </Stack>;
 const routes: Record<string, { default: () => React.JSX.Element }> = {
   "./_layout.tsx": { default: Layout }, "./index.tsx": { default: Notifications }, "./details.tsx": { default: Details },
+  "./plain.tsx": { default: Plain },
 };
 const context = Object.assign((key: string) => routes[key], { keys: () => Object.keys(routes), resolve: (key: string) => key, id: "selection-runtime" });
 
