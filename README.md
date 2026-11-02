@@ -23,8 +23,15 @@ ClawTab connects Claude Code, Codex, OpenCode, and Hermes in one workspace. The 
 
 ## How it fits together
 
-```text
-agent in tmux or a managed terminal <-> ClawTab daemon <-> relay <-> phone, web, desktop
+```mermaid
+flowchart LR
+  subgraph host["Your machine"]
+    A["Agents in tmux or<br/>managed terminals"] <--> D["ClawTab daemon"]
+    D <--> C["Message bar, tmux plugin,<br/>cwt, desktop app"]
+  end
+  D <--> R["Relay"]
+  R <--> I["iPhone app"]
+  R <--> W["Web Remote<br/>(browser and Android)"]
 ```
 
 The daemon runs in the background and doesn't need the desktop app open. Every client (tmux, `cwt`, desktop, phone) connects to the same session, so switching devices never restarts or duplicates an agent. More in [Architecture](docs/architecture.md).
@@ -37,7 +44,7 @@ The daemon runs in the background and doesn't need the desktop app open. Every c
 | Linux | [x86_64](https://github.com/tonisives/clawtab/releases/latest/download/clawtab-linux-x86_64.tar.gz) / [ARM64](https://github.com/tonisives/clawtab/releases/latest/download/clawtab-linux-aarch64.tar.gz) |
 | Windows | Native host and CLI, no WSL. See [platform builds](docs/platform-builds.md#windows). |
 | iPhone / iPad | [App Store](https://apps.apple.com/us/app/clawtab/id6759683841) |
-| Android | Coming soon |
+| Android | [remote.clawtab.cc](https://remote.clawtab.cc) in your browser. Play Store app coming soon. |
 | Web | [remote.clawtab.cc](https://remote.clawtab.cc) |
 
 On macOS, start the daemon after installing:
