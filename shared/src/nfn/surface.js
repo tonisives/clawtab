@@ -369,7 +369,7 @@
     if (signature !== lastMobileChrome) { lastMobileChrome = signature; native({ native: "chrome", ...state }); }
   }
   function followMobileShell() {
-    if (mobileHost() && shellReply && card?._followLogs && !hasLogSelection(card._logs)) {
+    if (mobileHost() && details && card?._followLogs && !hasLogSelection(card._logs)) {
       card._content.scrollTop = card._content.scrollHeight;
     }
   }
@@ -707,7 +707,7 @@
     if (actionsInProgress.has(id)) return;
     leaveSettings();
     const replyFocused = card?._reply && document.activeElement === card._reply;
-    clearTimeout(completionTimer); pauseTimer(); stopContext(); current = id; queueReturnId = id; expanded = true; details = defaultDetails(records.get(id)) || Boolean(resizedSize?.showDetails) || (mobileHost() && innerHeight > 480 && record?.request.source?.pane_id); queue = false; renderedId = null; menu = null;
+    clearTimeout(completionTimer); pauseTimer(); stopContext(); current = id; queueReturnId = id; expanded = true; details = defaultDetails(records.get(id)) || Boolean(snapshot.shell_only || resizedSize?.showDetails) || (snapshot.remote && record?.request.source?.pane_id); queue = false; renderedId = null; menu = null;
     syncMobileChrome();
     call({ op: "read", id }).catch(error => showError(error, id)); render();
     startContext();
@@ -1205,6 +1205,7 @@
     }
     if (agent && !record.question_id && record.request.title !== identity.group && record.request.title !== identity.title) body.append(el("div", "notification-title", record.request.title));
     const messages = cardMessages(record);
+    node._messages = [];
     if (messages.length > 1) {
       const thread = el("ol", "message-thread"); thread.setAttribute("aria-label", `${messages.length} messages from this agent`);
       for (const item of messages) {
@@ -1212,13 +1213,22 @@
         const header = el("div", "message-header");
         header.append(el("div", "hint", `${item.id === record.id ? "Latest · " : ""}${item.request.title}`), relativeTimestamp(item));
         entry.append(header, el("div", "message", messageText(item)));
+        node._messages.push({ record: item, element: entry });
         thread.append(entry);
       }
       node._thread = thread; body.append(thread);
-    } else body.append(el("div", "message", messageText(record)));
+    } else {
+      const message = el("div", "message", messageText(record));
+      body.append(message); node._messages.push({ record, element: message });
+    }
     const layout = template(record).layout;
     const content = el("div", "details-content"); node._content = content;
-    content.addEventListener("scroll", () => { node._followLogs = content.scrollHeight - content.scrollTop - content.clientHeight < 30; });
+    let previousScroll = 0;
+    content.addEventListener("scroll", () => {
+      node._followLogs = content.scrollHeight - content.scrollTop - content.clientHeight < 30;
+      if (snapshot.shell_only && content.scrollTop !== previousScroll) native({ native: "shell_scroll", direction: content.scrollTop < previousScroll ? "up" : "down" });
+      previousScroll = content.scrollTop;
+    });
     const bundle = socialReview(record, node);
     if (bundle) {
       const review = node.querySelector(".social-review");
@@ -1343,6 +1353,7 @@
       node._detailsButton.setAttribute("aria-expanded", String(showDetails));
     }
     const content = node._content;
+    syncMobileMessages(node, showDetails);
     if (!showDetails) {
       if (content.isConnected) {
         content.hidden = true;
@@ -1367,17 +1378,32 @@
     renderBlocks(detailBlocks(layout), content, record, true, primitives);
     node._followLogs = true;
     node._body.append(content);
+    syncMobileMessages(node, showDetails);
+    if (snapshot.remote) {
+      const follow = () => {
+        if (node.isConnected && node._followLogs && !hasLogSelection(node._logs)) content.scrollTop = content.scrollHeight;
+      };
+      const observer = new ResizeObserver(() => { if (!node.isConnected) observer.disconnect(); else follow(); });
+      observer.observe(content);
+      if (node._logs) observer.observe(node._logs);
+      requestAnimationFrame(follow);
+    }
+  }
+  function syncMobileMessages(node, showDetails) {
+    const shell = snapshot.remote && showDetails && Boolean(node._logs?._raw?.trim());
+    for (const item of node._messages || []) item.element.hidden = Boolean(shell && item.record.question_id);
+    if (node._thread) node._thread.hidden = node._messages.every(item => item.element.hidden);
   }
   function updateCard() {
     if (!card || !current) return;
     const record = records.get(current); if (!record) return;
     const wasPending = card._wasPending;
     if (card._signature !== cardSignature(record) && !shellReply && !hasLogSelection(card._logs)) {
-      const scroll = card._content.scrollTop, active = document.activeElement === card._reply;
+      const scroll = card._content.scrollTop, follow = card._followLogs, active = document.activeElement === card._reply;
       const selection = card._reply ? [card._reply.selectionStart, card._reply.selectionEnd] : null;
       stopContext();
       const replacement = createCard(record); card.replaceWith(replacement); card = replacement;
-      syncCardDetails(record); card._content.scrollTop = scroll;
+      syncCardDetails(record); card._followLogs = follow; card._content.scrollTop = scroll;
       if (active && card._reply) { card._reply.focus({ preventScroll: true }); if (selection) card._reply.setSelectionRange(...selection); }
       startContext();
     }
@@ -1471,6 +1497,7 @@
         card._followLogs = atBottom;
         if (atBottom) scroller.scrollTop = scroller.scrollHeight;
       }
+      syncMobileMessages(card, details);
       const agent = host.querySelector(".agent-controls");
       if (agent && agent.dataset.built !== "yes") {
         const beforeMenu = host.getBoundingClientRect();
@@ -2130,7 +2157,8 @@
       updateCard(); syncCardDetails(records.get(current));
     } else { host.querySelector(".card")?.remove(); host.querySelector(".queue")?.remove(); renderedId = null; card = null; }
     renderMenu(); positionAcknowledgementMenu(); cleanupRemoteMedia(); observeCardSize(); fitReviewHeight(); if (resizing || !animate) size(); else if (!continuingAnimation) animateLayout(before, !queue && !menu && !settingsOpen);
-    host.classList.toggle("native-mobile", mobileHost()); host.classList.toggle("native-chrome", Boolean(mobileHost() && snapshot.native_chrome)); host.classList.toggle("shell-reply", shellReply); syncMobileChrome(); preloadMobileShells();
+    host.classList.toggle("native-mobile", mobileHost() || Boolean(snapshot.shell_only)); host.classList.toggle("native-chrome", Boolean(mobileHost() && snapshot.native_chrome)); host.classList.toggle("shell-only", Boolean(snapshot.shell_only)); host.classList.toggle("shell-reply", shellReply); syncMobileChrome(); preloadMobileShells();
+    followMobileShell();
     if (snapshot.remote) window.nfnPaging?.reconcile();
     syncNativePointerHover();
   }
@@ -2504,7 +2532,7 @@
     const retry = step > 0 && items.find(record => record.id !== current && retryIds.has(record.id));
     const record = retry || items[(index + step + items.length) % items.length];
     const node = createCard(record, true);
-    const showDetails = record.details_available !== false && Boolean(details || mobileHost() && innerHeight > 480 && record.request.source?.pane_id);
+    const showDetails = record.details_available !== false && Boolean(details || snapshot.remote && record.request.source?.pane_id);
     syncCardDetails(record, node, showDetails);
     updateAutoYes(node);
     node.dataset.pageId = record.id;

@@ -627,6 +627,14 @@ impl Service {
                 return Ok(json!({"template": template}));
             }
             NfnCommand::Context { id } => return self.context(&id).await,
+            NfnCommand::PaneContext { pane_id } => {
+                let log = crate::terminal_backend::capture_pane_recent_ansi(&pane_id, 200)?;
+                return Ok(json!({"log":log,"source":{"pane_id":pane_id}}));
+            }
+            NfnCommand::PaneInput { pane_id, text } => {
+                crate::terminal_backend::send_literal_to_pane(&pane_id, &text)?;
+                return Ok(json!({"sent":true}));
+            }
             NfnCommand::ShellInput { id, text } => {
                 let record = self.store.get(&id)?;
                 validate_source(&record.request.source)?;

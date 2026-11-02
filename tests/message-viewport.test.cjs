@@ -151,7 +151,7 @@ test("web host keeps full height through route entry and follows the outer keybo
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
   const dependencies = {
-    react: { useRef: current => ({ current }), useCallback: callback => callback, useEffect: callback => effects.push(callback) },
+    react: { useRef: current => ({ current }), useState: value => [value, () => {}], useCallback: callback => callback, useEffect: callback => effects.push(callback) },
     "react/jsx-runtime": { jsx: (type, props) => ({ type, props }) },
     "../lib/messageSurfaceDocument.generated": { default: "fixture" },
     "../lib/messageSurfaceBootstrap": { messageSurfaceInitialDocument: document => document },

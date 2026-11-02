@@ -1,32 +1,22 @@
-import type { ComponentRef } from "react";
+import { ShellSurface } from "../../src/components/ShellSurface";
 import { toggleAutoYes } from "../../src/lib/autoYes"
-import { NextNotification } from "../../src/components/NextNotification";
-import type { ClaudeQuestion } from "@clawtab/shared";
-import { MachineTerminalControls } from "@clawtab/shared";
 import { useAgentActions } from "../../src/hooks/useAgentActions";
-import { encodeTerminalInput } from "@clawtab/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Platform, View, Text, TouchableOpacity, StyleSheet, Keyboard, TextInput } from "react-native";
+import { Platform, View, TouchableOpacity, StyleSheet } from "react-native";
 import { useLocalSearchParams, Stack, useRouter } from "expo-router";
-import { TerminalPasteButton } from "../../src/components/TerminalPasteButton";
-import { TerminalWriteDialog } from "../../src/components/TerminalWriteDialog";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useJobsStore } from "../../src/store/jobs";
 import { usePinsStore } from "../../src/store/pins";
 import { useNotificationStore } from "../../src/store/notifications";
-import { JobKindIcon, OptionButtons, PaneOverviewModal, XtermLog, compactPath, findYesOption, kindForProcess, colors, radius, spacing } from "@clawtab/shared";
-import type { XtermLogHandle } from "@clawtab/shared";
+import { JobKindIcon, OptionButtons, PaneOverviewModal, compactPath, findYesOption, kindForProcess, colors, radius } from "@clawtab/shared";
 import { useMachineStatus } from "../../src/hooks/useMachineStatus";
 import { getWsSend, nextId } from "../../src/lib/wsRuntime";
 import { stopSession } from "../../src/lib/stopSession";
-import { usePty } from "../../src/hooks/usePty";
 import { HeaderTitleWithIcon } from "../../src/components/HeaderButtons";
 import { LoadingBar } from "../../src/components/LoadingBar";
 import { useDetailBack } from "../../src/hooks/useDetailBack";
 import { useResponsive } from "../../src/hooks/useResponsive";
-import { useTerminalKeyboard } from "../../src/hooks/useTerminalKeyboard";
-import { TerminalCopySheet } from "../../src/components/TerminalCopySheet";
 import { alertError, confirm } from "../../src/lib/platform";
 import { jobRoute } from "../../src/lib/notificationRoutes";
 import { useLandscapeTerminalHeader } from "../../src/hooks/useLandscapeTerminalHeader";
@@ -34,26 +24,16 @@ import { TerminalHeaderActions } from "../../src/components/TerminalHeaderAction
 import { LandscapeTerminalBar } from "../../src/components/LandscapeTerminalBar";
 import { useLandscapeShellNavigation } from "../../src/hooks/useLandscapeShellNavigation";
 
-const KEYBOARD_TOOLBAR_HEIGHT = 48;
-const KEYBOARD_EXTRA_CLEARANCE = 10;
-const TERMINAL_BG = "#1c1c1e";
 
 
 export default function ProcessDetailScreen() {
   const { pane_id: rawPaneId, source, fromSplit, landscapeHandoff } = useLocalSearchParams<{ pane_id: string; source?: string; fromSplit?: string; landscapeHandoff?: string }>();
   let routePaneId = (rawPaneId ?? "").replace(/_pct_/g, "%");
-  let [selection, setSelection] = useState<{ routePaneId: string; paneId: string } | null>(null);
-  let paneId = selection?.routePaneId === routePaneId ? selection.paneId : routePaneId;
-  let handleSelectNotification = (question: ClaudeQuestion) => {
-    Keyboard.dismiss();
-    setSelection({ routePaneId, paneId: question.pane_id });
-  };
   return (
     <ProcessDetailContent
-      key={paneId}
-      pane_id={paneId}
+      key={routePaneId}
+      pane_id={routePaneId}
       preserveTerminal={source === "notifications"}
-      onSelectNotification={handleSelectNotification}
       fromSplit={fromSplit === "1" || landscapeHandoff === "1"}
       landscapeHandoff={landscapeHandoff === "1"}
     />
@@ -63,12 +43,11 @@ export default function ProcessDetailScreen() {
 type ProcessDetailContentProps = {
   pane_id: string;
   preserveTerminal: boolean;
-  onSelectNotification: (question: ClaudeQuestion) => void;
   fromSplit: boolean;
   landscapeHandoff: boolean;
 };
 
-let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification, fromSplit, landscapeHandoff }: ProcessDetailContentProps) => {
+let ProcessDetailContent = ({ pane_id, preserveTerminal, fromSplit, landscapeHandoff }: ProcessDetailContentProps) => {
   const router = useRouter();
   const goBack = useDetailBack("/(tabs)");
   const insets = useSafeAreaInsets();
@@ -128,12 +107,6 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification, f
   const lastProcess = lastProcessRef.current;
   const [stopping, setStopping] = useState(false);
   let [stopError, setStopError] = useState<string | null>(null);
-  const [copyModeActive, setCopyModeActive] = useState(false);
-  const [terminalMenuOpen, setTerminalMenuOpen] = useState(false);
-  const [writeOpen, setWriteOpen] = useState(false);
-  const [writeDraft, setWriteDraft] = useState("");
-  const [copyText, setCopyText] = useState<string | null>(null);
-  const [optionOverlayHeight, setOptionOverlayHeight] = useState(0);
   const pinnedItems = usePinsStore((s) => s.pinnedItems);
   const hydratePins = usePinsStore((s) => s.hydrate);
   const togglePin = usePinsStore((s) => s.togglePin);
@@ -163,37 +136,11 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification, f
   const [showPaneOverview, setShowPaneOverview] = useState(false);
   let agentActionControls = useAgentActions(pane_id, showPaneOverview);
 
-  // PTY streaming terminal
-  const termRef = useRef<XtermLogHandle | null>(null);
-  const keyboardDismissRef = useRef<ComponentRef<typeof TextInput> | null>(null);
-  const {
-    keyboardVisible,
-    keyboardHeight,
-    terminalSurfaceRef,
-    handleTerminalLayout,
-  } = useTerminalKeyboard({
-    termRef,
-    menuOpen: terminalMenuOpen,
-    toolbarHeight: KEYBOARD_TOOLBAR_HEIGHT,
-    extraClearance: KEYBOARD_EXTRA_CLEARANCE,
-    overlayHeight: optionOverlayHeight,
-  });
-  const {
-    sendInput: ptySendInput,
-    sendResize,
-    connecting: ptyConnecting,
-    error: ptyError,
-    hasOutput: ptyHasOutput,
-  } = usePty(pane_id, tmuxSession, termRef);
   useEffect(() => {
     hydratePins();
   }, [hydratePins]);
 
   const options = paneQuestion?.options ?? [];
-  useEffect(() => {
-    if (!options.length) setOptionOverlayHeight(0);
-  }, [options.length]);
-
   const answerQuestion = useNotificationStore((s) => s.answerQuestion);
   const autoYesPaneIds = useNotificationStore((s) => s.autoYesPaneIds);
   const autoYesActive = autoYesPaneIds.has(pane_id);
@@ -227,55 +174,6 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification, f
     },
     [pane_id, paneQuestion, answerQuestion],
   );
-
-  const sendTmuxPaneKey = useCallback(
-    (key: string) => {
-      const send = getWsSend();
-      if (!send) return;
-      send({ type: "tmux_pane_key", pane_id, key });
-    },
-    [pane_id],
-  );
-
-  const scrollTerminal = useCallback(
-    (direction: "up" | "down") => {
-      setCopyModeActive(true);
-      sendTmuxPaneKey(direction === "up" ? "copy-halfpage-up" : "copy-halfpage-down");
-    },
-    [sendTmuxPaneKey],
-  );
-
-  const exitCopyMode = useCallback(() => {
-    setCopyModeActive(false);
-    sendTmuxPaneKey("copy-cancel");
-  }, [sendTmuxPaneKey]);
-
-  const sendTerminalText = useCallback(
-    (text: string) => {
-      if (!text) return;
-      ptySendInput(encodeTerminalInput(text));
-    },
-    [ptySendInput],
-  );
-
-  const handleTerminalMenuOpenChange = useCallback((open: boolean) => {
-    setTerminalMenuOpen(open);
-    if (open) {
-      setTimeout(() => termRef.current?.focus(), 0);
-      setTimeout(() => termRef.current?.focus(), 80);
-    }
-  }, []);
-
-
-
-  const dismissTerminalKeyboard = useCallback(() => {
-    termRef.current?.blur();
-    keyboardDismissRef.current?.focus();
-    setTimeout(() => {
-      keyboardDismissRef.current?.blur();
-      Keyboard.dismiss();
-    }, 30);
-  }, []);
 
   const doStop = useCallback(async () => {
     if (stopping) return;
@@ -358,50 +256,10 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification, f
     );
   }
 
-  const terminalLoading = !ptyError && (!connected || !desktopOnline || !tmuxSession || ptyConnecting || !ptyHasOutput);
-  const terminalLoadingState = processLoadingState({
-    connected,
-    desktopOnline,
-    hasTmuxSession: !!tmuxSession,
-    waitingForAgent: terminalLoading,
-  });
   return (
     <View style={containerStyle}>
       <Stack.Screen options={terminalHeaderOptions} />
-      {Platform.OS !== "ios" && <MachineTerminalControls paneId={pane_id} />}
-      <View style={styles.terminalContainer}>
-        <View
-          ref={terminalSurfaceRef}
-          style={[styles.terminalSurface, terminalLoading && ptyHasOutput && styles.terminalSurfaceDimmed]}
-          onLayout={handleTerminalLayout}
-        >
-          <XtermLog
-            ref={termRef}
-            onData={ptySendInput}
-            onResize={sendResize}
-            interactive
-            forceDarkTheme
-            onScrollGesture={landscapeHeader.onScrollGesture}
-            onLongPressCopyText={setCopyText}
-          />
-        </View>
-        <TerminalScrollButtons
-          rightInset={0}
-          onScrollUp={() => scrollTerminal("up")}
-          onScrollDown={() => scrollTerminal("down")}
-          onExitCopyMode={exitCopyMode}
-          copyModeActive={copyModeActive}
-        />
-        {terminalLoading || ptyError ? (
-          <View style={styles.ptyConnectingOverlay} pointerEvents="none">
-            <LoadingBar
-              label={ptyError ?? terminalLoadingState.label}
-              progress={ptyError ? 1 : terminalLoadingState.progress}
-              error={!!ptyError}
-            />
-          </View>
-        ) : null}
-      </View>
+      <ShellSurface paneId={pane_id} onScrollGesture={landscapeHeader.onScrollGesture} />
       {landscapeHeader.overlayShown ? (
         <LandscapeTerminalBar
           topInset={insets.top}
@@ -412,56 +270,12 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, onSelectNotification, f
           actions={<TerminalHeaderActions onZoom={showLandscapeSidebar} zoomed onOpenDetails={openPaneOverview} />}
         />
       ) : null}
-      {keyboardVisible || terminalMenuOpen ? (
-        <TerminalKeyboardToolbar
-          bottom={keyboardVisible ? keyboardHeight : insets.bottom}
-          safeAreaLeft={insets.left}
-          safeAreaRight={insets.right}
-          onDismiss={dismissTerminalKeyboard}
-          onEscape={() => sendTerminalText("\x1b")}
-          onArrowUp={() => sendTerminalText("\x1b[A")}
-          onArrowDown={() => sendTerminalText("\x1b[B")}
-          onArrowLeft={() => sendTerminalText("\x1b[D")}
-          onArrowRight={() => sendTerminalText("\x1b[C")}
-          onCtrlC={() => sendTerminalText("\x03")}
-          onPaste={sendTerminalText}
-          onWrite={() => { setTerminalMenuOpen(false); setWriteOpen(true); }}
-          menuOpen={terminalMenuOpen}
-          onMenuOpenChange={handleTerminalMenuOpenChange}
-        />
-      ) : null}
-      <TerminalWriteDialog
-        visible={writeOpen}
-        draft={writeDraft}
-        onDraftChange={setWriteDraft}
-        onClose={() => setWriteOpen(false)}
-        onDone={() => {
-          const text = writeDraft.replace(/\r\n|\n/g, "\r");
-          sendTerminalText(text.endsWith("\r") ? text : text + "\r");
-          setWriteOpen(false);
-        }}
-      />
-      <TerminalCopySheet text={copyText} onClose={() => setCopyText(null)} />
-      <TextInput
-        ref={keyboardDismissRef}
-        style={styles.keyboardDismissSink}
-        showSoftInputOnFocus={false}
-        caretHidden
-        autoCorrect={false}
-        autoCapitalize="none"
-      />
-
       {(isAlive || paneQuestion) && (
         <OptionButtons
           options={options}
           onSend={handleSend}
           bottomInset={insets.bottom}
-          overlay
-          onHeightChange={setOptionOverlayHeight}
         />
-      )}
-      {preserveTerminal && (
-        <NextNotification paneId={pane_id} onSelect={onSelectNotification} />
       )}
       <PaneOverviewModal
         visible={showPaneOverview}
@@ -506,121 +320,9 @@ function processLoadingState({
   return { label: "Connected", progress: 1 };
 }
 
-function TerminalKeyboardToolbar({
-  bottom,
-  safeAreaLeft,
-  safeAreaRight,
-  onDismiss,
-  onEscape,
-  onArrowUp,
-  onArrowDown,
-  onArrowLeft,
-  onArrowRight,
-  onCtrlC,
-  onPaste,
-  onWrite,
-  menuOpen,
-  onMenuOpenChange,
-}: {
-  bottom: number;
-  safeAreaLeft: number;
-  safeAreaRight: number;
-  onDismiss: () => void;
-  onEscape: () => void;
-  onArrowUp: () => void;
-  onArrowDown: () => void;
-  onArrowLeft: () => void;
-  onArrowRight: () => void;
-  onCtrlC: () => void;
-  onPaste: (text: string) => void;
-  onWrite: () => void;
-  menuOpen: boolean;
-  onMenuOpenChange: (open: boolean) => void;
-}) {
-  let handlePasteDone = useCallback(() => onMenuOpenChange(false), [onMenuOpenChange]);
-
-  return (
-    <View style={[styles.keyboardToolbar, { bottom, paddingLeft: safeAreaLeft + spacing.sm, paddingRight: safeAreaRight + spacing.sm }]}>
-      <TouchableOpacity style={styles.keyboardToolBtn} onPress={onDismiss} activeOpacity={0.7}>
-        <Ionicons name="chevron-down" size={20} color={colors.text} />
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.keyboardToolBtnWide} onPress={onEscape} activeOpacity={0.7}>
-        <Text style={styles.keyboardToolText}>Esc</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.keyboardToolBtnWide} onPress={onCtrlC} activeOpacity={0.7}>
-        <Text style={styles.keyboardToolText}>C-c</Text>
-      </TouchableOpacity>
-      <View style={styles.keyboardToolSpacer} />
-      <TouchableOpacity style={styles.keyboardToolBtn} onPress={onArrowLeft} activeOpacity={0.7}>
-        <Ionicons name="chevron-back" size={20} color={colors.text} />
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.keyboardToolBtn} onPress={onArrowDown} activeOpacity={0.7}>
-        <Ionicons name="chevron-down" size={20} color={colors.text} />
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.keyboardToolBtn} onPress={onArrowUp} activeOpacity={0.7}>
-        <Ionicons name="chevron-up" size={20} color={colors.text} />
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.keyboardToolBtn} onPress={onArrowRight} activeOpacity={0.7}>
-        <Ionicons name="chevron-forward" size={20} color={colors.text} />
-      </TouchableOpacity>
-      <View style={styles.keyboardToolSpacer} />
-      <View style={styles.keyboardToolMenuWrap}>
-        <TouchableOpacity style={styles.keyboardToolBtn} onPress={() => onMenuOpenChange(!menuOpen)} activeOpacity={0.7}>
-          <Ionicons name="ellipsis-horizontal" size={20} color={colors.text} />
-        </TouchableOpacity>
-        {menuOpen ? (
-          <View style={styles.keyboardPastePopover}>
-            <TerminalPasteButton onPaste={onPaste} onDone={handlePasteDone} />
-            <TouchableOpacity style={styles.keyboardWriteButton} onPress={onWrite} activeOpacity={0.7}>
-              <Text style={styles.keyboardPasteTitle}>Write</Text>
-            </TouchableOpacity>
-          </View>
-        ) : null}
-      </View>
-    </View>
-  );
-}
-
-function TerminalScrollButtons({
-  rightInset,
-  onScrollUp,
-  onScrollDown,
-  onExitCopyMode,
-  copyModeActive,
-}: {
-  rightInset: number;
-  onScrollUp: () => void;
-  onScrollDown: () => void;
-  onExitCopyMode: () => void;
-  copyModeActive: boolean;
-}) {
-  return (
-    <View style={[styles.scrollControls, { right: spacing.sm + rightInset }]} pointerEvents="box-none">
-      <TouchableOpacity style={styles.scrollBtn} onPress={onScrollUp} activeOpacity={0.7}>
-        <View style={styles.scrollBtnVisible}>
-          <Ionicons name="chevron-up" size={24} color={colors.text} />
-        </View>
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.scrollBtn} onPress={onScrollDown} activeOpacity={0.7}>
-        <View style={styles.scrollBtnVisible}>
-          <Ionicons name="chevron-down" size={24} color={colors.text} />
-        </View>
-      </TouchableOpacity>
-      {copyModeActive ? (
-        <TouchableOpacity style={styles.exitCopyBtn} onPress={onExitCopyMode} activeOpacity={0.7}>
-          <View style={styles.scrollBtnVisible}>
-            <Ionicons name="close" size={24} color={colors.text} />
-          </View>
-        </TouchableOpacity>
-      ) : null}
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
-  notFound: { color: colors.textMuted, fontSize: 16 },
   headerActions: { flexDirection: "row", alignItems: "center" },
   contextBtn: {
     width: 36,
@@ -628,159 +330,5 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderRadius: radius.sm,
-  },
-  terminalContainer: {
-    flex: 1,
-    minHeight: 0,
-    position: "relative",
-    backgroundColor: TERMINAL_BG,
-  },
-  terminalSurface: {
-    flex: 1,
-    minHeight: 0,
-  },
-  terminalSurfaceDimmed: {
-    opacity: 0.42,
-  },
-  keyboardToolbar: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    height: KEYBOARD_TOOLBAR_HEIGHT,
-    zIndex: 200,
-    elevation: 200,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: spacing.sm,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-  },
-  keyboardToolBtn: {
-    width: 38,
-    height: 34,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: radius.sm,
-    backgroundColor: colors.bg,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  keyboardToolBtnWide: {
-    minWidth: 48,
-    height: 34,
-    paddingHorizontal: spacing.sm,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: radius.sm,
-    backgroundColor: colors.bg,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  keyboardToolText: {
-    color: colors.text,
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  keyboardToolSpacer: {
-    flex: 1,
-  },
-  keyboardToolMenuWrap: {
-    position: "relative",
-    alignSelf: "center",
-    zIndex: 220,
-    elevation: 220,
-  },
-  keyboardPastePopover: {
-    position: "absolute",
-    right: 0,
-    bottom: 42,
-    width: 164,
-    padding: 12,
-    alignItems: "center",
-    gap: 8,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    zIndex: 240,
-    elevation: 240,
-  },
-  keyboardPasteItem: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: 10,
-  },
-  keyboardPasteTitle: {
-    color: colors.text,
-    fontSize: 15,
-    fontWeight: "600",
-  },
-  keyboardWriteButton: {
-    width: 120,
-    minHeight: 38,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: radius.sm,
-    backgroundColor: colors.bg,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  keyboardDismissSink: {
-    position: "absolute",
-    width: 1,
-    height: 1,
-    opacity: 0,
-    left: -10,
-    bottom: 0,
-  },
-  scrollControls: {
-    position: "absolute",
-    top: spacing.sm,
-    right: spacing.sm,
-    zIndex: 100,
-    elevation: 100,
-    gap: 4,
-  },
-  scrollBtn: {
-    width: 64,
-    height: 64,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  exitCopyBtn: {
-    position: "absolute",
-    left: -8,
-    top: "50%",
-    transform: [{ translateX: -64 }, { translateY: -32 }],
-    width: 64,
-    height: 64,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  scrollBtnVisible: {
-    width: 46,
-    height: 46,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: "rgba(28, 28, 30, 0.82)",
-  },
-  ptyConnectingOverlay: {
-    position: "absolute",
-    top: spacing.sm,
-    left: spacing.sm,
-    right: spacing.sm,
-    zIndex: 90,
-    elevation: 90,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: "rgba(28, 28, 30, 0.88)",
   },
 });

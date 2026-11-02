@@ -7,6 +7,7 @@ export type SurfaceMessage = {
   id?: string;
   active?: boolean;
   height?: number;
+  direction?: "up" | "down";
 };
 
 export type MessageSurfaceProps = {
