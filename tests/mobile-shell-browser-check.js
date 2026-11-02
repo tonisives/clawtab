@@ -21,7 +21,11 @@
   assert(bottom(), "a notification opens with its shell scrolled to the latest line");
   assert(surface.querySelector(".message").hidden, "shell-derived question text is hidden while its captured shell is visible");
   const yes = surface.querySelector(".auto-yes-button"), action = surface.querySelector(".actions button");
-  assert(yes.getBoundingClientRect().width < innerWidth / 2 && getComputedStyle(yes).padding === getComputedStyle(action).padding, "Yes all fits its label and uses the same padding as the other actions");
+  const yesBounds = yes.getBoundingClientRect();
+  assert(Math.abs(yesBounds.left - 12) < 1 && Math.abs(innerWidth - yesBounds.right - 12) < 1,
+    "Yes all fills the row with the same 12-point side insets as the native bottom segmented control");
+  assert(getComputedStyle(yes).justifyContent === "center" && getComputedStyle(yes).padding === getComputedStyle(action).padding,
+    "Yes all centers its label and uses the same padding as the other actions");
   open(custom.id); await wait(100);
   assert(bottom(), "a cached shell is also positioned at the bottom on first display");
   assert(!surface.querySelector(".message").hidden && surface.querySelector(".message").textContent === custom.request.body, "custom notification text remains above the shell");

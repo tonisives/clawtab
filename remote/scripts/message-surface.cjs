@@ -35,7 +35,7 @@ button.close,button.nav-step{min-height:36px;min-width:36px;padding:4px}
 button.queue-item,button.menu-link,button.reply-toggle{border-radius:6px}
 .segments:not(.segmented-control) button{min-height:36px;padding:4px 12px;border:0;border-radius:6px;background:transparent;color:var(--muted)}
 .segments:not(.segmented-control) button[aria-selected="true"]{background:#38383a;color:#e4e4e4}
-button.auto-yes-button{width:auto;align-self:flex-start;min-height:44px;padding:8px 16px;border-radius:999px}
+button.auto-yes-button{width:100%;min-height:44px;padding:8px 16px;border-radius:999px;text-align:center}
 .todo-agent{margin-top:0}
 .todo-heading,.todo-row{align-items:center}
 .todo-add{grid-template-columns:minmax(0,1fr) auto}
@@ -50,7 +50,7 @@ button.auto-yes-button{width:auto;align-self:flex-start;min-height:44px;padding:
 .native-mobile .logs{box-sizing:border-box;width:100%;min-width:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;line-height:16px;border:0;border-radius:0;background:#000000;padding:8px;margin:0}
 .native-mobile.details-open>.card{flex:1;min-height:0}
 .native-chrome.details-open:not(.shell-reply)>.card{padding:12px 0 0}
-.native-chrome.details-open:not(.shell-reply)>.card>.heading,.native-chrome.details-open:not(.shell-reply) .message-content>:not(.details-content),.native-chrome.details-open:not(.shell-reply)>.card>.auto-yes-button,.native-chrome.details-open:not(.shell-reply)>.card>.answer-row,.native-chrome.details-open:not(.shell-reply)>.card>.reply,.native-chrome.details-open:not(.shell-reply)>.card>.notice{margin-left:12px;margin-right:12px}
+.native-chrome.details-open:not(.shell-reply)>.card>.heading,.native-chrome.details-open:not(.shell-reply) .message-content>:not(.details-content),.native-chrome.details-open:not(.shell-reply)>.card>.answer-auto-yes,.native-chrome.details-open:not(.shell-reply)>.card>.answer-row,.native-chrome.details-open:not(.shell-reply)>.card>.reply,.native-chrome.details-open:not(.shell-reply)>.card>.notice{margin-left:12px;margin-right:12px}
 .native-chrome.details-open>.card>.controls{display:none}
 .native-chrome.details-open .details-content{background:#000000}
 .native-mobile.shell-reply>.card{padding:0;display:flex;flex:1;min-height:0;overflow:hidden}
