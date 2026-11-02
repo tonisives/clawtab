@@ -26,6 +26,31 @@ function viewport() {
   return { window, document, context, listeners, properties, scrolled, field, composer, flush, tap };
 }
 
+test("standalone shell swipes leave navigation to iOS while notification cards still page", () => {
+  for (const shellOnly of [true, false]) {
+    const v = viewport(), calls = [];
+    v.context.performance = { now: () => 10 };
+    v.window.getSelection = () => ({ isCollapsed: true });
+    v.window.nfnPaging = {
+      finish() {}, cancel() {},
+      begin: () => calls.push("begin"), move: () => calls.push("move"),
+      release: () => calls.push("release"),
+    };
+    const card = { isConnected: true, matches: () => true };
+    const target = { closest: selector => selector.startsWith("#surface")
+      ? shellOnly && selector.includes(":not(.shell-only)") ? null : card
+      : null, parentElement: card, scrollWidth: 0, clientWidth: 0 };
+    const touch = { identifier: 1, clientX: 10, clientY: 100 };
+    v.listeners.touchstart({ touches: [touch], target });
+    const moved = { ...touch, clientX: 130 };
+    let prevented = false;
+    v.listeners.touchmove({ touches: [moved], preventDefault: () => { prevented = true; } });
+    v.listeners.touchend({ touches: [], changedTouches: [moved] });
+    assert.equal(prevented, !shellOnly);
+    assert.deepEqual(calls, shellOnly ? [] : ["begin", "move", "release"]);
+  }
+});
+
 test("mobile safe-area space disappears during keyboard use and returns after dismissal", () => {
   const v = viewport();
   v.window.nfnMobile.setInsets(34, false);
