@@ -23,6 +23,7 @@ impl Store {
                 id TEXT PRIMARY KEY, status TEXT NOT NULL, dedupe TEXT, record TEXT NOT NULL,
                 created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
             CREATE INDEX IF NOT EXISTS nfn_status ON notifications(status, created_at);
+            CREATE INDEX IF NOT EXISTS nfn_scheduled_due ON notifications(json_extract(record,'$.request.deliver_at')) WHERE status='scheduled';
             CREATE UNIQUE INDEX IF NOT EXISTS nfn_active_dedupe ON notifications(dedupe)
                 WHERE status IN ('pending', 'delivering') AND dedupe IS NOT NULL;
             CREATE TABLE IF NOT EXISTS ignored_agents (key TEXT PRIMARY KEY, record TEXT NOT NULL);",
@@ -39,7 +40,7 @@ impl Store {
             );
             store.save(&mut record)?;
         }
-        store.conn.lock().execute("DELETE FROM notifications WHERE status NOT IN ('pending', 'delivering') AND updated_at < ?1", [now() - 30 * 86400000]).map_err(|e| e.to_string())?;
+        store.conn.lock().execute("DELETE FROM notifications WHERE status NOT IN ('pending', 'delivering', 'scheduled') AND updated_at < ?1", [now() - 30 * 86400000]).map_err(|e| e.to_string())?;
         Ok(store)
     }
 
@@ -78,7 +79,43 @@ impl Store {
     }
 
     pub fn list(&self, offset: usize) -> Result<Vec<NfnRecord>, String> {
-        self.list_where("1=1", offset, 50)
+        self.list_where("status != 'scheduled'", offset, 50)
+    }
+    pub fn scheduled(&self, offset: usize) -> Result<Vec<NfnRecord>, String> {
+        self.list_where("status = 'scheduled'", offset, 50)
+    }
+
+    pub fn activate_due(&self, timestamp: i64) -> Result<Vec<NfnRecord>, String> {
+        let mut conn = self.conn.lock();
+        let transaction = conn.transaction().map_err(|e| e.to_string())?;
+        let rows = {
+            let mut statement = transaction.prepare("SELECT record FROM notifications WHERE status='scheduled' AND json_extract(record,'$.request.deliver_at') <= ?1 ORDER BY json_extract(record,'$.request.deliver_at') LIMIT 100").map_err(|e| e.to_string())?;
+            let rows = statement
+                .query_map([timestamp], |row| row.get::<_, String>(0))
+                .map_err(|e| e.to_string())?;
+            rows.collect::<Result<Vec<_>, _>>()
+                .map_err(|e| e.to_string())?
+        };
+        let mut due = Vec::new();
+        for row in rows {
+            let mut record: NfnRecord = serde_json::from_str(&row).map_err(|e| e.to_string())?;
+            record.status = if record
+                .request
+                .expires_at
+                .is_some_and(|until| until <= timestamp)
+            {
+                "expired"
+            } else {
+                "pending"
+            }
+            .into();
+            record.created_at = timestamp;
+            record.updated_at = timestamp;
+            Self::write(&transaction, &record)?;
+            due.push(record);
+        }
+        transaction.commit().map_err(|e| e.to_string())?;
+        Ok(due)
     }
     pub fn pending_count(&self) -> Result<usize, String> {
         self.conn.lock().query_row("SELECT count(*) FROM notifications WHERE status IN ('pending','delivering') AND json_extract(record,'$.dismissed_at') IS NULL AND COALESCE(json_extract(record,'$.ignored'),0)=0", [], |row| row.get(0)).map_err(|e| e.to_string())
@@ -110,7 +147,7 @@ impl Store {
         let mut clause = if pending_only {
             "status IN ('pending','delivering') AND json_extract(record,'$.dismissed_at') IS NULL AND COALESCE(json_extract(record,'$.ignored'),0)=0".to_owned()
         } else {
-            "1=1".to_owned()
+            "status != 'scheduled'".to_owned()
         };
         let mut values: Vec<rusqlite::types::Value> = vec![(50_i64).into(), (offset as i64).into()];
         for term in query.split_whitespace() {
@@ -207,6 +244,8 @@ impl Store {
         let timestamp = now();
         let status = if request.expires_at.is_some_and(|until| until <= timestamp) {
             "expired"
+        } else if request.deliver_at.is_some() {
+            "scheduled"
         } else {
             "pending"
         };
@@ -231,12 +270,13 @@ impl Store {
 
     fn write(conn: &Connection, record: &NfnRecord) -> Result<(), String> {
         conn.execute(
-            "UPDATE notifications SET status=?2,record=?3,updated_at=?4 WHERE id=?1",
+            "UPDATE notifications SET status=?2,record=?3,updated_at=?4,created_at=?5 WHERE id=?1",
             params![
                 record.id,
                 record.status,
                 serde_json::to_string(record).map_err(|e| e.to_string())?,
-                record.updated_at
+                record.updated_at,
+                record.created_at
             ],
         )
         .map_err(|e| e.to_string())?;
@@ -278,6 +318,11 @@ impl Store {
                 .map_err(|e| e.to_string())?;
             let mut record: NfnRecord = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
             record.dismissed_at = Some(timestamp);
+            if record.request.deliver_at.is_some() && record.pending() {
+                record.status = "resolved".into();
+            } else if record.status == "scheduled" {
+                record.status = "cancelled".into();
+            }
             record.read_at = Some(timestamp);
             record.updated_at = timestamp;
             Self::write(&transaction, &record)?;
@@ -304,7 +349,7 @@ impl Store {
 
     pub fn supersede_previous(&self, latest: &NfnRecord) -> Result<Vec<NfnRecord>, String> {
         // Each social review owns its exact draft revisions and publication decision.
-        if latest.request.template == "social-review" {
+        if latest.request.template == "social-review" || latest.request.deliver_at.is_some() {
             return Ok(Vec::new());
         }
         let mut conn = self.conn.lock();
@@ -326,6 +371,7 @@ impl Store {
             let mut record: NfnRecord = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
             if record.dismissed_at.is_some()
                 || record.request.template == "social-review"
+                || record.request.deliver_at.is_some()
                 || (record.created_at, &record.id) > (latest.created_at, &latest.id)
                 || !latest.request.source.same_thread(&record.request.source)
             {
@@ -420,6 +466,74 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn reminders_wait_until_due_and_survive_restarts_without_early_delivery() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("notifications.sqlite");
+        let due = now() + 86400000;
+        let id = {
+            let store = Store::open(&path).unwrap();
+            let (record, _) = store
+                .send(
+                    NfnRequest {
+                        kind: "update".into(),
+                        template: "update".into(),
+                        title: "Check embeddings".into(),
+                        deliver_at: Some(due),
+                        ..Default::default()
+                    },
+                    None,
+                )
+                .unwrap();
+            assert_eq!(record.status, "scheduled");
+            assert!(store.list(0).unwrap().is_empty());
+            assert!(store.search(0, false, "embeddings").unwrap().is_empty());
+            assert_eq!(store.pending_count().unwrap(), 0);
+            assert!(store.activate_due(due - 1).unwrap().is_empty());
+            record.id
+        };
+        let store = Store::open(&path).unwrap();
+        assert_eq!(store.scheduled(0).unwrap()[0].id, id);
+        let delivered = store.activate_due(due + 3600000).unwrap();
+        assert_eq!(delivered.len(), 1);
+        assert_eq!(delivered[0].status, "pending");
+        assert_eq!(delivered[0].id, id);
+        assert!(store.activate_due(due + 3600001).unwrap().is_empty());
+        assert_eq!(store.pending_count().unwrap(), 1);
+        store.dismiss_many(&[id.clone()]).unwrap();
+        assert_eq!(store.get(&id).unwrap().status, "resolved");
+    }
+
+    #[test]
+    fn cancelled_schedules_do_not_fire_and_expired_schedules_are_not_pending() {
+        let store = Store::from_connection(Connection::open_in_memory().unwrap()).unwrap();
+        let due = now() + 1000;
+        let request = NfnRequest {
+            kind: "update".into(),
+            template: "update".into(),
+            title: "Reminder".into(),
+            deliver_at: Some(due),
+            ..Default::default()
+        };
+        let (cancelled, _) = store.send(request.clone(), None).unwrap();
+        store.dismiss_many(&[cancelled.id.clone()]).unwrap();
+        let (expired, _) = store
+            .send(
+                NfnRequest {
+                    expires_at: Some(due + 1),
+                    ..request
+                },
+                None,
+            )
+            .unwrap();
+        let due = store.activate_due(due + 2).unwrap();
+        assert_eq!(due.len(), 1);
+        assert_eq!(due[0].id, expired.id);
+        assert_eq!(due[0].status, "expired");
+        assert_eq!(store.get(&cancelled.id).unwrap().status, "cancelled");
+        assert!(store.pending().unwrap().is_empty());
+    }
+
     fn request() -> NfnRequest {
         NfnRequest {
             title: "Review a post".into(),

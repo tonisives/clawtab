@@ -169,6 +169,14 @@ impl Service {
             .await
             .unwrap_or_default();
             let _guard = self.mutation.lock().await;
+            match self.store.activate_due(now()) {
+                Ok(records) => {
+                    for record in records {
+                        self.announce(&record);
+                    }
+                }
+                Err(error) => log::warn!("[nfn] Could not activate scheduled messages: {error}"),
+            }
             let current_auto_yes = self.ctx.auto_yes_panes.lock().clone();
             let mut changed = current_auto_yes != auto_yes_panes;
             auto_yes_panes = current_auto_yes;
@@ -531,6 +539,9 @@ impl Service {
 
     async fn execute_inner(&self, command: NfnCommand) -> Result<Value, String> {
         match command {
+            NfnCommand::Scheduled { offset } => {
+                return Ok(json!({"records":self.store.scheduled(offset)?}))
+            }
             NfnCommand::Todos => return Ok(super::todos::snapshot()),
             NfnCommand::TodoRefresh => {
                 return self.refresh_todo_agents().await;
@@ -588,9 +599,7 @@ impl Service {
                 focus_source(&source).await?;
                 return Ok(json!({"focused":true}));
             }
-            NfnCommand::Get { id } => {
-                return Ok(surface_record(self.store.get(&id)?))
-            }
+            NfnCommand::Get { id } => return Ok(surface_record(self.store.get(&id)?)),
             NfnCommand::List {
                 offset,
                 pending_only,
@@ -712,6 +721,24 @@ impl Service {
             NfnCommand::SessionTargets { id } => {
                 let record = self.store.get(&id)?;
                 return Ok(json!({"targets": session_targets(&record.request.source)?}));
+            }
+            NfnCommand::Resume { id } => {
+                let _guard = self.mutation.lock().await;
+                let record = self.store.get(&id)?;
+                if record.request.deliver_at.is_none() || record.request.source.session_id.is_none()
+                {
+                    return Err("Only a linked reminder can resume a saved session".into());
+                }
+                let targets = session_targets(&record.request.source)?;
+                if !targets.is_empty() {
+                    return Ok(json!({"targets":targets}));
+                }
+                self.open_saved_session(&record, false).await?;
+                let mut record = self.store.get(&id)?;
+                record.request.source.pane_id = record.request.data["opened_session_pane"]
+                    .as_str()
+                    .map(str::to_owned);
+                return Ok(json!({"record":surface_record(record)}));
             }
             NfnCommand::Focus { id, pane_id } => {
                 let _guard = self.mutation.lock().await;
@@ -862,6 +889,7 @@ impl Service {
                 {
                     return Err("agent_message requires a running supported agent".into());
                 }
+                prepare_reminder(&mut request, now())?;
                 let (record, created) = self.store.send(request, None)?;
                 if created {
                     self.announce(&record);
@@ -877,12 +905,17 @@ impl Service {
                     "dismiss" => {
                         record.dismissed_at = Some(now());
                         record.read_at = Some(now());
+                        if record.request.deliver_at.is_some() && record.pending() {
+                            record.status = "resolved".into();
+                        } else if record.status == "scheduled" {
+                            record.status = "cancelled".into();
+                        }
                     }
                     _ => {
                         if record.status == "delivering" {
                             return Err("A response is being delivered".into());
                         }
-                        if record.pending() {
+                        if record.pending() || record.status == "scheduled" {
                             record.status = "cancelled".into();
                         }
                     }
@@ -924,8 +957,8 @@ impl Service {
             focus_source(&source).await?;
             return Ok(json!({"focused":true}));
         }
-        if job_notice(record) {
-            self.focus_job_session(record).await?;
+        if resumable_notice(record) {
+            self.open_saved_session(record, true).await?;
         } else {
             validate_source(&record.request.source)?;
             focus_source(&record.request.source).await?;
@@ -933,7 +966,7 @@ impl Service {
         Ok(json!({"focused":true, "record":self.store.get(&record.id)?}))
     }
 
-    async fn focus_job_session(&self, record: &NfnRecord) -> Result<(), String> {
+    async fn open_saved_session(&self, record: &NfnRecord, focus: bool) -> Result<(), String> {
         let mut source = record.request.source.clone();
         if let Some(pane) = record.request.data["opened_session_pane"]
             .as_str()
@@ -951,7 +984,11 @@ impl Service {
                 if current.session_id.is_some() && current.session_id != source.session_id {
                     return Err("The originating agent session has changed".into());
                 }
-                return focus_source(&source).await;
+                return if focus {
+                    focus_source(&source).await
+                } else {
+                    Ok(())
+                };
             }
         }
         if let Some(pane) = source
@@ -964,7 +1001,13 @@ impl Service {
                 crate::tmux::PaneProcessState::Running
             ) {
                 match validate_source(&source) {
-                    Ok(()) => return focus_source(&source).await,
+                    Ok(()) => {
+                        return if focus {
+                            focus_source(&source).await
+                        } else {
+                            Ok(())
+                        }
+                    }
                     Err(error) => {
                         let finished = source.run_id.as_deref().is_some_and(|run| {
                             self.ctx
@@ -975,14 +1018,20 @@ impl Service {
                                 .flatten()
                                 .is_some_and(|run| run.finished_at.is_some())
                         });
-                        if source.session_id.is_none() || !finished {
+                        if source.session_id.is_none()
+                            || (!finished && record.request.deliver_at.is_none())
+                        {
                             return Err(error);
                         }
                     }
                 }
             }
             if source.session_id.is_none() {
-                return focus_source(&source).await;
+                return if focus {
+                    focus_source(&source).await
+                } else {
+                    Ok(())
+                };
             }
         }
         let command = session_resume_command(&source)?;
@@ -1011,7 +1060,11 @@ impl Service {
             updated.request.data["opened_session_pane"] = json!(info.id);
             self.store.save(&mut updated)?;
             source.pane_id = Some(info.id);
-            return focus_source(&source).await;
+            return if focus {
+                focus_source(&source).await
+            } else {
+                Ok(())
+            };
         }
         let session = source
             .group
@@ -1035,7 +1088,45 @@ impl Service {
         updated.request.data["opened_session_pane"] = json!(pane);
         self.store.save(&mut updated)?;
         source.pane_id = Some(pane);
-        focus_source(&source).await
+        if focus {
+            focus_source(&source).await
+        } else {
+            Ok(())
+        }
+    }
+
+    async fn reminder_reply_source(&self, record: &NfnRecord) -> Result<NfnSource, String> {
+        if record.request.source.session_id.is_none() {
+            return Err("This reminder has no linked agent session".into());
+        }
+        let targets = session_targets(&record.request.source)?;
+        if targets.len() > 1 {
+            return Err("Open the reminder and select a session pane before replying".into());
+        }
+        let pane = if let Some(target) = targets.first() {
+            target["pane_id"]
+                .as_str()
+                .ok_or("Session target has no pane")?
+                .to_owned()
+        } else {
+            self.open_saved_session(record, false).await?;
+            self.store.get(&record.id)?.request.data["opened_session_pane"]
+                .as_str()
+                .ok_or("Could not open the reminder session")?
+                .to_owned()
+        };
+        for _ in 0..60 {
+            if let Ok(source) = resolve_source(&pane, None) {
+                if same_conversation(&record.request.source, &source)
+                    && validate_source(&source).is_ok()
+                    && crate::agent_plugins::notification_reply_ready(&pane)?
+                {
+                    return Ok(source);
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        }
+        Err("The session is still starting. Your reply has not been sent; try again when it is ready".into())
     }
 
     async fn respond(
@@ -1052,11 +1143,17 @@ impl Service {
             return Err("Enter a reply before sending".into());
         }
         let mut record = self.store.get(id)?;
+        if record.status == "scheduled" {
+            return Err("This reminder has not been delivered yet".into());
+        }
         record.request.validate_decisions(decisions.as_deref())?;
         if !record.request.needs_response() && action_id == "acknowledge" {
             let dismissed = self.store.dismiss_many(&[id.to_string()])?;
             self.store.supersede_previous(&record)?;
             return Ok(json!({"record":dismissed[0]}));
+        }
+        if !record.pending() {
+            return Err(format!("Request is {}", record.status));
         }
         if record
             .request
@@ -1130,6 +1227,10 @@ impl Service {
                 }
                 _ => Err("Unsupported action".into()),
             };
+        }
+        if action_id == "reply" && record.request.deliver_at.is_some() {
+            record.request.source = self.reminder_reply_source(&record).await?;
+            self.store.save(&mut record)?;
         }
         if record.request.source.pane_id.is_some() {
             validate_source(&record.request.source)?;
@@ -1253,7 +1354,7 @@ impl Service {
         let mut plugins = json!([]);
         let mut source = source.clone();
         let mut auto_yes = false;
-        let live_source = if job_notice(&record) {
+        let live_source = if resumable_notice(&record) || record.request.deliver_at.is_some() {
             validate_source(&source).is_ok()
         } else {
             validate_source(&source)?;
@@ -1300,6 +1401,56 @@ impl Service {
             json!({"type":"context","id":id,"source":source,"log":log,"auto_yes":auto_yes,"models":models,"plugins":plugins}),
         )
     }
+}
+
+fn resumable_notice(record: &NfnRecord) -> bool {
+    job_notice(record)
+        || (record.request.deliver_at.is_some() && record.request.source.session_id.is_some())
+}
+
+fn prepare_reminder(request: &mut NfnRequest, timestamp: i64) -> Result<(), String> {
+    let Some(due) = request.deliver_at else {
+        return Ok(());
+    };
+    if due <= timestamp {
+        return Err("Reminder time must be in the future".into());
+    }
+    if request.dedupe_key.is_some() {
+        return Err("Scheduled reminders do not use dedupe keys".into());
+    }
+    let linked = request.data["reminder_as_user"] != true && request.source.session_id.is_some();
+    if linked {
+        session_resume_command(&request.source)?;
+    } else {
+        request.source = Default::default();
+    }
+    let name = if linked {
+        request
+            .source
+            .agent_title
+            .clone()
+            .or(request.source.task.clone())
+            .or(request.source.provider.clone())
+            .unwrap_or_else(|| "Agent".into())
+    } else {
+        "You".into()
+    };
+    request.data["reminder"] = json!({"created_at":timestamp,"creator":if linked { "agent" } else { "user" },"creator_label":name,"source":request.source});
+    request.actions = Vec::new();
+    if linked {
+        request.actions.push(NfnAction {
+            id: "focus".into(),
+            label: "Open".into(),
+            kind: "focus".into(),
+            ..Default::default()
+        });
+    }
+    request.actions.push(NfnAction {
+        id: "acknowledge".into(),
+        label: "Got it".into(),
+        ..Default::default()
+    });
+    request.validate()
 }
 
 fn job_notice(record: &NfnRecord) -> bool {
@@ -1359,7 +1510,7 @@ fn refresh_pending_record(
             return false;
         }
         record.status = "resolved".into();
-    } else if job_notice(record) {
+    } else if resumable_notice(record) || record.request.deliver_at.is_some() {
         return false;
     } else if record.request.source.pane_id.is_some() && !source_valid(&record.request.source) {
         record.status = "expired".into();
@@ -1920,7 +2071,7 @@ fn invalid_pending_sources(records: &[NfnRecord]) -> HashSet<String> {
     records
         .iter()
         .filter(|record| {
-            record.status == "pending" && record.question_id.is_none() && !job_notice(record)
+            record.status == "pending" && record.question_id.is_none() && !resumable_notice(record)
         })
         .filter(|record| validator.validate(&record.request.source).is_err())
         .map(|record| record.id.clone())
@@ -1938,7 +2089,7 @@ fn closed_pending_sources(
                 && record.dismissed_at.is_none()
                 && !record.ignored
                 && record.question_id.is_none()
-                && !job_notice(record)
+                && !resumable_notice(record)
         })
         .filter_map(|record| {
             let pane = record.request.source.pane_id.as_deref()?;
@@ -1987,6 +2138,56 @@ fn reply_targets_agent(record: &NfnRecord, action_id: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn scheduled_reminders_keep_creator_and_session_and_do_not_expire_when_the_agent_closes() {
+        let mut request = NfnRequest {
+            kind: "update".into(),
+            template: "update".into(),
+            title: "Check embedding budget".into(),
+            deliver_at: Some(now() + 86400000),
+            source: NfnSource {
+                pane_id: Some("%49".into()),
+                session_id: Some("saved-session".into()),
+                provider: Some("codex".into()),
+                agent_title: Some("Backlog check".into()),
+                cwd: Some("/project".into()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        prepare_reminder(&mut request, now()).unwrap();
+        assert_eq!(request.data["reminder"]["creator_label"], "Backlog check");
+        assert_eq!(
+            request.data["reminder"]["source"]["session_id"],
+            "saved-session"
+        );
+        assert_eq!(
+            request
+                .actions
+                .iter()
+                .map(|a| a.label.as_str())
+                .collect::<Vec<_>>(),
+            ["Open", "Got it"]
+        );
+        let mut record = pending_permission();
+        record.request = request.clone();
+        record.question_id = None;
+        assert!(!refresh_pending_record(
+            &mut record,
+            None,
+            &HashSet::new(),
+            now(),
+            |_| false
+        ));
+        assert!(reply_targets_agent(&record, "reply"));
+        assert!(!reply_targets_agent(&record, "acknowledge"));
+        request.data["reminder_as_user"] = json!(true);
+        prepare_reminder(&mut request, now()).unwrap();
+        assert!(request.source.session_id.is_none());
+        assert_eq!(request.data["reminder"]["creator"], "user");
+        assert_eq!(request.actions.len(), 1);
+    }
 
     #[test]
     fn conversation_targets_match_across_panes_but_not_providers_or_homes() {
@@ -2189,7 +2390,10 @@ mod tests {
             .send(request_for_completion(source.clone()), None)
             .unwrap();
         let (job, _) = store
-            .send(job_request("project/job", "failed", Some("run"), source), None)
+            .send(
+                job_request("project/job", "failed", Some("run"), source),
+                None,
+            )
             .unwrap();
         let (live, _) = store
             .send(
@@ -2223,7 +2427,8 @@ mod tests {
         assert_eq!(store.pending_count().unwrap(), 2);
         assert!(closed_pending_sources(&store.pending().unwrap(), || {
             Err("tmux unavailable".into())
-        }).is_empty());
+        })
+        .is_empty());
     }
 
     #[test]
@@ -2232,7 +2437,10 @@ mod tests {
         let mut job = prompt.clone();
         job.question_id = None;
         job.request = job_request(
-            "project/job", "completed", Some("run"), NfnSource {
+            "project/job",
+            "completed",
+            Some("run"),
+            NfnSource {
                 pane_id: Some("%10".into()),
                 ..Default::default()
             },
@@ -2240,7 +2448,10 @@ mod tests {
         let mut managed = prompt.clone();
         managed.question_id = None;
         managed.request.source.pane_id = Some("managed-session".into());
-        assert!(closed_pending_sources(&[prompt, job, managed], || panic!("no tmux candidates")).is_empty());
+        assert!(
+            closed_pending_sources(&[prompt, job, managed], || panic!("no tmux candidates"))
+                .is_empty()
+        );
     }
 
     #[test]
@@ -2487,26 +2698,43 @@ mod tests {
             };
             let mut completions = Vec::new();
             for read_at in [None, Some(now())] {
-                let (mut record, _) = store.send(request_for_completion(source.clone()), None).unwrap();
+                let (mut record, _) = store
+                    .send(request_for_completion(source.clone()), None)
+                    .unwrap();
                 record.read_at = read_at;
                 store.save(&mut record).unwrap();
                 completions.push(record);
             }
-            let (other, _) = store.send(request_for_completion(NfnSource {
-                pane_id: Some("%14".into()),
-                ..Default::default()
-            }), None).unwrap();
-            let (update, _) = store.send(NfnRequest {
-                title: "Review this change".into(),
-                template: "update".into(),
-                source: source.clone(),
-                ..Default::default()
-            }, None).unwrap();
-            let (question, _) = store.send(NfnRequest {
-                title: "Allow this command?".into(),
-                source: source.clone(),
-                ..Default::default()
-            }, Some("live-prompt".into())).unwrap();
+            let (other, _) = store
+                .send(
+                    request_for_completion(NfnSource {
+                        pane_id: Some("%14".into()),
+                        ..Default::default()
+                    }),
+                    None,
+                )
+                .unwrap();
+            let (update, _) = store
+                .send(
+                    NfnRequest {
+                        title: "Review this change".into(),
+                        template: "update".into(),
+                        source: source.clone(),
+                        ..Default::default()
+                    },
+                    None,
+                )
+                .unwrap();
+            let (question, _) = store
+                .send(
+                    NfnRequest {
+                        title: "Allow this command?".into(),
+                        source: source.clone(),
+                        ..Default::default()
+                    },
+                    Some("live-prompt".into()),
+                )
+                .unwrap();
             let mut activity = vec![AgentActivity {
                 pane_id: "%13".into(),
                 working: false,

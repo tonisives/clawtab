@@ -5,7 +5,7 @@
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
   const buttons = () => [...document.querySelectorAll("button")];
   const keepAlive = () => document.querySelector('.acknowledge-menu [role="menuitem"]')?.click();
-  const click = text => { buttons().find(button => (button.textContent === text || button.getAttribute("aria-label") === text)).click(); if (text === "Got it") keepAlive(); };
+  const click = text => { const button = buttons().find(button => (button.textContent === text || button.getAttribute("aria-label") === text)); assert(button, `Missing button ${text} after ${checks.at(-1)}`); button.click(); if (text === "Got it") keepAlive(); };
   const nav = label => document.querySelector(`[aria-label="${label} notification"]`).click();
   const draft = text => { if (document.querySelector(".reply")?.hidden) document.querySelector(".reply-toggle").click(); const input = document.querySelector("textarea"); input.value = text; input.dispatchEvent(new Event("input")); return input; };
   const detailsVisible = () => Boolean(document.querySelector(".details-content:not([hidden])"));

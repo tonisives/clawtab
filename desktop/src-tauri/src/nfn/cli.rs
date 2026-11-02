@@ -32,6 +32,8 @@ pub async fn message(args: &[String]) -> Result<Value, String> {
             "  [--title TITLE] [--template ID] [--chat ID] [--response-destination result|agent_message]",
             "  [--image PATH_OR_URL] [--video PATH_OR_URL] (repeat for multiple attachments)",
             "cwt message send --stdin [--wait] [--timeout SECONDS]",
+            "cwt message schedule TEXT (--at RFC3339 | --in 24h) [--title TITLE] [--as-user]",
+            "cwt message scheduled [--offset N] (cancel with cwt message cancel ID)",
             "cwt message list [--pending] [--offset N] [--query TEXT]",
             "cwt message get|wait|cancel|read|dismiss ID [--timeout SECONDS]",
             "cwt message ignore|unignore ID",
@@ -42,9 +44,20 @@ pub async fn message(args: &[String]) -> Result<Value, String> {
         ]}));
     }
     match args[0].as_str() {
-        "send" => {
+        "send" | "schedule" => {
             let (request, waits, timeout) = parse_message(&args[1..])?;
+            if args[0] == "schedule" && request.deliver_at.is_none() {
+                return Err("Schedule requires --at RFC3339 or --in 24h".into());
+            }
             submit(request, waits, timeout).await
+        }
+        "scheduled" => {
+            validate_flags(&args[1..], &[], &["--offset"])?;
+            let offset = flag_value(args, "--offset")?
+                .unwrap_or("0")
+                .parse()
+                .map_err(|_| "offset must be a number")?;
+            call(NfnCommand::Scheduled { offset }).await
         }
         "list" => {
             validate_flags(&args[1..], &["--pending"], &["--offset", "--query"])?;
@@ -108,11 +121,13 @@ fn parse_message(args: &[String]) -> Result<(NfnRequest, bool, Option<u64>), Str
     let mut flags: std::collections::HashMap<&str, Vec<&str>> = Default::default();
     let mut input = false;
     let mut waits = false;
+    let mut as_user = false;
     let mut values = args.iter();
     while let Some(value) = values.next() {
         match value.as_str() {
             "--stdin" => input = true,
             "--wait" => waits = true,
+            "--as-user" => as_user = true,
             "--kind"
             | "--channel"
             | "--choice"
@@ -122,6 +137,8 @@ fn parse_message(args: &[String]) -> Result<(NfnRequest, bool, Option<u64>), Str
             | "--chat"
             | "--image"
             | "--video"
+            | "--at"
+            | "--in"
             | "--response-destination" => {
                 let next = values
                     .next()
@@ -224,6 +241,36 @@ fn parse_message(args: &[String]) -> Result<(NfnRequest, bool, Option<u64>), Str
     if let Some(destination) = value("--response-destination") {
         request.response_destination = destination.into();
     }
+    if value("--at").is_some() && value("--in").is_some() {
+        return Err("Use either --at or --in".into());
+    }
+    if let Some(at) = value("--at") {
+        request.deliver_at = Some(
+            chrono::DateTime::parse_from_rfc3339(at)
+                .map_err(|_| "--at requires an RFC3339 time with a timezone")?
+                .timestamp_millis(),
+        );
+    }
+    if let Some(after) = value("--in") {
+        request.deliver_at = Some(parse_delay(after, super::now())?);
+    }
+    if request.deliver_at.is_some() {
+        if waits {
+            return Err("Scheduled reminders cannot use --wait".into());
+        }
+        if request.deliver_at.is_some_and(|due| due <= super::now()) {
+            return Err("Reminder time must be in the future".into());
+        }
+    } else if as_user {
+        return Err("--as-user is for scheduled reminders".into());
+    }
+    if as_user {
+        if !request.data.is_object() {
+            return Err("Reminder data must be an object".into());
+        }
+        request.source = Default::default();
+        request.data["reminder_as_user"] = json!(true);
+    }
     for kind in ["image", "video"] {
         if let Some(paths) = flags.get(format!("--{kind}").as_str()) {
             for path in paths {
@@ -254,13 +301,15 @@ async fn submit(
     waits: bool,
     timeout: Option<u64>,
 ) -> Result<Value, String> {
-    infer_source(
-        &mut request.source,
-        std::env::var("CODEX_THREAD_ID").ok().as_deref(),
-        std::env::var("CLAWTAB_SESSION_ID").ok().as_deref(),
-        std::env::var("TMUX_PANE").ok().as_deref(),
-        agent_session::agent_identities,
-    )?;
+    if request.data["reminder_as_user"] != true {
+        infer_source(
+            &mut request.source,
+            std::env::var("CODEX_THREAD_ID").ok().as_deref(),
+            std::env::var("CLAWTAB_SESSION_ID").ok().as_deref(),
+            std::env::var("TMUX_PANE").ok().as_deref(),
+            agent_session::agent_identities,
+        )?;
+    }
     request.validate()?;
     let record = call(NfnCommand::Send { request }).await?;
     if waits {
@@ -268,6 +317,30 @@ async fn submit(
     } else {
         Ok(record)
     }
+}
+
+fn parse_delay(value: &str, timestamp: i64) -> Result<i64, String> {
+    let split = value
+        .find(|c: char| !c.is_ascii_digit())
+        .ok_or("Use a duration such as 30m, 24h, or 1d")?;
+    let amount: i64 = value[..split]
+        .parse()
+        .map_err(|_| "Invalid reminder duration")?;
+    let unit = match &value[split..] {
+        "s" => 1_000,
+        "m" => 60_000,
+        "h" => 3_600_000,
+        "d" => 86_400_000,
+        "w" => 604_800_000,
+        _ => return Err("Use duration units s, m, h, d, or w".into()),
+    };
+    if amount <= 0 {
+        return Err("Reminder duration must be positive".into());
+    }
+    amount
+        .checked_mul(unit)
+        .and_then(|delay| timestamp.checked_add(delay))
+        .ok_or_else(|| "Reminder time is out of range".into())
 }
 
 pub async fn run(args: &[String]) -> Result<Value, String> {
@@ -503,6 +576,50 @@ async fn wait(id: &str, timeout: Option<u64>) -> Result<Value, String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn parses_reminder_times_and_rejects_ambiguous_or_invalid_schedules() {
+        use super::*;
+        assert_eq!(parse_delay("24h", 1000).unwrap(), 86401000);
+        for value in [
+            "0h",
+            "-1h",
+            "tomorrow",
+            "20",
+            "3months",
+            "999999999999999999h",
+        ] {
+            assert!(parse_delay(value, 1000).is_err(), "{value}");
+        }
+        let args = |args: &[&str]| args.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let (request, waits, _) = parse_message(&args(&[
+            "Check the cap",
+            "--at",
+            "2099-01-02T09:00:00+07:00",
+            "--as-user",
+        ]))
+        .unwrap();
+        assert_eq!(
+            request.deliver_at,
+            Some(
+                chrono::DateTime::parse_from_rfc3339("2099-01-02T02:00:00Z")
+                    .unwrap()
+                    .timestamp_millis()
+            )
+        );
+        assert_eq!(request.data["reminder_as_user"], true);
+        assert!(!waits);
+        for flags in [
+            vec!["--at", "2099-01-02T09:00:00"],
+            vec!["--at", "2000-01-01T00:00:00Z"],
+            vec!["--in", "1h", "--wait"],
+            vec!["--in", "1h", "--at", "2099-01-02T09:00:00Z"],
+            vec!["--as-user"],
+        ] {
+            let mut values = vec!["Check the cap"];
+            values.extend(flags);
+            assert!(parse_message(&args(&values)).is_err());
+        }
+    }
     use super::*;
 
     #[tokio::test]

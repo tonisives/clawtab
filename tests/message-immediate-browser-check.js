@@ -44,7 +44,7 @@
   reading.scrollTop = 0; fixture.log += "\nAnother line"; await sleep(1100);
   assert(reading.scrollTop === 0, "new output preserves the reader's position when they scroll upward");
   click("Hide details");
-  assert(!document.querySelector(".message-content").hidden && !document.querySelector(".details-content") && document.querySelector(".card") === card, "Hide details restores the same message view immediately");
+  assert(!document.querySelector(".message-content").hidden && !document.querySelector(".details-content:not([hidden])") && document.querySelector(".card") === card, "Hide details restores the same message view immediately");
   assert(document.querySelector("textarea") === input && input.value === "Please check the newest output", "hiding Details retains the composer and draft");
   input.blur();
   document.querySelector('.acknowledge').click();

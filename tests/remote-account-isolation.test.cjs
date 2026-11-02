@@ -44,7 +44,7 @@ function harness() {
   };
   const dependencies = { zustand: { create }, '@react-native-async-storage/async-storage': asyncStorage, '@clawtab/shared': shared };
   const messages = load('remote/src/store/messages.ts', { ...dependencies, '../lib/notifications': { dismissMessageNotification: async () => {} } });
-  const actions = load('remote/src/lib/messageActions.ts', { ...dependencies, '../store/messages': messages });
+  const actions = load('remote/src/lib/messageActions.ts', { ...dependencies, '../store/messages': messages, './funnel': { trackFunnel: async () => {} } });
   const notifications = load('remote/src/store/notifications.ts', dependencies).useNotificationStore;
   const jobs = load('remote/src/store/jobs.ts', dependencies).useJobsStore;
   const ws = load('remote/src/store/ws.ts', dependencies).useWsStore;
@@ -70,6 +70,7 @@ function harness() {
     '../store/terminalSettings': { useTerminalSettings: { getState: () => ({ hydrate: async () => {} }) } },
     '../lib/notifications': { getPushToken: () => pushToken },
     '../lib/analytics': {}, '../store/pins': {}, '../lib/useRequestMap': {}, './useLogs': {},
+    '../lib/funnel': { trackFunnel: async () => {} }, '../lib/activation': load('remote/src/lib/activation.ts', {}),
     '../transport/wsTransport': {}, './usePty': {}, '../lib/agentActions': {}, '../lib/machineSecurity': {},
   });
   return { storage, asyncStorage, delayedReads, shared, auth, messages, actions, notifications, jobs, ws, registrations,
@@ -172,6 +173,12 @@ test('demo headers cannot expose or open a stale personal notification badge', (
     '../store/notifications': { useNotificationStore: app.notifications },
     '../store/jobs': { useJobsStore: app.jobs },
     '../store/messages': app.messages,
+    '../hooks/usePendingMessageCount': load('remote/src/hooks/usePendingMessageCount.ts', {
+      '@clawtab/shared': app.shared,
+      '../store/jobs': { useJobsStore: app.jobs },
+      '../store/messages': app.messages,
+      '../store/notifications': { useNotificationStore: app.notifications },
+    }),
     '../hooks/useResponsive': { useResponsive: () => ({ isSplitView: false }) },
   });
   const machines = { connected: false, error: null };

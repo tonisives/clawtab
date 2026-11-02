@@ -65,6 +65,29 @@ cwt message send "Build finished" --kind completed
 
 See the [CLI reference](cli-tui.md) for commands and the [message renderer and delivery reference](https://github.com/tonisives/clawtab/blob/main/desktop/docs/enhanced-notifications.md) for JSON requests, settings, and custom cards.
 
+## Schedule a reminder
+
+```sh
+cwt message schedule "Check the embedding cap and backlog" --in 24h
+cwt message schedule "Check the embedding cap and backlog" --at '2026-11-03T09:00:00+07:00'
+cwt message scheduled
+cwt message cancel MESSAGE_ID
+```
+
+Times passed to `--at` include a timezone. Durations support seconds, minutes,
+hours, days, and weeks (`30s`, `15m`, `24h`, `1d`, `1w`). `message send` also
+accepts these scheduling flags. The daemon stores reminders until they are due
+and delivers overdue reminders when it next starts or wakes.
+
+An agent-created reminder records its creator and conversation. **Open** returns
+to that conversation, resuming it when needed. **Reply** resumes the conversation
+and sends your text. **Got it** completes the reminder without opening a session.
+Scheduling never starts an agent automatically.
+
+Run the command from your own terminal, or add `--as-user`, to create a reminder
+without a linked agent session. These reminders show who created them and can
+be completed with **Got it**.
+
 ## Keep your task list beside your messages
 
 The circular indicator opens a checklist grouped by ClawTab group. Add and complete tasks, inspect agent progress, or open the linked agent. Link an existing Markdown checklist to keep the note as the source:

@@ -107,6 +107,12 @@ export function messageSurfaceController(options: Options) {
           if (selected) target = { ...record, request: { ...record.request, source: { ...record.request.source,
             pane_id: resourceKey(machine, selected.pane_id),
           } } };
+          else if (record.request.deliver_at) {
+            const resumed = await options.host(machine, { op: "resume", id });
+            if (resumed.targets?.length > 1) return { targets: resumed.targets };
+            if (resumed.record) target = remember(machine, resumed.record);
+            else if (resumed.targets?.[0]) target = { ...record, request: { ...record.request, source: { ...record.request.source, pane_id: resourceKey(machine, resumed.targets[0].pane_id) } } };
+          }
         }
         options.navigate(target);
         return { focused: true, record: surfaceRecord(record) };

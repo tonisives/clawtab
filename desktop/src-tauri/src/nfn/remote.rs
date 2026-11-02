@@ -57,6 +57,7 @@ fn allowed(command: &NfnCommand) -> bool {
             | NfnCommand::Context { .. }
             | NfnCommand::ShellInput { .. }
             | NfnCommand::SessionTargets { .. }
+            | NfnCommand::Resume { .. }
             | NfnCommand::Templates
             | NfnCommand::Todos
             | NfnCommand::TodoRefresh
@@ -184,7 +185,9 @@ mod tests {
         assert!(allowed(&input));
         assert!(matches!(input, NfnCommand::ShellInput { text, .. } if text == "hello\r\u{1b}[A"));
         assert!(allowed(&NfnCommand::Templates));
-        assert!(allowed(&NfnCommand::SessionTargets { id: "message".into() }));
+        assert!(allowed(&NfnCommand::SessionTargets {
+            id: "message".into()
+        }));
         assert!(allowed(&NfnCommand::Todos));
         assert!(!allowed(&NfnCommand::TodoLink {
             note: "/tmp/tasks.md".into(),

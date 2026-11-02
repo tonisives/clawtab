@@ -1710,6 +1710,17 @@ fn submit_text(pane_id: &str, provider: ProcessProvider, text: &str) -> Result<(
     crate::terminal_backend::send_key_to_pane(pane_id, "Enter")
 }
 
+/// Wait for a resumed agent to expose its composer before submitting a reply.
+pub fn notification_reply_ready(pane_id: &str) -> Result<bool, String> {
+    let Some((provider, _)) = pane_context(pane_id) else {
+        return Ok(false);
+    };
+    if provider == ProcessProvider::Codex {
+        return Ok(codex_composer_draft(&capture_plain(pane_id)?).is_some());
+    }
+    Ok(!capture_plain(pane_id)?.trim().is_empty())
+}
+
 /// Submit a notification reply without overwriting a user's composer draft.
 pub fn submit_notification_reply(pane_id: &str, text: &str) -> Result<(), String> {
     let (provider, _) =
