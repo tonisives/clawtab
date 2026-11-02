@@ -32,9 +32,10 @@ flowchart LR
   D <--> R["Relay"]
   R <--> I["iPhone app"]
   R <--> W["Web Remote<br/>(browser and Android)"]
+  R <--> M["Other machines<br/>(Mac, Linux, Windows, rented boxes)"]
 ```
 
-The daemon runs in the background and doesn't need the desktop app open. Every client (tmux, `cwt`, desktop, phone) connects to the same session, so switching devices never restarts or duplicates an agent. More in [Architecture](docs/architecture.md).
+The daemon runs in the background and doesn't need the desktop app open. Every client (tmux, `cwt`, desktop, phone) connects to the same session, so switching devices never restarts or duplicates an agent. Other machines run their own daemon and connect to the same relay, so agents on all of them show up in one place. More in [Remote machines](docs/remote-machines.md) and [Architecture](docs/architecture.md).
 
 ## Install
 
