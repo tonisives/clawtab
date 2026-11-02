@@ -18,14 +18,22 @@ const isWeb = Platform.OS === "web";
 const AGENT_ACTIVITY_WINDOW_MS = 8_000;
 type GroupedRowPosition = "single" | "first" | "middle" | "last";
 
-function AgentTimestamp({ timestamp }: { timestamp: number }) {
+function AgentTimestamp({ timestamp, compact = false }: { timestamp: number; compact?: boolean }) {
   const [, refresh] = useState(0);
   useEffect(() => {
     const timer = setInterval(() => refresh(value => value + 1), 30_000);
     return () => clearInterval(timer);
   }, []);
   if (!Number.isFinite(timestamp) || timestamp <= 0) return null;
-  return <Text style={styles.timestamp} numberOfLines={1}>{timeAgo(new Date(Math.min(timestamp, Date.now())).toISOString())}</Text>;
+  const age = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+  const label = age < 60 ? "jn" : age < 3600 ? `${Math.floor(age / 60)}m`
+    : age < 86400 ? `${Math.floor(age / 3600)}h` : `${Math.floor(age / 86400)}d`;
+  const color = age < 3600 ? "#a7c88d" : age < 86400 ? "#e5c07b" : "#e88b8b";
+  return <Text
+    style={[styles.timestamp, compact ? { color, fontFamily: "monospace" } : null]}
+    accessibilityLabel={timeAgo(new Date(Math.min(timestamp, Date.now())).toISOString())}
+    numberOfLines={1}
+  >{compact ? label : timeAgo(new Date(Math.min(timestamp, Date.now())).toISOString())}</Text>;
 }
 
 function groupedCardStyle(position?: GroupedRowPosition) {
@@ -244,7 +252,7 @@ export function ProcessCard({
   );
   const titleControls = (
     <View style={styles.titleControls}>
-      {!editing ? <AgentTimestamp timestamp={timestamp} /> : null}
+      {!editing && !mobileAppearance ? <AgentTimestamp timestamp={timestamp} /> : null}
       {showMenu && !editing ? (
         <TouchableOpacity
           ref={menuBtnRef}
@@ -273,40 +281,49 @@ export function ProcessCard({
         onLongPress={openMenu}
         activeOpacity={0.7}
       >
-        {compactPhoneLandscape ? <View style={styles.compactTopRow}>{paneMark}{titleControls}</View> : paneMark}
-        <View style={styles.processInfo}>
-          <View style={styles.titleRow}>
-            {editing ? (
-              <TextInput
-                ref={editInputRef}
-                value={editValue}
-                onChangeText={(value) => {
-                  setEditValue(value);
-                  onRenameDraftChange?.(value);
-                }}
-                onSubmitEditing={commitEdit}
-                onBlur={cancelEdit}
-                onKeyPress={(e: any) => {
-                  if (e?.key === "Escape") cancelEdit();
-                }}
-                style={styles.editInput}
-                placeholder={shortenPath(process.cwd)}
-                placeholderTextColor={colors.textMuted}
-                selectTextOnFocus
-              />
-            ) : (
-              <Text style={[styles.processName, transient === "stopping" && { opacity: 0.5 }]} numberOfLines={1}>
-                {displayName}
-              </Text>
-            )}
-            {!compactPhoneLandscape ? titleControls : null}
+        {compactPhoneLandscape ? <View style={styles.compactTopRow}>{paneMark}</View> : paneMark}
+        <View style={styles.contentRow}>
+          <View style={styles.processInfo}>
+            <View style={styles.titleRow}>
+              {editing ? (
+                <TextInput
+                  ref={editInputRef}
+                  value={editValue}
+                  onChangeText={(value) => {
+                    setEditValue(value);
+                    onRenameDraftChange?.(value);
+                  }}
+                  onSubmitEditing={commitEdit}
+                  onBlur={cancelEdit}
+                  onKeyPress={(e: any) => {
+                    if (e?.key === "Escape") cancelEdit();
+                  }}
+                  style={styles.editInput}
+                  placeholder={shortenPath(process.cwd)}
+                  placeholderTextColor={colors.textMuted}
+                  selectTextOnFocus
+                />
+              ) : (
+                <Text style={[styles.processName, transient === "stopping" && { opacity: 0.5 }]} numberOfLines={1}>
+                  {displayName}
+                </Text>
+              )}
+              {!mobileAppearance ? titleControls : null}
+            </View>
+            {!editing ? (
+              <View style={styles.processMeta}>
+                <Text style={[styles.queryPreview, transient ? styles.transientPreview : null]} numberOfLines={1}>
+                  {listItemSubtitle}
+                </Text>
+                {modelLabel && !mobileAppearance ? <Text style={styles.agentText} numberOfLines={1}>{modelLabel}</Text> : null}
+              </View>
+            ) : null}
           </View>
-          {!editing ? (
-            <View style={styles.processMeta}>
-              <Text style={[styles.queryPreview, transient ? styles.transientPreview : null]} numberOfLines={1}>
-                {listItemSubtitle}
-              </Text>
-              {modelLabel ? <Text style={styles.agentText} numberOfLines={1}>{modelLabel}</Text> : null}
+          {mobileAppearance ? (
+            <View style={styles.metadataStack}>
+              {titleControls}
+              {!editing ? <AgentTimestamp timestamp={timestamp} compact /> : null}
+              {!editing && modelLabel ? <Text style={styles.agentText} numberOfLines={1}>{modelLabel}</Text> : null}
             </View>
           ) : null}
         </View>
@@ -365,6 +382,8 @@ const styles = StyleSheet.create({
   processRowCompact: { flexDirection: "column", alignItems: "stretch", gap: 4 },
   compactTopRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", minWidth: 0 },
   processInfo: { flex: 1, gap: 2, minWidth: 0 },
+  contentRow: { flex: 1, flexDirection: "row", alignItems: "center", minWidth: 0 },
+  metadataStack: { alignItems: "flex-end", flexShrink: 0, gap: 2, marginLeft: spacing.sm, maxWidth: 130 },
   processName: { color: colors.text, fontSize: 16, fontWeight: "500", flex: 1 },
   titleRow: {
     flexDirection: "row",
