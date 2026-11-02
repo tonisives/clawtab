@@ -436,7 +436,7 @@ for (const variant of ["MessageSurface.web.tsx", "MessageSurface.tsx"]) {
       react, "react/jsx-runtime": { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
 
       "react-native-webview": { default: "WebView" },
-      "react-native": { View: "View", Keyboard: { dismiss() {} } },
+      "react-native": { View: "View", Platform: { OS: "ios" }, Keyboard: { dismiss() {} } },
       "react-native-safe-area-context": { useSafeAreaInsets: () => ({ bottom: 34 }) },
       "../hooks/useMessageKeyboard": { useMessageKeyboard: () => ({ host: { current: null }, overlap: keyboardOverlap, horizontalInsets: { left: 0, right: 0 }, onLayout() {} }) },
       "../lib/messageSurfaceDocument.generated": { default: "<html><body></body></html>" },
@@ -445,6 +445,7 @@ for (const variant of ["MessageSurface.web.tsx", "MessageSurface.tsx"]) {
       "./TerminalKeyboardToolbar": { TERMINAL_KEYBOARD_TOOLBAR_HEIGHT: 48, TerminalKeyboardToolbar: "TerminalKeyboardToolbar" },
       "./TerminalWriteDialog": { TerminalWriteDialog: "TerminalWriteDialog" },
       "./MessageTextSelection": { MessageTextSelection: "MessageTextSelection" },
+      "./ShellKeyboardInput": { ShellKeyboardInput: "ShellKeyboardInput" },
       "expo-router/react-navigation": { useIsFocused: () => focused },
       "../lib/messageSelection": load("messageSelection"),
     };
@@ -467,6 +468,7 @@ for (const variant of ["MessageSurface.web.tsx", "MessageSurface.tsx"]) {
       assert.equal(initial.props.hideKeyboardAccessoryView, true);
       assert.equal(initial.props.contentInsetAdjustmentBehavior, "never");
       assert.equal(initial.props.scrollEnabled, false, "nested shell scrolling cannot offset the native WebView");
+      assert.ok(initial.props.source.html.includes('"native_keyboard":true'), "native input is selected before the first paint");
     }
     if (variant.includes(".web")) initial.props.onLoad();
     else initial.props.onMessage({ nativeEvent: { data: JSON.stringify({ nfn: { preview_ready: true } }) } });
@@ -486,6 +488,12 @@ for (const variant of ["MessageSurface.web.tsx", "MessageSurface.tsx"]) {
     assert.equal(variant.includes(".web") ? reopened.props.srcDoc : reopened.props.source, initialSource, "the warm renderer document is not reloaded on activation or selection changes");
     assert.equal(variant.includes(".web") ? inactive.props.srcDoc : inactive.props.source, initialSource);
     if (!variant.includes(".web")) {
+      let focusedInput = false;
+      lastRoot.props.children.find(child => child?.type === "ShellKeyboardInput").props.ref.current = {
+        focus() { focusedInput = true; }, blur() { focusedInput = false; },
+      };
+      reopened.props.onMessage({nativeEvent:{data:JSON.stringify({nfn:{native:"shell_keyboard",active:true}})}});
+      assert.equal(focusedInput, true, "shell typing focuses a native input outside WebKit");
       reopened.props.onMessage({nativeEvent:{data:JSON.stringify({nfn:{native:"chrome",screen:"message",reply:true}})}});
       render("mac-b::other");
       const toolbar=lastRoot.props.children.find(child=>child?.type==="TerminalKeyboardToolbar");
@@ -496,6 +504,7 @@ for (const variant of ["MessageSurface.web.tsx", "MessageSurface.tsx"]) {
       assert.equal(lastRoot.props.style.paddingBottom,344,"the shell and inline toolbar move above the keyboard together");
       assert.ok(lastRoot.props.children.find(child=>child?.type==="TerminalKeyboardToolbar"));
       reopened.props.onMessage({ nativeEvent: { data: JSON.stringify({ nfn: { native: "selection_gesture", active: true } }) } });
+      assert.equal(focusedInput, false, "selection releases native editing without touching WebKit input state");
       render("mac-b::other");
       keyboardOverlap = 0; render("mac-b::other");
       assert.equal(lastRoot.props.style.paddingBottom, 344, "keyboard dismissal cannot move text under a native selection gesture");

@@ -2,9 +2,10 @@ import { useIsFocused } from "expo-router/react-navigation";
 import { MessageTextSelection } from "./MessageTextSelection";
 import { messageSelectionScript } from "../lib/messageSelection";
 import { NotificationChrome, initialNotificationChrome, type NotificationChromeState } from "./NotificationChrome";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ComponentRef } from "react";
 import WebView from "react-native-webview";
-import { Keyboard, View } from "react-native";
+import { Keyboard, Platform, View } from "react-native";
+import { ShellKeyboardInput } from "./ShellKeyboardInput";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useMessageKeyboard } from "../hooks/useMessageKeyboard";
 import document from "../lib/messageSurfaceDocument.generated";
@@ -12,6 +13,8 @@ import { messageSurfaceDefaultView, messageSurfaceInitialDocument } from "../lib
 import type { MessageSurfaceProps, SurfaceMessage } from "./messageSurfaceTypes";
 import { TerminalKeyboardToolbar } from "./TerminalKeyboardToolbar";
 import { TerminalWriteDialog } from "./TerminalWriteDialog";
+
+const nativeShellKeyboard = Platform.OS === "ios";
 
 export function MessageSurface(props: MessageSurfaceProps) {
   const focused = useIsFocused();
@@ -26,8 +29,9 @@ export function MessageSurface(props: MessageSurfaceProps) {
   const [writeOpen, setWriteOpen] = useState(false);
   const [writeDraft, setWriteDraft] = useState("");
   const source = useRef<{ document: string; value: { html: string } } | null>(null);
-  if (!source.current || source.current.document !== document) source.current = { document, value: { html: messageSurfaceInitialDocument(document, props) } };
+  if (!source.current || source.current.document !== document) source.current = { document, value: { html: messageSurfaceInitialDocument(document, { ...props, snapshot: { ...props.snapshot, native_keyboard: nativeShellKeyboard } }) } };
   const view = useRef<WebView<object>>(null);
+  const shellKeyboard = useRef<ComponentRef<typeof ShellKeyboardInput>>(null);
   const insets = useSafeAreaInsets();
   const keyboard = useMessageKeyboard(!props.popup);
   const contentLayout = selectionLayout ?? {
@@ -53,9 +57,11 @@ export function MessageSurface(props: MessageSurfaceProps) {
   }, [focused, send]);
   const action = useCallback((action: string) => {
     if (action === "reply_focus" && (selectingText.current || selectionGesture.current || !focusedRef.current)) return;
+    if (action === "reply_focus" && nativeShellKeyboard) { shellKeyboard.current?.focus(); return; }
     if (action === "select_text") {
       setTerminalMenuOpen(false); setWriteOpen(false);
       selectingText.current = true;
+      shellKeyboard.current?.blur();
       view.current?.injectJavaScript(messageSelectionScript);
       Keyboard.dismiss();
       return;
@@ -66,6 +72,7 @@ export function MessageSurface(props: MessageSurfaceProps) {
   useEffect(() => {
     selectingText.current = false; setSelectionText(null);
     selectionGesture.current = false; setSelectionLayout(null);
+    shellKeyboard.current?.blur();
   }, [props.selection, props.active, focused]);
   const sendTerminalText = useCallback((text: string) => send({ type: "mobile_action", action: "shell_input", text }), [send]);
   useEffect(() => {
@@ -83,7 +90,7 @@ export function MessageSurface(props: MessageSurfaceProps) {
       return;
     }
     if (selectingText.current || selectionGesture.current) return;
-    send(latest.current.snapshot);
+    send({ ...latest.current.snapshot, native_keyboard: nativeShellKeyboard });
     const selection = latest.current.selection ?? null;
     const defaultView = messageSurfaceDefaultView(latest.current.snapshot);
     if (selection && selected.current !== selection) {
@@ -102,6 +109,11 @@ export function MessageSurface(props: MessageSurfaceProps) {
     if (value.native === "selection_gesture" && (focusedRef.current || !value.active)) {
       selectionGesture.current = Boolean(value.active);
       setSelectionLayout(value.active ? layoutRef.current : null);
+      if (value.active) shellKeyboard.current?.blur();
+    }
+    if (value.native === "shell_keyboard") {
+      if (value.active && focusedRef.current && latest.current.active !== false && !selectingText.current && !selectionGesture.current) shellKeyboard.current?.focus();
+      else if (!value.active) shellKeyboard.current?.blur();
     }
     if (value.native === "selection_text" && selectingText.current && typeof value.text === "string") setSelectionText(value.text);
     if (value.native === "chrome" && !selectingText.current && !selectionGesture.current) setChrome(value as unknown as NotificationChromeState);
@@ -122,6 +134,7 @@ export function MessageSurface(props: MessageSurfaceProps) {
     onMessage={event => { void receive(event.nativeEvent.data); }}
     onShouldStartLoadWithRequest={request => request.url === "about:blank"}
     onLoadStart={() => { ready.current = false; }} />
+    {nativeShellKeyboard ? <ShellKeyboardInput ref={shellKeyboard} onSend={sendTerminalText} /> : null}
     {selectionText !== null ? <MessageTextSelection text={selectionText} bottom={insets.bottom} onDone={() => {
       selectingText.current = false; setSelectionText(null);
     }} /> : null}

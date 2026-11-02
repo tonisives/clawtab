@@ -1,0 +1,38 @@
+name: ShellSelection
+options:
+  deploymentTarget:
+    iOS: '18.0'
+settings:
+  base:
+    SWIFT_VERSION: '5.0'
+    CODE_SIGNING_ALLOWED: NO
+targets:
+  ShellSelection:
+    type: application
+    platform: iOS
+    sources: [App]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: cc.clawtab.selection-probe
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        TARGETED_DEVICE_FAMILY: '1'
+  ShellSelectionUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [UITests]
+    dependencies:
+      - target: ShellSelection
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: cc.clawtab.selection-probe.tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: ShellSelection
+schemes:
+  ShellSelection:
+    build:
+      targets:
+        ShellSelection: all
+        ShellSelectionUITests: [test]
+    test:
+      targets: [ShellSelectionUITests]

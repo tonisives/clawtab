@@ -401,7 +401,7 @@
     shellReply = open;
     if (open) {
       clearTimeout(completionTimer); pauseTimer(); expanded = true; details = true; syncCardDetails(records.get(current));
-      if (!card._shellInput) {
+      if (!snapshot.native_keyboard && !card._shellInput) {
         const input = el("textarea", "shell-keyboard");
         input.setAttribute("aria-label", "Type into shell");
         input.setAttribute("autocapitalize", "none"); input.setAttribute("autocorrect", "off"); input.spellcheck = false;
@@ -424,9 +424,14 @@
     host.classList.toggle("shell-reply", open);
     if (open) {
       card._followLogs = true; followMobileShell();
-      card._shellInput.focus({ preventScroll: true }); startContext();
+      if (snapshot.native_keyboard) native({ native: "shell_keyboard", active: true });
+      else card._shellInput.focus({ preventScroll: true });
+      startContext();
       requestAnimationFrame(followMobileShell);
-    } else card._shellInput?.blur();
+    } else {
+      card._shellInput?.blur();
+      if (snapshot.native_keyboard) native({ native: "shell_keyboard", active: false });
+    }
     syncMobileChrome(); size();
   }
   window.addEventListener("resize", () => { requestAnimationFrame(followMobileShell); });
