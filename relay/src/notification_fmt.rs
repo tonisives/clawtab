@@ -2,24 +2,7 @@ use clawtab_protocol::QuestionOption;
 
 /// Strip ANSI escape sequences from text.
 fn strip_ansi(text: &str) -> String {
-    let mut result = String::with_capacity(text.len());
-    let mut chars = text.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '\x1b' {
-            if chars.peek() == Some(&'[') {
-                chars.next();
-                while let Some(&next) = chars.peek() {
-                    chars.next();
-                    if next.is_ascii_alphabetic() {
-                        break;
-                    }
-                }
-            }
-        } else {
-            result.push(c);
-        }
-    }
-    result
+    clawtab_protocol::notification_text(text)
 }
 
 /// Format the notification body for an iOS push notification.
@@ -95,7 +78,7 @@ fn format_options(options: &[QuestionOption]) -> String {
     // Try single-line format first
     let single_line: String = options
         .iter()
-        .map(|o| format!("{}.{}", o.number, o.label))
+        .map(|o| format!("{}.{}", strip_ansi(&o.number), strip_ansi(&o.label)))
         .collect::<Vec<_>>()
         .join(" ");
 
@@ -104,7 +87,7 @@ fn format_options(options: &[QuestionOption]) -> String {
     } else {
         options
             .iter()
-            .map(|o| format!("{}. {}", o.number, o.label))
+            .map(|o| format!("{}. {}", strip_ansi(&o.number), strip_ansi(&o.label)))
             .collect::<Vec<_>>()
             .join("\n")
     }

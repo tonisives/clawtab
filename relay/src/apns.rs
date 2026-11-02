@@ -171,7 +171,7 @@ impl ApnsClient {
         let request = &record["request"];
         let actions: Vec<_> = request["actions"].as_array().into_iter().flatten()
             .filter(|action| action["kind"] == "choice").take(3)
-            .map(|action| serde_json::json!({"id":action["id"],"label":action["label"].as_str().unwrap_or("").chars().take(48).collect::<String>()})).collect();
+            .map(|action| serde_json::json!({"id":action["id"],"label":push_text(action["label"].as_str().unwrap_or(""), 48)})).collect();
         let options: Vec<_> = actions.iter().enumerate().map(|(index, action)| serde_json::json!({"number":(index+1).to_string(),"label":action["label"]})).collect();
         let kind = request["kind"]
             .as_str()
@@ -182,18 +182,8 @@ impl ApnsClient {
                 _ => "question",
             });
         let custom = serde_json::json!({"event":"message","message_id":record["id"],"machine_id":machine,"kind":kind,"actions":actions,"options":options});
-        let title: String = request["title"]
-            .as_str()
-            .unwrap_or("ClawTab")
-            .chars()
-            .take(100)
-            .collect();
-        let body: String = request["body"]
-            .as_str()
-            .unwrap_or("")
-            .chars()
-            .take(300)
-            .collect();
+        let title = push_text(request["title"].as_str().unwrap_or("ClawTab"), 100);
+        let body = push_text(request["body"].as_str().unwrap_or(""), 300);
         self.send_status_notification(token, &title, &body, &custom)
             .await
     }
@@ -206,8 +196,8 @@ impl ApnsClient {
         custom_json: &serde_json::Value,
     ) -> Result<(), String> {
         // APNs limits the whole payload to 4 KiB, including source metadata.
-        let title: String = title.chars().take(160).collect();
-        let body: String = body.chars().take(600).collect();
+        let title = push_text(title, 160);
+        let body = push_text(body, 600);
         let collapse_id = message_collapse_id(custom_json)?;
 
         let build_payload = || {
@@ -274,11 +264,13 @@ impl ApnsClient {
         matched_job: Option<&str>,
         options: &[(String, String)],
     ) -> Result<(), String> {
+        let title = push_text(title, 160);
+        let body = push_text(body, 600);
         let payload_options: Vec<PayloadOption> = options
             .iter()
             .map(|(n, l)| PayloadOption {
                 number: n.clone(),
-                label: l.clone(),
+                label: push_text(l, 48),
             })
             .collect();
 
@@ -301,8 +293,8 @@ impl ApnsClient {
 
         let build_payload = || {
             let builder = DefaultNotificationBuilder::new()
-                .set_title(title)
-                .set_body(body)
+                .set_title(&title)
+                .set_body(&body)
                 .set_mutable_content()
                 .set_category(category)
                 .set_sound("default");
@@ -342,10 +334,24 @@ impl ApnsClient {
     }
 }
 
+fn push_text(text: &str, limit: usize) -> String {
+    clawtab_protocol::notification_text(text)
+        .chars()
+        .take(limit)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
-    use super::message_collapse_id;
+    use super::{message_collapse_id, push_text};
     use serde_json::json;
+
+    #[test]
+    fn push_strips_codes_before_truncating() {
+        let prefix = "[2m[0m[38;2;99;168;248m[39m".repeat(30);
+        assert_eq!(push_text(&format!("{prefix}Ready to review"), 5), "Ready");
+        assert_eq!(push_text("\x1b[31mภาษาไทย\x1b[0m", 4), "ภาษา");
+    }
 
     #[test]
     fn collapse_id_preserves_the_message_uuid() {

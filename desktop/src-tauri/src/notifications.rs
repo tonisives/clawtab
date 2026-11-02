@@ -53,7 +53,7 @@ impl TauriNotifier {
 impl Notifier for TauriNotifier {
     fn notify_question(&self, question: &ClaudeQuestion) {
         use tauri_plugin_notification::NotificationExt;
-        let title = compact_cwd(&question.cwd);
+        let title = clawtab_protocol::notification_text(&compact_cwd(&question.cwd));
         let body = format_question_body(question);
         match self
             .app_handle
@@ -81,7 +81,7 @@ impl Notifier for TauriNotifier {
 
     fn notify_job(&self, job_id: &str, event: &str) {
         use tauri_plugin_notification::NotificationExt;
-        let body = format!("Job {} {}", job_id, event);
+        let body = clawtab_protocol::notification_text(&format!("Job {} {}", job_id, event));
         match self
             .app_handle
             .notification()
@@ -110,13 +110,15 @@ pub struct OsascriptNotifier;
 
 impl OsascriptNotifier {
     fn send_notification(title: &str, body: &str, _sound: bool) -> Result<(), String> {
+        let title = clawtab_protocol::notification_text(title);
+        let body = clawtab_protocol::notification_text(body);
         // Preferred path: UNUserNotificationCenter via objc2-user-notifications.
         // Works whenever the daemon is launched from inside ClawTab Daemon.app
         // (the launchd plist points at the .app's binary). No subprocess, no
         // leak, native ClawTab icon from the bundle's Info.plist.
         #[cfg(target_os = "macos")]
         {
-            if crate::native_notifications::send_with_sound(title, body, _sound).is_ok() {
+            if crate::native_notifications::send_with_sound(&title, &body, _sound).is_ok() {
                 return Ok(());
             }
         }
@@ -187,6 +189,8 @@ impl IpcNotifier {
     }
 
     pub fn dispatch_native(&self, title: String, body: String, sound: bool) {
+        let title = clawtab_protocol::notification_text(&title);
+        let body = clawtab_protocol::notification_text(&body);
         let subs = self.subscribers.clone();
         let title_for_fallback = title.clone();
         let body_for_fallback = body.clone();
@@ -331,7 +335,7 @@ fn compact_cwd(cwd: &str) -> String {
 /// Format question body for the notification.
 /// Shows truncated context and a compact option summary.
 fn format_question_body(question: &ClaudeQuestion) -> String {
-    let context = crate::questions::strip_ansi(&question.context_lines);
+    let context = clawtab_protocol::notification_text(&question.context_lines);
 
     // Get the last meaningful line (the actual question text)
     let question_text = context
@@ -363,9 +367,9 @@ fn format_question_body(question: &ClaudeQuestion) -> String {
         .iter()
         .map(|o| {
             if question.input_mode == "command" {
-                o.label.clone()
+                clawtab_protocol::notification_text(&o.label)
             } else {
-                format!("{}.{}", o.number, o.label)
+                clawtab_protocol::notification_text(&format!("{}.{}", o.number, o.label))
             }
         })
         .collect::<Vec<_>>()
@@ -382,9 +386,9 @@ fn format_question_body(question: &ClaudeQuestion) -> String {
             .iter()
             .map(|o| {
                 if question.input_mode == "command" {
-                    o.label.clone()
+                    clawtab_protocol::notification_text(&o.label)
                 } else {
-                    format!("{}. {}", o.number, o.label)
+                    clawtab_protocol::notification_text(&format!("{}. {}", o.number, o.label))
                 }
             })
             .collect::<Vec<_>>()
@@ -426,6 +430,16 @@ pub fn notify_new_questions(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn question_body_strips_colors_from_context_and_options() {
+        let question: ClaudeQuestion = serde_json::from_value(serde_json::json!({
+            "pane_id": "%1", "question_id": "colors", "cwd": "/tmp", "tmux_session": "test",
+            "window_name": "test", "context_lines": "[38;2;99;168;248mContinue?[39m",
+            "options": [{"number":"1", "label":"\u{1b}[32mYes\u{1b}[0m", "selected":false, "col":0}]
+        })).unwrap();
+        assert_eq!(format_question_body(&question), "Continue?\n1.Yes");
+    }
 
     #[test]
     fn failure_delivery_binds_the_exact_run_before_a_newer_job_can_start() {

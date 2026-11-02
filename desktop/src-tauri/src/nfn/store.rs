@@ -190,6 +190,11 @@ impl Store {
         if request.actions.is_empty() && request.data["text_input"] != true {
             request.actions = template.actions;
         }
+        request.title = clawtab_protocol::notification_text(&request.title);
+        request.body = clawtab_protocol::notification_text(&request.body);
+        for action in &mut request.actions {
+            action.label = clawtab_protocol::notification_text(&action.label);
+        }
         request.validate()?;
         let dedupe = request.dedupe_key.as_ref().map(|key| {
             format!(
@@ -466,6 +471,36 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn strips_terminal_codes_before_storing_or_updating_messages() {
+        let store = Store::from_connection(Connection::open_in_memory().unwrap()).unwrap();
+        for text in [
+            "\x1b[31mReview\x1b[0m",
+            "[2m[38;2;99;168;248mReview[39m",
+        ] {
+            let (record, _) = store
+                .send(
+                    NfnRequest {
+                        title: text.into(),
+                        body: text.into(),
+                        dedupe_key: Some("color-test".into()),
+                        actions: vec![NfnAction {
+                            id: "review".into(),
+                            label: text.into(),
+                            ..Default::default()
+                        }],
+                        ..Default::default()
+                    },
+                    None,
+                )
+                .unwrap();
+            let saved = store.get(&record.id).unwrap();
+            assert_eq!(saved.request.title, "Review");
+            assert_eq!(saved.request.body, "Review");
+            assert_eq!(saved.request.actions[0].label, "Review");
+        }
+    }
+
     #[test]
     fn reminders_wait_until_due_and_survive_restarts_without_early_delivery() {
         let dir = tempfile::tempdir().unwrap();
