@@ -462,11 +462,15 @@
   window.fixture.records.clear();
   const failedJob = window.fixture.record("failed-job", 0);
   failedJob.request.template = "update";
+  failedJob.request.kind = "failed";
+  failedJob.request.data = { event: "failed (exit 143)" };
   failedJob.request.title = "project/job failed (exit 143)";
   failedJob.request.source = { job_id: "project/job", run_id: "failed-run", pane_id: "%failed", session_id: "failed-conversation", provider: "codex" };
   failedJob.request.actions = [{ id: "focus", label: "Open session", kind: "focus" }, { id: "acknowledge", label: "Got it", kind: "choice" }];
   window.fixture.records.set(failedJob.id, failedJob); window.nfn.receive(window.fixture.snapshot(failedJob.id));
   assert(document.querySelector(".controls .open-session") && document.querySelector(".actions").textContent === "Got it" && !buttons().some(button => button.textContent === "Open agent"), "failed jobs expose their saved conversation through the centered footer");
+  assert(document.querySelector(".details-toggle").getAttribute("aria-expanded") === "true" && !document.querySelector(".details-content").hidden, "failed jobs show recent error output by default");
+  assert(document.querySelector(".footer-actions .open-job"), "jobs with resumable sessions also offer Go to job in the footer");
   click("Open session"); await sleep(30);
   assert(!failedJob.dismissed_at && !failedJob.response && document.querySelector(".card"), "opening a failed job session keeps its notice open without answering an agent");
   window.nfn.collapse();
@@ -489,6 +493,7 @@
   const job = window.fixture.record("job", 1); job.request.template = "update"; job.request.source = { job_id: "project/fault-updates" }; job.request.title = "Job failed";
   window.fixture.records.set(job.id, job); window.nfn.receive(window.fixture.snapshot(job.id));
   assert(!document.querySelector(".options-toggle, .reply") && !document.querySelector(".status").textContent && buttons().some(button => button.textContent === "Go to job"), "job cards offer Go to job without agent options or the inert Update label");
+  assert(!document.querySelector(".open-session") && document.querySelector(".footer-actions .open-job"), "jobs without conversations replace disabled Open with Go to job in the footer");
   click("Go to job"); await sleep(30);
   assert(window.fixture.calls.some(command => command.op === "open_job" && command.id === job.id), "Go to job requests the originating job folder");
   const bar = document.querySelector(".top");

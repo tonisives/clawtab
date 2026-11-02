@@ -833,12 +833,7 @@ impl Service {
             NfnCommand::KillSession { id } => {
                 let record = self.store.get(&id)?;
                 let source = &record.request.source;
-                let pane = source
-                    .pane_id
-                    .as_deref()
-                    .ok_or("This message has no session")?;
-                validate_source(source)?;
-                crate::terminal_backend::kill_pane(pane)?;
+                close_message_session(source, validate_source, crate::terminal_backend::kill_pane)?;
                 let records = self.store.dismiss_many(&[id])?;
                 self.store.supersede_previous(&record)?;
                 serde_json::to_value(&records[0]).map_err(|error| error.to_string())?
@@ -1991,6 +1986,27 @@ fn session_targets(source: &NfnSource) -> Result<Vec<Value>, String> {
     Ok(targets)
 }
 
+fn close_message_session(
+    source: &NfnSource,
+    mut validate: impl FnMut(&NfnSource) -> Result<(), String>,
+    kill: impl FnOnce(&str) -> Result<(), String>,
+) -> Result<(), String> {
+    let Some(pane) = source.pane_id.as_deref() else {
+        return Ok(());
+    };
+    // A missing or replaced session is already closed. Never kill its replacement.
+    if validate(source).is_err() {
+        return Ok(());
+    }
+    if let Err(error) = kill(pane) {
+        // The session may exit between validation and the kill request.
+        if validate(source).is_ok() {
+            return Err(error);
+        }
+    }
+    Ok(())
+}
+
 fn validate_source(source: &NfnSource) -> Result<(), String> {
     SourceValidator::default().validate(source)
 }
@@ -2832,6 +2848,55 @@ mod tests {
         current = source.clone();
         current.session_id = Some("session-2".into());
         assert!(!same_source(&source, &current));
+    }
+
+    #[test]
+    fn closing_message_sessions_accepts_missing_and_replaced_sessions() {
+        let source = NfnSource {
+            pane_id: Some("%1".into()),
+            ..Default::default()
+        };
+        for error in [
+            "tmux returned an invalid pane process id",
+            "The originating agent session has changed",
+        ] {
+            assert!(close_message_session(
+                &source,
+                |_| Err(error.into()),
+                |_| panic!("must not kill a missing or replacement session")
+            )
+            .is_ok());
+        }
+        assert!(close_message_session(
+            &NfnSource::default(),
+            |_| panic!("no pane"),
+            |_| panic!("no pane")
+        )
+        .is_ok());
+        assert!(close_message_session(
+            &source,
+            |_| Ok(()),
+            |pane| {
+                assert_eq!(pane, "%1");
+                Ok(())
+            }
+        )
+        .is_ok());
+        assert!(close_message_session(&source, |_| Ok(()), |_| Err("kill failed".into())).is_err());
+        let mut checks = 0;
+        assert!(close_message_session(
+            &source,
+            |_| {
+                checks += 1;
+                if checks == 1 {
+                    Ok(())
+                } else {
+                    Err("closed".into())
+                }
+            },
+            |_| Err("pane disappeared".into())
+        )
+        .is_ok());
     }
 
     #[test]

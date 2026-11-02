@@ -336,3 +336,7 @@ button.auto-yes-button[aria-checked="true"] { background: rgba(255, 159, 10, .15
 .session-target-title,.session-locations-summary{color:var(--muted);font-size:14px;line-height:20px;overflow-wrap:anywhere}
 .session-locations-summary{margin:0;padding:8px 12px}
 button.session-locations{font-size:14px;line-height:20px;padding:4px 8px}
+
+.segmented-control button.open-job { background: #181818; color: #e4e4e4; }
+.segmented-control button.open-job:is(:hover:where(:not([data-native-pointer] *)), [data-native-hover]) { background: #313131; }
+.segmented-control > .actions:only-child button { border-radius: 8px; }

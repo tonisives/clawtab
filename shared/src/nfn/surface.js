@@ -695,6 +695,9 @@
     else { showQueue(true); return; }
     if (view?.kind === "settings") { settingsTab = view.tab; openSettings(); }
   }
+  function defaultDetails(record) {
+    return Boolean(record?.request.source?.job_id && (record.request.kind === "failed" || /^failed\b/.test(record.request.data?.event || "")));
+  }
   function openRecord(id) {
     if (snapshot.remote) window.nfnPaging?.opening();
     const record = records.get(id), key = record && threadKey(record);
@@ -704,7 +707,7 @@
     if (actionsInProgress.has(id)) return;
     leaveSettings();
     const replyFocused = card?._reply && document.activeElement === card._reply;
-    clearTimeout(completionTimer); pauseTimer(); stopContext(); current = id; queueReturnId = id; expanded = true; details = Boolean(resizedSize?.showDetails) || (mobileHost() && innerHeight > 480 && record?.request.source?.pane_id); queue = false; renderedId = null; menu = null;
+    clearTimeout(completionTimer); pauseTimer(); stopContext(); current = id; queueReturnId = id; expanded = true; details = defaultDetails(records.get(id)) || Boolean(resizedSize?.showDetails) || (mobileHost() && innerHeight > 480 && record?.request.source?.pane_id); queue = false; renderedId = null; menu = null;
     syncMobileChrome();
     call({ op: "read", id }).catch(error => showError(error, id)); render();
     startContext();
@@ -1290,16 +1293,18 @@
       const focus = choices.find(action => action.kind === "focus");
       const openSession = button("Open", () => focus ? act(record.id, focus.id, "") : focusSession(record.id, { op: "focus", id: record.id }), "primary open-session");
       openSession.setAttribute("aria-label", "Open session"); openSession.title = "Open the originating session"; node._openSession = openSession; utilities.append(openSession);
-    } else if (record.request.source?.job_id && record.details_available !== false) {
-      const openJob = button("Go to job", async () => {
+    }
+    let openJob = null;
+    if (record.request.source?.job_id && record.details_available !== false) {
+      openJob = button("Go to job", async () => {
         openJob.disabled = true;
         try { await call({ op: "open_job", id: record.id }); }
         catch (error) { showError(error); }
         finally { openJob.disabled = false; }
-      }, "utility");
-      openJob.title = "Show job folder in Finder"; utilities.append(openJob);
+      }, "open-job");
+      openJob.title = "Show job folder in Finder";
     }
-    if (!utilities.querySelector(".open-session")) {
+    if (!utilities.querySelector(".open-session") && !record.request.source?.job_id) {
       const openSession = button("Open", () => focusSession(record.id, { op: "focus", id: record.id }), "primary open-session");
       openSession.setAttribute("aria-label", "Open session"); openSession.disabled = true; openSession.title = "This message has no originating session";
       utilities.classList.add("session-controls"); utilities.append(openSession);
@@ -1310,7 +1315,10 @@
     }
     const footerActions = el("div", "footer-actions segmented-control");
     footerActions.setAttribute("role", "group"); footerActions.setAttribute("aria-label", "Message actions");
-    footerActions.append(utilities.querySelector(".open-session"));
+    const sessionControl = utilities.querySelector(".open-session");
+    if (sessionControl) footerActions.append(sessionControl);
+    if (openJob) footerActions.append(openJob);
+    utilities.classList.add("session-controls");
     if (actions.parentElement === utilities) footerActions.append(actions);
     else {
       const control = button("Got it", () => acknowledge(record), "primary acknowledge");
@@ -2199,7 +2207,7 @@
         records.set(record.id, record);
         if (pendingRecords(true).length > before) unseenPending = Math.max(0, unseenPending - 1);
         openRecord(record.id);
-        if (value.popup && record.request.template === "update" && !resizedSize && !record.request.media?.length) { expanded = false; render(); resumeTimer(); }
+        if (value.popup && !defaultDetails(record) && record.request.template === "update" && !resizedSize && !record.request.media?.length) { expanded = false; render(); resumeTimer(); }
       };
       if (records.has(value.id)) open(records.get(value.id));
       else call({ op: "get", id: value.id }).then(open).catch(error => {
@@ -2256,7 +2264,8 @@
       clearTimeout(completionTimer); pauseTimer(); stopContext();
       const arrival = records.get(value.arrival), key = threadKey(arrival);
       current = (key && pendingCards().find(record => threadKey(record) === key)?.id) || value.arrival;
-      queueReturnId = current; queue = false; history = false; details = Boolean(resizedSize?.showDetails) || Boolean(mobileHost() && innerHeight > 480 && records.get(current)?.request.source?.pane_id); menu = null;
+      queueReturnId = current; queue = false; history = false; details = defaultDetails(records.get(current)) || Boolean(resizedSize?.showDetails) || Boolean(mobileHost() && innerHeight > 480 && records.get(current)?.request.source?.pane_id); menu = null;
+      if (defaultDetails(records.get(current))) expanded = true;
       remaining = (value.settings?.preview_seconds || 8) * 1000; renderedId = null;
     }
     render(); resumeTimer();
