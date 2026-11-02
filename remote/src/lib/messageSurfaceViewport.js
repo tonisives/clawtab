@@ -39,6 +39,7 @@
   const swipeControl = "button,a,input,textarea,select,label,video,audio,[contenteditable='true'],[role='slider']";
   const selecting = () => window.getSelection()?.isCollapsed === false;
   document.addEventListener("touchstart", event => {
+    window.nfnPaging?.finish();
     swipe = null;
     if (event.touches.length !== 1 || selecting()) return;
     const card = event.target.closest("#surface:not(.menu-open) > .card");
@@ -47,30 +48,39 @@
       if (node.scrollWidth > node.clientWidth + 1 && /auto|scroll/.test(getComputedStyle(node).overflowX)) return;
     }
     const touch = event.touches[0];
-    swipe = { card, id: touch.identifier, x: touch.clientX, y: touch.clientY, horizontal: false };
+    swipe = { card, id: touch.identifier, x: touch.clientX, y: touch.clientY, horizontal: false,
+      lastX: touch.clientX, lastAt: performance.now(), velocity: 0 };
   }, { passive: true, capture: true });
   document.addEventListener("touchmove", event => {
     if (!swipe) return;
     const touch = event.touches[0];
     if (event.touches.length !== 1 || touch.identifier !== swipe.id || selecting()) {
-      swipe = null; return;
+      window.nfnPaging?.cancel(); swipe = null; return;
     }
     const dx = Math.abs(touch.clientX - swipe.x), dy = Math.abs(touch.clientY - swipe.y);
     if (!swipe.horizontal && dy > 12 && dy >= dx) { swipe = null; return; }
-    if (dx > 12 && dx > dy * 1.5) swipe.horizontal = true;
-    if (swipe.horizontal) event.preventDefault();
+    if (!swipe.horizontal && dx > 12 && dx > dy * 1.5) {
+      swipe.horizontal = true;
+      window.nfnPaging?.begin(swipe.card);
+    }
+    if (swipe.horizontal) {
+      event.preventDefault();
+      const now = performance.now();
+      swipe.velocity = (touch.clientX - swipe.lastX) / Math.max(1, now - swipe.lastAt);
+      swipe.lastX = touch.clientX; swipe.lastAt = now;
+      window.nfnPaging?.move(touch.clientX - swipe.x);
+    }
   }, { passive: false, capture: true });
-  document.addEventListener("touchcancel", () => { swipe = null; }, { passive: true, capture: true });
+  document.addEventListener("touchcancel", () => { window.nfnPaging?.cancel(); swipe = null; }, { passive: true, capture: true });
   document.addEventListener("touchend", event => {
     const start = swipe; swipe = null;
     if (!start || event.touches.length || selecting()
-      || !start.card.isConnected || !start.card.matches("#surface:not(.menu-open) > .card")) return;
+      || !start.card.isConnected || !start.card.matches("#surface:not(.menu-open) > .card")) { window.nfnPaging?.cancel(); return; }
     const touch = Array.from(event.changedTouches).find(touch => touch.identifier === start.id);
     if (!touch) return;
     const dx = touch.clientX - start.x, dy = touch.clientY - start.y;
-    if (Math.abs(dx) < 60 || Math.abs(dx) <= Math.abs(dy) * 1.5) return;
-    const step = start.card.parentElement.querySelector(dx < 0 ? ".nav-step.next" : ".nav-step.previous");
-    if (step && !step.hidden) step.click();
+    if (!start.horizontal || Math.abs(dx) <= Math.abs(dy) * 1.5) { window.nfnPaging?.cancel(); return; }
+    window.nfnPaging?.release(dx, performance.now() - start.lastAt < 100 ? start.velocity : 0);
   }, { passive: true, capture: true });
   document.addEventListener("pointerdown", event => { pointer = { x: event.clientX, y: event.clientY }; }, true);
   document.addEventListener("pointercancel", () => { pointer = null; }, true);

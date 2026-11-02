@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useLayoutEffect, useState } from "react";
 import { Modal, Pressable, Text, View } from "react-native";
 import { useNavigation } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -23,7 +23,8 @@ export function NotificationChrome({ state, send, bottom, enabled }: {
 }) {
   const navigation = useNavigation();
   const [menuOpen, setMenuOpen] = useState(false);
-  useEffect(() => {
+  const { counter, canNavigate } = state;
+  useLayoutEffect(() => {
     if (!enabled) return;
     navigation.setOptions({
       headerShown: true,
@@ -31,18 +32,18 @@ export function NotificationChrome({ state, send, bottom, enabled }: {
         <Ionicons name="ellipsis-horizontal" size={24} color={colors.text} />
       </Pressable>,
       headerTitle: () => <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-        <Pressable accessibilityLabel="Previous notification" disabled={!state.canNavigate} hitSlop={8} onPress={() => send("previous")}>
-          <Ionicons name="chevron-back" size={20} color={state.canNavigate ? colors.text : colors.textMuted} />
+        <Pressable accessibilityLabel="Previous notification" disabled={!canNavigate} hitSlop={8} onPress={() => send("previous")}>
+          <Ionicons name="chevron-back" size={20} color={canNavigate ? colors.text : colors.textMuted} />
         </Pressable>
         <Pressable accessibilityLabel="Pending notifications" hitSlop={8} onPress={() => send("list")}>
-          <Text style={{ color: colors.text, fontSize: 16, fontWeight: "600" }}>{state.counter}</Text>
+          <Text style={{ color: colors.text, fontSize: 16, fontWeight: "600" }}>{counter}</Text>
         </Pressable>
-        <Pressable accessibilityLabel="Next notification" disabled={!state.canNavigate} hitSlop={8} onPress={() => send("next")}>
-          <Ionicons name="chevron-forward" size={20} color={state.canNavigate ? colors.text : colors.textMuted} />
+        <Pressable accessibilityLabel="Next notification" disabled={!canNavigate} hitSlop={8} onPress={() => send("next")}>
+          <Ionicons name="chevron-forward" size={20} color={canNavigate ? colors.text : colors.textMuted} />
         </Pressable>
       </View>,
     });
-  }, [enabled, navigation, send, state]);
+  }, [enabled, navigation, send, counter, canNavigate]);
 
   if (!enabled) return null;
   return <>
