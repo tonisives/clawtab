@@ -522,15 +522,24 @@ for (const variant of ["MessageSurface.web.tsx", "MessageSurface.tsx"]) {
       const selecting = render("mac-b::other", true, 4);
       const selectionView = lastRoot.props.children.find(child => child?.type === "MessageTextSelection");
       assert.equal(selectionView.props.text, "Frozen shell output");
-      assert.equal(selecting.props.style.display, "none", "the interactive shell stays mounted behind the selection view");
+      assert.equal(selecting.props.containerStyle.display, "none", "the whole WebView container leaves the selection layout");
       assert.equal(lastRoot.props.children.some(child => child?.type === "TerminalKeyboardToolbar"), false);
       assert.equal(selecting.props.source, initialSource);
       render("mac-b::other", true, 2);
       assert.equal(lastRoot.props.children.find(child => child?.type === "MessageTextSelection").props.text, "Frozen shell output", "live snapshots cannot alter the selected text");
       selectionView.props.onDone();
       const restored = render("mac-b::other");
-      assert.equal(restored.props.style.display, "flex");
+      assert.equal(restored.props.containerStyle.display, "flex");
       assert.equal(restored.props.source, initialSource, "Done restores the same cached shell");
+      restored.props.onMessage({ nativeEvent: { data: JSON.stringify({ nfn: {
+        native: "selection_text", gesture: true, text: "Long-pressed shell output", selection: { start: 13, end: 18 },
+      } }) } });
+      render("mac-b::other");
+      const heldSelection = lastRoot.props.children.find(child => child?.type === "MessageTextSelection");
+      assert.equal(heldSelection.props.text, "Long-pressed shell output", "holding output opens selection without the toolbar action");
+      assert.equal(heldSelection.props.selection.start, 13);
+      assert.equal(heldSelection.props.selection.end, 18);
+      heldSelection.props.onDone();
       focused = false;
       render("mac-b::other");
       assert.equal(sent.at(-1).type, "mobile_visibility");

@@ -9,6 +9,7 @@ function messageDocument(root = path.resolve(__dirname, "../../shared/src/nfn"))
 html,body{width:100%;height:var(--message-height,100%);background:#161616;overflow:hidden;-webkit-text-size-adjust:100%;text-size-adjust:100%}
 body{display:flex;justify-content:center}
 .message,.message-thread,.logs,.logs span{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
+.logs.native-text-selection,.logs.native-text-selection *{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 .message,.message-thread,.details-content,.heading{touch-action:pan-y pinch-zoom}
 .gallery-page{position:fixed;display:flex;flex-direction:column;background:#161616;overflow:hidden;pointer-events:none;z-index:2}
 .gallery-page>.card{flex:1;height:100%;min-height:0}

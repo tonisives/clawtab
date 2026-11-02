@@ -1,9 +1,27 @@
 # Native shell selection regression
 
-This small UIKit app loads the production mobile shell document. XCTest sends
-real long presses and drags the iOS selection handle. It checks notification
-and details layouts, opening the shell keyboard first, and pushing details then
-returning to notifications. No account, relay, PTY or tmux pane is used.
+`remote/tests/selection-runtime.tsx` runs the production React Native
+`MessageSurface` in a native navigation stack, using captured fixture output.
+`RuntimeSelectionTests` holds the shell, selects text in the native control,
+copies through the iOS edit menu, and checks the clipboard in notifications,
+details and after returning. No account, relay, PTY or tmux pane is used.
+
+Build this app on the shared worker, from `remote`:
+
+```sh
+~/.agents/scripts/buildctl run --prepare-node \
+  --output tests/ios-selection/runtime-build/Build/Products/Release-iphonesimulator/ClawTabSelection.app=/private/tmp/clawtab-selection-runtime.app \
+  -- sh ../tests/ios-selection/build-runtime.sh
+```
+
+The script changes the app identity and entry point inside the worker snapshot.
+Install the returned app on the dedicated simulator with `simctl install`.
+Build the UI runner as below, then run with
+`-only-testing:ShellSelectionUITests/RuntimeSelectionTests`.
+
+The separate UIKit fixture isolates the HTML renderer. Its tests send real
+long presses and drag WebKit's selection handle, without the React Native
+WebView or navigation components.
 
 Generate the fixture and Xcode project on the host:
 
@@ -27,6 +45,8 @@ Use a dedicated simulator created with `xcrun simctl create`, then boot it with
 the returned `.xctestrun` using `xcodebuild test-without-building -xctestrun PATH
 -destination id=DEVICE_ID -parallel-testing-enabled NO`. This step does no
 compilation. Shut down and delete the dedicated simulator afterwards.
+Use `-skip-testing:ShellSelectionUITests/RuntimeSelectionTests` for just the
+UIKit fixture tests.
 
 The app's `--legacy-web-input` launch argument restores the hidden WebView
 textarea. On iOS 26.5 that configuration reproduces the original failure:

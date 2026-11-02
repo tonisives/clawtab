@@ -44,23 +44,46 @@ test("the static selection document escapes shell content as text", () => {
   assert.ok(html.includes("user-select:text"));
 });
 
-test("selection view uses a static WebView and Copy all copies the frozen text", async () => {
+test("selection uses read-only native text and Copy all copies the frozen text", async () => {
   let copied, done = false;
   const jsx = (type, props) => ({ type, props });
   const { MessageTextSelection } = load("components/MessageTextSelection.tsx", {
-    react: { useMemo: callback => callback(), useState: value => [value, () => {}] },
-    "react/jsx-runtime": { jsx, jsxs: jsx }, "react-native": { View: "View", Text: "Text", Pressable: "Pressable" },
-    "react-native-webview": { default: "WebView" }, "@clawtab/shared": { colors: {} },
-    "expo-clipboard": { setStringAsync: async text => { copied = text; } },
+    react: { useMemo: callback => callback(), useRef: current => ({ current }), useState: value => [value, () => {}] },
+    "react/jsx-runtime": { jsx, jsxs: jsx }, "react-native": { View: "View", Text: "Text", TextInput: "TextInput", Pressable: "Pressable", Platform: { OS: "ios" } },
+    "@clawtab/shared": { colors: {} },
+    "react-native-webview": { default: "WebView" },
     "../lib/terminalSelectionDocument": { terminalSelectionDocument: text => text },
+    "expo-clipboard": { setStringAsync: async text => { copied = text; } },
   });
-  const root = MessageTextSelection({ text: "frozen text", bottom: 34, onDone: () => done = true });
-  const webview = root.props.children.find(node => node.type === "WebView");
-  assert.equal(webview.props.javaScriptEnabled, false);
-  assert.equal(webview.props.textInteractionEnabled, true);
-  assert.equal(webview.props.source.html, "frozen text");
+  const root = MessageTextSelection({ text: "frozen text", selection: { start: 0, end: 6 }, bottom: 34, onDone: () => done = true });
+  const input = root.props.children.find(node => node.type === "TextInput");
+  assert.equal(input.props.editable, false);
+  assert.equal(input.props.showSoftInputOnFocus, false);
+  assert.equal(input.props.defaultValue, "frozen text");
+  let positions = [];
+  input.props.ref.current = { setSelection: (...range) => positions.push(range) };
+  input.props.onLayout(); input.props.onLayout();
+  assert.deepEqual(positions, [[0, 6]], "position once, then leave selection handles under native control");
   const buttons = root.props.children.at(-1).props.children;
   buttons[0].props.onPress(); await Promise.resolve();
   assert.equal(copied, "frozen text");
   buttons[1].props.onPress(); assert.equal(done, true);
+});
+
+test("native handoff preserves UTF-16 word offsets in the displayed shell", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../remote/src/lib/messageSurfaceViewport.js"), "utf8");
+  const method = source.slice(source.indexOf("    selectText("), source.indexOf("    holdSelection("));
+  let captured;
+  const target = { textContent: "first\n日本語 shell 😀 output", contains: () => true };
+  const context = {
+    document: { caretRangeFromPoint: () => ({ startContainer: {}, startOffset: 17 }), createRange: () => ({
+      selectNodeContents() {}, setEnd() {}, toString: () => target.textContent.slice(0, 17),
+    }) },
+    window: { ReactNativeWebView: { postMessage: raw => captured = JSON.parse(raw).nfn } },
+    Math, JSON,
+  };
+  vm.runInNewContext(`({${method}}).selectText(target, 20, 30)`, { ...context, target });
+  assert.equal(captured.text, target.textContent);
+  assert.equal(captured.text.slice(captured.selection.start, captured.selection.end), "😀");
+  assert.equal(captured.gesture, true);
 });

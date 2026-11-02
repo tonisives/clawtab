@@ -4,6 +4,8 @@ export type SurfaceMessage = {
   command?: Record<string, unknown>;
   native?: string;
   text?: string;
+  gesture?: boolean;
+  selection?: { start: number; end: number };
   id?: string;
   active?: boolean;
   height?: number;

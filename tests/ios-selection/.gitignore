@@ -2,3 +2,6 @@ App/fixture.html
 ShellSelection.xcodeproj/
 build/
 build.log
+runtime-build/
+runtime-update/
+inline-update/

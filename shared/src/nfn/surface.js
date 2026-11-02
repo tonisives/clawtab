@@ -1462,6 +1462,41 @@
     updateAutoYes();
   }
   function installLogSelection(logs, canReply) {
+    if (snapshot.native_selection && window.nfnMobile?.selectText) {
+      // Hand selection to the native read-only text view, outside WebKit's
+      // gesture recognizers and the notification gallery's swipe handler.
+      let touch = null, timer = null;
+      logs.classList.add("native-text-selection");
+      const cancel = () => {
+        clearTimeout(timer); timer = null; touch = null; logs._selecting = false;
+        window.nfnMobile.releaseSelection(logs);
+      };
+      logs._cancelSelection = cancel;
+      logs.addEventListener("touchstart", event => {
+        cancel();
+        if (event.touches.length !== 1) return;
+        const point = event.touches[0];
+        touch = { x: point.clientX, y: point.clientY, at: performance.now() };
+        logs._selecting = true; window.nfnMobile.holdSelection(logs);
+        timer = setTimeout(() => {
+          const point = touch;
+          if (!point || !logs.isConnected) { cancel(); return; }
+          window.nfnMobile.selectText(logs, point.x, point.y);
+          cancel();
+        }, 500);
+      }, { passive: true });
+      logs.addEventListener("touchmove", event => {
+        const point = event.touches[0];
+        if (touch && (!point || event.touches.length !== 1 || Math.hypot(point.clientX - touch.x, point.clientY - touch.y) >= 8)) cancel();
+      }, { passive: true });
+      logs.addEventListener("touchcancel", cancel, { passive: true });
+      logs.addEventListener("touchend", () => {
+        const point = touch;
+        cancel();
+        if (canReply && point && performance.now() - point.at < 350) setShellReply(true);
+      }, { passive: true });
+      return;
+    }
     let touch = null, releaseTimer = null, touching = false;
     const hasRange = () => {
       const selection = window.getSelection();

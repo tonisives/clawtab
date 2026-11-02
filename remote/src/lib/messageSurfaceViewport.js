@@ -26,6 +26,27 @@
     }
   }
   window.nfnMobile = {
+    selectText(target, x, y) {
+      const text = target.textContent || "";
+      const caret = document.caretRangeFromPoint?.(x, y);
+      let offset = 0;
+      if (caret && target.contains(caret.startContainer)) {
+        const prefix = document.createRange();
+        prefix.selectNodeContents(target);
+        prefix.setEnd(caret.startContainer, caret.startOffset);
+        offset = prefix.toString().length;
+      }
+      // DOM ranges and UITextView both use UTF-16 offsets.
+      offset = Math.min(offset, Math.max(0, text.length - 1));
+      while (offset < text.length - 1 && /\s/.test(text[offset])) offset++;
+      while (offset > 0 && /\s/.test(text[offset])) offset--;
+      let start = offset, end = offset;
+      while (start > 0 && /\S/.test(text[start - 1])) start--;
+      while (end < text.length && /\S/.test(text[end])) end++;
+      window.ReactNativeWebView?.postMessage(JSON.stringify({ nfn: {
+        native: "selection_text", gesture: true, text, selection: { start, end },
+      } }));
+    },
     holdSelection(target) {
       if (selectionTarget === target) return;
       selectionTarget = target;
