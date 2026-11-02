@@ -3,8 +3,6 @@ import { Ionicons } from "@expo/vector-icons";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { colors } from "@clawtab/shared";
-import { NextNotification } from "./NextNotification";
-import type { ClaudeQuestion } from "@clawtab/shared";
 import { JobDetailPane } from "./JobDetailPane";
 import { ProcessDetailPane } from "./ProcessDetailPane";
 import type { NotificationDetailTarget } from "./notificationTypes";
@@ -45,17 +43,6 @@ export function NotificationsPanel({
 
   const closeDetail = onBack ?? (() => setDetailTarget(null));
 
-  let handleSelectNextNotification = (question: ClaudeQuestion) => {
-    if (question.matched_job) {
-      setDetailTarget({ kind: "job", jobName: question.matched_job, paneId: question.pane_id });
-      return;
-    }
-    setDetailTarget({
-      kind: "process",
-      paneId: question.pane_id,
-    });
-  };
-
   if (detailTarget) {
     return (
       <View style={styles.detailRoot}>
@@ -91,11 +78,6 @@ export function NotificationsPanel({
             />
           )}
         </View>
-        <NextNotification
-          paneId={detailTarget.paneId}
-          jobName={detailTarget.kind === "job" ? detailTarget.jobName : undefined}
-          onSelect={handleSelectNextNotification}
-        />
       </View>
     );
   }

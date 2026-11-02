@@ -9,7 +9,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useJobsStore } from "../../src/store/jobs";
 import { usePinsStore } from "../../src/store/pins";
 import { useNotificationStore } from "../../src/store/notifications";
-import { JobKindIcon, OptionButtons, PaneOverviewModal, compactPath, findYesOption, kindForProcess, colors } from "@clawtab/shared";
+import { JobKindIcon, OptionButtons, PaneOverviewModal, compactPath, findYesOption, kindForProcess, colors, radius } from "@clawtab/shared";
 import { useMachineStatus } from "../../src/hooks/useMachineStatus";
 import { getWsSend, nextId } from "../../src/lib/wsRuntime";
 import { stopSession } from "../../src/lib/stopSession";
