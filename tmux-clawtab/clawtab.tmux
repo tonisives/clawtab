@@ -117,6 +117,26 @@ elif [[ "$current_border" != *"clawtab-auto-yes"* ]]; then
     clawtab_part="#[align=right]#{?#{@clawtab-daemon-running},#{?#{==:#{@clawtab-auto-yes},1},#[fg=green#,bold][Y]#[default],#{?#{||:#{m:*.*.*,#{pane_current_command}},#{||:#{m:*codex*,#{pane_current_command}},#{m:*claude*,#{pane_current_command}}}},#[fg=colour240][y]#[default],}},}"
     current_border="${current_border}${clawtab_part}"
 fi
+# Pending takes precedence over the last confirmed state, including on reload.
+if [[ "$current_border" != *"@clawtab-auto-yes-pending"* &&
+      "$current_border" == *"$auto_yes_start"* ]]; then
+    border_prefix="${current_border%%"$auto_yes_start"*}"
+    border_rest="${current_border:${#border_prefix}}"
+    depth=0
+    for ((i = 0; i < ${#border_rest}; i++)); do
+        if [[ "${border_rest:i:2}" == '#{' ]]; then
+            depth=$((depth + 1))
+            i=$((i + 1))
+        elif [[ "${border_rest:i:1}" == '}' ]]; then
+            depth=$((depth - 1))
+            if [ "$depth" -eq 0 ]; then
+                auto_yes_expression="${border_rest:0:i+1}"
+                current_border="${border_prefix}#{?#{==:#{@clawtab-auto-yes-pending},1},#[fg=colour240#,bold][y...]#[default],${auto_yes_expression}}${border_rest:i+1}"
+                break
+            fi
+        fi
+    done
+fi
 if [[ "$current_border" != *"@clawtab-agent-title"* ]]; then
     # Rich pane helpers already include the display name in their cached info.
     agent_title='#{?#{@clawtab-pane-has-info},,#{?#{@clawtab-agent-title},#{@clawtab-agent-title} ,}}'

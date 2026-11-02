@@ -111,13 +111,20 @@ export TEST_BORDER_FORMAT='#[align=right]#{?#{==:#{@clawtab-auto-yes},1},#[fg=gr
 : >"$TEST_TMUX_OPTIONS"
 bash "$PLUGIN_DIR/clawtab.tmux"
 grep -Fq '#{@clawtab-daemon-running}' "$TEST_TMUX_OPTIONS"
-[ "$(grep -o 'clawtab-auto-yes' "$TEST_TMUX_OPTIONS" | wc -l | tr -d ' ')" = 1 ]
+[ "$(grep -o 'clawtab-auto-yes},' "$TEST_TMUX_OPTIONS" | wc -l | tr -d ' ')" = 1 ]
 
 # A user-defined pane border has the same marker inside a larger format.
 export TEST_BORDER_FORMAT='before #{?#{==:#{@clawtab-auto-yes},1},[Y],#{?#{m:*codex*,#{pane_current_command}},[y],}} after'
 : >"$TEST_TMUX_OPTIONS"
 bash "$PLUGIN_DIR/clawtab.tmux"
-grep -Fq 'before #{?#{@clawtab-daemon-running},#{?#{==:#{@clawtab-auto-yes},1},[Y],#{?#{m:*codex*,#{pane_current_command}},[y],}},} after' "$TEST_TMUX_OPTIONS"
+grep -Fq 'before #{?#{@clawtab-daemon-running},#{?#{==:#{@clawtab-auto-yes-pending},1},#[fg=colour240#,bold][y...]#[default],#{?#{==:#{@clawtab-auto-yes},1},[Y],#{?#{m:*codex*,#{pane_current_command}},[y],}}},} after' "$TEST_TMUX_OPTIONS"
+
+# Loading state is installed once, even after repeated plugin reloads.
+grep -Fq '[y...]' "$TEST_TMUX_OPTIONS"
+export TEST_BORDER_FORMAT="$(sed -n '/^pane-border-format$/{n;p;}' "$TEST_TMUX_OPTIONS")"
+: >"$TEST_TMUX_OPTIONS"
+bash "$PLUGIN_DIR/clawtab.tmux"
+[ "$(grep -o 'clawtab-auto-yes-pending' "$TEST_TMUX_OPTIONS" | wc -l | tr -d ' ')" = 1 ]
 
 # Reloading upgrades existing alert labels without duplicating the markers.
 export TEST_BORDER_FORMAT='#{?#{@clawtab-daemon-running},#{?#{==:#{@clawtab-agent-pane-alert},1},#[fg=colour208#,bold]! Alert #[default],},} #{@clawtab-agent-title}'

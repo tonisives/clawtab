@@ -21,6 +21,19 @@ if ! command -v cwt >/dev/null 2>&1; then
     exit 1
 fi
 
+# Keep the confirmed state while showing that a toggle is in flight.
+if [ "$(tmux show-option -pqvt "$pane_id" @clawtab-auto-yes-pending)" = 1 ]; then
+    exit 0
+fi
+clear_pending() {
+    tmux set-option -pqu -t "$pane_id" @clawtab-auto-yes-pending
+    tmux refresh-client -S
+}
+trap clear_pending EXIT
+trap 'exit 1' HUP INT TERM
+tmux set-option -pt "$pane_id" @clawtab-auto-yes-pending 1
+tmux refresh-client -S
+
 if ! out=$(cwt agent auto-yes toggle "$pane_id" 2>&1); then
     tmux display-message "clawtab: auto-yes toggle failed: $out"
     exit 1
