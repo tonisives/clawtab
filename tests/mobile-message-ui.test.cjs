@@ -400,7 +400,7 @@ test("initial message data cannot terminate the bootstrap script and inactive po
 for (const variant of ["MessageSurface.web.tsx", "MessageSurface.tsx"]) {
   test(`${variant}: clearing and restoring a deep link cannot retain the previous message`, () => {
     const refs = [], effects = [], sent = [];
-    let cursor = 0, lastRoot, keyboardOverlap = 0;
+    let cursor = 0, lastRoot, keyboardOverlap = 0, focused = true;
     const react = {
       useRef: value => refs[cursor++] ??= { current: value },
       useState: value => { const state = refs[cursor++] ??= { value }; return [state.value, next => { state.value=next; }]; },
@@ -428,6 +428,7 @@ for (const variant of ["MessageSurface.web.tsx", "MessageSurface.tsx"]) {
       "./TerminalKeyboardToolbar": { TERMINAL_KEYBOARD_TOOLBAR_HEIGHT: 48, TerminalKeyboardToolbar: "TerminalKeyboardToolbar" },
       "./TerminalWriteDialog": { TerminalWriteDialog: "TerminalWriteDialog" },
       "./MessageTextSelection": { MessageTextSelection: "MessageTextSelection" },
+      "expo-router/react-navigation": { useIsFocused: () => focused },
       "../lib/messageSelection": load("messageSelection"),
     };
     const source = ts.transpileModule(fs.readFileSync(path.resolve(base, `../components/${variant}`), "utf8"), {
@@ -448,6 +449,7 @@ for (const variant of ["MessageSurface.web.tsx", "MessageSurface.tsx"]) {
     if (!variant.includes(".web")) {
       assert.equal(initial.props.hideKeyboardAccessoryView, true);
       assert.equal(initial.props.contentInsetAdjustmentBehavior, "never");
+      assert.equal(initial.props.scrollEnabled, false, "nested shell scrolling cannot offset the native WebView");
     }
     if (variant.includes(".web")) initial.props.onLoad();
     else initial.props.onMessage({ nativeEvent: { data: JSON.stringify({ nfn: { preview_ready: true } }) } });
@@ -495,6 +497,14 @@ for (const variant of ["MessageSurface.web.tsx", "MessageSurface.tsx"]) {
       const restored = render("mac-b::other");
       assert.equal(restored.props.style.display, "flex");
       assert.equal(restored.props.source, initialSource, "Done restores the same cached shell");
+      focused = false;
+      render("mac-b::other");
+      assert.equal(sent.at(-1).type, "mobile_visibility");
+      assert.equal(sent.at(-1).active, false, "details suspends the covered notification surface");
+      focused = true;
+      const returned = render("mac-b::other");
+      assert.ok(sent.some(value => value.type === "mobile_visibility" && value.active === true));
+      assert.equal(returned.props.source, initialSource, "returning repairs the viewport without reloading the shell");
       dependencies["../lib/messageSurfaceDocument.generated"].default="<html><body>Updated surface</body></html>";
       const updated=render("mac-b::other");
       assert.notEqual(updated.props.source,initialSource,"updated renderer code refreshes the native document");

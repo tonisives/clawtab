@@ -34,7 +34,7 @@ test("long press protects output before a native selection range exists", () => 
   app.event("pointerdown");
   assert.equal(app.selected(), true);
   app.advance(350);
-  assert.equal(app.blurs(), 1, "the hidden shell input releases keyboard focus");
+  assert.equal(app.blurs(), 0, "a long press cannot move the keyboard or its selection target");
   app.event("pointercancel");
   app.advance(500);
   assert.equal(app.selected(), true, "native gesture takeover keeps the output stable");

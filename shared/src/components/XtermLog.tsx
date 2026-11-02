@@ -618,7 +618,9 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
           onMessage={handleMessage}
           javaScriptEnabled
           originWhitelist={["*"]}
-          scrollEnabled={Platform.OS === "ios"}
+          scrollEnabled={false}
+          textInteractionEnabled
+          dataDetectorTypes="none"
           automaticallyAdjustContentInsets={false}
           contentInsetAdjustmentBehavior="never"
           bounces={false}

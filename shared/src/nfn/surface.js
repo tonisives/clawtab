@@ -1399,20 +1399,17 @@
     updateAutoYes();
   }
   function installLogSelection(logs, canReply) {
-    let touch = null, holdTimer = null, releaseTimer = null;
+    let touch = null, releaseTimer = null;
     const release = () => {
-      clearTimeout(holdTimer); clearTimeout(releaseTimer);
+      clearTimeout(releaseTimer);
       // WebKit can cancel pointer events when its native selection gesture wins.
       // Keep the DOM stable until selectionchange has established the range.
       releaseTimer = setTimeout(() => { logs._selecting = false; }, 1000);
     };
     logs.addEventListener("pointerdown", event => {
-      clearTimeout(holdTimer); clearTimeout(releaseTimer);
+      clearTimeout(releaseTimer);
       logs._selecting = true;
       touch = { x: event.clientX, y: event.clientY, at: performance.now() };
-      holdTimer = setTimeout(() => {
-        if (card?._logs === logs && card._shellInput === document.activeElement) card._shellInput.blur();
-      }, 350);
     });
     logs.addEventListener("pointermove", event => {
       if (touch && Math.hypot(event.clientX - touch.x, event.clientY - touch.y) >= 8) {
@@ -2118,6 +2115,13 @@
     syncNativePointerHover();
   }
   function receive(value) {
+    if (value.type === "mobile_visibility" && mobileHost()) {
+      snapshot.visible = Boolean(value.active);
+      window.nfnMobile?.setActive(snapshot.visible);
+      if (snapshot.visible) { startContext(); refreshContext(); }
+      else { stopContext(); card?._shellInput?.blur(); }
+      return;
+    }
     if (value.type === "mobile_action" && mobileHost()) {
       if (value.action === "list") showQueue();
       else if (value.action === "previous") navigate(-1);
