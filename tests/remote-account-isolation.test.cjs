@@ -173,6 +173,12 @@ test('demo headers cannot expose or open a stale personal notification badge', (
     '../store/notifications': { useNotificationStore: app.notifications },
     '../store/jobs': { useJobsStore: app.jobs },
     '../store/messages': app.messages,
+    '../hooks/usePendingMessageCount': load('remote/src/hooks/usePendingMessageCount.ts', {
+      '@clawtab/shared': app.shared,
+      '../store/jobs': { useJobsStore: app.jobs },
+      '../store/messages': app.messages,
+      '../store/notifications': { useNotificationStore: app.notifications },
+    }),
     '../hooks/useResponsive': { useResponsive: () => ({ isSplitView: false }) },
   });
   const machines = { connected: false, error: null };
