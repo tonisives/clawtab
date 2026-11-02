@@ -97,7 +97,15 @@ pub fn html() -> String {
         )
         .replace(
             "/* NFN_JS */",
-            include_str!("../../../../shared/src/nfn/surface.js"),
+            concat!(
+                include_str!("../../../../shared/src/nfn/vendor/marked.js"),
+                "\n",
+                include_str!("../../../../shared/src/nfn/vendor/purify.js"),
+                "\n",
+                include_str!("../../../../shared/src/nfn/markdown.js"),
+                "\n",
+                include_str!("../../../../shared/src/nfn/surface.js"),
+            ),
         )
 }
 

@@ -160,3 +160,12 @@ For tmux jobs (Claude/Folder), secrets are injected via tmux's `-e KEY=VALUE` fl
 ## Aerospace Integration
 
 If a job has `aerospace_workspace` set and [AeroSpace](https://github.com/nikitabobko/AeroSpace) is installed, the tmux window is moved to that workspace after creation.
+
+## Messages from jobs
+
+Agent jobs receive instructions to format `cwt message send` bodies with
+Markdown: short paragraphs, lists, bold details, code for paths and commands,
+and descriptive links. This guidance applies to Claude jobs and folder jobs
+using an agent provider. Shell job prompts keep their executable contents.
+See [Markdown bodies](messages.md#markdown-bodies) for a multiline example and
+`cwt message help` for command options.

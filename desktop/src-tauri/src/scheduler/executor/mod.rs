@@ -329,6 +329,7 @@ pub(super) fn apply_policy_prompt(
     if provider == crate::agent_session::ProcessProvider::Shell {
         return prompt;
     }
+    let prompt = format!("{prompt}\n\n## ClawTab messages\nWhen sending a ClawTab message, use `cwt message send`. Desktop and mobile render Markdown in the body. Use short paragraphs, bullets for steps, **bold** for key details, `code` for paths and commands, and [descriptive labels](https://example.com) for links. Keep the title plain text. For multiline bodies, pass JSON with title, body, kind, and template fields via --stdin using a quoted heredoc so the shell preserves backticks and newlines. Attach media with --image or --video. See `cwt message help` for options.");
     match policy {
         Some(policy) => format!("{prompt}\n\n{}", policy.prompt_directive()),
         None => prompt,

@@ -738,6 +738,12 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
         if (self.surfaceWidth < 1 || self.surfaceHeight < 1) { [self.panel orderOut:nil]; [self releaseTextFocus]; return; }
         [self positionWidth:self.surfaceWidth height:self.surfaceHeight];
         if (!self.panel.visible && (self.settingsVisible || self.notificationsVisible || [self.snapshot[@"visible"] boolValue]) && [self allowsOverlay]) [self.panel orderFrontRegardless];
+    } else if ([operation isEqual:@"external_link"]) {
+        NSString *text = value[@"text"];
+        if ([text isKindOfClass:NSString.class]) {
+            NSURL *url = [NSURL URLWithString:text];
+            if ([@[@"https", @"http", @"mailto"] containsObject:url.scheme.lowercaseString]) [[NSWorkspace sharedWorkspace] openURL:url];
+        }
     } else if ([operation isEqual:@"cursor"]) {
         self.web.contentCursor = [@{@"pointer":NSCursor.pointingHandCursor, @"text":NSCursor.IBeamCursor, @"grab":NSCursor.openHandCursor, @"grabbing":NSCursor.closedHandCursor} objectForKey:value[@"value"]] ?: NSCursor.arrowCursor;
         self.panel.contentCursor = self.web.contentCursor;

@@ -6,6 +6,27 @@ ClawTab collects your coding agents' questions, permission prompts, updates, and
 
 [Watch the 66-second demo](https://cdn.clawtab.cc/assets/home/message-bar-hero-v12e-narrated.mp4).
 
+## Markdown bodies
+
+Desktop and mobile messages render Markdown: paragraphs, lists, headings, bold,
+emphasis, inline code, fenced code blocks, quotes, tables, and links. Bare web
+URLs are clickable. Keep titles plain text. Use short paragraphs or bullets,
+backticks around paths and commands, and descriptive link labels. Add images
+and videos through the attachment options.
+
+For multiline messages, pass a JSON body through a quoted heredoc:
+
+```sh
+cwt message send --stdin <<'JSON'
+{
+  "title": "Review X browsing recordings",
+  "body": "Open **Plugins > Built in > Recordings**.\n\n- Select the X collection sessions.\n- Check search, scrolling, and opened replies.\n- Compare the [collection dashboard](https://example.com/dashboard).\n\nFiles: `/Volumes/sam/movies/bmux/observations/`",
+  "kind": "update",
+  "template": "update"
+}
+JSON
+```
+
 ## Get started on macOS
 
 The message bar requires macOS 12 or later. Install the daemon and CLI, then start the background service:

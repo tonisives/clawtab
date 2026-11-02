@@ -76,7 +76,7 @@ button.auto-yes-button{width:100%;min-height:44px;padding:8px 16px;border-radius
 .message-thread{max-height:35dvh}
 .details-content{max-height:50dvh}
 `)
-    .replace("/* NFN_JS */", read("surface.js") + "\n" + ["messageSurfacePaging.js", "messageSurfaceViewport.js"]
+    .replace("/* NFN_JS */", ["vendor/marked.js", "vendor/purify.js", "markdown.js", "surface.js"].map(read).join("\n") + "\n" + ["messageSurfacePaging.js", "messageSurfaceViewport.js"]
       .map(name => fs.readFileSync(path.resolve(__dirname, "../src/lib", name), "utf8")).join("\n"));
 }
 
