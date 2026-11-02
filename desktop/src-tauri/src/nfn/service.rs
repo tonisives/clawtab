@@ -1403,6 +1403,15 @@ fn resumable_notice(record: &NfnRecord) -> bool {
         || (record.request.deliver_at.is_some() && record.request.source.session_id.is_some())
 }
 
+fn requires_live_source(record: &NfnRecord) -> bool {
+    // Successful job cards belong to the agent that produced them. Failed job
+    // recovery and scheduled reminders remain available after the process exits.
+    !resumable_notice(record)
+        || (job_notice(record)
+            && record.request.kind == "completed"
+            && record.request.source.pane_id.is_some())
+}
+
 fn prepare_reminder(request: &mut NfnRequest, timestamp: i64) -> Result<(), String> {
     let Some(due) = request.deliver_at else {
         return Ok(());
@@ -1505,7 +1514,7 @@ fn refresh_pending_record(
             return false;
         }
         record.status = "resolved".into();
-    } else if resumable_notice(record) || record.request.deliver_at.is_some() {
+    } else if !requires_live_source(record) || record.request.deliver_at.is_some() {
         return false;
     } else if record.request.source.pane_id.is_some() && !source_valid(&record.request.source) {
         record.status = "expired".into();
@@ -2087,7 +2096,9 @@ fn invalid_pending_sources(records: &[NfnRecord]) -> HashSet<String> {
     records
         .iter()
         .filter(|record| {
-            record.status == "pending" && record.question_id.is_none() && !resumable_notice(record)
+            record.status == "pending"
+                && record.question_id.is_none()
+                && requires_live_source(record)
         })
         .filter(|record| validator.validate(&record.request.source).is_err())
         .map(|record| record.id.clone())
@@ -2105,7 +2116,7 @@ fn closed_pending_sources(
                 && record.dismissed_at.is_none()
                 && !record.ignored
                 && record.question_id.is_none()
-                && !resumable_notice(record)
+                && requires_live_source(record)
         })
         .filter_map(|record| {
             let pane = record.request.source.pane_id.as_deref()?;
@@ -2394,6 +2405,69 @@ mod tests {
     }
 
     #[test]
+    fn successful_job_cards_expire_when_the_agent_stops_even_if_the_pane_stays_open() {
+        let source = NfnSource {
+            pane_id: Some("%10".into()),
+            pane_pid: Some("100".into()),
+            agent_pid: Some("200".into()),
+            provider: Some("codex".into()),
+            session_id: Some("conversation".into()),
+            ..Default::default()
+        };
+        for read_at in [None, Some(now())] {
+            let mut record = pending_permission();
+            record.question_id = None;
+            record.read_at = read_at;
+            record.request = job_request("project/job", "completed", Some("run"), source.clone());
+            assert!(requires_live_source(&record));
+            assert!(closed_pending_sources(&[record.clone()], || Ok("%10\n".into())).is_empty());
+            assert_eq!(
+                closed_pending_sources(&[record.clone()], || Ok("%11\n".into())),
+                HashSet::from([record.id.clone()])
+            );
+            assert!(!refresh_pending_record(
+                &mut record,
+                None,
+                &HashSet::new(),
+                now(),
+                |_| true
+            ));
+            // Exiting Codex leaves the shell and its tmux pane alive.
+            let shell = NfnSource {
+                pane_id: source.pane_id.clone(),
+                pane_pid: source.pane_pid.clone(),
+                ..Default::default()
+            };
+            assert!(refresh_pending_record(
+                &mut record,
+                None,
+                &HashSet::new(),
+                now(),
+                |saved| { same_source(saved, &shell) }
+            ));
+            assert_eq!(record.status, "expired");
+            assert_eq!(record.read_at, read_at);
+            assert!(!record.pending());
+        }
+        let mut unbound = pending_permission();
+        unbound.question_id = None;
+        unbound.request = job_request(
+            "project/job",
+            "completed",
+            Some("run"),
+            NfnSource::default(),
+        );
+        assert!(!requires_live_source(&unbound));
+        assert!(!refresh_pending_record(
+            &mut unbound,
+            None,
+            &HashSet::new(),
+            now(),
+            |_| false
+        ));
+    }
+
+    #[test]
     fn closed_tmux_windows_expire_completions_before_the_identity_scan() {
         let directory = tempfile::tempdir().unwrap();
         let store = Store::open(&directory.path().join("notifications.sqlite")).unwrap();
@@ -2448,13 +2522,13 @@ mod tests {
     }
 
     #[test]
-    fn closed_pane_scan_skips_prompts_jobs_and_managed_sessions() {
+    fn closed_pane_scan_skips_prompts_failed_jobs_and_managed_sessions() {
         let prompt = pending_permission();
         let mut job = prompt.clone();
         job.question_id = None;
         job.request = job_request(
             "project/job",
-            "completed",
+            "failed",
             Some("run"),
             NfnSource {
                 pane_id: Some("%10".into()),
