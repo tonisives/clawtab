@@ -10,14 +10,22 @@ if (__SMOOTH_SCROLL__) {
   var output = document.createElement('pre');
   output.style.cssText = 'margin:0;min-height:100%;box-sizing:border-box;padding:8px;color:#e4e4e4;white-space:pre-wrap;overflow-wrap:anywhere;-webkit-user-select:text;user-select:text;font-family:monospace;font-size:14px;line-height:1.2';
   scroller.append(output); document.body.append(scroller);
-  var dirty = true, scheduled = false;
+  var dirty = true, scheduled = false, holding = false, releaseTimer = null, pendingOffset = 0;
+  function protectedSelection() { return holding || hasSelection(); }
+  function releaseSelectionGesture() {
+    clearTimeout(releaseTimer);
+    releaseTimer = setTimeout(function() {
+      holding = false;
+      if (!hasSelection()) { window.setVisualOffset(pendingOffset); if (dirty) scheduleOutput(); }
+    }, 1000);
+  }
   function hasSelection() {
     var selection = window.getSelection();
     return selection && !selection.isCollapsed && (output.contains(selection.anchorNode) || output.contains(selection.focusNode));
   }
   function paintOutput() {
     scheduled = false;
-    if (!dirty || hasSelection()) return;
+    if (!dirty || protectedSelection()) return;
     dirty = false;
     output.style.fontSize = term.options.fontSize + 'px';
     output.style.fontFamily = term.options.fontFamily;
@@ -72,7 +80,7 @@ if (__SMOOTH_SCROLL__) {
     if (!scheduled) { scheduled = true; setTimeout(paintOutput, 100); }
   }
   term.onWriteParsed(scheduleOutput);
-  document.addEventListener('selectionchange', function() { if (!hasSelection() && dirty) scheduleOutput(); });
+  document.addEventListener('selectionchange', function() { if (!protectedSelection()) { window.setVisualOffset(pendingOffset); if (dirty) scheduleOutput(); } });
   var scrollTime = 0, scrollY = null;
   scroller.addEventListener('touchmove', function(e) {
     var y = e.touches[0].clientY, now = Date.now();
@@ -83,13 +91,16 @@ if (__SMOOTH_SCROLL__) {
     scrollY = y;
   }, {passive:true});
   var origin = null;
-  scroller.addEventListener('touchstart', function(e) { var t = e.touches[0]; origin = {x:t.clientX,y:t.clientY,time:Date.now()}; scrollY = t.clientY; }, {passive:true});
+  scroller.addEventListener('touchstart', function(e) { var t = e.touches[0]; origin = {x:t.clientX,y:t.clientY,time:Date.now()}; scrollY = t.clientY; clearTimeout(releaseTimer); holding = true; }, {passive:true});
   scroller.addEventListener('touchend', function(e) {
-    var t = e.changedTouches[0], start = origin; origin = null;
+    var t = e.changedTouches[0], start = origin; origin = null; releaseSelectionGesture();
     if (start && Date.now()-start.time < 300 && Math.hypot(t.clientX-start.x,t.clientY-start.y) < 8 && !hasSelection())
       window.ReactNativeWebView.postMessage(JSON.stringify({type:'focus'}));
   }, {passive:true});
+  scroller.addEventListener('touchcancel', function() { origin = null; releaseSelectionGesture(); }, {passive:true});
   window.setVisualOffset = function(px) {
+    pendingOffset = px;
+    if (protectedSelection()) return;
     var follow = scroller.scrollHeight-scroller.scrollTop-scroller.clientHeight < 40;
     scroller.style.bottom = Math.max(0, px) + 'px';
     if (follow) scroller.scrollTop = scroller.scrollHeight;

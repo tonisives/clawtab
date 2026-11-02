@@ -24,6 +24,19 @@
     }
   }
   window.nfnMobile = {
+    setActive(active) {
+      pointer = null; swipe = null;
+      window.nfnPaging?.finish();
+      window.getSelection?.()?.removeAllRanges();
+      for (const logs of document.querySelectorAll?.(".logs") || []) logs._selecting = false;
+      if (!active) document.activeElement?.blur?.();
+      const reset = () => {
+        window.scrollTo?.(0, 0);
+        if (document.scrollingElement) document.scrollingElement.scrollTop = 0;
+        schedule();
+      };
+      reset(); requestAnimationFrame(reset);
+    },
     setInsets(bottom, keyboard) {
       safeBottom = Math.max(0, bottom);
       nativeKeyboard = keyboard;

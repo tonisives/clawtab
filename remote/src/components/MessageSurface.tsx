@@ -1,3 +1,4 @@
+import { useIsFocused } from "expo-router/react-navigation";
 import { MessageTextSelection } from "./MessageTextSelection";
 import { messageSelectionScript } from "../lib/messageSelection";
 import { NotificationChrome, initialNotificationChrome, type NotificationChromeState } from "./NotificationChrome";
@@ -13,6 +14,9 @@ import { TerminalKeyboardToolbar } from "./TerminalKeyboardToolbar";
 import { TerminalWriteDialog } from "./TerminalWriteDialog";
 
 export function MessageSurface(props: MessageSurfaceProps) {
+  const focused = useIsFocused();
+  const focusedRef = useRef(focused);
+  focusedRef.current = focused;
   const [selectionText, setSelectionText] = useState<string | null>(null);
   const selectingText = useRef(false);
   const [chrome, setChrome] = useState(initialNotificationChrome);
@@ -36,8 +40,11 @@ export function MessageSurface(props: MessageSurfaceProps) {
     const json = JSON.stringify(value).replace(/</g, "\\u003c").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
     view.current?.injectJavaScript(`window.nfn?.receive(${json});true;`);
   }, []);
+  useEffect(() => {
+    if (ready.current) send({ type: "mobile_visibility", active: focused });
+  }, [focused, send]);
   const action = useCallback((action: string) => {
-    if (action === "reply_focus" && selectingText.current) return;
+    if (action === "reply_focus" && (selectingText.current || !focusedRef.current)) return;
     if (action === "select_text") {
       setTerminalMenuOpen(false); setWriteOpen(false);
       selectingText.current = true;
@@ -54,13 +61,13 @@ export function MessageSurface(props: MessageSurfaceProps) {
   const sendTerminalText = useCallback((text: string) => send({ type: "mobile_action", action: "shell_input", text }), [send]);
   useEffect(() => {
     if (!chrome.reply) { setTerminalMenuOpen(false); setWriteOpen(false); return; }
-    if (!writeOpen && selectionText === null && !selectingText.current) {
+    if (focused && !writeOpen && selectionText === null && !selectingText.current) {
       const timer = setTimeout(() => action("reply_focus"), 350);
       return () => clearTimeout(timer);
     }
-  }, [action, chrome.reply, writeOpen, selectionText]);
+  }, [action, chrome.reply, writeOpen, selectionText, focused]);
   const synchronize = useCallback(() => {
-    if (!ready.current) return;
+    if (!ready.current || !focusedRef.current) return;
     if (latest.current.active === false) {
       if (selected.current !== "inactive") send({ type: "hide" });
       selected.current = "inactive";
@@ -76,13 +83,13 @@ export function MessageSurface(props: MessageSurfaceProps) {
       send({ type: defaultView }); selected.current = defaultView;
     }
   }, [send]);
-  useEffect(synchronize, [props.snapshot, props.selection, props.active, selectionText, synchronize]);
+  useEffect(synchronize, [props.snapshot, props.selection, props.active, selectionText, focused, synchronize]);
 
   const receive = async (raw: string) => {
     let value: SurfaceMessage;
     try { value = JSON.parse(raw).nfn; } catch { return; }
     if (!value) return;
-    if (value.preview_ready) { ready.current = true; selected.current = null; synchronize(); applyInsets(); }
+    if (value.preview_ready) { ready.current = true; selected.current = null; send({ type: "mobile_visibility", active: focusedRef.current }); synchronize(); applyInsets(); }
     if (value.native === "selection_text" && selectingText.current && typeof value.text === "string") setSelectionText(value.text);
     if (value.native === "chrome" && !selectingText.current) setChrome(value as unknown as NotificationChromeState);
     if (value.native) latest.current.onNative?.(value);
@@ -93,7 +100,7 @@ export function MessageSurface(props: MessageSurfaceProps) {
 
   return <View ref={keyboard.host} onLayout={keyboard.onLayout} style={{ flex: 1, minHeight: 0, backgroundColor: "#161616", paddingBottom: chrome.reply && selectionText === null ? Math.max(keyboard.overlap, insets.bottom) : keyboard.overlap, paddingLeft: keyboard.horizontalInsets.left, paddingRight: keyboard.horizontalInsets.right }}>
     <WebView<object> ref={view} source={source.current.value} style={{ flex: 1, backgroundColor: "#161616", display: selectionText === null ? "flex" : "none" }}
-    textInteractionEnabled dataDetectorTypes="none"
+    scrollEnabled={false} textInteractionEnabled dataDetectorTypes="none"
     javaScriptEnabled originWhitelist={["*"]} allowsInlineMediaPlayback mediaPlaybackRequiresUserAction
     keyboardDisplayRequiresUserAction={false} hideKeyboardAccessoryView
     automaticallyAdjustContentInsets={false} contentInsetAdjustmentBehavior="never" bounces={false}

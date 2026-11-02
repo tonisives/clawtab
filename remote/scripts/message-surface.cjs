@@ -66,7 +66,7 @@ button.auto-yes-button{min-height:44px;padding:8px 16px;border-radius:999px}
 .native-mobile.shell-reply .message-content>:not(.details-content){display:none}
 .native-mobile.shell-reply .details-content{margin:0;min-height:0;flex:1;overflow-y:auto;overflow-x:hidden}
 .native-mobile.shell-reply .block-label{display:none}
-.shell-keyboard{position:absolute;width:1px;height:1px;opacity:0;left:0;top:0;font-size:16px}
+.shell-keyboard{position:fixed;width:1px;height:1px;opacity:0;left:12px;top:12px;font-size:16px}
 .todo-add[hidden]{display:none}
 .message{max-height:35dvh}
 .message-thread{max-height:35dvh}

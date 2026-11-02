@@ -1,3 +1,4 @@
+import { cacheMessageShell } from "../lib/cacheMessageShell";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "expo-router";
 import { Platform, Text, View } from "react-native";
@@ -117,7 +118,9 @@ export function MessageInbox({ selection, popup = false, active = true, arrival,
     return () => { mounted = false; clearInterval(timer); };
   }, [todoMachine?.id, todoMachine?.online, active]);
   const command = useCallback(async (command: Record<string, unknown>) => {
-    return isMessageTodoCommand(command) ? todoCommand(command) : controller.execute(command);
+    const value = await (isMessageTodoCommand(command) ? todoCommand(command) : controller.execute(command));
+    if (command.op === "context") cacheMessageShell(value);
+    return value;
   }, [controller, todoCommand]);
   const snapshot = useMemo(() => ({
     type: "snapshot", remote: true, native_chrome: Platform.OS !== "web" && !popup, visible: active, preview: false, arrival: popup && active ? arrival : undefined,

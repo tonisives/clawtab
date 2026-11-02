@@ -59,6 +59,26 @@ test("background taps dismiss editing while controls and scrolling keep their in
   v.tap(false); assert.equal(v.document.activeElement, null);
 });
 
+test("returning from details clears stale selection and outer scroll without replacing shell content", () => {
+  const v = viewport();
+  let cleared = 0, resets = [];
+  v.window.getSelection = () => ({ removeAllRanges: () => cleared++ });
+  v.window.scrollTo = (x, y) => resets.push([x, y]);
+  v.document.scrollingElement = { scrollTop: 180 };
+  const logs = { _selecting: true };
+  v.document.querySelectorAll = () => [logs];
+  v.document.activeElement = v.field;
+  v.window.nfnMobile.setActive(false); v.flush();
+  assert.equal(v.document.activeElement, null);
+  assert.equal(v.document.scrollingElement.scrollTop, 0);
+  assert.equal(logs._selecting, false, "a cancelled native gesture cannot leave the old shell locked");
+  v.document.scrollingElement.scrollTop = 220;
+  v.window.nfnMobile.setActive(true); v.flush();
+  assert.equal(v.document.scrollingElement.scrollTop, 0);
+  assert.equal(cleared, 2);
+  assert.ok(resets.every(([x, y]) => x === 0 && y === 0));
+});
+
 function nativeKeyboard({ bottomAnchored = true, current } = {}) {
   const ts = require("../desktop/node_modules/typescript");
   const events = {}, cleanups = [], values = [], refs = [], animations = [], exports = {};
