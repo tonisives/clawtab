@@ -1,16 +1,21 @@
 import XCTest
 
 final class InlineSelectionTests: XCTestCase {
-    func testInlineColoredAndPlainSelection() {
+    func testInlineColoredSelection() {
         let app = XCUIApplication(bundleIdentifier: "cc.clawtab.selection-runtime")
         app.launch()
         exerciseInlineSelection(app)
+    }
+    func testInlinePlainSelection() {
+        let app = XCUIApplication(bundleIdentifier: "cc.clawtab.selection-runtime")
+        app.launch()
         app.buttons["Plain"].tap()
         exerciseInlineSelection(app)
     }
 
     private func exerciseInlineSelection(_ app: XCUIApplication) {
-        let output = app.webViews.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Selection")).firstMatch
+        app.buttons["Clear"].tap()
+        let output = app.webViews.staticTexts.matching(NSPredicate(format: "label == %@ OR label BEGINSWITH %@", "Selection", "Selection starts here")).firstMatch
         XCTAssertTrue(output.waitForExistence(timeout: 20), app.debugDescription)
         output.tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
@@ -20,7 +25,7 @@ final class InlineSelectionTests: XCTestCase {
         XCTAssertTrue(copy.waitForExistence(timeout: 5), "Inline selection must produce a native Copy menu: \(app.debugDescription)")
         copy.tap()
         app.buttons["Read clipboard"].tap()
-        XCTAssertEqual(app.staticTexts["Clipboard contents"].value as? String, "Selection")
+        XCTAssertEqual(app.staticTexts["Clipboard contents"].firstMatch.value as? String, "Selection")
     }
 }
 
@@ -36,7 +41,8 @@ final class RuntimeSelectionTests: XCTestCase {
     }
 
     private func exerciseSelection(_ app: XCUIApplication, keyboard: Bool) {
-        let output = app.webViews.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Selection")).firstMatch
+        app.buttons["Clear"].tap()
+        let output = app.webViews.staticTexts.matching(NSPredicate(format: "label == %@ OR label BEGINSWITH %@", "Selection", "Selection starts here")).firstMatch
         XCTAssertTrue(output.waitForExistence(timeout: 20), app.debugDescription)
         if keyboard {
             output.tap()
@@ -54,7 +60,7 @@ final class RuntimeSelectionTests: XCTestCase {
         copy.tap()
         app.buttons["Done"].tap()
         app.buttons["Read clipboard"].tap()
-        let clipboard = app.staticTexts["Clipboard contents"]
+        let clipboard = app.staticTexts["Clipboard contents"].firstMatch
         let copied = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             clipboard.label == "Selection" || clipboard.value as? String == "Selection"
         }, object: nil)

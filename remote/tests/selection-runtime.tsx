@@ -21,6 +21,7 @@ function Screen({ details = false }: { details?: boolean }) {
     <View style={{ flexDirection: "row" }}>
       {!details ? <Button title="Details" onPress={() => router.push("/details")} /> : null}
       <Button title="Read clipboard" onPress={() => { void Clipboard.getStringAsync().then(setCopied); }} />
+      <Button title="Clear" onPress={() => { setCopied(""); void Clipboard.setStringAsync(""); }} />
       <Button title="Plain" onPress={() => setPlain(true)} />
     </View>
     <Text accessible accessibilityLabel="Clipboard contents" accessibilityValue={{ text: copied }} style={{ color: "white", height: 24 }}>{copied}</Text>

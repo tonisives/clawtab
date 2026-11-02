@@ -15,5 +15,6 @@ export function messageSurfaceInitialDocument(document: string, props: {
     ? { type: "open_record", id: props.selection, popup: props.popup }
     : { type: messageSurfaceDefaultView(props.snapshot) }];
   const json = JSON.stringify(values).replace(/</g, "\\u003c").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
-  return document.replace("</body>", `<script>for(const value of ${json})window.nfn.receive(value);</script></body>`);
+  return document.replace(/<\/body>\s*<\/html>\s*$/i,
+    closing => `<script>for(const value of ${json})window.nfn.receive(value);</script>${closing}`);
 }

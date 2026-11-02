@@ -22,4 +22,4 @@ document.addEventListener('selectionchange',report);
 window.reportSelection=report;
 setTimeout(report,700);
 `;
-fs.writeFileSync(path.join(__dirname, 'App/fixture.html'), messageDocument().replace('</body>', '<script>'+setup+'</script></body>'));
+fs.writeFileSync(path.join(__dirname, 'App/fixture.html'), messageDocument().replace(/<\/body>\s*<\/html>\s*$/i, closing => '<script>'+setup+'</script>'+closing));

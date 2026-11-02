@@ -414,6 +414,18 @@ test("initial message data cannot terminate the bootstrap script and inactive po
   assert.equal(messageSurfaceInitialDocument(document, { snapshot: {}, active: false }), document);
 });
 
+test("bootstrap follows vendor scripts containing body tags and preserves replacement tokens", () => {
+  const { messageSurfaceInitialDocument } = load("messageSurfaceBootstrap");
+  const vendor = '<script>window.vendor="</body></html>";</script>';
+  const document = `<html><body>${vendor}</body></html>\n`;
+  const html = messageSurfaceInitialDocument(document, { snapshot: { type: "snapshot", text: "$& $` $'" } });
+  assert.ok(html.includes(vendor), "vendor JavaScript remains intact");
+  const sent = [], window = { nfn: { receive: value => sent.push(value) } };
+  for (const script of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) vm.runInNewContext(script[1], { window });
+  assert.equal(window.vendor, "</body></html>");
+  assert.equal(sent[0].text, "$& $` $'");
+});
+
 for (const variant of ["MessageSurface.web.tsx", "MessageSurface.tsx"]) {
   test(`${variant}: clearing and restoring a deep link cannot retain the previous message`, () => {
     const refs = [], effects = [], sent = [];

@@ -46,7 +46,7 @@ the returned `.xctestrun` using `xcodebuild test-without-building -xctestrun PAT
 -destination id=DEVICE_ID -parallel-testing-enabled NO`. This step does no
 compilation. Shut down and delete the dedicated simulator afterwards.
 Use `-skip-testing:ShellSelectionUITests/RuntimeSelectionTests` for just the
-UIKit fixture tests.
+UIKit fixture tests, also skipping `ShellSelectionUITests/InlineSelectionTests`.
 
 The app's `--legacy-web-input` launch argument restores the hidden WebView
 textarea. On iOS 26.5 that configuration reproduces the original failure:
