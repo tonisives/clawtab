@@ -1,11 +1,21 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { TerminalKeyboardToolbar } from "./TerminalKeyboardToolbar";
+import { TerminalWriteDialog } from "./TerminalWriteDialog";
 import document from "../lib/messageSurfaceDocument.generated";
 import { messageSurfaceDefaultView, messageSurfaceInitialDocument } from "../lib/messageSurfaceBootstrap";
 import type { MessageSurfaceProps, SurfaceMessage } from "./messageSurfaceTypes";
 
 export function MessageSurface(props: MessageSurfaceProps) {
   const source = useRef<string | null>(null);
-  if (source.current === null) source.current = messageSurfaceInitialDocument(document, props);
+  if (source.current === null) {
+    source.current = messageSurfaceInitialDocument(document, props);
+    if (props.snapshot.shell_only) source.current = source.current.replace("<script>",
+      '<script>window.ReactNativeWebView={postMessage:raw=>window.parent.postMessage(JSON.parse(raw),"*")};');
+  }
+  const [reply, setReply] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [writeOpen, setWriteOpen] = useState(false);
+  const [draft, setDraft] = useState("");
   const frame = useRef<HTMLIFrameElement>(null);
   const latest = useRef(props);
   latest.current = props;
@@ -62,6 +72,7 @@ export function MessageSurface(props: MessageSurfaceProps) {
     const receive = async (event: MessageEvent) => {
       if (event.source !== frame.current?.contentWindow || !event.data?.nfn) return;
       const value = event.data.nfn as SurfaceMessage;
+      if (value.native === "chrome") setReply(Boolean((value as SurfaceMessage & { reply?: boolean }).reply));
       if (value.preview_ready) { ready.current = true; selected.current = null; synchronize(); }
       if (value.native) latest.current.onNative?.(value);
       if (!value.command || !value.token) return;
@@ -73,7 +84,19 @@ export function MessageSurface(props: MessageSurfaceProps) {
   }, [send, synchronize]);
   useEffect(synchronize, [props.snapshot, props.selection, props.active, synchronize]);
 
-  return <iframe ref={frame} title="Messages" sandbox="allow-scripts" srcDoc={source.current}
+  const iframe = <iframe ref={frame} title="Messages" sandbox="allow-scripts" srcDoc={source.current}
     style={{ display: "block", width: "100%", height: "100%", flex: 1, minHeight: 0, border: 0, background: "#161616" }}
     onLoad={() => { ready.current = true; selected.current = null; synchronize(); }} />;
+  if (!props.snapshot.shell_only) return iframe;
+  const input = (text: string) => send({ type: "mobile_action", action: "shell_input", text });
+  return <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+    {iframe}
+    {reply ? <TerminalKeyboardToolbar bottom={0} inline dismissIcon="close"
+      onDismiss={() => send({ type: "mobile_action", action: "reply_close" })} onSend={input}
+      onWrite={() => { setMenuOpen(false); setWriteOpen(true); }} menuOpen={menuOpen} onMenuOpenChange={setMenuOpen} /> : null}
+    <TerminalWriteDialog visible={writeOpen} draft={draft} onDraftChange={setDraft} onClose={() => setWriteOpen(false)} onDone={() => {
+      const text = draft.replace(/\r\n|\n/g, "\r"); input(text.endsWith("\r") ? text : text + "\r");
+      setDraft(""); setWriteOpen(false);
+    }} />
+  </div>;
 }

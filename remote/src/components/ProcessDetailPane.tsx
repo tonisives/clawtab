@@ -1,8 +1,7 @@
-import type { ComponentRef } from "react";
+import { ShellSurface } from "./ShellSurface";
 import { toggleAutoYes } from "../lib/autoYes"
-import { MachineTerminalControls } from "@clawtab/shared";
 import { useCallback, useEffect, useRef, useState, useMemo } from "react"
-import { Platform, View, Text, TextInput, StyleSheet, ActivityIndicator, TouchableOpacity, Keyboard } from "react-native"
+import { Platform, View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Keyboard } from "react-native"
 import { useRouter } from "expo-router"
 import { useLandscapeShellStore } from "../store/landscapeShell"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
@@ -10,10 +9,8 @@ import { useJobsStore } from "../store/jobs"
 import { useNotificationStore } from "../store/notifications"
 import { usePinsStore } from "../store/pins"
 import { useMachineStatus } from "../hooks/useMachineStatus";
-import { JobDetailView, StatusBadge, encodeTerminalInput, findYesOption, XtermLog, colors, spacing } from "@clawtab/shared"
-import type { XtermLogHandle } from "@clawtab/shared"
+import { JobDetailView, StatusBadge, findYesOption, colors, spacing } from "@clawtab/shared"
 import { getWsSend, nextId } from "../lib/wsRuntime"
-import { usePty } from "../hooks/usePty"
 import { registerRequest } from "../lib/useRequestMap"
 import { alertError } from "../lib/platform"
 import { stopSession } from "../lib/stopSession"
@@ -21,10 +18,6 @@ import type { Transport, RemoteJob, JobStatus } from "@clawtab/shared"
 import { useAgentActions } from "../hooks/useAgentActions"
 import { useLandscapeTerminalHeader } from "../hooks/useLandscapeTerminalHeader"
 import { TerminalHeaderActions } from "./TerminalHeaderActions"
-import { TerminalCopySheet } from "./TerminalCopySheet"
-import { TerminalKeyboardToolbar, TERMINAL_KEYBOARD_TOOLBAR_HEIGHT } from "./TerminalKeyboardToolbar"
-import { TerminalWriteDialog } from "./TerminalWriteDialog"
-import { useTerminalKeyboard } from "../hooks/useTerminalKeyboard"
 
 function createProcessTransport(paneId: string, onStopped?: () => void): Transport {
   const noop = async () => {}
@@ -215,73 +208,14 @@ export function ProcessDetailPane({ paneId, onClose, embedded = false }: Process
   }, [paneId, stopping, transport])
 
 
-  // PTY streaming terminal
-  const termRef = useRef<XtermLogHandle | null>(null)
-  const keyboardDismissRef = useRef<ComponentRef<typeof TextInput> | null>(null)
-  const tmuxSession = activeProcess?.tmux_session ?? ""
-  const { sendInput, sendResize, connecting: ptyConnecting, error: ptyError } = usePty(paneId, tmuxSession, termRef)
   const landscapeHeader = useLandscapeTerminalHeader(!!activeProcess)
-  const [copyText, setCopyText] = useState<string | null>(null)
-  const [terminalMenuOpen, setTerminalMenuOpen] = useState(false)
-  const [writeOpen, setWriteOpen] = useState(false)
-  const [writeDraft, setWriteDraft] = useState("")
-  const [optionOverlayHeight, setOptionOverlayHeight] = useState(0)
-  const { keyboardVisible, keyboardHeight, terminalSurfaceRef, handleTerminalLayout } = useTerminalKeyboard({
-    termRef,
-    menuOpen: terminalMenuOpen,
-    toolbarHeight: TERMINAL_KEYBOARD_TOOLBAR_HEIGHT,
-    extraClearance: 10,
-    overlayHeight: optionOverlayHeight,
-  })
-  const sendTerminalText = useCallback((text: string) => {
-    if (text) sendInput(encodeTerminalInput(text))
-  }, [sendInput])
-  const dismissTerminalKeyboard = useCallback(() => {
-    termRef.current?.blur()
-    keyboardDismissRef.current?.focus()
-    setTimeout(() => {
-      keyboardDismissRef.current?.blur()
-      Keyboard.dismiss()
-    }, 30)
-  }, [])
-  const handleTerminalMenuOpenChange = useCallback((open: boolean) => {
-    setTerminalMenuOpen(open)
-    if (open) setTimeout(() => termRef.current?.focus(), 0)
-  }, [])
   const zoomToFullScreen = useCallback(() => {
-    termRef.current?.blur()
     Keyboard.dismiss()
     useLandscapeShellStore.getState().showFullScreen({ kind: "process", paneId })
     router.push({ pathname: "/process/[pane_id]", params: { pane_id: paneId.replace(/%/g, "_pct_"), fromSplit: "1" } })
   }, [paneId, router])
 
-  const renderTerminal = useCallback(
-    () => (
-      <View style={{ flex: 1, minHeight: 0 }}>
-        {ptyConnecting || ptyError ? (
-          <View style={styles.ptyConnecting}>
-            {ptyConnecting ? <ActivityIndicator size="small" color={colors.accent} /> : null}
-            <Text style={styles.ptyConnectingText}>
-              {ptyError ?? "Connecting to terminal..."}
-            </Text>
-          </View>
-        ) : null}
-        {Platform.OS === "android" && <MachineTerminalControls paneId={paneId} />}
-        <View ref={terminalSurfaceRef} style={styles.terminalSurface} onLayout={handleTerminalLayout}>
-          <XtermLog
-            ref={termRef}
-            onData={sendInput}
-            onResize={sendResize}
-            interactive
-            forceDarkTheme
-            onScrollGesture={landscapeHeader.onScrollGesture}
-            onLongPressCopyText={setCopyText}
-          />
-        </View>
-      </View>
-    ),
-    [sendInput, sendResize, ptyConnecting, ptyError, landscapeHeader.onScrollGesture, handleTerminalLayout, terminalSurfaceRef],
-  )
+  const renderTerminal = useCallback(() => <ShellSurface paneId={paneId} onScrollGesture={landscapeHeader.onScrollGesture} />, [paneId, landscapeHeader.onScrollGesture])
 
   // Keep the terminal and its stop action available through login, startup, and shell prompts.
   const isAlive = !!activeProcess
@@ -351,7 +285,6 @@ export function ProcessDetailPane({ paneId, onClose, embedded = false }: Process
         expandOutput
         hideInfoPanels={landscapeHeader.isLandscape}
         options={paneQuestion?.options}
-        questionContext={paneQuestion?.context_lines}
         renderTerminal={isAlive ? renderTerminal : undefined}
         hideMessageInput={isAlive}
         agentAlert={activeProcess?._agent_alert}
@@ -378,31 +311,8 @@ export function ProcessDetailPane({ paneId, onClose, embedded = false }: Process
         paneOverviewVisible={showPaneOverview}
         onPaneOverviewVisibleChange={setShowPaneOverview}
         optionBarBottomInset={insets.bottom}
-        onTerminalOverlayHeightChange={setOptionOverlayHeight}
+        terminalOptionsOverlay={false}
       />
-      {isAlive && (keyboardVisible || terminalMenuOpen) ? (
-        <TerminalKeyboardToolbar
-          bottom={keyboardVisible ? keyboardHeight : insets.bottom}
-          onDismiss={dismissTerminalKeyboard}
-          onSend={sendTerminalText}
-          onWrite={() => { setTerminalMenuOpen(false); setWriteOpen(true) }}
-          menuOpen={terminalMenuOpen}
-          onMenuOpenChange={handleTerminalMenuOpenChange}
-        />
-      ) : null}
-      <TerminalWriteDialog
-        visible={writeOpen}
-        draft={writeDraft}
-        onDraftChange={setWriteDraft}
-        onClose={() => setWriteOpen(false)}
-        onDone={() => {
-          const value = writeDraft.replace(/\r\n|\n/g, "\r")
-          sendTerminalText(value.endsWith("\r") ? value : value + "\r")
-          setWriteOpen(false)
-        }}
-      />
-      <TerminalCopySheet text={copyText} onClose={() => setCopyText(null)} />
-      <TextInput ref={keyboardDismissRef} style={styles.keyboardDismissSink} showSoftInputOnFocus={false} caretHidden autoCorrect={false} autoCapitalize="none" />
     </View>
   )
 }
@@ -454,26 +364,4 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: 8,
   },
-  ptyConnecting: {
-    flexDirection: "row" as const,
-    alignItems: "center" as const,
-    justifyContent: "center" as const,
-    gap: 8,
-    paddingVertical: 8,
-    backgroundColor: colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  ptyConnectingHidden: {
-    height: 0,
-    paddingVertical: 0,
-    borderBottomWidth: 0,
-    overflow: "hidden",
-  },
-  ptyConnectingText: {
-    color: colors.textMuted,
-    fontSize: 12,
-  },
-  terminalSurface: { flex: 1, minHeight: 0 },
-  keyboardDismissSink: { position: "absolute", width: 1, height: 1, opacity: 0, bottom: 0, left: 0 },
 })

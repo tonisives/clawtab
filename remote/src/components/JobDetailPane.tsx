@@ -1,8 +1,7 @@
-import type { ComponentRef } from "react";
+import { ShellSurface } from "./ShellSurface";
 import { toggleAutoYes } from "../lib/autoYes"
-import { MachineTerminalControls } from "@clawtab/shared";
-import { useCallback, useEffect, useRef, useState } from "react"
-import { Platform, View, Text, TextInput, StyleSheet, ActivityIndicator, TouchableOpacity, Keyboard } from "react-native"
+import { useCallback, useEffect, useState } from "react"
+import { Platform, View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Keyboard } from "react-native"
 import { useRouter } from "expo-router"
 import { useLandscapeShellStore } from "../store/landscapeShell"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
@@ -10,10 +9,8 @@ import { useJobsStore, useJob, useJobStatus } from "../store/jobs"
 import { useRunsStore } from "../store/runs"
 import { useNotificationStore } from "../store/notifications"
 import { useWsStore } from "../store/ws"
-import { JobDetailView, compactPath, encodeTerminalInput, findYesOption, StatusBadge, XtermLog } from "@clawtab/shared"
-import type { XtermLogHandle } from "@clawtab/shared"
+import { JobDetailView, compactPath, findYesOption, StatusBadge } from "@clawtab/shared"
 import { useLogs } from "../hooks/useLogs"
-import { usePty } from "../hooks/usePty"
 import { createWsTransport } from "../transport/wsTransport"
 import { getWsSend, nextId } from "../lib/wsRuntime"
 import { registerRequest } from "../lib/useRequestMap"
@@ -22,11 +19,7 @@ import type { AgentModelOption, JobUpdate, ProcessProvider, RemoteJob, RunRecord
 import { buildModelOptions } from "../lib/agentModels"
 import { useLandscapeTerminalHeader } from "../hooks/useLandscapeTerminalHeader"
 import { TerminalHeaderActions } from "./TerminalHeaderActions"
-import { TerminalCopySheet } from "./TerminalCopySheet"
-import { TerminalKeyboardToolbar, TERMINAL_KEYBOARD_TOOLBAR_HEIGHT } from "./TerminalKeyboardToolbar"
-import { TerminalWriteDialog } from "./TerminalWriteDialog"
 import { useAgentActions } from "../hooks/useAgentActions"
-import { useTerminalKeyboard } from "../hooks/useTerminalKeyboard"
 
 const wsTransport = createWsTransport()
 const AGENT_PROVIDERS: ProcessProvider[] = ["claude", "codex", "opencode", "antigravity", "hermes"]
@@ -117,78 +110,18 @@ export function JobDetailPane({ jobName, onClose, embedded = false }: JobDetailP
 
   const loaded = useJobsStore((s) => s.loaded)
 
-  // PTY streaming for running jobs
   const statusTmuxSession = status?.state === "running" ? (status as any).tmux_session ?? "" : ""
-  const termRef = useRef<XtermLogHandle | null>(null)
-  const keyboardDismissRef = useRef<ComponentRef<typeof TextInput> | null>(null)
-  const { sendInput, sendResize, connecting: ptyConnecting, error: ptyError } = usePty(statusPaneId, statusTmuxSession, termRef)
-  const isRunningWithPty = !!statusPaneId && !!statusTmuxSession
-  const landscapeHeader = useLandscapeTerminalHeader(isRunningWithPty)
-  const [copyText, setCopyText] = useState<string | null>(null)
+  const isRunningWithShell = !!statusPaneId
+  const landscapeHeader = useLandscapeTerminalHeader(isRunningWithShell)
   const [showPaneOverview, setShowPaneOverview] = useState(false)
   let agentActionControls = useAgentActions(statusPaneId, showPaneOverview)
-  const [terminalMenuOpen, setTerminalMenuOpen] = useState(false)
-  const [writeOpen, setWriteOpen] = useState(false)
-  const [writeDraft, setWriteDraft] = useState("")
-  const [optionOverlayHeight, setOptionOverlayHeight] = useState(0)
-  const { keyboardVisible, keyboardHeight, terminalSurfaceRef, handleTerminalLayout } = useTerminalKeyboard({
-    termRef,
-    menuOpen: terminalMenuOpen,
-    toolbarHeight: TERMINAL_KEYBOARD_TOOLBAR_HEIGHT,
-    extraClearance: 10,
-    overlayHeight: optionOverlayHeight,
-  })
-  const sendTerminalText = useCallback((text: string) => {
-    if (text) sendInput(encodeTerminalInput(text))
-  }, [sendInput])
-  const dismissTerminalKeyboard = useCallback(() => {
-    termRef.current?.blur()
-    keyboardDismissRef.current?.focus()
-    setTimeout(() => {
-      keyboardDismissRef.current?.blur()
-      Keyboard.dismiss()
-    }, 30)
-  }, [])
-  const handleTerminalMenuOpenChange = useCallback((open: boolean) => {
-    setTerminalMenuOpen(open)
-    if (open) setTimeout(() => termRef.current?.focus(), 0)
-  }, [])
   const zoomToFullScreen = useCallback(() => {
-    termRef.current?.blur()
     Keyboard.dismiss()
     useLandscapeShellStore.getState().showFullScreen({ kind: "job", slug })
     router.push({ pathname: "/job/[name]", params: { name: slug, fromSplit: "1" } })
   }, [router, slug])
 
-  const renderTerminal = useCallback(
-    () => (
-      <View style={{ flex: 1, minHeight: 0 }}>
-        <View style={[styles.ptyConnecting, !ptyConnecting && !ptyError && styles.ptyConnectingHidden]}>
-          {ptyConnecting || ptyError ? (
-            <>
-              {ptyConnecting ? <ActivityIndicator size="small" color={colors.accent} /> : null}
-              <Text style={styles.ptyConnectingText}>
-                {ptyError ?? "Connecting to terminal..."}
-              </Text>
-            </>
-          ) : null}
-        </View>
-        {Platform.OS === "android" && <MachineTerminalControls paneId={statusPaneId ?? ""} />}
-        <View ref={terminalSurfaceRef} style={styles.terminalSurface} onLayout={handleTerminalLayout}>
-          <XtermLog
-            ref={termRef}
-            onData={sendInput}
-            onResize={sendResize}
-            interactive
-            forceDarkTheme
-            onScrollGesture={landscapeHeader.onScrollGesture}
-            onLongPressCopyText={setCopyText}
-          />
-        </View>
-      </View>
-    ),
-    [sendInput, sendResize, ptyConnecting, ptyError, landscapeHeader.onScrollGesture, handleTerminalLayout, terminalSurfaceRef],
-  )
+  const renderTerminal = useCallback(() => <ShellSurface paneId={statusPaneId} onScrollGesture={landscapeHeader.onScrollGesture} />, [statusPaneId, landscapeHeader.onScrollGesture])
 
   if (!job) {
     const waiting = !loaded || !connected
@@ -212,7 +145,7 @@ export function JobDetailPane({ jobName, onClose, embedded = false }: JobDetailP
     <View style={styles.container}>
       {Platform.OS !== "web" && (landscapeHeader.headerShown || landscapeHeader.overlayShown) ? <View style={[styles.header, landscapeHeader.isLandscape && styles.landscapeHeaderOverlay, { paddingTop: embedded ? spacing.md : insets.top + spacing.md }]}>
         <Text style={styles.title} numberOfLines={1}>{landscapeHeader.isLandscape ? compactPath(job.work_dir) : job.name}</Text>
-        {landscapeHeader.isLandscape && isRunningWithPty ? (
+        {landscapeHeader.isLandscape && isRunningWithShell ? (
           <TerminalHeaderActions onZoom={zoomToFullScreen} onOpenDetails={() => setShowPaneOverview(true)} />
         ) : <TouchableOpacity
           onPress={canToggleAutoYes ? handleToggleAutoYes : undefined}
@@ -235,19 +168,18 @@ export function JobDetailPane({ jobName, onClose, embedded = false }: JobDetailP
         showBackButton={false}
         hidePath
         mobileDetails={Platform.OS === "web"}
-        hideInfoPanels={landscapeHeader.isLandscape && isRunningWithPty}
+        hideInfoPanels={landscapeHeader.isLandscape && isRunningWithShell}
         paneOverview={statusPaneId ? { paneId: statusPaneId, tmuxSession: statusTmuxSession, cwd: activeProcess?.cwd ?? job.work_dir, windowName: activeProcess?.window_name, startedAt: activeProcess?.session_started_at, firstQuery: activeProcess?.first_query, lastQuery: activeProcess?.last_query } : undefined}
         paneOverviewActions={{ autoYesActive, onToggleAutoYes: canToggleAutoYes ? handleToggleAutoYes : undefined, ...agentActionControls }}
         paneOverviewVisible={showPaneOverview}
         onPaneOverviewVisibleChange={setShowPaneOverview}
         onReloadRuns={loadRuns}
         options={jobQuestion?.options}
-        questionContext={jobQuestion?.context_lines}
         autoYesActive={autoYesActive}
         onToggleAutoYes={!autoYesPaneId ? undefined : handleToggleAutoYes}
-        renderTerminal={isRunningWithPty ? renderTerminal : undefined}
-        hideMessageInput={isRunningWithPty}
-        expandOutput={isRunningWithPty}
+        renderTerminal={isRunningWithShell ? renderTerminal : undefined}
+        hideMessageInput={isRunningWithShell}
+        expandOutput={isRunningWithShell}
         defaultOutputCollapsed
         defaultRunsCollapsed
         defaultAgentProvider={(defaultAgentProvider ?? undefined) as import("@clawtab/shared").ProcessProvider | undefined}
@@ -255,31 +187,8 @@ export function JobDetailPane({ jobName, onClose, embedded = false }: JobDetailP
         agentModelOptions={modelOptions}
         onUpdateJob={!isAgent ? onUpdateJob : undefined}
         optionBarBottomInset={insets.bottom}
-        onTerminalOverlayHeightChange={setOptionOverlayHeight}
+        terminalOptionsOverlay={false}
       />
-      {isRunningWithPty && (keyboardVisible || terminalMenuOpen) ? (
-        <TerminalKeyboardToolbar
-          bottom={keyboardVisible ? keyboardHeight : insets.bottom}
-          onDismiss={dismissTerminalKeyboard}
-          onSend={sendTerminalText}
-          onWrite={() => { setTerminalMenuOpen(false); setWriteOpen(true) }}
-          menuOpen={terminalMenuOpen}
-          onMenuOpenChange={handleTerminalMenuOpenChange}
-        />
-      ) : null}
-      <TerminalWriteDialog
-        visible={writeOpen}
-        draft={writeDraft}
-        onDraftChange={setWriteDraft}
-        onClose={() => setWriteOpen(false)}
-        onDone={() => {
-          const value = writeDraft.replace(/\r\n|\n/g, "\r")
-          sendTerminalText(value.endsWith("\r") ? value : value + "\r")
-          setWriteOpen(false)
-        }}
-      />
-      <TerminalCopySheet text={copyText} onClose={() => setCopyText(null)} />
-      <TextInput ref={keyboardDismissRef} style={styles.keyboardDismissSink} showSoftInputOnFocus={false} caretHidden autoCorrect={false} autoCapitalize="none" />
     </View>
   )
 }
@@ -326,26 +235,4 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: 8,
   },
-  ptyConnecting: {
-    flexDirection: "row" as const,
-    alignItems: "center" as const,
-    justifyContent: "center" as const,
-    gap: 8,
-    paddingVertical: 8,
-    backgroundColor: colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  ptyConnectingHidden: {
-    height: 0,
-    paddingVertical: 0,
-    borderBottomWidth: 0,
-    overflow: "hidden",
-  },
-  ptyConnectingText: {
-    color: colors.textMuted,
-    fontSize: 12,
-  },
-  terminalSurface: { flex: 1, minHeight: 0 },
-  keyboardDismissSink: { position: "absolute", width: 1, height: 1, opacity: 0, bottom: 0, left: 0 },
 })

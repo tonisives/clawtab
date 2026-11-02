@@ -110,7 +110,7 @@ export function MessageSurface(props: MessageSurfaceProps) {
     {selectionText !== null ? <MessageTextSelection text={selectionText} bottom={insets.bottom} onDone={() => {
       selectingText.current = false; setSelectionText(null);
     }} /> : null}
-    {!props.popup && props.active !== false && selectionText === null ? <NotificationChrome state={chrome} send={action} bottom={insets.bottom} enabled /> : null}
+    {!props.popup && !props.snapshot.shell_only && props.active !== false && selectionText === null ? <NotificationChrome state={chrome} send={action} bottom={insets.bottom} enabled /> : null}
     {chrome.reply && props.active !== false && selectionText === null ? <TerminalKeyboardToolbar
       bottom={0} inline
       dismissIcon="close"

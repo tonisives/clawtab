@@ -557,6 +557,13 @@ pub enum NfnCommand {
     Context {
         id: String,
     },
+    PaneContext {
+        pane_id: String,
+    },
+    PaneInput {
+        pane_id: String,
+        text: String,
+    },
     ShellInput {
         id: String,
         text: String,
