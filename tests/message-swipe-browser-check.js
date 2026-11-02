@@ -8,7 +8,7 @@
   window.nfn.collapse();
   fixture.records.clear();
   for (const id of ["swipe-a", "swipe-b", "swipe-c"]) {
-    const item = fixture.record(id); item.request.title = id;
+    const item = fixture.record(id); item.request.title = id; item.request.body = `${id} body`;
     fixture.records.set(id, item);
   }
   window.nfn.receive({ ...fixture.snapshot(), remote: true, native_chrome: true });
@@ -26,9 +26,29 @@
     touch(target, "touchend", 160 + dx, 150 + dy); return move;
   };
   open();
-  assert(swipe(-100).defaultPrevented && title() === "swipe-c", "left swipe opens the next notification without scrolling sideways");
+  const initial = surface.querySelector(":scope > .card"), initialMessage = initial.querySelector(".message");
+  const reads = fixture.calls.filter(command => command.op === "read").length;
+  touch(initialMessage, "touchstart", 160, 150);
+  const movement = touch(initialMessage, "touchmove", 100, 150);
+  const adjacent = document.querySelector(".gallery-page");
+  const motion = !matchMedia("(prefers-reduced-motion: reduce)").matches;
+  assert(!motion || initial.style.transform === "translate3d(-60px, 0px, 0px)" || initial.style.transform === "translate3d(-60px,0,0)", "the current card follows the finger during a horizontal drag");
+  assert(motion || !initial.style.transform && adjacent.style.opacity === "0", "reduced motion keeps dragging still and uses a fade when changing pages");
+  assert(adjacent?.querySelector("h1")?.textContent === "swipe-c" && adjacent.querySelector(".message").textContent === "swipe-c body", "dragging reveals the actual adjacent notification");
+  assert(adjacent.inert && adjacent.getAttribute("aria-hidden") === "true" && fixture.calls.filter(command => command.op === "read").length === reads, "adjacent previews cannot trigger actions or mark notifications as read");
+  const bridge = window.webkit.messageHandlers.nfn.postMessage;
+  let counterBeforePaint = false;
+  window.webkit.messageHandlers.nfn.postMessage = value => {
+    if (value.native === "chrome" && value.counter === "3 / 3") counterBeforePaint = title() === "swipe-b";
+    bridge(value);
+  };
+  touch(initialMessage, "touchmove", 60, 150); touch(initialMessage, "touchend", 60, 150);
+  window.webkit.messageHandlers.nfn.postMessage = bridge;
+  assert(movement.defaultPrevented && title() === "swipe-c", "left swipe opens the next notification without scrolling sideways");
+  assert(counterBeforePaint && fixture.nativeEvents.filter(event => event.native === "chrome").at(-1).counter === "3 / 3", "the native counter updates before rendering the selected card");
+  assert(surface.dataset.paging === "settling" && surface.querySelector(":scope > .card").getAnimations().length > 0 && document.querySelector(".gallery-page"), "release animates both pages into the selected position");
   swipe(100);
-  assert(title() === "swipe-b", "right swipe opens the previous notification");
+  assert(title() === "swipe-b" && document.querySelectorAll(".gallery-page").length === 1, "a reverse swipe can interrupt settling without leaving stale pages");
   const slowMessage = document.querySelector(".message");
   touch(slowMessage, "touchstart", 160, 150);
   await sleep(450);
@@ -42,6 +62,9 @@
   open();
   swipe(20);
   assert(title() === "swipe-b", "short horizontal movements keep the current notification");
+  await Promise.all(surface.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => {})));
+  await sleep(20);
+  assert(!surface.dataset.paging && !document.querySelector(".gallery-page") && !surface.querySelector(":scope > .card").style.transform, "a short drag settles back to the current card and clears its preview");
   assert(!swipe(20, 100).defaultPrevented && title() === "swipe-b", "vertical scrolling keeps the current notification and native scrolling");
   swipe(-100, 90);
   assert(title() === "swipe-b", "diagonal scrolling does not switch notifications");
@@ -52,9 +75,16 @@
   assert(title() === "swipe-b", "cancelled touch gestures do not navigate");
   touch(message, "touchstart", 160, 150); touch(message, "touchstart", 160, 150, true); touch(message, "touchend", 60, 150);
   assert(title() === "swipe-b", "multitouch gestures do not navigate");
-  touch(message, "touchstart", 160, 150); await sleep(400); touch(message, "touchend", 160, 150);
+  const reversing = document.querySelector(".message");
+  touch(reversing, "touchstart", 160, 150); touch(reversing, "touchmove", 60, 150); touch(reversing, "touchmove", 260, 150);
+  assert(document.querySelector(".gallery-page h1")?.textContent === "swipe-a", "reversing the drag reveals the neighbor on the other side");
+  touch(reversing, "touchend", 260, 150);
+  assert(title() === "swipe-a", "releasing a reversed drag selects the page under the finger");
+  open();
+  const heldMessage = document.querySelector(".message");
+  touch(heldMessage, "touchstart", 160, 150); await sleep(400); touch(heldMessage, "touchend", 160, 150);
   assert(title() === "swipe-b", "long presses remain available for text selection");
-  const range = document.createRange(); range.selectNodeContents(message);
+  const range = document.createRange(); range.selectNodeContents(heldMessage);
   window.getSelection().addRange(range); swipe(-100);
   assert(title() === "swipe-b" && !window.getSelection().isCollapsed, "swiping selected message text preserves the selection");
   window.getSelection().removeAllRanges();
@@ -73,5 +103,21 @@
   delete window.ReactNativeWebView;
   window.nfn.receive({ ...fixture.snapshot(), remote: true }); open(); swipe(-100);
   assert(title() === "swipe-c", "the mobile web view also supports swipe navigation");
+  window.nfn.collapse();
+  fixture.records.clear();
+  for (let i = 0; i < 60; i++) {
+    const id = `page-${String(i).padStart(2, "0")}`, item = fixture.record(id);
+    item.request.title = id; item.created_at = i + 1; fixture.records.set(id, item);
+  }
+  window.nfn.receive({ ...fixture.snapshot(), remote: true });
+  window.nfn.receive({ type: "open_record", id: "page-49" });
+  fixture.heldOps.add("list");
+  swipe(-120);
+  assert(title() === "page-49" && !document.querySelector(".gallery-page"), "an unloaded neighbor does not show an incorrect wrapped preview");
+  fixture.deferred.find(item => item.command.op === "list").complete(); fixture.heldOps.delete("list");
+  await sleep(40);
+  assert(title() === "page-50" && surface.dataset.paging === "settling", "paging continues into unloaded notifications and animates when the page arrives");
+  window.nfn.receive({ type: "hide" });
+  assert(!document.querySelector(".gallery-page") && !surface.dataset.paging, "hiding the view cancels transitions and removes detached previews");
   return { passed: checks.length, checks, viewport: { width: innerWidth, height: innerHeight } };
 })()

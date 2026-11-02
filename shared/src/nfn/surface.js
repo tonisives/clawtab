@@ -696,6 +696,7 @@
     if (view?.kind === "settings") { settingsTab = view.tab; openSettings(); }
   }
   function openRecord(id) {
+    if (snapshot.remote) window.nfnPaging?.opening();
     const record = records.get(id), key = record && threadKey(record);
     if (record && pending(record) && !record.dismissed_at && !record.ignored && key) id = pendingCards().find(item => threadKey(item) === key)?.id || id;
     shellReply = false;
@@ -704,6 +705,7 @@
     leaveSettings();
     const replyFocused = card?._reply && document.activeElement === card._reply;
     clearTimeout(completionTimer); pauseTimer(); stopContext(); current = id; queueReturnId = id; expanded = true; details = Boolean(resizedSize?.showDetails) || (mobileHost() && innerHeight > 480 && record?.request.source?.pane_id); queue = false; renderedId = null; menu = null;
+    syncMobileChrome();
     call({ op: "read", id }).catch(error => showError(error, id)); render();
     startContext();
     if (replyFocused && card?._reply) card._reply.focus({ preventScroll: true });
@@ -715,7 +717,7 @@
     else { queueReturnId = null; collapse(true); }
   }
   async function navigate(step) {
-    if (navigating) return;
+    if (navigating) { if (snapshot.remote) window.nfnPaging?.cancel(); return; }
     const id = current, version = reviewVersion;
     navigating = true;
     try {
@@ -727,8 +729,13 @@
         items = pendingCards(); index = items.findIndex(record => record.id === current);
       }
       const retry = step > 0 && items.find(record => record.id !== current && retryIds.has(record.id));
-      if (items.length) openRecord((retry || items[(Math.max(index, 0) + step + items.length) % items.length]).id);
-    } catch (error) { showError(error); }
+      if (items.length) {
+        const next = retry || items[(Math.max(index, 0) + step + items.length) % items.length];
+        if (snapshot.remote && next.id !== current) window.nfnPaging?.willNavigate(step);
+        openRecord(next.id);
+        if (snapshot.remote) window.nfnPaging?.didNavigate();
+      }
+    } catch (error) { if (snapshot.remote) window.nfnPaging?.cancel(); showError(error); }
     finally { navigating = false; }
   }
   function startContext() {
@@ -1161,16 +1168,16 @@
     row.append(control);
     return row;
   }
-  function updateAutoYes() {
-    for (const control of host.querySelectorAll(".auto-yes-switch")) {
+  function updateAutoYes(root = host) {
+    for (const control of root.querySelectorAll(".auto-yes-switch")) {
       const enabled = (snapshot.auto_yes_panes || []).includes(control.dataset.pane);
       control.setAttribute("aria-checked", String(enabled));
       control.querySelector(".switch-state").textContent = control.classList.contains("auto-yes-button") ? enabled ? "! Auto ON" : "! Yes all" : enabled ? "On" : "Off";
       control.disabled = autoYesBusy.has(control.dataset.pane);
     }
   }
-  function createCard(record) {
-    if (record.details_available === false) details = false;
+  function createCard(record, readOnly = false) {
+    if (!readOnly && record.details_available === false) details = false;
     const node = el("article", "card");
     node._wasPending = pending(record) && !record.dismissed_at;
     node._signature = cardSignature(record);
@@ -1316,19 +1323,19 @@
     if (replyToggle) footerActions.append(replyToggle);
     utilities.append(footerActions);
     node.append(utilities);
-    loadSessionTargets(record, node);
+    if (!readOnly) loadSessionTargets(record, node);
     return node;
   }
-  function syncCardDetails(record) {
-    if (!card) return;
-    card._body.hidden = false;
-    if (card._detailsButton) {
-      card._detailsButton.setAttribute("aria-label", details ? "Hide details" : "Details");
-      if (!card._detailsButton.disabled) card._detailsButton.title = details ? "Hide details" : "Details";
-      card._detailsButton.setAttribute("aria-expanded", String(details));
+  function syncCardDetails(record, node = card, showDetails = details) {
+    if (!node) return;
+    node._body.hidden = false;
+    if (node._detailsButton) {
+      node._detailsButton.setAttribute("aria-label", showDetails ? "Hide details" : "Details");
+      if (!node._detailsButton.disabled) node._detailsButton.title = showDetails ? "Hide details" : "Details";
+      node._detailsButton.setAttribute("aria-expanded", String(showDetails));
     }
-    const content = card._content;
-    if (!details) {
+    const content = node._content;
+    if (!showDetails) {
       if (content.isConnected) {
         content.hidden = true;
       }
@@ -1336,7 +1343,7 @@
     }
     content.hidden = false;
     if (content.isConnected) return;
-    const node = card, layout = template(record).layout, primitives = {};
+    const layout = template(record).layout, primitives = {};
     if (hasBlock(layout, "logs")) {
       const section = el("div", "log-output");
       if (!mobileHost()) section.append(el("div", "block-label", "Recent output"));
@@ -1350,8 +1357,8 @@
     const detailBlocks = blocks => (blocks || []).filter(block => !["text", "media", "choices", "reply"].includes(block.type))
       .map(block => block.children ? { ...block, children: detailBlocks(block.children) } : block);
     renderBlocks(detailBlocks(layout), content, record, true, primitives);
-    card._followLogs = true;
-    card._body.append(content);
+    node._followLogs = true;
+    node._body.append(content);
   }
   function updateCard() {
     if (!card || !current) return;
@@ -2042,6 +2049,7 @@
     }, true);
   }
   function render(animate = true) {
+    if (snapshot.remote && (queue || settingsOpen || todosOpen || !current)) window.nfnPaging?.finish();
     syncFocusAppearance();
     if (records.get(current)?.details_available === false) details = false;
     if (reducedMotion.matches || geometry.reduce_motion) stopArrivalAnimation();
@@ -2115,6 +2123,7 @@
     } else { host.querySelector(".card")?.remove(); host.querySelector(".queue")?.remove(); renderedId = null; card = null; }
     renderMenu(); positionAcknowledgementMenu(); cleanupRemoteMedia(); observeCardSize(); fitReviewHeight(); if (resizing || !animate) size(); else if (!continuingAnimation) animateLayout(before, !queue && !menu && !settingsOpen);
     host.classList.toggle("native-mobile", mobileHost()); host.classList.toggle("native-chrome", Boolean(mobileHost() && snapshot.native_chrome)); host.classList.toggle("shell-reply", shellReply); syncMobileChrome(); preloadMobileShells();
+    if (snapshot.remote) window.nfnPaging?.reconcile();
     syncNativePointerHover();
   }
   function receive(value) {
@@ -2478,7 +2487,20 @@
   });
   window.addEventListener("message", event => { if (event.source === window.parent) receive(event.data || {}); });
   document.addEventListener("visibilitychange", () => { if (document.hidden) stopContext(); else startContext(); });
-  window.nfn = { receive, collapse, outsideClick() {
+  window.nfn = { receive, collapse, pagePreview(step) {
+    if (!snapshot.remote || !current || queue || menu || settingsOpen || todosOpen) return null;
+    const items = pendingCards(), index = items.findIndex(record => record.id === current);
+    if (items.length < 2 || index < 0) return null;
+    if (unseenPending > 0 && (index + step >= items.length || index + step < 0)) return null;
+    const retry = step > 0 && items.find(record => record.id !== current && retryIds.has(record.id));
+    const record = retry || items[(index + step + items.length) % items.length];
+    const node = createCard(record, true);
+    const showDetails = record.details_available !== false && Boolean(details || mobileHost() && innerHeight > 480 && record.request.source?.pane_id);
+    syncCardDetails(record, node, showDetails);
+    updateAutoYes(node);
+    node.dataset.pageId = record.id;
+    return { node, details: showDetails };
+  }, outsideClick() {
     const request = records.get(current)?.request;
     if (!expanded && request?.template === "update" && request.data?.event !== "agent_alert") collapse();
   }, setPlacement(value) {

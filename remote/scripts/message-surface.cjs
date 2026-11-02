@@ -10,6 +10,9 @@ html,body{width:100%;height:var(--message-height,100%);background:#161616;overfl
 body{display:flex;justify-content:center}
 .message,.message-thread,.logs,.logs span{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
 .message,.message-thread,.details-content,.heading{touch-action:pan-y pinch-zoom}
+.gallery-page{position:fixed;display:flex;flex-direction:column;background:#161616;overflow:hidden;pointer-events:none;z-index:2}
+.gallery-page>.card{flex:1;height:100%;min-height:0}
+#surface[data-paging]>.card{will-change:transform}
 #surface,#surface.details-open,#surface.pill{width:100%;height:100%;max-width:100%;max-height:100%;border:0;border-radius:0;box-shadow:none}
 #surface{height:100%;min-height:0;--surface-max-height:var(--message-height,100dvh)}
 .queue{flex:1;height:auto;padding-bottom:max(6px,var(--message-safe-bottom,env(safe-area-inset-bottom,0px)))}
@@ -69,7 +72,8 @@ button.auto-yes-button{min-height:44px;padding:8px 16px;border-radius:999px}
 .message-thread{max-height:35dvh}
 .details-content{max-height:50dvh}
 `)
-    .replace("/* NFN_JS */", read("surface.js") + "\n" + fs.readFileSync(path.resolve(__dirname, "../src/lib/messageSurfaceViewport.js"), "utf8"));
+    .replace("/* NFN_JS */", read("surface.js") + "\n" + ["messageSurfacePaging.js", "messageSurfaceViewport.js"]
+      .map(name => fs.readFileSync(path.resolve(__dirname, "../src/lib", name), "utf8")).join("\n"));
 }
 
 function generate() {
