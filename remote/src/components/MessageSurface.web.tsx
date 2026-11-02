@@ -73,6 +73,7 @@ export function MessageSurface(props: MessageSurfaceProps) {
       if (event.source !== frame.current?.contentWindow || !event.data?.nfn) return;
       const value = event.data.nfn as SurfaceMessage;
       if (value.native === "chrome") setReply(Boolean((value as SurfaceMessage & { reply?: boolean }).reply));
+      if (value.native === "external_link" && typeof value.text === "string" && /^(https?:\/\/|mailto:)/i.test(value.text)) window.open(value.text, "_blank", "noopener,noreferrer");
       if (value.preview_ready) { ready.current = true; selected.current = null; synchronize(); }
       if (value.native) latest.current.onNative?.(value);
       if (!value.command || !value.token) return;

@@ -522,6 +522,11 @@
     const title = [source.agent_title, source.window_name, source.pane_title, source.task, record.request.title].map(clean).find(Boolean);
     return { group, title };
   }
+  function messageBody(record) {
+    const node = el("div", "message");
+    window.nfnMarkdown(node, messageText(record), text => native({ native: "external_link", text }));
+    return node;
+  }
   function messageText(record) {
     const body = stripAnsi(record.request.body).trim();
     if (!record.question_id) return body;
@@ -1230,13 +1235,13 @@
         const entry = el("li", "message-thread-item"); entry.dataset.id = item.id;
         const header = el("div", "message-header");
         header.append(el("div", "hint", `${item.id === record.id ? "Latest · " : ""}${item.request.title}`), relativeTimestamp(item));
-        entry.append(header, el("div", "message", messageText(item)));
+        entry.append(header, messageBody(item));
         node._messages.push({ record: item, element: entry });
         thread.append(entry);
       }
       node._thread = thread; body.append(thread);
     } else {
-      const message = el("div", "message", messageText(record));
+      const message = messageBody(record);
       body.append(message); node._messages.push({ record, element: message });
     }
     const layout = template(record).layout;

@@ -17,7 +17,7 @@ const modules = names.map(name => {
   return `modules[${literal(`./${name}`)}] = (()=>{ const exports={}; ${source}; return exports; })();`;
 }).join("\n");
 const check = fs.readFileSync(path.join(root, "tests/mobile-message-browser-check.js"), "utf8");
-const document = messageDocument().replace("</body>", `<script>
+const document = messageDocument().replace("</script></body>", `</script><script>
 parent.postMessage({instrumented:true},"*");
 window.addEventListener("error",event=>parent.postMessage({checkError:event.message},"*"));
 window.addEventListener("message", async event => {

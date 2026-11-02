@@ -58,6 +58,27 @@ Clicking another app releases keyboard focus while keeping a review card visible
 
 Following macOS Focus requires notification and Focus access for **ClawTab Daemon**. When Focus status is unavailable or Focus is active, delivery goes through macOS notifications. macOS then applies its notification settings and Focus allowlist. Independent mode allows the overlay and its sound regardless of Focus. Selecting Both uses the native notification for sound.
 
+## Markdown bodies
+
+Desktop and mobile messages render Markdown: paragraphs, lists, headings, bold,
+emphasis, inline code, fenced code blocks, quotes, tables, and links. Bare web
+URLs are clickable. Keep titles plain text. Use short paragraphs or bullets,
+backticks around paths and commands, and descriptive link labels. Add images
+and videos through the attachment options.
+
+For multiline messages, pass a JSON body through a quoted heredoc:
+
+```sh
+cwt message send --stdin <<'JSON'
+{
+  "title": "Review X browsing recordings",
+  "body": "Open **Plugins > Built in > Recordings**.\n\n- Select the X collection sessions.\n- Check search, scrolling, and opened replies.\n- Compare the [collection dashboard](https://example.com/dashboard).\n\nFiles: `/Volumes/sam/movies/bmux/observations/`",
+  "kind": "update",
+  "template": "update"
+}
+JSON
+```
+
 ## Settings file
 
 The daemon reads `~/.config/clawtab/notifications.yaml` and reloads edits within a second. The desktop app is optional. Existing preferences migrate to this file when the daemon starts.

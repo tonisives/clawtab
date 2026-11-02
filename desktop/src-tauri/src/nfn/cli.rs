@@ -41,6 +41,10 @@ pub async fn message(args: &[String]) -> Result<Value, String> {
             "cwt message focus ID",
             "cwt message reply ID [TEXT] [--action ID]",
             "cwt message show|settings|templates [args]"
+        ], "formatting": [
+            "Message bodies render Markdown on desktop and mobile: paragraphs, lists, **bold**, *emphasis*, `code`, fenced code blocks, and [label](https://example.com) links.",
+            "Use short paragraphs or bullets and descriptive link labels. Keep --title plain text. Bare web URLs become clickable.",
+            "For multiline bodies, pipe JSON to --stdin with title, body, kind, and template fields; use a quoted heredoc to preserve backticks and newlines. Attach images with --image and videos with --video."
         ]}));
     }
     match args[0].as_str() {

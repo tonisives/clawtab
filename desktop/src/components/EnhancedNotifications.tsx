@@ -4,6 +4,10 @@ import { listen } from "@tauri-apps/api/event"
 import type { EnhancedNotificationSettings } from "../types"
 import html from "../../../shared/src/nfn/surface.html?raw"
 import css from "../../../shared/src/nfn/surface.css?raw"
+import marked from "../../../shared/src/nfn/vendor/marked.js?raw"
+import purify from "../../../shared/src/nfn/vendor/purify.js?raw"
+import markdown from "../../../shared/src/nfn/markdown.js?raw"
+import { openUrl } from "@tauri-apps/plugin-opener"
 import script from "../../../shared/src/nfn/surface.js?raw"
 import "./EnhancedNotifications.css"
 
@@ -19,7 +23,7 @@ type Info = {
 }
 
 const surfaceDocument = html.replace("/* NFN_CSS */", css + "\nbody{display:flex;justify-content:center;padding:12px 4px;overflow:auto}#surface{flex-shrink:0;max-width:calc(100vw - 8px)}")
-  .replace("/* NFN_JS */", script)
+  .replace("/* NFN_JS */", [marked, purify, markdown, script].join("\n"))
 
 export function nfnCommand<T>(command: object): Promise<T> {
   return invoke<T>("nfn_command", { command })
@@ -36,6 +40,7 @@ function NotificationSurface({ snapshot, inbox = false }: { snapshot: object; in
     const receive = async (event: MessageEvent) => {
       if (event.source !== frame.current?.contentWindow || !event.data?.nfn) return
       const value = event.data.nfn
+      if (value.native === "external_link" && typeof value.text === "string" && /^(https?:\/\/|mailto:)/i.test(value.text)) void openUrl(value.text);
       if (value.preview_ready) { setReady(true); send(snapshotRef.current); if (inbox) send({ type: "show" }); return }
       if (!inbox || !value.command) return
       try {

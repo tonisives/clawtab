@@ -4,7 +4,7 @@ import { messageSelectionScript } from "../lib/messageSelection";
 import { NotificationChrome, initialNotificationChrome, type NotificationChromeState } from "./NotificationChrome";
 import { useCallback, useEffect, useRef, useState, type ComponentRef } from "react";
 import WebView from "react-native-webview";
-import { Keyboard, Platform, View } from "react-native";
+import { Keyboard, Linking, Platform, View } from "react-native";
 import { ShellKeyboardInput } from "./ShellKeyboardInput";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useMessageKeyboard } from "../hooks/useMessageKeyboard";
@@ -106,6 +106,7 @@ export function MessageSurface(props: MessageSurfaceProps) {
     let value: SurfaceMessage;
     try { value = JSON.parse(raw).nfn; } catch { return; }
     if (!value) return;
+    if (value.native === "external_link" && typeof value.text === "string" && /^(https?:\/\/|mailto:)/i.test(value.text)) void Linking.openURL(value.text);
     if (value.preview_ready) { ready.current = true; selected.current = null; send({ type: "mobile_visibility", active: focusedRef.current }); synchronize(); applyInsets(); }
     if (value.native === "selection_gesture" && (focusedRef.current || !value.active)) {
       selectionGesture.current = Boolean(value.active);

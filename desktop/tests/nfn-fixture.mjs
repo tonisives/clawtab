@@ -147,5 +147,5 @@ window.matchMedia = query => {
   return result;
 };` : "";
 const document = read("surface.html").replace("/* NFN_CSS */", read("surface.css") + (native ? "" : "\nbody{background:#202126;padding:24px;display:flex;justify-content:center}"))
-  .replace("/* NFN_JS */", visibility + fixtureSetup + videoSetup + motionSetup + `\nwindow.fixture.reviewImage = ${JSON.stringify(reviewImage)};\n` + read("surface.js") + "\n" + (process.argv.includes("--video-preview") ? videoReady : ready) + "\n" + todoSetup);
+  .replace("/* NFN_JS */", visibility + fixtureSetup + videoSetup + motionSetup + `\nwindow.fixture.reviewImage = ${JSON.stringify(reviewImage)};\n` + "\n/* NFN_RUNTIME */\n" + ["vendor/marked.js", "vendor/purify.js", "markdown.js", "surface.js"].map(read).join("\n") + "\n" + (process.argv.includes("--video-preview") ? videoReady : ready) + "\n" + todoSetup);
 writeFileSync(process.argv[2] || fileURLToPath(new URL("./nfn-fixture.html", import.meta.url)), document);
