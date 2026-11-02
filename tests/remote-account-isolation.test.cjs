@@ -44,7 +44,7 @@ function harness() {
   };
   const dependencies = { zustand: { create }, '@react-native-async-storage/async-storage': asyncStorage, '@clawtab/shared': shared };
   const messages = load('remote/src/store/messages.ts', { ...dependencies, '../lib/notifications': { dismissMessageNotification: async () => {} } });
-  const actions = load('remote/src/lib/messageActions.ts', { ...dependencies, '../store/messages': messages });
+  const actions = load('remote/src/lib/messageActions.ts', { ...dependencies, '../store/messages': messages, './funnel': { trackFunnel: async () => {} } });
   const notifications = load('remote/src/store/notifications.ts', dependencies).useNotificationStore;
   const jobs = load('remote/src/store/jobs.ts', dependencies).useJobsStore;
   const ws = load('remote/src/store/ws.ts', dependencies).useWsStore;

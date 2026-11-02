@@ -216,6 +216,23 @@ test("missing deep-link record is fetched from its machine before opening", asyn
   assert.equal(h.calls.length, 1);
 });
 
+test("Open resumes a closed reminder session on its host without focusing the desktop", async () => {
+  const original = record("mac-b");
+  original.request.deliver_at = 123;
+  original.request.source.session_id = "saved-session";
+  const h = harness([original]);
+  const calls = [];
+  h.options.host = async (machine, command) => {
+    calls.push({ machine, ...command });
+    if (command.op === "session_targets") return { targets: [] };
+    if (command.op === "resume") return { record: { ...original, request: { ...original.request, source: { session_id: "saved-session", pane_id: "%9" } } } };
+    throw Error(`Unexpected operation ${command.op}`);
+  };
+  await h.controller.execute({ op: "focus", id: "mac-b::same-id" });
+  assert.deepEqual(calls, [{ machine: "mac-b", op: "session_targets", id: "same-id" }, { machine: "mac-b", op: "resume", id: "same-id" }]);
+  assert.equal(h.opened[0].request.source.pane_id, "mac-b::%9");
+});
+
 test("a shared conversation offers its panes and navigates only to a verified selection", async () => {
   const original = record("mac-b");
   original.request.source.session_id = "shared-thread";

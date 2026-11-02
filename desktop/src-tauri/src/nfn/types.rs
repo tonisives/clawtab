@@ -191,6 +191,8 @@ pub struct NfnRequest {
     pub response_destination: String,
     pub dedupe_key: Option<String>,
     pub expires_at: Option<i64>,
+    /// One-shot reminder delivery time, in Unix milliseconds.
+    pub deliver_at: Option<i64>,
 }
 
 impl Default for NfnRequest {
@@ -209,6 +211,7 @@ impl Default for NfnRequest {
             response_destination: "result".into(),
             dedupe_key: None,
             expires_at: None,
+            deliver_at: None,
         }
     }
 }
@@ -242,6 +245,19 @@ impl NfnRequest {
     }
 
     pub fn validate(&self) -> Result<(), String> {
+        if let Some(due) = self.deliver_at {
+            if !self.data.is_object() {
+                return Err("Reminder data must be an object".into());
+            }
+            if due <= 0 || self.expires_at.is_some_and(|expiry| expiry <= due) {
+                return Err("Reminder delivery must precede its expiry".into());
+            }
+            if self.message_kind() != "update" || self.response_destination != "result" {
+                return Err(
+                    "Scheduled reminders use kind update and response_destination result".into(),
+                );
+            }
+        }
         if !["update", "question", "approval", "completed", "failed"].contains(&self.message_kind())
         {
             return Err("kind must be update, question, approval, completed, or failed".into());
@@ -473,6 +489,10 @@ pub enum NfnCommand {
     Send {
         request: NfnRequest,
     },
+    Scheduled {
+        #[serde(default)]
+        offset: usize,
+    },
     Get {
         id: String,
     },
@@ -520,6 +540,9 @@ pub enum NfnCommand {
         pane_id: Option<String>,
     },
     SessionTargets {
+        id: String,
+    },
+    Resume {
         id: String,
     },
     Reveal {

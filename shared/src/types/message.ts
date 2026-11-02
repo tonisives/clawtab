@@ -8,6 +8,7 @@ export type MessageRecord = {
     title: string
     body: string
     template: string
+    deliver_at?: number | null
     data?: Record<string, unknown>
     actions: MessageAction[]
     media?: { kind: string; src: string; alt: string }[]

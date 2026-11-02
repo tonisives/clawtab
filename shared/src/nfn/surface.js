@@ -294,6 +294,7 @@
       source.agent_started_at, source.job_id, source.run_id]);
   }
   function threadKey(record) {
+    if (record.request.deliver_at) return JSON.stringify([record.machine_id, "reminder", record.id]);
     if (record.request.template === "social-review") return JSON.stringify([record.machine_id, "review", record.id]);
     const job = record.request.source?.job_id;
     return job ? JSON.stringify([record.machine_id, "job", job]) : agentKey(record);
@@ -873,6 +874,7 @@
   }
   function acknowledge(record) {
     if (actionsInProgress.has(record.id)) return;
+    if (record.request.deliver_at) { performAction(record.id, { op: "dismiss", id: record.id }); return; }
     if (record.request.source?.pane_id) toggleMenu("acknowledge");
     else performAction(record.id, { op: "dismiss", id: record.id });
   }
@@ -1185,6 +1187,7 @@
     }
     node.append(heading);
     const body = el("div", "message-content"); node._body = body; node.append(body);
+    if (record.request.data?.reminder) body.append(el("div", "notification-title source-attribution", `Scheduled by ${record.request.data.reminder.creator_label}`));
     if (!agent) {
       const source = record.request.source || {};
       const label = [source.group, source.agent_title || source.task, source.browser_pane_id ? `BMUX pane ${source.browser_pane_id}` : source.pane_id ? `Pane ${source.pane_id}` : ""].filter(Boolean).join(" · ");
@@ -1226,14 +1229,14 @@
       node.append(autoYesControl(record, true));
     }
     let replyToggle = null;
-    if (!bundle && (record.request.source?.pane_id || record.request.template !== "update" && hasBlock(layout, "reply"))) {
-      const toAgent = Boolean(record.question_id || record.request.response_destination === "agent_message" || record.request.template === "update" && record.request.source?.pane_id);
+    if (!bundle && (record.request.source?.pane_id || record.request.deliver_at && record.request.source?.session_id || record.request.template !== "update" && hasBlock(layout, "reply"))) {
+      const toAgent = Boolean(record.question_id || record.request.response_destination === "agent_message" || record.request.template === "update" && (record.request.source?.pane_id || record.request.deliver_at && record.request.source?.session_id));
       const reply = el("div", "reply");
       const revision = revisionChoice(record);
       const replyLabel = revision ? "Changes to the draft" : toAgent ? "Reply to agent" : "Your reply";
       const open = replyStates.get(record.id) ?? Boolean(drafts.get(record.id));
       const toggle = button("Reply", () => {
-        if (mobileHost() && record.request.source?.pane_id) { setShellReply(true); return; }
+        if (mobileHost() && record.request.source?.pane_id && !record.request.deliver_at) { setShellReply(true); return; }
         const next = !(replyStates.get(record.id) ?? Boolean(drafts.get(record.id)));
         const previousReplyHeight = reply.hidden ? 0 : reply.offsetHeight + 12;
         replyStates.set(record.id, next); pauseTimer(); expanded = true;
