@@ -24,18 +24,15 @@ ClawTab connects Claude Code, Codex, OpenCode, and Hermes in one workspace. The 
 ## How it fits together
 
 ```mermaid
+%%{init: {"flowchart": {"wrappingWidth": 420}}}%%
 flowchart TB
-  subgraph machine["Each machine: your Mac, Linux or Windows hosts, rented boxes"]
-    direction LR
-    A["Agents in tmux or managed terminals"] <--> D["ClawTab daemon"]
-    D <--> C["Message bar, tmux plugin, cwt, desktop app"]
-  end
-  machine <--> R["Relay"]
+  M@{ shape: procs, label: "**Every machine: your Mac, Linux and Windows hosts, rented boxes**<br/>Agents in tmux or managed terminals, the ClawTab daemon, and local clients: message bar, tmux plugin, cwt, desktop app" }
+  M <--> R["Relay"]
   R <--> I["iPhone app"]
   R <--> W["Web Remote (browser and Android)"]
 ```
 
-The daemon runs in the background and doesn't need the desktop app open. Every client (tmux, `cwt`, desktop, phone) connects to the same session, so switching devices never restarts or duplicates an agent. Your Mac and any remote machines run the same daemon and connects to the same relay, so agents on all of them show up in one place. More in [Remote machines](docs/remote-machines.md) and [Architecture](docs/architecture.md).
+The daemon runs in the background and doesn't need the desktop app open. Every client (tmux, `cwt`, desktop, phone) connects to the same session, so switching devices never restarts or duplicates an agent. Your Mac and any remote machines run the same daemon and connect to the same relay, so agents on all of them show up in one place. More in [Remote machines](docs/remote-machines.md) and [Architecture](docs/architecture.md).
 
 ## Install
 
