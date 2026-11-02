@@ -63,7 +63,7 @@ button.auto-yes-button{width:auto;align-self:flex-start;min-height:44px;padding:
 .native-mobile.shell-reply .source-group{max-width:25%;font-size:12px}
 .native-mobile.details-open .details-toggle{display:none}
 .shell-only>.top,.shell-only>.card>:not(.message-content):not(.shell-keyboard):not(.notice){display:none}
-.shell-only>.card,.shell-only.shell-reply>.card{padding:0}
+.native-mobile.shell-only.details-open>.card{padding:0}
 .shell-only .message-content>:not(.details-content){display:none}
 .shell-only .details-content{margin:0;min-height:0;flex:1}
 .native-mobile.shell-reply .message-content{flex:1;min-height:0;display:flex;flex-direction:column}

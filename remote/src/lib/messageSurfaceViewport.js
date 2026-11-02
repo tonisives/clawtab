@@ -3,8 +3,10 @@
   const root = document.documentElement;
   let safeBottom = null, nativeKeyboard = false, pointer = null;
   let scheduled = false;
+  let selectionTarget = null;
   const editable = element => element?.matches?.("textarea,input,select,[contenteditable='true']");
   function layout() {
+    if (selectionTarget?.isConnected) return;
     const viewport = window.visualViewport;
     const height = Math.min(innerHeight, viewport?.height ?? innerHeight);
     const keyboard = nativeKeyboard || innerHeight - height > 100;
@@ -24,11 +26,25 @@
     }
   }
   window.nfnMobile = {
+    holdSelection(target) {
+      if (selectionTarget === target) return;
+      selectionTarget = target;
+      window.ReactNativeWebView?.postMessage(JSON.stringify({ nfn: { native: "selection_gesture", active: true } }));
+    },
+    releaseSelection(target) {
+      if (!selectionTarget || target && target !== selectionTarget) return;
+      selectionTarget = null;
+      window.ReactNativeWebView?.postMessage(JSON.stringify({ nfn: { native: "selection_gesture", active: false } }));
+      schedule();
+    },
     setActive(active) {
+      this.releaseSelection();
       pointer = null; swipe = null;
       window.nfnPaging?.finish();
       window.getSelection?.()?.removeAllRanges();
-      for (const logs of document.querySelectorAll?.(".logs") || []) logs._selecting = false;
+      for (const logs of document.querySelectorAll?.(".logs") || []) {
+        logs._cancelSelection?.(); logs._selecting = false;
+      }
       if (!active) document.activeElement?.blur?.();
       const reset = () => {
         window.scrollTo?.(0, 0);
@@ -62,7 +78,7 @@
     }
     const touch = event.touches[0];
     swipe = { card, id: touch.identifier, x: touch.clientX, y: touch.clientY, horizontal: false,
-      lastX: touch.clientX, lastAt: performance.now(), velocity: 0 };
+      lastX: touch.clientX, lastAt: performance.now(), at: performance.now(), velocity: 0 };
   }, { passive: true, capture: true });
   document.addEventListener("touchmove", event => {
     if (!swipe) return;
@@ -71,6 +87,7 @@
       window.nfnPaging?.cancel(); swipe = null; return;
     }
     const dx = Math.abs(touch.clientX - swipe.x), dy = Math.abs(touch.clientY - swipe.y);
+    if (!swipe.horizontal && performance.now() - swipe.at >= 350) { swipe = null; return; }
     if (!swipe.horizontal && dy > 12 && dy >= dx) { swipe = null; return; }
     if (!swipe.horizontal && dx > 12 && dx > dy * 1.5) {
       swipe.horizontal = true;

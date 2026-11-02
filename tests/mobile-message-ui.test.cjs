@@ -495,8 +495,16 @@ for (const variant of ["MessageSurface.web.tsx", "MessageSurface.tsx"]) {
       keyboardOverlap = 344; render("mac-b::other");
       assert.equal(lastRoot.props.style.paddingBottom,344,"the shell and inline toolbar move above the keyboard together");
       assert.ok(lastRoot.props.children.find(child=>child?.type==="TerminalKeyboardToolbar"));
+      reopened.props.onMessage({ nativeEvent: { data: JSON.stringify({ nfn: { native: "selection_gesture", active: true } }) } });
+      render("mac-b::other");
       keyboardOverlap = 0; render("mac-b::other");
-      assert.equal(lastRoot.props.style.paddingBottom,34,"dismissal restores the bottom safe area");
+      assert.equal(lastRoot.props.style.paddingBottom, 344, "keyboard dismissal cannot move text under a native selection gesture");
+      const beforeRefocus = sent.length;
+      lastRoot.props.children.find(child => child?.type === "NotificationChrome").props.send("reply_focus");
+      assert.equal(sent.length, beforeRefocus, "the React host cannot steal focus from an in-progress selection");
+      reopened.props.onMessage({ nativeEvent: { data: JSON.stringify({ nfn: { native: "selection_gesture", active: false } }) } });
+      render("mac-b::other");
+      assert.equal(lastRoot.props.style.paddingBottom,34,"dismissal restores the bottom safe area after selection ends");
       toolbar.props.onDismiss(); assert.equal(sent.at(-1).action,"reply_close");
       toolbar.props.onSend("\x1b[A"); assert.equal(sent.at(-1).text,"\x1b[A");
       toolbar.props.onSelect();
@@ -518,6 +526,7 @@ for (const variant of ["MessageSurface.web.tsx", "MessageSurface.tsx"]) {
       render("mac-b::other");
       assert.equal(sent.at(-1).type, "mobile_visibility");
       assert.equal(sent.at(-1).active, false, "details suspends the covered notification surface");
+      assert.equal(lastRoot.props.pointerEvents, "none", "the covered WebView cannot intercept the details gesture");
       focused = true;
       const returned = render("mac-b::other");
       assert.ok(sent.some(value => value.type === "mobile_visibility" && value.active === true));
@@ -562,4 +571,17 @@ test("reply keeps native navigation and lays the shared keyboard controls in flo
   toolbar.props.children.find(child=>child?.props.accessibilityLabel==="Dismiss keyboard").props.onPress();
   toolbar.props.children.find(child=>child?.props.accessibilityLabel==="Up arrow").props.onPress();
   assert.equal(dismissed,1); assert.equal(sent.at(-1),"\x1b[A");
+});
+
+test("Open reuses the session targets already loaded by the notification", async () => {
+  const original = record("mac-b"); original.request.source.session_id = "thread";
+  const h = harness([original]);
+  h.options.host = async (machine, command) => {
+    h.calls.push({ machine, ...command });
+    return { targets: [{ pane_id: "%12" }] };
+  };
+  await h.controller.execute({ op: "session_targets", id: "mac-b::same-id" });
+  await h.controller.execute({ op: "focus", id: "mac-b::same-id" });
+  assert.equal(h.calls.length, 1, "opening a verified pane has no second network wait");
+  assert.equal(h.opened[0].request.source.pane_id, "mac-b::%12");
 });

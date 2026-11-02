@@ -1,10 +1,15 @@
-import { encodeTerminalInput } from "@clawtab/shared";
-import { terminalCache } from "./terminalCache";
+// Shared by notification and details documents. Keep captures in memory only.
+const captures = new Map<string, string>();
+const limit = 10;
 
-// A captured notification screen can paint details while its live PTY attaches.
-// The PTY's first reset replaces this preview with its authoritative screen.
 export function cacheMessageShell(value: { log?: string; source?: { pane_id?: string } }) {
   const pane = value.source?.pane_id;
-  if (!pane || !value.log || terminalCache.get(pane).length) return;
-  terminalCache.append(pane, encodeTerminalInput("\x1bc" + value.log.replace(/\r?\n/g, "\r\n")));
+  if (!pane || typeof value.log !== "string" || value.log.length > 384 * 1024) return;
+  captures.delete(pane);
+  captures.set(pane, value.log);
+  if (captures.size > limit) captures.delete(captures.keys().next().value!);
 }
+
+export const getMessageShell = (pane: string) => captures.get(pane);
+export const clearMessageShellCache = () => captures.clear();
+export const deleteMessageShell = (pane: string) => captures.delete(pane);

@@ -100,7 +100,7 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, fromSplit, landscapeHan
   const loaded = useJobsStore((s) => s.loaded);
 
   // Cold start from notification: waiting for relay data
-  const waitingForData = !process && !questions.some((q) => q.pane_id === pane_id) && (!connected || !desktopOnline || !loaded);
+  const waitingForData = !preserveTerminal && !process && !questions.some((q) => q.pane_id === pane_id) && (!connected || !desktopOnline || !loaded);
 
   const lastProcessRef = useRef(process);
   if (process) lastProcessRef.current = process;

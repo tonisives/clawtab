@@ -14,21 +14,18 @@ function load(file, dependencies = {}) {
   return exports;
 }
 
-test('notification capture paints the details terminal immediately and live PTY reset replaces it', () => {
-  const { createTerminalCache } = load('../src/lib/terminalCache.ts');
-  const terminalCache = createTerminalCache();
-  const encodeTerminalInput = value => Buffer.from(value).toString('base64');
-  const { cacheMessageShell } = load('../src/lib/cacheMessageShell.ts', {
-    '@clawtab/shared': { encodeTerminalInput }, './terminalCache': { terminalCache },
-  });
+test('notification captures are shared with details and keep the latest raw output', () => {
+  const { cacheMessageShell, getMessageShell, clearMessageShellCache, deleteMessageShell } = load('../src/lib/cacheMessageShell.ts');
   const pane = 'mac::%9';
   cacheMessageShell({ source: { pane_id: pane }, log: 'cached output\nไทย' });
-  assert.equal(Buffer.from(terminalCache.get(pane)[0], 'base64').toString(), '\x1bccached output\r\nไทย');
-  cacheMessageShell({ source: { pane_id: pane }, log: 'older capture' });
-  assert.equal(terminalCache.get(pane).length, 1, 'a capture never appends to an existing terminal stream');
-  terminalCache.append(pane, encodeTerminalInput('\x1bclive screen'));
-  assert.equal(Buffer.from(terminalCache.get(pane)[0], 'base64').toString(), '\x1bclive screen');
-  assert.equal(terminalCache.get('other::%9').length, 0, 'pane snapshots retain their machine scope');
+  assert.equal(getMessageShell(pane), 'cached output\nไทย');
+  cacheMessageShell({ source: { pane_id: pane }, log: 'new capture' });
+  assert.equal(getMessageShell(pane), 'new capture');
+  assert.equal(getMessageShell('other::%9'), undefined);
+  deleteMessageShell(pane); assert.equal(getMessageShell(pane), undefined);
+  cacheMessageShell({ source: { pane_id: pane }, log: '' });
+  assert.equal(getMessageShell(pane), '');
+  clearMessageShellCache(); assert.equal(getMessageShell(pane), undefined);
 });
 
 function smoothFixture() {

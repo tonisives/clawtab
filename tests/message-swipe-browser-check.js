@@ -53,8 +53,7 @@
   touch(slowMessage, "touchstart", 160, 150);
   await sleep(450);
   touch(slowMessage, "touchmove", 60, 150); touch(slowMessage, "touchend", 60, 150);
-  assert(title() === "swipe-c", "a swipe still navigates when the first movement event arrives after 350 ms");
-  swipe(100);
+  assert(title() === "swipe-b" && !document.querySelector(".gallery-page"), "a held selection gesture cannot become a swipe before its native range exists");
   window.nfn.receive({ type: "mobile_action", action: "next" });
   assert(title() === "swipe-c", "chevron navigation still uses the same notification order");
   swipe(-100);

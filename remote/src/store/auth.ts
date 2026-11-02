@@ -1,3 +1,4 @@
+import { clearMessageShellCache } from "../lib/cacheMessageShell";
 import { trackRemoteEvent } from "../lib/analytics";
 import { terminalCache } from "../lib/terminalCache";
 import { create } from "zustand"
@@ -49,7 +50,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             }
             await api.clearTokens()
             await clearCache(userId)
-            terminalCache.clear()
+            terminalCache.clear(); clearMessageShellCache()
             set({ isAuthenticated: false, userId: null, email: null, loading: false })
             return
           }
@@ -65,7 +66,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   googleLogin: async (idToken) => {
     await clearCache(get().userId)
-    terminalCache.clear()
+    terminalCache.clear(); clearMessageShellCache()
     const resp = await api.googleAuth(idToken)
     trackRemoteEvent("login")
     set({ isAuthenticated: true, userId: resp.user_id, email: emailFromToken(resp.access_token) })
@@ -74,14 +75,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   passwordLogin: async (email, password) => {
     const resp = await api.passwordLogin(email, password)
     await clearCache(get().userId)
-    terminalCache.clear()
+    terminalCache.clear(); clearMessageShellCache()
     trackRemoteEvent("login")
     set({ isAuthenticated: true, userId: resp.user_id, email: emailFromToken(resp.access_token) })
   },
 
   appleLogin: async (idToken, displayName, email) => {
     await clearCache(get().userId)
-    terminalCache.clear()
+    terminalCache.clear(); clearMessageShellCache()
     const resp = await api.appleAuth(idToken, displayName, email)
     trackRemoteEvent("login")
     set({ isAuthenticated: true, userId: resp.user_id, email: emailFromToken(resp.access_token) })
@@ -90,14 +91,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   setAuth: (userId, accessToken) => {
     trackRemoteEvent("login")
     clearCache(get().userId)
-    terminalCache.clear()
+    terminalCache.clear(); clearMessageShellCache()
     set({ isAuthenticated: true, userId, email: emailFromToken(accessToken) })
   },
 
   logout: async () => {
     await api.clearTokens()
     await clearCache(get().userId)
-    terminalCache.clear()
+    terminalCache.clear(); clearMessageShellCache()
     set({ isAuthenticated: false, userId: null, email: null })
   },
 
@@ -109,7 +110,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (!api.isInvalidRefreshError(error)) return false
       await api.clearTokens()
       await clearCache(get().userId)
-      terminalCache.clear()
+      terminalCache.clear(); clearMessageShellCache()
       set({ isAuthenticated: false, userId: null, email: null })
       return false
     }

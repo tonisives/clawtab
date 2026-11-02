@@ -445,13 +445,21 @@
     // A pane capture includes unused screen rows after its last output.
     const lines = String(raw).replace(/\r\n?/g, "\n").split("\n");
     while (lines.length && !stripAnsi(lines[lines.length - 1]).trim()) lines.pop();
-    const text = lines.join("\n"), fragment = document.createDocumentFragment();
+    let prefix = "";
+    while (lines.length && !stripAnsi(lines[0]).trim()) prefix += (lines.shift().match(/\x1b\[[0-?]*[ -/]*[@-~]/g) || []).join("");
+    const visibleRows = lines.map(line => Boolean(stripAnsi(line).trim()));
+    const text = prefix + lines.join("\n"), fragment = document.createDocumentFragment();
+    let row = 0;
     let last = 0, foreground, background, bold = false, dim = false, italic = false, underline = false, inverse = false;
     const append = value => {
       if (!value) return;
-      const node = el("span", "", value);
-      Object.assign(node.style, { color: inverse ? background || "#000" : foreground || "", backgroundColor: inverse ? foreground || "#dee2e6" : background || "", fontWeight: bold ? "bold" : "", opacity: dim ? ".6" : "", fontStyle: italic ? "italic" : "", textDecoration: underline ? "underline" : "" });
-      fragment.append(node);
+      for (const part of value.split(/(\n)/)) {
+        if (part === "\n") { fragment.append(document.createTextNode(part)); row++; continue; }
+        if (!part || !visibleRows[row]) continue;
+        const node = el("span", "", part);
+        Object.assign(node.style, { color: inverse ? background || "#000" : foreground || "", backgroundColor: inverse ? foreground || "#dee2e6" : background || "", fontWeight: bold ? "bold" : "", opacity: dim ? ".6" : "", fontStyle: italic ? "italic" : "", textDecoration: underline ? "underline" : "" });
+        fragment.append(node);
+      }
     };
     for (const match of text.matchAll(/\x1b\[([0-?]*[ -/]*)([@-~])|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[ -/]*[@-~]/g)) {
       append(text.slice(last, match.index)); last = match.index + match[0].length;
@@ -699,6 +707,7 @@
     return Boolean(record?.request.source?.job_id && (record.request.kind === "failed" || /^failed\b/.test(record.request.data?.event || "")));
   }
   function openRecord(id) {
+    if (current !== id) card?._logs?._cancelSelection?.();
     if (snapshot.remote) window.nfnPaging?.opening();
     const record = records.get(id), key = record && threadKey(record);
     if (record && pending(record) && !record.dismissed_at && !record.ignored && key) id = pendingCards().find(item => threadKey(item) === key)?.id || id;
@@ -1443,16 +1452,38 @@
     updateAutoYes();
   }
   function installLogSelection(logs, canReply) {
-    let touch = null, releaseTimer = null;
+    let touch = null, releaseTimer = null, touching = false;
+    const hasRange = () => {
+      const selection = window.getSelection();
+      return selection && !selection.isCollapsed && (logs.contains(selection.anchorNode) || logs.contains(selection.focusNode));
+    };
+    const finish = () => {
+      if (touching || hasRange()) return;
+      logs._selecting = false;
+      window.nfnMobile?.releaseSelection(logs);
+    };
+    const hold = () => {
+      clearTimeout(releaseTimer); logs._selecting = true;
+      window.nfnMobile?.holdSelection(logs);
+      // iOS cannot select output while the separate shell input owns editing.
+      if (document.activeElement?.classList.contains("shell-keyboard")) document.activeElement.blur();
+    };
     const release = () => {
       clearTimeout(releaseTimer);
       // WebKit can cancel pointer events when its native selection gesture wins.
       // Keep the DOM stable until selectionchange has established the range.
-      releaseTimer = setTimeout(() => { logs._selecting = false; }, 1000);
+      releaseTimer = setTimeout(finish, 1000);
+    };
+    logs.addEventListener("touchstart", () => { touching = true; hold(); }, { passive: true });
+    logs.addEventListener("touchend", () => { touching = false; release(); }, { passive: true });
+    logs.addEventListener("touchcancel", () => { touching = false; release(); }, { passive: true });
+    logs._selectionChanged = () => { if (!touching && !touch && !hasRange()) finish(); };
+    logs._cancelSelection = () => {
+      touch = null; touching = false; clearTimeout(releaseTimer); logs._selecting = false;
+      window.nfnMobile?.releaseSelection(logs);
     };
     logs.addEventListener("pointerdown", event => {
-      clearTimeout(releaseTimer);
-      logs._selecting = true;
+      hold();
       touch = { x: event.clientX, y: event.clientY, at: performance.now() };
     });
     logs.addEventListener("pointermove", event => {
@@ -1468,7 +1499,7 @@
       if (canReply && start && performance.now() - start.at < 350
         && Math.hypot(event.clientX - start.x, event.clientY - start.y) < 8
         && (!selection || selection.isCollapsed)) {
-        logs._selecting = false; clearTimeout(releaseTimer); setShellReply(true);
+        touching = false; finish(); clearTimeout(releaseTimer); setShellReply(true);
       }
     });
   }
@@ -1477,6 +1508,7 @@
     return Boolean(logs && (logs._selecting || selection && !selection.isCollapsed
       && (logs.contains(selection.anchorNode) || logs.contains(selection.focusNode))));
   }
+  document.addEventListener("selectionchange", () => card?._logs?._selectionChanged?.());
   async function refreshContext() {
     if ((!details && menu !== "agent") || queue || settingsOpen || !current || !card || contextRequest?.card === card) return;
     const id = current, request = { card }; contextRequest = request;
@@ -2167,7 +2199,7 @@
       snapshot.visible = Boolean(value.active);
       window.nfnMobile?.setActive(snapshot.visible);
       if (snapshot.visible) { startContext(); refreshContext(); }
-      else { stopContext(); card?._shellInput?.blur(); }
+      else { stopContext(); if (shellReply) setShellReply(false); card?._shellInput?.blur(); }
       return;
     }
     if (value.type === "mobile_action" && mobileHost()) {
@@ -2254,6 +2286,9 @@
     }
     if (value.type === "settings") { openSettings(); return; }
     if (value.type !== "snapshot") return;
+    if (value.remote) for (const [id, log] of Object.entries(value.shell_cache || {})) {
+      if (typeof log === "string" && !mobileShellCache.has(id)) mobileShellCache.set(id, log);
+    }
     const previousCurrent = records.get(current);
     snapshot = value; preview = Boolean(value.preview);
     if (value.todos) todoData = value.todos;

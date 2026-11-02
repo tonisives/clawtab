@@ -1,4 +1,4 @@
-import { cacheMessageShell } from "../lib/cacheMessageShell";
+import { cacheMessageShell, getMessageShell } from "../lib/cacheMessageShell";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "expo-router";
 import { Platform, Text, View } from "react-native";
@@ -125,6 +125,10 @@ export function MessageInbox({ selection, popup = false, active = true, arrival,
   const snapshot = useMemo(() => ({
     type: "snapshot", remote: true, native_chrome: Platform.OS !== "web" && !popup, visible: active, preview: false, arrival: popup && active ? arrival : undefined,
     records: records.map(surfaceRecord), pending_count: records.filter(messagePending).length,
+    shell_cache: Object.fromEntries(records.flatMap(record => {
+      const cached = record.request.source.pane_id && getMessageShell(record.request.source.pane_id);
+      return typeof cached === "string" ? [[surfaceId(record), cached]] : [];
+    })),
     auto_yes_panes: [...autoYes], templates_by_machine: templates, todos,
     settings: { preview_seconds: 8, hover_expand: false, placement: "right" },
   }), [records, autoYes, templates, todos, popup, arrival, active]);

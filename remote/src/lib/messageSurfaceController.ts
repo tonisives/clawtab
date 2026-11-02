@@ -14,6 +14,22 @@ type Options = {
 
 export function messageSurfaceController(options: Options) {
   const cache = new Map<string, MessageRecord>();
+  const targetRequests = new Map<string, { at: number; request: Promise<Result> }>();
+  const verifiedTargets = new Map<string, { at: number; value: Result }>();
+  const sessionTargets = (machine: string, id: string) => {
+    const key = `${machine}::${id}`, cached = targetRequests.get(key);
+    if (cached && Date.now() - cached.at < 5000) return cached.request;
+    const request = options.host(machine, { op: "session_targets", id }).then(value => {
+      verifiedTargets.set(key, { at: Date.now(), value });
+      return value;
+    }).catch(error => { targetRequests.delete(key); verifiedTargets.delete(key); throw error; });
+    targetRequests.set(key, { at: Date.now(), request });
+    if (targetRequests.size > 50) {
+      const oldest = targetRequests.keys().next().value!;
+      targetRequests.delete(oldest); verifiedTargets.delete(oldest);
+    }
+    return request;
+  };
   const remember = (machine: string, raw: Result) => {
     const source = raw.request.source;
     const scope = (id?: string) => id && (id.startsWith(`${machine}::`) ? id : resourceKey(machine, id));
@@ -95,11 +111,15 @@ export function messageSurfaceController(options: Options) {
       }
       const record = await get(command.id);
       if (op === "get") return surfaceRecord(record);
+      if (op === "session_targets") return sessionTargets(machine, id);
       const focusAction = op === "respond" && record.request.actions.find(action => action.id === command.action_id)?.kind === "focus";
       if (op === "focus" || focusAction) {
         let target = record;
         if (record.request.source.session_id) {
-          const value = await options.host(machine, { op: "session_targets", id });
+          const key = `${machine}::${id}`, verified = verifiedTargets.get(key);
+          if (command.pane_id) targetRequests.delete(key);
+          const value = !command.pane_id && verified && Date.now() - verified.at < 15000
+            ? verified.value : await sessionTargets(machine, id);
           const targets: Result[] = value.targets || [];
           if (!command.pane_id && targets.length > 1) return { targets };
           const selected = command.pane_id ? targets.find(item => item.pane_id === command.pane_id) : targets[0];
@@ -129,6 +149,7 @@ export function messageSurfaceController(options: Options) {
         if (messagePending(next)) throw new Error("Saved. Waiting for the machine to reconnect.");
         return surfaceRecord(next);
       }
+      if (op === "context" && record.request.source.session_id) void sessionTargets(machine, id).catch(() => {});
       const value = await options.host(machine, { ...command, id });
       if (value.request && value.id) {
         const record = remember(machine, value);

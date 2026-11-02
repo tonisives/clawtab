@@ -1,3 +1,4 @@
+import { clearMessageShellCache, deleteMessageShell } from "../lib/cacheMessageShell";
 import { trackFunnel } from "../lib/funnel"
 import { createAnswerTracker } from "../lib/activation"
 import { trackConnectedHost } from "../lib/analytics"
@@ -57,7 +58,7 @@ let resetAccountState = () => {
   useNotificationStore.getState().reset()
   useJobsStore.setState(useJobsStore.getInitialState())
   useWsStore.getState().reset()
-  terminalCache.clear()
+  terminalCache.clear(); clearMessageShellCache()
   setWsSend(null)
 }
 
@@ -150,7 +151,7 @@ export let useWebSocket = () => {
         machineProcesses().map((process) => [process.pane_id, process.execution_id]),
       )
       for (let [pane, execution] of executions)
-        if (nextExecutions.get(pane) !== execution) terminalCache.delete(pane)
+        if (nextExecutions.get(pane) !== execution) { terminalCache.delete(pane); deleteMessageShell(pane); }
       executions = nextExecutions
       let connected = machineState().connected && machineState().machines.some((m) => m.online)
       if (machineState().connected && machineState().machines.some((machine) => machine.owned && machine.online)) { trackConnectedHost(); void trackFunnel("host_connected") }

@@ -56,6 +56,26 @@
   assert(surface.classList.contains("shell-reply") && document.activeElement === surface.querySelector(".shell-keyboard"), "tapping details output uses the notification shell input");
   assert(getComputedStyle(surface.querySelector(".heading")).display === "none", "typing in details keeps its shell free of notification headings");
   window.nfn.receive({ type: "mobile_action", action: "reply_close" });
+  assert(surface.querySelector(".details-content").getBoundingClientRect().top === surface.getBoundingClientRect().top,
+    "the details shell starts directly below its native header with no card padding");
+  window.nfn.receive({ type: "hide" });
+  fixture.records.clear();
+  const cached = fixture.record("cached-details"); fixture.records.set(cached.id, cached);
+  fixture.heldOps.add("context");
+  window.nfn.receive({ ...snapshot(), shell_only: true, shell_cache: { [cached.id]: "Already loaded in notifications" } });
+  open(cached.id);
+  assert(surface.querySelector(".logs").textContent === "Already loaded in notifications", "details paints its inherited capture before a context request completes");
+  fixture.heldOps.delete("context");
+  fixture.deferred.filter(item => item.command.op === "context").forEach(item => item.complete());
+  window.nfn.receive({ type: "hide" });
+  fixture.log = "\x1b[48;2;38;43;51m" + (" ".repeat(80) + "\n").repeat(35)
+    + "\x1b[0mEditor status\n\x1b[48;2;38;43;51m" + " ".repeat(80) + "\x1b[0m\nLast line";
+  const blank = fixture.record("blank-rows"); fixture.records.set(blank.id, blank);
+  window.nfn.receive({ ...snapshot(), shell_only: true }); open(blank.id); await wait(150);
+  const cleaned = surface.querySelector(".logs");
+  assert(cleaned.textContent === "Editor status\n\nLast line", "unused leading screen rows are removed while internal paragraph spacing remains");
+  assert(![...cleaned.querySelectorAll("span")].some(node => !node.textContent.trim() && node.style.backgroundColor),
+    "blank terminal rows cannot draw colored bars");
   window.nfn.receive({ type: "hide" });
   return { passed: checks.length, checks, viewport: { width: innerWidth, height: innerHeight } };
 })()

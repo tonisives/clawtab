@@ -21,7 +21,12 @@
   await wait(50);
   logs.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, clientX: 30, clientY: 100 }));
   await wait(450);
-  assert(document.activeElement === input, "long press does not blur the input or dismiss its keyboard mid gesture");
+  assert(document.activeElement !== input, "selection releases the invisible shell input before WebKit begins its long press");
+  window.nfn.receive({ type: "mobile_action", action: "reply_focus" });
+  assert(document.activeElement !== input, "delayed reply focus cannot interrupt a pending selection");
+  Object.defineProperty(window, "innerHeight", { value: originalHeight, configurable: true });
+  window.nfnMobile.setInsets(34, false);
+  assert(document.documentElement.style.getPropertyValue("--message-height") === "500px", "keyboard dismissal keeps selection coordinates fixed");
   const range = document.createRange(); range.selectNodeContents(logs);
   const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
   const before = range.getBoundingClientRect();
@@ -32,6 +37,7 @@
   fixture.log = "Selection stays here\nA second line\nA final visible line";
   window.nfn.receive({ type: "mobile_visibility", active: false });
   assert(selection.isCollapsed, "leaving for details clears the old native range");
+  assert(!document.querySelector("#surface").classList.contains("shell-reply"), "leaving closes the old input session instead of refocusing it on return");
   Object.defineProperty(window, "innerHeight", { value: originalHeight, configurable: true });
   window.nfnMobile.setInsets(34, false);
   window.nfn.receive({ type: "mobile_visibility", active: true });
@@ -42,5 +48,12 @@
   selection.addRange(returned);
   const rect = returned.getBoundingClientRect();
   assert(rect.height > 0 && rect.top >= 0 && rect.bottom <= originalHeight + 1, "the same shell can be selected again at its visible coordinates");
+  selection.removeAllRanges();
+  window.nfn.receive({ type: "mobile_action", action: "reply" });
+  logs.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, clientX: 30, clientY: 100 }));
+  assert(document.activeElement !== input, "selection can release input again after returning from details");
+  logs.dispatchEvent(new PointerEvent("pointercancel", { bubbles: true }));
+  await wait(1100);
+  assert(!logs._selecting, "a cancelled selection releases its gesture lock");
   return { passed: checks.length, checks };
 })()
