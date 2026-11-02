@@ -40,6 +40,13 @@
   assert(document.querySelector(".open-session").disabled && !document.querySelector(".reply-toggle"), "User reminders have no linked agent controls");
   click("Got it"); await sleep(30);
   assert(personal.dismissed_at, "User reminders can be completed");
+  reset();
+  const mobileReminder = reminder("mobile-reminder");
+  mobileReminder.request.source.pane_id = "%saved";
+  const mobile = window.fixture.snapshot(mobileReminder.id); mobile.remote = true; mobile.native_chrome = true;
+  window.nfn.receive(mobile);
+  window.nfn.receive({ type: "mobile_action", action: "reply" });
+  assert(!document.querySelector(".reply-row").hidden && !document.querySelector("#surface").classList.contains("shell-reply"), "The phone Reply control uses the resumable message handler instead of a stale shell");
   reset(); reminder("reminder-preview");
   return { checks };
 })()

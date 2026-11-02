@@ -70,6 +70,7 @@ function harness() {
     '../store/terminalSettings': { useTerminalSettings: { getState: () => ({ hydrate: async () => {} }) } },
     '../lib/notifications': { getPushToken: () => pushToken },
     '../lib/analytics': {}, '../store/pins': {}, '../lib/useRequestMap': {}, './useLogs': {},
+    '../lib/funnel': { trackFunnel: async () => {} }, '../lib/activation': load('remote/src/lib/activation.ts', {}),
     '../transport/wsTransport': {}, './usePty': {}, '../lib/agentActions': {}, '../lib/machineSecurity': {},
   });
   return { storage, asyncStorage, delayedReads, shared, auth, messages, actions, notifications, jobs, ws, registrations,

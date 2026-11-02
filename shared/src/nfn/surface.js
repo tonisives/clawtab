@@ -2137,7 +2137,7 @@
         sendShellInput(value.text); card?._shellInput?.focus({ preventScroll: true });
       }
       else if (value.action === "reply") {
-        if (records.get(current)?.request.source?.pane_id) setShellReply(true);
+        if (records.get(current)?.request.source?.pane_id && !records.get(current)?.request.deliver_at) setShellReply(true);
         else card?.querySelector(".reply-toggle")?.click();
       }
       else if (value.action === "open") card?.querySelector(".open-session")?.click();
