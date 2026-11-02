@@ -8,7 +8,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform, useWindowDimensions } from "react-native";
 import type { DetectedProcess } from "../types/process";
 import { PopupMenu } from "./PopupMenu";
-import { compactProcessQuery, processDisplayTitle, shortenPath } from "../util/format";
+import { compactProcessQuery, processDisplayTitle, shortenPath, timeAgo } from "../util/format";
 import { Tooltip } from "./Tooltip";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
@@ -17,6 +17,16 @@ import { JobKindIcon, kindForProcess } from "./JobKindIcon";
 const isWeb = Platform.OS === "web";
 const AGENT_ACTIVITY_WINDOW_MS = 8_000;
 type GroupedRowPosition = "single" | "first" | "middle" | "last";
+
+function AgentTimestamp({ timestamp }: { timestamp: number }) {
+  const [, refresh] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => refresh(value => value + 1), 30_000);
+    return () => clearInterval(timer);
+  }, []);
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return null;
+  return <Text style={styles.timestamp} numberOfLines={1}>{timeAgo(new Date(Math.min(timestamp, Date.now())).toISOString())}</Text>;
+}
 
 function groupedCardStyle(position?: GroupedRowPosition) {
   if (!isWeb || !position || position === "single") return null;
@@ -70,6 +80,9 @@ export function ProcessCard({
   const compactPhoneLandscape = Platform.OS === "ios" && !Platform.isPad && width > height;
   let modelLabel = agentLabel ?? (process.model_id ? compactAgentSelectionLabel(null, process.model_id, process.agent_effort) : null);
   const displayName = processDisplayTitle(process);
+  const timestamp = Math.max(process.last_user_message_at ?? 0, process._last_user_message ?? 0)
+    || process._last_activity || process._last_log_change
+    || (process.session_started_at ? Date.parse(process.session_started_at) : 0);
   let subtitle = compactProcessQuery(process.last_query) ?? compactProcessQuery(process.first_query);
   const transient = process._transient_state;
   const listItemSubtitle = transient
@@ -231,6 +244,7 @@ export function ProcessCard({
   );
   const titleControls = (
     <View style={styles.titleControls}>
+      {!editing ? <AgentTimestamp timestamp={timestamp} /> : null}
       {showMenu && !editing ? (
         <TouchableOpacity
           ref={menuBtnRef}
@@ -363,6 +377,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     marginLeft: spacing.sm,
   },
+  timestamp: { color: colors.textMuted, fontSize: 12, flexShrink: 0 },
   editInput: {
     color: colors.text,
     fontSize: 16,
