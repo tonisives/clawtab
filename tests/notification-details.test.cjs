@@ -18,7 +18,7 @@ test("notification details retains the selected pane without a second notificati
     "react/jsx-runtime": { jsx, jsxs: jsx },
     "react-native": { StyleSheet: { create: value => value } },
     "expo-router": { useLocalSearchParams: () => ({ pane_id: "machine::_pct_12", source: "notifications" }) },
-    "@clawtab/shared": { colors: {}, spacing: {} },
+    "@clawtab/shared": { colors: {}, radius: {} },
   });
   const view = screen.default();
   assert.equal(view.props.pane_id, "machine::%12");
