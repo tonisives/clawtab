@@ -24,13 +24,10 @@ ClawTab connects Claude Code, Codex, OpenCode, and Hermes in one workspace. The 
 ## How it fits together
 
 ```mermaid
+%%{init: {"flowchart": {"wrappingWidth": 420}}}%%
 flowchart TB
-  subgraph machine["Each machine: your Mac, Linux or Windows hosts, rented boxes"]
-    direction LR
-    A["Agents in tmux or managed terminals"] <--> D["ClawTab daemon"]
-    D <--> C["Message bar, tmux plugin, cwt, desktop app"]
-  end
-  machine <--> R["Relay"]
+  M@{ shape: procs, label: "**Every machine: your Mac, Linux and Windows hosts, rented boxes**<br/>Agents in tmux or managed terminals, the ClawTab daemon, and local clients: message bar, tmux plugin, cwt, desktop app" }
+  M <--> R["Relay"]
   R <--> I["iPhone app"]
   R <--> W["Web Remote (browser and Android)"]
 ```
