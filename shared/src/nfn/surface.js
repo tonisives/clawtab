@@ -313,6 +313,14 @@
     for (const record of pendingRecords().sort(messageOrder)) threads.set(threadKey(record) || record.id, record);
     return [...threads.values()].sort(messageOrder);
   }
+  function navigationCards() {
+    const items = pendingCards(), viewed = records.get(current);
+    // A received update must not remove the page under the user's finger,
+    // including when the host supersedes the message being read.
+    if (mobileHost() && viewed && !viewed.dismissed_at && !viewed.ignored && !actionInProgress(viewed)
+      && !items.some(record => record.id === viewed.id)) items.push(viewed);
+    return items.sort(messageOrder);
+  }
   function cardMessages(record) {
     const key = threadKey(record);
     return [...records.values()].filter(item => item.id === record.id || (key && threadKey(item) === key
@@ -335,7 +343,7 @@
   const mobileShellCache = new Map();
   const mobileContextRequests = new Map(), mobileShellCapturedAt = new Map(), mobilePreloadAttempts = new Map();
   let mobilePreloads = 0;
-  let shellReply = false, shellSending = false, shellInputTimer = null, lastMobileChrome = "";
+  let shellReply = false, shellSending = false, shellInputTimer = null, lastMobileChrome = "", mobileArrival = 0, receivedMobileSnapshot = false;
   const shellInputQueue = [];
   const mobileHost = () => Boolean(window.ReactNativeWebView);
   function captureMobileShell(id) {
@@ -361,10 +369,10 @@
   }
   function syncMobileChrome() {
     if (!mobileHost()) return;
-    const items = pendingCards(), index = items.findIndex(record => record.id === current);
+    const items = navigationCards(), index = items.findIndex(record => record.id === current);
     const state = { screen: todosOpen ? "tasks" : settingsOpen ? "settings" : queue ? "list" : current ? "message" : "list",
-      counter: current && index >= 0 ? (index + 1) + " / " + pendingCount() : pendingCount() + " pending",
-      canNavigate: Boolean(current && items.length > 1), reply: shellReply };
+      counter: current && index >= 0 ? (index + 1) + " / " + (items.length + unseenPending) : pendingCount() + " pending",
+      canNavigate: Boolean(current && items.length > 1), reply: shellReply, arrival: mobileArrival };
     const signature = JSON.stringify(state);
     if (signature !== lastMobileChrome) { lastMobileChrome = signature; native({ native: "chrome", ...state }); }
   }
@@ -690,7 +698,7 @@
     hiddenByUser = true; queueReturnId = null; collapse(false);
   }
   function closeResumedCompletion(previous) {
-    if (previous?.id !== current || !pending(previous) || previous.request.data?.event !== "agent_finished"
+    if (mobileHost() || previous?.id !== current || !pending(previous) || previous.request.data?.event !== "agent_finished"
       || records.get(current)?.status !== "resolved") return;
     queueReturnId = null;
     collapse(false);
@@ -721,7 +729,7 @@
     if (current !== id) card?._logs?._cancelSelection?.();
     if (snapshot.remote) window.nfnPaging?.opening();
     const record = records.get(id), key = record && threadKey(record);
-    if (record && pending(record) && !record.dismissed_at && !record.ignored && key) id = pendingCards().find(item => threadKey(item) === key)?.id || id;
+    if (!mobileHost() && record && pending(record) && !record.dismissed_at && !record.ignored && key) id = pendingCards().find(item => threadKey(item) === key)?.id || id;
     shellReply = false;
     todosOpen = false;
     if (actionsInProgress.has(id)) return;
@@ -744,12 +752,12 @@
     const id = current, version = reviewVersion;
     navigating = true;
     try {
-      let items = pendingCards(), index = items.findIndex(record => record.id === current);
+      let items = navigationCards(), index = items.findIndex(record => record.id === current);
       while (unseenPending > 0 && (index + step >= items.length || index + step < 0)) {
         const result = await call({ op: "list", offset: pendingOffset, pending_only: true });
         addPendingPage(result);
         if (current !== id || version !== reviewVersion || queue || settingsOpen) return;
-        items = pendingCards(); index = items.findIndex(record => record.id === current);
+        items = navigationCards(); index = items.findIndex(record => record.id === current);
       }
       const retry = step > 0 && items.find(record => record.id !== current && retryIds.has(record.id));
       if (items.length) {
@@ -1433,7 +1441,7 @@
     const isPending = pending(record) && !record.dismissed_at && !record.ignored;
     if (card._thread && !card._thread._positioned) { card._thread.scrollTop = card._thread.scrollHeight; card._thread._positioned = true; }
     card._wasPending = isPending;
-    if (wasPending && !isPending && !preview && !shellReply) {
+    if (wasPending && !isPending && !preview && !shellReply && !mobileHost()) {
       clearTimeout(completionTimer);
       const id = current;
       completionTimer = setTimeout(() => {
@@ -2204,7 +2212,7 @@
       top.append(list);
     }
     updateTodoRing(top);
-    const items = pendingCards(), index = items.findIndex(record => record.id === current);
+    const items = navigationCards(), index = items.findIndex(record => record.id === current);
     const isOpen = Boolean(current || queue || expanded), toggle = top.querySelector(".bar-toggle");
     toggle.setAttribute("aria-label", isOpen ? "Collapse notifications" : "Expand notifications"); toggle.setAttribute("aria-expanded", String(isOpen));
     toggle.title = `${isOpen ? "Collapse" : "Open"} notifications. Drag to move.`;
@@ -2214,9 +2222,10 @@
       if (isOpen) draggableBar(label);
       countButton.replaceWith(label); countButton = label;
     }
-    countButton.textContent = current && index >= 0 && !settingsOpen ? `${index + 1} / ${count}` : `${count} pending`;
+    const navigationCount = mobileHost() && current ? items.length + unseenPending : count;
+    countButton.textContent = current && index >= 0 && !settingsOpen ? `${index + 1} / ${navigationCount}` : `${count} pending`;
     if (isOpen) countButton.title = queue || settingsOpen ? "Return to notification" : "Collapse notifications";
-    for (const step of top.querySelectorAll(".nav-step")) step.hidden = !current || count < 2 || settingsOpen;
+    for (const step of top.querySelectorAll(".nav-step")) step.hidden = !current || navigationCount < 2 || settingsOpen;
     top.querySelector(".list-toggle").setAttribute("aria-pressed", String(queue && !settingsOpen));
     if (!settingsOpen) host.querySelector(".notification-settings")?.remove();
     if (!todosOpen) host.querySelector(".todo-view")?.remove();
@@ -2338,16 +2347,22 @@
     }
     if (value.type === "settings") { openSettings(); return; }
     if (value.type !== "snapshot") return;
+    if (value.remote && window.nfnPaging?.deferSnapshot(value)) return;
     if (value.remote) for (const [id, log] of Object.entries(value.shell_cache || {})) {
       if (typeof log === "string" && !mobileShellCache.has(id)) mobileShellCache.set(id, log);
     }
     const previousCurrent = records.get(current);
+    if (mobileHost()) {
+      if (receivedMobileSnapshot && snapshot.visible && value.visible && (value.records || []).some(record =>
+        !records.has(record.id) && pending(record) && !record.dismissed_at && !record.ignored)) mobileArrival++;
+      receivedMobileSnapshot = true;
+    }
     snapshot = value; preview = Boolean(value.preview);
     if (value.todos) todoData = value.todos;
     const incoming = new Set();
     for (const record of value.records || []) { records.set(record.id, record); incoming.add(record.id); }
     const activeRecord = records.get(current), activeKey = activeRecord && threadKey(activeRecord);
-    if (!shellReply && activeRecord && pending(activeRecord) && !activeRecord.dismissed_at && !activeRecord.ignored && activeKey && !actionsInProgress.has(current)) {
+    if (!mobileHost() && !shellReply && activeRecord && pending(activeRecord) && !activeRecord.dismissed_at && !activeRecord.ignored && activeKey && !actionsInProgress.has(current)) {
       const latest = pendingCards().find(item => threadKey(item) === activeKey);
       if (latest && latest.id !== current) {
         pauseTimer(); stopContext(); current = latest.id; queueReturnId = current; renderedId = null; menu = null;
@@ -2375,7 +2390,7 @@
       }).catch(error => showError(error, id));
     }
     if (value.arrival && records.has(value.arrival)) hiddenByUser = false;
-    if (value.arrival && records.has(value.arrival) && !actionsInProgress.has(value.arrival) && !current && !settingsOpen && !todosOpen && !bulkBusy && (!queue || !selectedNotifications.size)) {
+    if (!mobileHost() && value.arrival && records.has(value.arrival) && !actionsInProgress.has(value.arrival) && !current && !settingsOpen && !todosOpen && !bulkBusy && (!queue || !selectedNotifications.size)) {
       clearTimeout(completionTimer); pauseTimer(); stopContext();
       const arrival = records.get(value.arrival), key = threadKey(arrival);
       current = (key && pendingCards().find(record => threadKey(record) === key)?.id) || value.arrival;
@@ -2613,7 +2628,7 @@
   document.addEventListener("visibilitychange", () => { if (document.hidden) stopContext(); else startContext(); });
   window.nfn = { receive, collapse, pagePreview(step) {
     if (!snapshot.remote || !current || queue || menu || settingsOpen || todosOpen) return null;
-    const items = pendingCards(), index = items.findIndex(record => record.id === current);
+    const items = navigationCards(), index = items.findIndex(record => record.id === current);
     if (items.length < 2 || index < 0) return null;
     if (unseenPending > 0 && (index + step >= items.length || index + step < 0)) return null;
     const retry = step > 0 && items.find(record => record.id !== current && retryIds.has(record.id));

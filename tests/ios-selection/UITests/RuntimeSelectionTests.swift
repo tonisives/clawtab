@@ -40,6 +40,29 @@ final class RuntimeSelectionTests: XCTestCase {
         exerciseSelection(app, keyboard: false)
     }
 
+    func testLongOutputOpensAtTouchedWord() {
+        let app = XCUIApplication(bundleIdentifier: "cc.clawtab.selection-runtime")
+        app.launch()
+        app.buttons["Long"].tap()
+        let target = app.webViews.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Target selected at the bottom")).firstMatch
+        XCTAssertTrue(target.waitForExistence(timeout: 20), app.debugDescription)
+        let point = target.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 1)).withOffset(CGVector(dx: 24, dy: -25))
+        point.press(forDuration: 0.7)
+        let text = app.textViews["Message text"]
+        XCTAssertTrue(text.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(app.staticTexts["Touch and hold to select text, then drag the handles and tap Copy."].exists)
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        let copy = app.menuItems["Copy"].firstMatch
+        if !copy.exists { text.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.9)).press(forDuration: 1) }
+        XCTAssertTrue(copy.waitForExistence(timeout: 5), app.debugDescription)
+        copy.tap()
+        app.buttons["Done"].tap()
+        app.buttons["Read clipboard"].tap()
+        XCTAssertFalse((app.staticTexts["Clipboard contents"].firstMatch.value as? String ?? "").isEmpty)
+    }
+
     private func exerciseSelection(_ app: XCUIApplication, keyboard: Bool) {
         app.buttons["Clear"].tap()
         let output = app.webViews.staticTexts.matching(NSPredicate(format: "label == %@ OR label BEGINSWITH %@", "Selection", "Selection starts here")).firstMatch

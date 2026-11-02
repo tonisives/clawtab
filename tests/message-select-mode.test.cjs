@@ -56,14 +56,13 @@ test("selection uses read-only native text and Copy all copies the frozen text",
     "expo-clipboard": { setStringAsync: async text => { copied = text; } },
   });
   const root = MessageTextSelection({ text: "frozen text", selection: { start: 0, end: 6 }, bottom: 34, onDone: () => done = true });
-  const input = root.props.children.find(node => node.type === "TextInput");
+  const input = root.props.children.find(node => node?.type === "TextInput");
   assert.equal(input.props.editable, false);
   assert.equal(input.props.showSoftInputOnFocus, false);
   assert.equal(input.props.defaultValue, "frozen text");
-  let positions = [];
-  input.props.ref.current = { setSelection: (...range) => positions.push(range) };
-  input.props.onLayout(); input.props.onLayout();
-  assert.deepEqual(positions, [[0, 6]], "position once, then leave selection handles under native control");
+  assert.deepEqual(input.props.selection, { start: 0, end: 6 }, "initial native props position before first layout");
+  assert.equal(input.props.ref, undefined, "no animated imperative scroll after layout");
+  assert.ok(!JSON.stringify(root).includes("Touch and hold"));
   const buttons = root.props.children.at(-1).props.children;
   buttons[0].props.onPress(); await Promise.resolve();
   assert.equal(copied, "frozen text");

@@ -32,7 +32,7 @@ test("standalone shell swipes leave navigation to iOS while notification cards s
     v.context.performance = { now: () => 10 };
     v.window.getSelection = () => ({ isCollapsed: true });
     v.window.nfnPaging = {
-      finish() {}, cancel() {},
+      finish() {}, cancel() {}, setTouching() {},
       begin: () => calls.push("begin"), move: () => calls.push("move"),
       release: () => calls.push("release"),
     };

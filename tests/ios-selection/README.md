@@ -53,3 +53,13 @@ textarea. On iOS 26.5 that configuration reproduces the original failure:
 selection succeeds before typing, but the first long press after opening the
 keyboard establishes no range. With the separate native input the same press
 selects a word, and dragging its handle extends the range.
+
+The runtime suite also opens 150 lines of output at a touched word near the
+bottom and captures its initial selection position. The selection view has no
+instruction block above the text.
+
+For notification paging, generate `node tests/mobile-pager-fixture.cjs` and run
+`tests/mobile-pager-browser-check.js` in that page using the background browser.
+It sends touch events with snapshots arriving before the drag threshold and
+during animation, then checks same-shell arrivals, superseded pages and list
+position.

@@ -3,8 +3,22 @@
   const host = document.getElementById("surface");
   const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
   const easing = "cubic-bezier(0.22,1,0.36,1)";
-  let drag = null, transition = null;
+  let drag = null, transition = null, touching = false, pendingSnapshot = null;
   const translate = x => `translate3d(${x}px,0,0)`;
+  function flushSnapshot() {
+    queueMicrotask(() => {
+      if (touching || drag || transition || !pendingSnapshot) return;
+      const value = pendingSnapshot; pendingSnapshot = null;
+      window.nfn.receive(value);
+    });
+  }
+  function setTouching(value) { touching = value; if (!value) flushSnapshot(); }
+  function deferSnapshot(value) {
+    if (!touching && !drag && !transition && !pendingSnapshot) return false;
+    pendingSnapshot = value;
+    flushSnapshot();
+    return true;
+  }
 
   function finish() {
     const active = transition; transition = null;
@@ -20,6 +34,7 @@
       drag = null;
     }
     delete host.dataset.paging;
+    flushSnapshot();
   }
 
   function page(node, rect, showDetails, replying = false) {
@@ -144,7 +159,7 @@
   function reconcile() {
     if (transition && !transition.card.isConnected || drag && !drag.card.isConnected && !drag.outgoing) finish();
   }
-  window.nfnPaging = { begin, move, release, cancel, finish, willNavigate, didNavigate, opening, reconcile };
+  window.nfnPaging = { begin, move, release, cancel, finish, willNavigate, didNavigate, opening, reconcile, setTouching, deferSnapshot };
   window.addEventListener("resize", finish);
   document.addEventListener("visibilitychange", () => { if (document.hidden) finish(); });
 })();

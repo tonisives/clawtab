@@ -62,6 +62,7 @@
       this.releaseSelection();
       pointer = null; swipe = null;
       window.nfnPaging?.finish();
+      window.nfnPaging?.setTouching(false);
       window.getSelection?.()?.removeAllRanges();
       for (const logs of document.querySelectorAll?.(".logs") || []) {
         logs._cancelSelection?.(); logs._selecting = false;
@@ -90,6 +91,7 @@
   const selecting = () => window.getSelection()?.isCollapsed === false;
   document.addEventListener("touchstart", event => {
     window.nfnPaging?.finish();
+    window.nfnPaging?.setTouching(false);
     swipe = null;
     if (event.touches.length !== 1 || selecting()) return;
     // Standalone shell details use the native back gesture, not message paging.
@@ -99,6 +101,7 @@
       if (node.scrollWidth > node.clientWidth + 1 && /auto|scroll/.test(getComputedStyle(node).overflowX)) return;
     }
     const touch = event.touches[0];
+    window.nfnPaging?.setTouching(true);
     swipe = { card, id: touch.identifier, x: touch.clientX, y: touch.clientY, horizontal: false,
       lastX: touch.clientX, lastAt: performance.now(), at: performance.now(), velocity: 0 };
   }, { passive: true, capture: true });
@@ -106,11 +109,11 @@
     if (!swipe) return;
     const touch = event.touches[0];
     if (event.touches.length !== 1 || touch.identifier !== swipe.id || selecting()) {
-      window.nfnPaging?.cancel(); swipe = null; return;
+      window.nfnPaging?.cancel(); window.nfnPaging?.setTouching(false); swipe = null; return;
     }
     const dx = Math.abs(touch.clientX - swipe.x), dy = Math.abs(touch.clientY - swipe.y);
-    if (!swipe.horizontal && performance.now() - swipe.at >= 350) { swipe = null; return; }
-    if (!swipe.horizontal && dy > 12 && dy >= dx) { swipe = null; return; }
+    if (!swipe.horizontal && performance.now() - swipe.at >= 350) { window.nfnPaging?.setTouching(false); swipe = null; return; }
+    if (!swipe.horizontal && dy > 12 && dy >= dx) { window.nfnPaging?.setTouching(false); swipe = null; return; }
     if (!swipe.horizontal && dx > 12 && dx > dy * 1.5) {
       swipe.horizontal = true;
       window.nfnPaging?.begin(swipe.card);
@@ -123,9 +126,10 @@
       window.nfnPaging?.move(touch.clientX - swipe.x);
     }
   }, { passive: false, capture: true });
-  document.addEventListener("touchcancel", () => { window.nfnPaging?.cancel(); swipe = null; }, { passive: true, capture: true });
+  document.addEventListener("touchcancel", () => { window.nfnPaging?.cancel(); window.nfnPaging?.setTouching(false); swipe = null; }, { passive: true, capture: true });
   document.addEventListener("touchend", event => {
     const start = swipe; swipe = null;
+    window.nfnPaging?.setTouching(false);
     if (!start || event.touches.length || selecting()
       || !start.card.isConnected || !start.card.matches("#surface:not(.menu-open) > .card")) { window.nfnPaging?.cancel(); return; }
     const touch = Array.from(event.changedTouches).find(touch => touch.identifier === start.id);

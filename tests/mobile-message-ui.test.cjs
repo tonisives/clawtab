@@ -573,9 +573,9 @@ test("reply keeps native navigation and lays the shared keyboard controls in flo
   let dismissed = 0;
   const jsx = (type, props) => ({ type, props });
   const dependencies = {
-    react: { useLayoutEffect: effect => effect(), useState: value => [value, () => {}], useCallback: value => value },
+    react: { useLayoutEffect: effect => effect(), useState: value => [value, () => {}], useCallback: value => value, useEffect: () => {}, useMemo: callback => callback(), useRef: current => ({ current }) },
     "react/jsx-runtime": { jsx, jsxs: jsx },
-    "react-native": { View: "View", Modal: "Modal", Pressable: "Pressable", Text: "Text", TouchableOpacity: "TouchableOpacity", StyleSheet: { create: value => value } },
+    "react-native": { Animated: { Value: class { interpolate(value) { return value; } }, View: "Animated.View" }, View: "View", Modal: "Modal", Pressable: "Pressable", Text: "Text", TouchableOpacity: "TouchableOpacity", StyleSheet: { create: value => value } },
     "expo-router": { useNavigation: () => ({ setOptions: value => options.push(value) }), useRouter: () => ({}) },
     "@expo/vector-icons": { Ionicons: "Ionicons" },
     "@clawtab/shared": { colors: {}, SegmentedControl: "SegmentedControl" },
