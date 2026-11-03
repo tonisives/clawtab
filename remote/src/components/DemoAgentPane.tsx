@@ -4,7 +4,7 @@ import { Ionicons } from "@expo/vector-icons"
 import { JobKindIcon, XtermLog, colors, kindForProcess, type XtermLogHandle } from "@clawtab/shared"
 import { MachineModal } from "../../../shared/src/machines/Onboarding"
 import { DEMO_JOBS, DEMO_LOGS, DEMO_PROCESSES, demoQuestionForSelection } from "../demo/data"
-import { DemoQuestionButtons } from "./DemoQuestionButtons"
+import { DemoQuestionSurface } from "./DemoQuestionSurface"
 import { demoShell } from "../demo/shell"
 import { DemoDetailsContent } from "./DemoDetailsContent"
 
@@ -41,8 +41,8 @@ export let DemoAgentPane = ({ id, kind, onShowOverview }: DemoSelection & { onSh
         <Ionicons name="ellipsis-horizontal" size={22} color={colors.text} />
       </Pressable>
     </View>
-    <View style={styles.terminal} accessibilityLabel="Shell logs"><XtermLog ref={terminal} interactive={false} forceDarkTheme /></View>
-    {question ? <DemoQuestionButtons question={question} /> : <View style={styles.composer}>
+    <View style={styles.terminal} accessibilityLabel="Shell logs">{question ? <DemoQuestionSurface question={question} output={shell.output} /> : <XtermLog ref={terminal} interactive={false} forceDarkTheme />}</View>
+    {!question && <View style={styles.composer}>
       <TextInput value={draft} onChangeText={setDraft} placeholder={shell.placeholder} placeholderTextColor={colors.textMuted} accessibilityLabel="Demo prompt" accessibilityHint="Try typing locally. Demo prompts are not sent to an agent." multiline autoCapitalize="none" autoCorrect={false} style={styles.input} />
       <Text style={styles.model}>{shell.model}</Text>
     </View>}

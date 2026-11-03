@@ -2,13 +2,13 @@ import type { ComponentRef } from "react";
 import { useEffect, useRef, useState } from "react"
 import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native"
 import { useHeaderHeight } from "expo-router/react-navigation"
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
+import { SafeAreaView } from "react-native-safe-area-context"
 import { Stack, useLocalSearchParams, useRouter } from "expo-router"
 import { Ionicons } from "@expo/vector-icons"
 import { XtermLog, JobKindIcon, colors, kindForProcess, type XtermLogHandle } from "@clawtab/shared"
 import { HeaderTitleWithIcon } from "../src/components/HeaderButtons"
 import { DEMO_JOBS, DEMO_LOGS, DEMO_PROCESSES, demoQuestionForSelection } from "../src/demo/data"
-import { DemoQuestionButtons } from "../src/components/DemoQuestionButtons"
+import { DemoQuestionSurface } from "../src/components/DemoQuestionSurface"
 import { demoShell } from "../src/demo/shell"
 
 let DemoAgentScreen = () => {
@@ -18,7 +18,6 @@ let DemoAgentScreen = () => {
   let input = useRef<ComponentRef<typeof TextInput> | null>(null)
   let [draft, setDraft] = useState("")
   let headerHeight = useHeaderHeight()
-  let insets = useSafeAreaInsets()
   let process = kind === "process" ? DEMO_PROCESSES.find((item) => item.pane_id === id) : undefined
   let job = kind === "job" ? DEMO_JOBS.find((item) => item.slug === id) : undefined
   let title = process?.display_name ?? job?.display_name ?? job?.name ?? "Sample agent"
@@ -39,8 +38,8 @@ let DemoAgentScreen = () => {
   return <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={headerHeight}>
     <Stack.Screen options={{ title, headerTitle, headerRight }} />
     <Pressable style={styles.notice} accessibilityRole="button" accessibilityLabel="About demo mode" onPress={() => router.push("/demo-overview")}><Ionicons name="information-circle-outline" size={18} color={colors.warning} /><Text style={styles.noticeText}>Demo</Text></Pressable>
-    <View style={styles.terminal} accessibilityLabel="Shell logs"><XtermLog ref={terminal} interactive={false} forceDarkTheme extendedViewport /></View>
-    {question ? <DemoQuestionButtons question={question} bottomInset={insets.bottom} /> : <SafeAreaView edges={["bottom"]} style={styles.composer}>
+    <View style={styles.terminal} accessibilityLabel="Shell logs">{question ? <DemoQuestionSurface question={question} output={shell.output} /> : <XtermLog ref={terminal} interactive={false} forceDarkTheme extendedViewport />}</View>
+    {!question && <SafeAreaView edges={["bottom"]} style={styles.composer}>
       <TextInput ref={input} value={draft} onChangeText={setDraft} placeholder={shell.placeholder} placeholderTextColor="#a1a1aa" accessibilityLabel="Demo prompt" accessibilityHint="Try typing locally. Demo prompts are not sent to an agent." multiline submitBehavior="blurAndSubmit" blurOnSubmit onSubmitEditing={dismissInput} returnKeyType="done" autoCapitalize="none" autoCorrect={false} style={styles.input} />
       <View style={styles.inputFooter}><Text style={styles.model}>{shell.model}</Text><Pressable accessibilityRole="button" accessibilityLabel="Show keyboard" onPress={focusInput} style={styles.menu}><Ionicons name="keypad-outline" size={22} color="#a1a1aa" /></Pressable></View>
     </SafeAreaView>}

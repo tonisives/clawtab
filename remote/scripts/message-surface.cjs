@@ -63,7 +63,9 @@ button.auto-yes-button{width:100%;min-height:44px;padding:8px 16px;border-radius
 .native-mobile.shell-reply .heading-tools>:not(.options-toggle){display:none}
 .native-mobile.shell-reply .source-group{max-width:25%;font-size:12px}
 .native-mobile.details-open .details-toggle{display:none}
-.shell-only>.top,.shell-only>.card>:not(.message-content):not(.shell-keyboard):not(.notice){display:none}
+.shell-only>.top,.shell-only>.card>:not(.message-content):not(.shell-keyboard):not(.notice):not(.answer-row):not(.answer-auto-yes){display:none}
+.shell-only:not(.shell-answers)>.card>:is(.answer-row,.answer-auto-yes){display:none}
+.shell-only.shell-answers>.card>:is(.answer-row,.answer-auto-yes){margin-left:12px;margin-right:12px}
 .native-mobile.shell-only.details-open>.card{padding:0}
 .shell-only .message-content>:not(.details-content){display:none}
 .shell-only .details-content{margin:0;min-height:0;flex:1}

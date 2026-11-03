@@ -19,7 +19,7 @@ function load(file, dependencies) {
 }
 
 function fixture(version = 26) {
-  const state = { questions: [], records: [], detectedProcesses: [] };
+  const state = { questions: [], records: [], detectedProcesses: [], demo: false, demoRecords: [] };
   const messages = load("store/messages.ts", {
     "@react-native-async-storage/async-storage": {},
     zustand: { create: () => () => {} },
@@ -31,6 +31,8 @@ function fixture(version = 26) {
     "../store/jobs": { useJobsStore: select => select(state) },
     "../store/messages": { ...messages, useMessageStore: select => select(state) },
     "../store/notifications": { useNotificationStore: select => select(state) },
+    "./useDemoMode": { useDemoMode: () => state.demo },
+    "../demo/messages": { useDemoMessages: select => select({ records: state.demoRecords }) },
   });
   const pushes = [];
   const { TabScreenStack } = load("components/TabScreenStack.tsx", {
@@ -46,6 +48,20 @@ function fixture(version = 26) {
 }
 
 const record = (id, extra = {}) => ({ id, machine_id: "mac", status: "pending", request: { source: {}, data: {} }, ...extra });
+
+test("demo pending count stays separate from live messages and follows local review decisions", () => {
+  const app = fixture();
+  app.state.records = [record("live-a"), record("live-b")];
+  app.state.questions = [{ question_id: "live-question" }];
+  app.state.demoRecords = [record("demo-x-post")];
+  app.state.demo = true;
+  assert.equal(app.count(), 1);
+  assert.equal(app.options().unstable_headerRightItems()[0].badge.value, 1);
+  app.state.demoRecords = [record("demo-x-post", { status: "answered" })];
+  assert.equal(app.count(), 0);
+  app.state.demo = false;
+  assert.equal(app.count(), 3);
+});
 
 test("native bell shows four pending messages and clears its badge when resolved", () => {
   const app = fixture();

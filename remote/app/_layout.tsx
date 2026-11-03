@@ -23,6 +23,7 @@ import { NotificationsMenuButton } from "../src/components/NotificationsMenuButt
 import { useResponsive } from "../src/hooks/useResponsive";
 import { useMobileHeaderStore } from "../src/store/mobileHeader";
 import { useJobFilterStore } from "../src/store/jobFilter";
+import { useDemoMode } from "../src/hooks/useDemoMode";
 
 if (Platform.OS !== "web") void SplashScreen.preventAutoHideAsync();
 
@@ -140,6 +141,7 @@ function WebSocketProvider({ children, userId }: { children: React.ReactNode; us
 }
 
 export default function RootLayout() {
+  const demo = useDemoMode();
   const [iconsReady, setIconsReady] = useState(false);
   useIapRecovery();
   useWebDarkScrollbars();
@@ -211,7 +213,7 @@ export default function RootLayout() {
           <Stack.Screen name="machine-page" options={({ route }) => ({ title: (route.params as { title?: string } | undefined)?.title ?? "Machine", headerShown: true, headerTintColor: colors.text, headerStyle: { backgroundColor: colors.bg }, headerBackButtonDisplayMode: "minimal", animation: "slide_from_right" })} />
           <Stack.Screen name="job/[name]" options={{ animation: "slide_from_right" }} />
           <Stack.Screen name="process/[pane_id]" options={{ animation: "slide_from_right" }} />
-          <Stack.Protected guard={isAuthenticated}>
+          <Stack.Protected guard={isAuthenticated || demo}>
             <Stack.Screen
               name="notifications"
               options={{

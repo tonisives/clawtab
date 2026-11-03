@@ -14,8 +14,10 @@ import type { NotificationDetailTarget } from "./notificationTypes";
 import { MessageSurface } from "./MessageSurface";
 import type { SurfaceMessage } from "./messageSurfaceTypes";
 import { nextId } from "../lib/wsRuntime";
+import { useDemoMode } from "../hooks/useDemoMode";
+import { DemoMessageInbox } from "./DemoMessageInbox";
 
-export function MessageInbox({ selection, popup = false, active = true, arrival, onSelectDetail, onNavigateAway, onNative }: {
+type MessageInboxProps = {
   selection?: string | null;
   popup?: boolean;
   active?: boolean;
@@ -23,7 +25,14 @@ export function MessageInbox({ selection, popup = false, active = true, arrival,
   onSelectDetail?: (target: NotificationDetailTarget) => void;
   onNavigateAway?: () => void;
   onNative?: (message: SurfaceMessage) => void;
-}) {
+};
+
+export function MessageInbox(props: MessageInboxProps) {
+  const demo = useDemoMode();
+  return demo ? <DemoMessageInbox {...props} /> : <LiveMessageInbox {...props} />;
+}
+
+function LiveMessageInbox({ selection, popup = false, active = true, arrival, onSelectDetail, onNavigateAway, onNative }: MessageInboxProps) {
   const router = useRouter();
   const records = useMessageStore(state => state.records);
   const autoYes = useNotificationStore(state => state.autoYesPaneIds);

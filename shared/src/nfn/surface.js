@@ -2282,6 +2282,7 @@
       updateCard(); syncCardDetails(records.get(current));
     } else { host.querySelector(".card")?.remove(); host.querySelector(".queue")?.remove(); renderedId = null; card = null; }
     renderMenu(); positionAcknowledgementMenu(); cleanupRemoteMedia(); observeCardSize(); fitReviewHeight(); if (resizing || !animate) size(); else if (!continuingAnimation) animateLayout(before, !queue && !menu && !settingsOpen);
+    host.classList.toggle("shell-answers", Boolean(snapshot.shell_answers));
     host.classList.toggle("native-mobile", mobileHost() || Boolean(snapshot.shell_only)); host.classList.toggle("native-chrome", Boolean(mobileHost() && snapshot.native_chrome)); host.classList.toggle("shell-only", Boolean(snapshot.shell_only)); host.classList.toggle("shell-reply", shellReply); syncMobileChrome(); preloadMobileShells();
     followMobileShell();
     if (snapshot.remote) window.nfnPaging?.reconcile();

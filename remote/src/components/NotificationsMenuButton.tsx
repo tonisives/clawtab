@@ -1,12 +1,13 @@
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { GlassView, isGlassEffectAPIAvailable } from "expo-glass-effect";
-import { usePathname, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 
-import { colors, useMachines } from "@clawtab/shared";
+import { colors } from "@clawtab/shared";
 import { useAuthStore } from "../store/auth";
 import { useResponsive } from "../hooks/useResponsive";
 import { usePendingMessageCount } from "../hooks/usePendingMessageCount";
+import { useDemoMode } from "../hooks/useDemoMode";
 
 export function NotificationsMenuButton({
   hideWhenEmpty = false,
@@ -22,11 +23,9 @@ export function NotificationsMenuButton({
   active?: boolean;
 }) {
   const router = useRouter();
-  const pathname = usePathname();
   const { isSplitView } = useResponsive();
-  const authenticated = useAuthStore(state => state.isAuthenticated);
   const authLoading = useAuthStore(state => state.loading);
-  const machines = useMachines();
+  const demo = useDemoMode();
   const activeNotificationCount = usePendingMessageCount();
 
   const openMenu = () => {
@@ -35,13 +34,11 @@ export function NotificationsMenuButton({
     } else if (Platform.OS === "web" && isSplitView) {
       router.navigate({ pathname: "/(tabs)/(jobs)", params: { section: "notifications" } });
     } else {
-      router.push("/notifications");
+      router.push({ pathname: "/notifications", params: demo ? { demo: "1" } : {} });
     }
   };
 
-  const demo = !authenticated || (!machines.connected && machines.error === "Relay subscription required")
-    || /^\/demo(?:-|\/|$)/.test(pathname);
-  if (authLoading || demo || (hideWhenEmpty && activeNotificationCount === 0)) {
+  if (authLoading || (hideWhenEmpty && activeNotificationCount === 0)) {
     return null;
   }
 
