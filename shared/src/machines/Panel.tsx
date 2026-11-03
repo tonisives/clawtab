@@ -336,22 +336,26 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
       </View>}
       {(error || ((showConnectionStatus || state.connected) && state.error)) && <Text style={styles.error}>{error ?? state.error}</Text>}
       {showConnectionStatus && !state.connected && (
-        <View style={styles.row}>
-          <View style={[styles.statusDot, state.error ? styles.errorDot : styles.connectingDot]} />
-          <Text style={styles.text}>{state.error ? "Machine list unavailable" : "Connecting to your account’s machines…"}</Text>
-          {state.error && <Pressable accessibilityRole="button" onPress={retryMachines} style={styles.button}>
-            <Text style={styles.text}>Retry connection</Text>
-          </Pressable>}
-          {state.error && onOpenAccount && <Pressable accessibilityRole="button" onPress={onOpenAccount} style={styles.button}>
-            <Text style={styles.text}>Open account settings</Text>
-          </Pressable>}
+        <View style={styles.connectionStatus}>
+          <View style={styles.connectionStatusLabel}>
+            <View style={[styles.statusDot, state.error ? styles.errorDot : styles.connectingDot]} />
+            <Text style={[styles.text, styles.connectionStatusText]}>{state.error ? "Machine list unavailable" : "Connecting to your account’s machines…"}</Text>
+          </View>
+          <View style={styles.connectionStatusActions}>
+            {state.error && <Pressable accessibilityRole="button" onPress={retryMachines} style={styles.button}>
+              <Text style={styles.text}>Retry connection</Text>
+            </Pressable>}
+            {state.error && onOpenAccount && <Pressable accessibilityRole="button" onPress={onOpenAccount} style={styles.button}>
+              <Text style={styles.text}>Open account settings</Text>
+            </Pressable>}
+          </View>
         </View>
       )}
       {(expanded || presentation === "panel") && (
         <ScrollView style={presentation === "panel" ? styles.panelBody : styles.body}>
           {presentation === "panel" && tab !== "pair" && machineChoices}
           {presentation === "panel" && machine?.owned && api && <MachineAppearanceButton key={machine.id} machine={machine} api={api} />}
-          {Platform.OS !== "web" && presentation === "panel" && !managementSection ? <View style={styles.settingsPages}>
+          {Platform.OS !== "web" && presentation === "panel" && !managementSection ? <View style={machine ? styles.settingsPages : styles.settingsHint}>
             {machine && ["agents", "jobs", "repositories", ...(localRequest ? ["transfers"] : []), "models", "access"].map((section) => <MachineSettingsPageButton key={section} title={section[0].toUpperCase() + section.slice(1)}>
               <MachinesPanel managementSection={section} presentation="panel" approvePairing={approvePairing} localRequest={localRequest} api={api} localMachineId={localMachineId} machineType={machineType} showConnectionStatus={false} />
             </MachineSettingsPageButton>)}
@@ -734,10 +738,15 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
 }
 let createStyles = (desktop: boolean) => StyleSheet.create({
   settingsPages: { marginVertical: 16, borderRadius: 24, borderCurve: "continuous", overflow: "hidden", backgroundColor: colors.surface },
+  settingsHint: { marginVertical: 16 },
   panel: { backgroundColor: desktop ? "transparent" : "#202226", padding: desktop && Platform.OS !== "web" ? 0 : 8, gap: 8 },
   panelBody: { paddingRight: Platform.OS === "web" ? 8 : 0 },
   body: { maxHeight: 440, paddingRight: 8 },
   row: { flexDirection: "row", flexWrap: "wrap", gap: 6, paddingVertical: 4 },
+  connectionStatus: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 4 },
+  connectionStatusLabel: { flex: 1, flexDirection: "row", alignItems: "center", gap: 8 },
+  connectionStatusText: { flexShrink: 1 },
+  connectionStatusActions: { flexShrink: 1, alignItems: "flex-end" },
   machineRow: { alignItems: "center" },
   tabsScroll: { flexGrow: 0, marginVertical: 8 },
   title: { color: desktop ? colors.text : "#fff", fontWeight: "600", marginTop: 18, marginBottom: 8 },

@@ -3,7 +3,8 @@ import { Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-na
 import { Ionicons } from "@expo/vector-icons"
 import { JobKindIcon, XtermLog, colors, kindForProcess, type XtermLogHandle } from "@clawtab/shared"
 import { MachineModal } from "../../../shared/src/machines/Onboarding"
-import { DEMO_JOBS, DEMO_LOGS, DEMO_PROCESSES } from "../demo/data"
+import { DEMO_JOBS, DEMO_LOGS, DEMO_PROCESSES, demoQuestionForSelection } from "../demo/data"
+import { DemoQuestionButtons } from "./DemoQuestionButtons"
 import { demoShell } from "../demo/shell"
 import { DemoDetailsContent } from "./DemoDetailsContent"
 
@@ -19,6 +20,7 @@ export let DemoAgentPane = ({ id, kind, onShowOverview }: DemoSelection & { onSh
   let output = process?.log_lines ?? (job ? DEMO_LOGS[job.slug] : "Sample not found.")
   let provider = process?.provider ?? job?.agent_provider ?? (job?.job_type === "claude" ? "claude" : undefined)
   let shell = demoShell(output ?? "", provider)
+  let question = demoQuestionForSelection(id, kind)
   useEffect(() => {
     setDraft("")
     setDetailsOpen(false)
@@ -40,10 +42,10 @@ export let DemoAgentPane = ({ id, kind, onShowOverview }: DemoSelection & { onSh
       </Pressable>
     </View>
     <View style={styles.terminal} accessibilityLabel="Shell logs"><XtermLog ref={terminal} interactive={false} forceDarkTheme /></View>
-    <View style={styles.composer}>
+    {question ? <DemoQuestionButtons question={question} /> : <View style={styles.composer}>
       <TextInput value={draft} onChangeText={setDraft} placeholder={shell.placeholder} placeholderTextColor={colors.textMuted} accessibilityLabel="Demo prompt" accessibilityHint="Try typing locally. Demo prompts are not sent to an agent." multiline autoCapitalize="none" autoCorrect={false} style={styles.input} />
       <Text style={styles.model}>{shell.model}</Text>
-    </View>
+    </View>}
     {detailsOpen && <MachineModal title="Agent details" onClose={closeDetails}><DemoDetailsContent id={id} kind={kind} onShowOverview={onShowOverview} /></MachineModal>}
   </View>
 }

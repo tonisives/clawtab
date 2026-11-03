@@ -15,6 +15,8 @@ import antigravityIcon from "../assets/antigravity-icon.png";
 // Centered Hermes artwork on an ivory badge; SVG source lives beside the PNG.
 import hermesIcon from "../assets/hermes-icon.png";
 
+export const jobKindIconSources = [claudeIcon, cronIcon, manualIcon, shellIcon, codexIcon, opencodeIcon, antigravityIcon, hermesIcon];
+
 export type JobKind = "cron" | "manual" | "claude" | "codex" | "opencode" | "antigravity" | "hermes" | "shell";
 
 export function kindForJob(job: RemoteJob): JobKind {
