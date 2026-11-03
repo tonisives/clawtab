@@ -39,11 +39,12 @@ export const initialNotificationChrome: NotificationChromeState = {
   screen: "list", counter: "Notifications", canNavigate: false, reply: false,
 };
 
-export function NotificationChrome({ state, send, bottom, enabled }: {
+export function NotificationChrome({ state, send, bottom, enabled, demo = false }: {
   state: NotificationChromeState;
   send: (action: string) => void;
   bottom: number;
   enabled: boolean;
+  demo?: boolean;
 }) {
   const navigation = useNavigation();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -72,7 +73,7 @@ export function NotificationChrome({ state, send, bottom, enabled }: {
 
   if (!enabled) return null;
   return <>
-    {state.screen === "message" && !state.reply ? <View style={{ padding: 12, paddingBottom: Math.max(12, bottom), backgroundColor: colors.bg }}>
+    {state.screen === "message" && !state.reply && !demo ? <View style={{ padding: 12, paddingBottom: Math.max(12, bottom), backgroundColor: colors.bg }}>
       <SegmentedControl label="Message actions" value={null} stretch
         options={[{ value: "open", label: "Open" }, { value: "got_it", label: "Got it" }, { value: "reply", label: "Reply" }]}
         onChange={send} style={{ alignSelf: "stretch" }} />
@@ -80,7 +81,7 @@ export function NotificationChrome({ state, send, bottom, enabled }: {
     <Modal transparent visible={menuOpen} animationType="fade" onRequestClose={() => setMenuOpen(false)}>
       <Pressable onPress={() => setMenuOpen(false)} style={{ flex: 1, backgroundColor: "#00000080", justifyContent: "center", padding: 24 }}>
         <View accessibilityViewIsModal style={{ backgroundColor: colors.surface, borderRadius: 16, padding: 8, borderWidth: 1, borderColor: colors.border }}>
-          {[{ action: "list", label: "Pending notifications" }, { action: "tasks", label: "Tasks" }, ...(state.screen === "message" ? [{ action: "select_text", label: "Select text" }] : [])].map(item =>
+          {[{ action: "list", label: "Pending notifications" }, { action: "tasks", label: "Tasks" }].map(item =>
             <Pressable key={item.action} onPress={() => { setMenuOpen(false); send(item.action); }} style={{ padding: 16 }}>
               <Text style={{ color: colors.text, fontSize: 16 }}>{item.label}</Text>
             </Pressable>)}

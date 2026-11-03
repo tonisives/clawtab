@@ -45,9 +45,10 @@ export function MessageSurface(props: MessageSurfaceProps) {
   latest.current = props;
   const ready = useRef(false);
   const selected = useRef<string | null>(null);
+  const footerOwnsSafeArea = !props.popup && !props.snapshot.shell_only && !props.snapshot.demo && chrome.screen === "message" && !chrome.reply;
   const applyInsets = useCallback(() => {
-    view.current?.injectJavaScript(`window.nfnMobile?.setInsets(${props.popup || chrome.screen === "message" ? 0 : insets.bottom},${keyboard.overlap > 0});true;`);
-  }, [insets.bottom, props.popup, keyboard.overlap, chrome.screen, chrome.reply]);
+    view.current?.injectJavaScript(`window.nfnMobile?.setInsets(${props.popup || footerOwnsSafeArea ? 0 : insets.bottom},${keyboard.overlap > 0});true;`);
+  }, [insets.bottom, props.popup, keyboard.overlap, footerOwnsSafeArea]);
   useEffect(applyInsets, [applyInsets]);
   const send = useCallback((value: unknown) => {
     const json = JSON.stringify(value).replace(/</g, "\\u003c").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
@@ -106,7 +107,7 @@ export function MessageSurface(props: MessageSurfaceProps) {
     let value: SurfaceMessage;
     try { value = JSON.parse(raw).nfn; } catch { return; }
     if (!value) return;
-    if (value.native === "external_link" && typeof value.text === "string" && /^(https?:\/\/|mailto:)/i.test(value.text)) void Linking.openURL(value.text);
+    if (!latest.current.snapshot.demo && value.native === "external_link" && typeof value.text === "string" && /^(https?:\/\/|mailto:)/i.test(value.text)) void Linking.openURL(value.text);
     if (value.preview_ready) { ready.current = true; selected.current = null; send({ type: "mobile_visibility", active: focusedRef.current }); synchronize(); applyInsets(); }
     if (value.native === "selection_gesture" && (focusedRef.current || !value.active)) {
       selectionGesture.current = Boolean(value.active);
@@ -146,7 +147,7 @@ export function MessageSurface(props: MessageSurfaceProps) {
     {selectionText !== null ? <MessageTextSelection text={selectionText} selection={selectionRange} bottom={insets.bottom} onDone={() => {
       selectingText.current = false; setSelectionText(null);
     }} /> : null}
-    {!props.popup && !props.snapshot.shell_only && props.active !== false && selectionText === null ? <NotificationChrome state={chrome} send={action} bottom={insets.bottom} enabled /> : null}
+    {!props.popup && !props.snapshot.shell_only && props.active !== false && selectionText === null ? <NotificationChrome state={chrome} send={action} bottom={insets.bottom} demo={Boolean(props.snapshot.demo)} enabled /> : null}
     {chrome.reply && props.active !== false && selectionText === null ? <TerminalKeyboardToolbar
       bottom={0} inline
       dismissIcon="close"

@@ -6,7 +6,6 @@ import { useSetupProgress } from "../hooks/useSetupProgress"
 import { colors } from "@clawtab/shared"
 
 export let RelayWelcome = ({ onContinue, connected = false, children }: { onContinue?: () => void; connected?: boolean; children?: ReactNode }) => {
-  let router = useRouter()
   return <View style={styles.card}>
     <Text accessibilityRole="header" style={styles.title}>Relay</Text>
     {Platform.OS === "web" && !connected && <Text style={styles.price}>US$6.99 / month</Text>}
@@ -21,7 +20,6 @@ export let RelayWelcome = ({ onContinue, connected = false, children }: { onCont
     <Text style={styles.description}>Use your existing Claude, Codex, or other AI account.</Text>
     {onContinue && <Pressable accessibilityRole="button" onPress={onContinue} style={styles.button}><Text style={styles.buttonText}>{connected ? "Open workspace" : "Set up Relay"}</Text></Pressable>}
     {children}
-    {!connected && <Pressable accessibilityRole="button" onPress={() => router.push("/connect-relay")} style={styles.ownRelay}><Text style={styles.ownRelayText}>Connect your own relay</Text></Pressable>}
   </View>
 }
 
@@ -38,6 +36,7 @@ export let AdvancedSetupOptions = () => {
     {relayComplete && Platform.OS === "web" && <Option title="Rent a server" detail="Get a dedicated server with more CPU, memory, and storage." onPress={rent} />}
     {relayComplete && <Option title="Install on your server" detail="Install the ClawTab daemon on Linux or Kubernetes." onPress={serverGuide} external />}
     <Option title="Host your own relay" detail="Manage the relay infrastructure yourself." onPress={relayGuide} external />
+    <Pressable accessibilityRole="button" onPress={() => router.push("/connect-relay")} style={styles.ownRelay}><Text style={styles.ownRelayText}>Connect your own relay</Text></Pressable>
   </View>
 }
 
@@ -85,7 +84,7 @@ let styles = StyleSheet.create({
   infoButton: { width: 36, height: 36, flexShrink: 0, alignItems: "center", justifyContent: "center" },
   button: { minHeight: 48, width: "100%", minWidth: 0, paddingHorizontal: 16, paddingVertical: 12, alignItems: "center", justifyContent: "center", borderRadius: 999, backgroundColor: colors.accent },
   buttonText: { color: colors.bg, fontSize: 15, fontWeight: "600", flexShrink: 1, textAlign: "center" },
-  ownRelay: { minHeight: 44, alignItems: "center", justifyContent: "center" },
+  ownRelay: { minHeight: 44, alignItems: "flex-start", justifyContent: "center" },
   ownRelayText: { color: colors.textSecondary, fontSize: 13, lineHeight: 20, textAlign: "center" },
   advanced: { gap: 8, minWidth: 0, paddingTop: 24, borderTopWidth: 1, borderTopColor: colors.border },
   option: { gap: 4, minWidth: 0 },

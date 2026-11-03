@@ -33,7 +33,7 @@ test("custom relay is saved and used for subsequent API requests", async () => {
   }
 })
 
-test("demo tasks stay local and focus the sample agent", async () => {
+test("demo notification and task actions remain inert", async () => {
   const jsx = (type, props) => ({ type, props })
   let state
   const { useDemoMessages } = load("src/demo/messages.ts", {
@@ -63,10 +63,13 @@ test("demo tasks stay local and focus the sample agent", async () => {
   const task = snapshot.todos.items[0]
   const result = await onCommand({ op: "todo_update", id: task.id, checked: true })
   assert.equal(result.items.length, 1)
-  assert.equal(result.items[0].checked, true)
+  assert.equal(result.items[0].checked, false)
   await onCommand({ op: "todo_focus", id: task.id })
-  assert.equal(pushes[0].pathname, "/demo-agent")
-  assert.equal(pushes[0].params.id, "demo-codex")
+  assert.equal(pushes.length, 0)
+  assert.equal(snapshot.demo, true)
+  assert.equal(snapshot.records[0].details_available, false)
+  await onCommand({ op: "respond", id: snapshot.records[0].id, action_id: "decide" })
+  await onCommand({ op: "dismiss", id: snapshot.records[0].id })
   assert.equal(state.records[0].status, "pending")
 })
 
@@ -87,7 +90,8 @@ test("machine setup follows Relay and its card opens the self-hosted connection 
   const { DemoOverview } = load("src/components/DemoOverview.tsx", { ...modules, "./RelayWelcome": relay })
   assert.ok(!elements(DemoOverview({ onConnect() {} })).some(node => node.props?.children === "Connect your computer"))
   assert.ok(!elements(relay.AdvancedSetupOptions()).some(node => node.props?.title === "Connect a machine"))
-  const button = elements(relay.RelayWelcome({})).find(node => node.type === "Pressable")
+  assert.ok(!elements(relay.RelayWelcome({})).some(node => node.type === "Pressable"))
+  const button = elements(relay.AdvancedSetupOptions()).find(node => node.type === "Pressable")
   button.props.onPress()
   assert.equal(pushes[0], "/connect-relay")
   relayComplete = true

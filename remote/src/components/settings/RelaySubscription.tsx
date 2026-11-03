@@ -2,7 +2,7 @@ import { trackFunnel } from "../../lib/funnel"
 import { HostedWorkspacePanel, machineState, reconnectMachines } from "@clawtab/shared"
 import { useIap } from "../../hooks/useIap"
 import { useEffect, useRef, useState } from "react"
-import { AppState, Platform, View, Text, ActivityIndicator } from "react-native"
+import { AppState, Platform, View, Text, ActivityIndicator, Pressable } from "react-native"
 import { useIsFocused } from "expo-router/react-navigation"
 import { useRouter } from "expo-router"
 import { useAuthStore } from "../../store/auth"
@@ -203,10 +203,10 @@ export let RelaySubscription = () => {
     {subscriptionCheckFailed && <SettingsButton title={actionLoading ? "Checking…" : "Retry subscription check"} onPress={handleRefreshSubscription} disabled={subLoading || actionLoading || iap.purchasing} />}
     {Platform.OS === "ios" && <View style={styles.section}>
       {!sub?.subscribed && <Text style={styles.usageDescription}>Relay access renews monthly until canceled. Manage or cancel your subscription in your Apple account settings.</Text>}
-      <SettingsGroup>
-        <SettingsRow title="Terms of Use" onPress={openTerms} chevron={false} />
-        <SettingsRow title="Privacy Policy" onPress={openPrivacy} chevron={false} />
-      </SettingsGroup>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "center", gap: 16 }}>
+        <Pressable accessibilityRole="link" onPress={openTerms} style={{ minHeight: 44, justifyContent: "center" }}><Text style={styles.rowDetail}>Terms of Use</Text></Pressable>
+        <Pressable accessibilityRole="link" onPress={openPrivacy} style={{ minHeight: 44, justifyContent: "center" }}><Text style={styles.rowDetail}>Privacy Policy</Text></Pressable>
+      </View>
     </View>}
   </View>
   return !sub?.hosted_workspace_eligible ? <RelayWelcome>{content}</RelayWelcome> : content

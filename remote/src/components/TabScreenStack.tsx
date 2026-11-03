@@ -17,7 +17,7 @@ export function TabScreenStack({ screen, title }: { screen: string; title: strin
     <Stack
       screenOptions={{
         headerShown: showHeader,
-        headerTransparent: false,
+        headerTransparent: largeTitle ? undefined : false,
         headerLargeTitleEnabled: largeTitle,
         // Opaque large-title backgrounds hide the expanded title on iOS 26.
         // Let the native stack choose its large-title appearance.

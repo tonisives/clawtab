@@ -50,7 +50,7 @@ button.auto-yes-button{width:100%;min-height:44px;padding:8px 16px;border-radius
 .native-mobile .card,.native-mobile .message-content,.native-mobile .details-content,.native-mobile .log-output{min-width:0;max-width:100%;overflow-x:hidden}
 .native-mobile .logs{box-sizing:border-box;width:100%;min-width:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;line-height:16px;border:0;border-radius:0;background:#000000;padding:8px;margin:0}
 .native-mobile.details-open>.card{flex:1;min-height:0}
-.native-chrome.details-open:not(.shell-reply)>.card{padding:12px 0 0}
+.native-chrome.details-open:not(.shell-reply)>.card{padding:12px 0 calc(12px + var(--message-safe-bottom,env(safe-area-inset-bottom,0px)))}
 .native-chrome.details-open:not(.shell-reply)>.card>.heading,.native-chrome.details-open:not(.shell-reply) .message-content>:not(.details-content),.native-chrome.details-open:not(.shell-reply)>.card>.answer-auto-yes,.native-chrome.details-open:not(.shell-reply)>.card>.answer-row,.native-chrome.details-open:not(.shell-reply)>.card>.reply,.native-chrome.details-open:not(.shell-reply)>.card>.notice{margin-left:12px;margin-right:12px}
 .native-chrome.details-open>.card>.controls{display:none}
 .native-chrome.details-open .details-content{background:#000000}
@@ -67,6 +67,15 @@ button.auto-yes-button{width:100%;min-height:44px;padding:8px 16px;border-radius
 .shell-only:not(.shell-answers)>.card>:is(.answer-row,.answer-auto-yes){display:none}
 .shell-only.shell-answers>.card>:is(.answer-row,.answer-auto-yes){margin-left:12px;margin-right:12px}
 .native-mobile.shell-only.details-open>.card{padding:0}
+.native-mobile.shell-only.shell-answers.details-open>.card{padding-bottom:calc(12px + var(--message-safe-bottom,env(safe-area-inset-bottom,0px)))}
+.native-mobile .answer-row{flex-shrink:0}
+.native-mobile .answer-row .actions{display:flex;flex:1;width:100%;overflow:visible;gap:8px}
+.native-mobile .answer-row .actions button{flex:1 1 0;min-width:0;max-width:none;white-space:normal;overflow-wrap:anywhere}
+.native-mobile .answer-auto-yes{flex-shrink:0}
+.native-mobile .reply,.native-mobile .notice:not(:empty){padding-bottom:16px}
+.demo-surface .social-footer .social-decisions{justify-content:center}
+.demo-surface .card>.controls,.demo-surface .options-toggle,.demo-surface .card>.reply,.demo-surface .details-content{display:none!important}
+.demo-surface .card>.notice{display:none}
 .shell-only .message-content>:not(.details-content){display:none}
 .shell-only .details-content{margin:0;min-height:0;flex:1}
 .native-mobile.shell-reply .message-content{flex:1;min-height:0;display:flex;flex-direction:column}

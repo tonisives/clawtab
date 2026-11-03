@@ -28,6 +28,8 @@ let loadDemo = (entry, params = {}, os = 'ios', progress = {}) => {
     './DemoOverview': { DemoOverview: 'DemoOverview' },
     './settings/SettingsPage': { SettingsPage: 'SettingsPage' },
     '../../../shared/src/machines/Onboarding': { MachineModal: 'MachineModal' },
+    '../src/hooks/useMessageKeyboard': { useMessageKeyboard: () => ({ host: { current: null }, onLayout() {}, overlap: progress.keyboardOverlap ?? 0 }) },
+    '../src/components/DemoQuestionSurface': { DemoQuestionSurface: 'DemoQuestionSurface' },
     '../src/components/HeaderButtons': { HeaderTitleWithIcon: 'HeaderTitleWithIcon' },
     '../../../shared/src/components/InsetList': { InsetList: 'InsetList', InsetListRow: 'InsetListRow' },
     '../../src/components/settings/SettingsPage': { SettingsPage: 'SettingsPage' },
@@ -78,13 +80,13 @@ test('demo list has isolated sample groups and no live mutation callbacks', () =
   assert.ok(demo.render().props.collapsedGroups.has('sample'));
 });
 
-test('demo job and agent details render output offline and disable action controls', () => {
+test('demo job and agent details hide shell output and disable action controls', () => {
   for (let params of [{ id: 'deploy-api', kind: 'job' }, { id: 'codex', kind: 'process' }]) {
     let nodes = all(loadDemo('[id].tsx', params).render());
-    assert.ok(nodes.some((node) => node.type === 'Text' && node.props.children === 'Output'));
+    assert.ok(!nodes.some((node) => node.type === 'XtermLog' || (node.type === 'Text' && node.props.children === 'Output')));
     let action = nodes.find((node) => node.type === 'InsetListRow' && node.props.title === 'Agent actions');
     assert.equal(action.props.disabled, true);
-    assert.ok(nodes.some((node) => node.type === 'Text' && typeof node.props.children === 'string' && node.props.children.length > 100));
+    assert.ok(nodes.some((node) => node.type === 'InsetListRow' && node.props.title === 'Folder'));
   }
 });
 
@@ -134,7 +136,7 @@ test('the web demo uses the same compact list presentation as mobile', () => {
 });
 
 test('each demo agent keeps an editable local prompt and model outside the shell buffer', () => {
-  for (let id of ['claude', 'codex', 'opencode']) {
+  for (let id of ['codex', 'opencode']) {
     let demo = loadDemo('terminal', { id, kind: 'process' });
     let nodes = all(demo.render());
     let prompt = nodes.find((node) => node.type === 'TextInput');
@@ -147,7 +149,7 @@ test('each demo agent keeps an editable local prompt and model outside the shell
     assert.ok(!demo.writes[1].includes('────────────────'));
     assert.ok(!demo.writes[1].includes('▀▀▀▀'));
     assert.equal(nodes.find((node) => node.type === 'XtermLog').props.extendedViewport, true);
-    assert.equal(nodes[0].props.keyboardVerticalOffset, 96);
+    assert.equal(Object.assign({}, ...nodes[0].props.style).paddingBottom, 0);
   }
 });
 
@@ -181,24 +183,36 @@ test('native demo keeps navigation to sample detail screens', () => {
   assert.equal(tree.props.onSelectJob, undefined);
 });
 
-test('demo leads with included Relay agents and keeps hardware setup below the main action', () => {
+test('demo requires Relay before machine setup and puts the own-relay link below hosting docs', () => {
   let connected = false;
   let demo = loadDemo('overview', {}, 'web');
   let nodes = all(demo.render({ onConnect: () => { connected = true; } }));
   let press = (label) => nodes.find((node) => node.type === 'Pressable' && all(node).some((child) => child.type === 'Text' && child.props.children === label)).props.onPress();
-  let text = nodes.filter((node) => node.type === 'Text').map((node) => node.props.children).join('\n');
-  for (let phrase of ['remote workspace', 'existing Claude, Codex', 'automatically', '2 agents at once', 'US$6.99', 'Advanced setup']) assert.ok(text.includes(phrase), phrase);
-  assert.doesNotMatch(text, /two steps|cwt setup/);
-  assert.ok(text.indexOf('Get started with Relay') < text.indexOf('Advanced setup'));
-  press('Get started with Relay');
+  let labels = nodes.filter((node) => node.type === 'Text').map((node) => node.props.children);
+  let text = labels.join('\n');
+  for (let phrase of ['existing Claude, Codex', '2 agents at once', 'US$6.99', 'Advanced setup']) assert.ok(text.includes(phrase), phrase);
+  assert.doesNotMatch(text, /Connect a machine|Rent a server|Demo uses sample agents/);
+  assert.ok(labels.indexOf('Host your own relay') < labels.indexOf('Connect your own relay'));
+  press('Set up Relay');
   assert.equal(connected, true);
-  press('Connect your computer or server');
-  assert.equal(demo.pushed[0].pathname, '/add-machine');
-  assert.equal(demo.pushed[0].params.setup, 'connect');
-  press('Rent a larger box');
-  assert.equal(demo.pushed[1].params.setup, 'rent');
-  press('Install or deploy the daemon');
-  assert.match(demo.writes[0], /setup-remote-machines/);
+  press('Host your own relay');
+  assert.match(demo.writes[0], /docs#deploy/);
+  press('Connect your own relay');
+  assert.equal(demo.pushed[0], '/connect-relay');
+});
+
+test('demo composer follows measured keyboard overlap and drops the covered safe area', () => {
+  let nodes = all(loadDemo('terminal', { id: 'codex', kind: 'process' }, 'ios', { keyboardOverlap: 312 }).render());
+  assert.equal(Object.assign({}, ...nodes[0].props.style).paddingBottom, 312);
+  assert.equal(nodes[0].props.onLayout instanceof Function, true);
+  assert.equal(nodes.find(node => node.type === 'SafeAreaView').props.edges.length, 0);
+  assert.ok(nodes.some(node => node.type === 'TextInput'));
+});
+
+test('Claude demo presents its question surface without an editable shell composer', () => {
+  let nodes = all(loadDemo('terminal', { id: 'claude', kind: 'process' }).render());
+  assert.ok(nodes.some(node => node.type === 'DemoQuestionSurface'));
+  assert.ok(!nodes.some(node => node.type === 'TextInput' || node.type === 'XtermLog'));
 });
 
 test('sample navigation survives native URL decoding and a fresh module load', () => {
@@ -212,10 +226,13 @@ test('sample navigation survives native URL decoding and a fresh module load', (
     let terminal = loadDemo('terminal', params);
     let nodes = all(terminal.render());
     assert.notEqual(nodes.find((node) => node.type === 'Screen').props.options.title, 'Sample agent');
-    assert.ok(terminal.writes[1].length > 0, route.params.id);
-    assert.ok(!terminal.writes[1].includes('Sample not found'));
+    if (nodes.some(node => node.type === 'DemoQuestionSurface')) assert.ok(!nodes.some(node => node.type === 'TextInput'));
+    else {
+      assert.ok(terminal.writes[1].length > 0, route.params.id);
+      assert.ok(!terminal.writes[1].includes('Sample not found'));
+    }
     let details = all(loadDemo('[id].tsx', params).render());
-    assert.ok(details.some((node) => node.type === 'Text' && node.props.children === 'Output'));
+    assert.ok(details.some((node) => node.type === 'InsetListRow' && node.props.title === 'Folder'));
   }
 });
 
@@ -223,7 +240,7 @@ test('connected users reopen the workspace and native onboarding uses StoreKit p
   for (let platform of ['ios', 'android', 'web']) {
     let nodes = all(loadDemo('overview', {}, platform, { relayComplete: true }).render({ onConnect: () => {} }));
     let text = nodes.filter((node) => node.type === 'Text').map((node) => node.props.children).join('\n');
-    assert.match(text, /Open Relay workspace/);
+    assert.match(text, /Open workspace/);
     assert.doesNotMatch(text, /US\$6.99/);
     if (platform !== 'web') assert.doesNotMatch(text, /Rent a larger box/);
   }

@@ -234,6 +234,7 @@
   }
 
   function native(value) {
+    if (snapshot.demo && value.native === "external_link") return;
     if (window.webkit?.messageHandlers?.nfn) window.webkit.messageHandlers.nfn.postMessage(value);
     else if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify({ nfn: value }));
     else if (window.parent !== window) window.parent.postMessage({ nfn: value }, "*");
@@ -787,6 +788,7 @@
     if (!logTimer) logTimer = setInterval(refreshContext, 1000);
   }
   function toggleDetails() {
+    if (snapshot.demo) return;
     if (records.get(current)?.details_available === false) return;
     pauseTimer(); stopContext(true); expanded = true; details = !details;
     if (details) {
@@ -856,6 +858,7 @@
     }
   }
   async function focusSession(id, command) {
+    if (snapshot.demo) return;
     if (openingSessions.has(id) || actionsInProgress.has(id)) return;
     openingSessions.add(id); actionErrors.delete(id);
     expanded = true; pauseTimer(); render();
@@ -886,6 +889,7 @@
     } catch (_) { /* Opening the session reports connection errors on demand. */ }
   }
   async function performAction(id, command, accept = () => {}) {
+    if (snapshot.demo) return;
     if (actionsInProgress.has(id)) return;
     if (preview) {
       try { accept(await call(command)); } catch (error) { showError(error, id); }
@@ -1357,7 +1361,7 @@
       node.append(autoYesControl(record, true));
     }
     let replyToggle = null;
-    if ((!bundle || singleSocialTarget(record)) && (record.request.source?.pane_id || savedConversation(record) || record.request.template !== "update" && hasBlock(layout, "reply"))) {
+    if (!snapshot.demo && (!bundle || singleSocialTarget(record)) && (record.request.source?.pane_id || savedConversation(record) || record.request.template !== "update" && hasBlock(layout, "reply"))) {
       const toAgent = Boolean(record.question_id || savedConversation(record) || record.request.response_destination === "agent_message" || record.request.template === "update" && (record.request.source?.pane_id || record.request.deliver_at && record.request.source?.session_id));
       const reply = el("div", "reply");
       const revision = revisionChoice(record);
@@ -2331,6 +2335,7 @@
     } else { host.querySelector(".card")?.remove(); host.querySelector(".queue")?.remove(); renderedId = null; card = null; }
     renderMenu(); positionAcknowledgementMenu(); cleanupRemoteMedia(); observeCardSize(); fitReviewHeight(); if (resizing || !animate) size(); else if (!continuingAnimation) animateLayout(before, !queue && !menu && !settingsOpen);
     host.classList.toggle("shell-answers", Boolean(snapshot.shell_answers));
+    host.classList.toggle("demo-surface", Boolean(snapshot.demo));
     host.classList.toggle("native-mobile", mobileHost() || Boolean(snapshot.shell_only)); host.classList.toggle("native-chrome", Boolean(mobileHost() && snapshot.native_chrome)); host.classList.toggle("shell-only", Boolean(snapshot.shell_only)); host.classList.toggle("shell-reply", shellReply); syncMobileChrome(); preloadMobileShells();
     followMobileShell();
     if (snapshot.remote) window.nfnPaging?.reconcile();

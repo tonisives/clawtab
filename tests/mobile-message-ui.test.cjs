@@ -592,7 +592,7 @@ test("reply keeps native navigation and lays the shared keyboard controls in flo
   const labels=[];
   const collect=node=>{ if(Array.isArray(node)) node.forEach(collect); else if(node?.props) { if(node.type==="Text") labels.push(node.props.children); collect(node.props.children); } };
   collect(chrome);
-  assert.deepEqual(labels,["Pending notifications","Tasks","Select text"],"message menu offers text selection");
+  assert.deepEqual(labels,["Pending notifications","Tasks"],"message menu omits text selection");
   assert.equal(options.at(-1).headerShown,true,"reply retains the native title bar and its close button");
   assert.ok(options.at(-1).headerTitle());
   const toolbar=component("TerminalKeyboardToolbar")({bottom:0,inline:true,dismissIcon:"close",onDismiss:()=>dismissed++,onSend:value=>sent.push(value),onWrite(){},menuOpen:false,onMenuOpenChange(){}});

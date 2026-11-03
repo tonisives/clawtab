@@ -1,13 +1,13 @@
 import type { ComponentRef } from "react";
 import { useEffect, useRef, useState } from "react"
-import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native"
-import { useHeaderHeight } from "expo-router/react-navigation"
+import { Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { Stack, useLocalSearchParams, useRouter } from "expo-router"
 import { Ionicons } from "@expo/vector-icons"
 import { XtermLog, JobKindIcon, colors, kindForProcess, type XtermLogHandle } from "@clawtab/shared"
 import { HeaderTitleWithIcon } from "../src/components/HeaderButtons"
 import { DEMO_JOBS, DEMO_LOGS, DEMO_PROCESSES, demoQuestionForSelection } from "../src/demo/data"
+import { useMessageKeyboard } from "../src/hooks/useMessageKeyboard"
 import { DemoQuestionSurface } from "../src/components/DemoQuestionSurface"
 import { demoShell } from "../src/demo/shell"
 
@@ -17,7 +17,7 @@ let DemoAgentScreen = () => {
   let terminal = useRef<XtermLogHandle | null>(null)
   let input = useRef<ComponentRef<typeof TextInput> | null>(null)
   let [draft, setDraft] = useState("")
-  let headerHeight = useHeaderHeight()
+  let keyboard = useMessageKeyboard(false)
   let process = kind === "process" ? DEMO_PROCESSES.find((item) => item.pane_id === id) : undefined
   let job = kind === "job" ? DEMO_JOBS.find((item) => item.slug === id) : undefined
   let title = process?.display_name ?? job?.display_name ?? job?.name ?? "Sample agent"
@@ -35,15 +35,15 @@ let DemoAgentScreen = () => {
   let openDetails = () => router.push({ pathname: "/demo-agent-details", params: { id, kind } })
   let headerTitle = () => <HeaderTitleWithIcon title={title} icon={<JobKindIcon kind={process ? kindForProcess(process) : "shell"} size={26} bare />} onPress={openDetails} accessibilityLabel="Open pane overview" />
   let headerRight = () => <Pressable accessibilityRole="button" accessibilityLabel="Open pane overview" onPress={openDetails} style={styles.menu} hitSlop={8}><Ionicons name="ellipsis-horizontal" size={22} color={colors.text} /></Pressable>
-  return <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={headerHeight}>
+  return <View ref={keyboard.host} onLayout={keyboard.onLayout} style={[styles.screen, { paddingBottom: keyboard.overlap }]}>
     <Stack.Screen options={{ title, headerTitle, headerRight }} />
     <Pressable style={styles.notice} accessibilityRole="button" accessibilityLabel="About demo mode" onPress={() => router.push("/demo-overview")}><Ionicons name="information-circle-outline" size={18} color={colors.warning} /><Text style={styles.noticeText}>Demo</Text></Pressable>
     <View style={styles.terminal} accessibilityLabel="Shell logs">{question ? <DemoQuestionSurface question={question} output={shell.output} /> : <XtermLog ref={terminal} interactive={false} forceDarkTheme extendedViewport />}</View>
-    {!question && <SafeAreaView edges={["bottom"]} style={styles.composer}>
+    {!question && <SafeAreaView edges={keyboard.overlap > 0 ? [] : ["bottom"]} style={styles.composer}>
       <TextInput ref={input} value={draft} onChangeText={setDraft} placeholder={shell.placeholder} placeholderTextColor="#a1a1aa" accessibilityLabel="Demo prompt" accessibilityHint="Try typing locally. Demo prompts are not sent to an agent." multiline submitBehavior="blurAndSubmit" blurOnSubmit onSubmitEditing={dismissInput} returnKeyType="done" autoCapitalize="none" autoCorrect={false} style={styles.input} />
       <View style={styles.inputFooter}><Text style={styles.model}>{shell.model}</Text><Pressable accessibilityRole="button" accessibilityLabel="Show keyboard" onPress={focusInput} style={styles.menu}><Ionicons name="keypad-outline" size={22} color="#a1a1aa" /></Pressable></View>
     </SafeAreaView>}
-  </KeyboardAvoidingView>
+  </View>
 }
 export default DemoAgentScreen
 

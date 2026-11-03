@@ -15,10 +15,9 @@ export let DemoOverview = ({ onConnect, showSamples = true }: { onConnect: () =>
         <Text accessibilityRole="header" style={styles.heading}>Use your own agents</Text>
         <Text style={styles.description}>Connect the computer where your Codex, Claude Code, or OpenCode sessions run. Open a live terminal, then answer an agent question from here.</Text>
         <Pressable accessibilityRole="button" onPress={connectComputer} style={styles.button}><Text style={styles.buttonText}>Connect your computer</Text></Pressable>
-        <Text style={styles.hint}>The demo uses sample agents. Hosted Relay needs a subscription; you can also host your own relay.</Text>
+        <Text style={styles.hint}>Hosted Relay needs a subscription; you can also host your own relay.</Text>
       </View>}
       <RelayWelcome onContinue={onConnect} connected={relayComplete} />
-      {showSamples && <Text style={styles.hint}>Demo uses sample agents.</Text>}
       <AdvancedSetupOptions />
     </View>
   </ScrollView>
