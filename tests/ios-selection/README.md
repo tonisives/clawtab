@@ -71,3 +71,8 @@ The first visible frames must already show the touched line. A screenshot
 after XCTest waits for idle cannot establish that the transition is stationary;
 record the dedicated simulator with `simctl io DEVICE recordVideo` and inspect
 the first visible frames. Keep recordings on the mounted external media volume.
+
+Also inspect a manual swipe in the recording and confirm that different output
+rows become visible. UITextView's accessibility frame can be clipped to zero
+while its enclosing ScrollView moves, so comparing that frame does not test
+scroll position.

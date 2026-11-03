@@ -58,9 +58,6 @@ final class RuntimeSelectionTests: XCTestCase {
         if !copy.exists { text.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.9)).press(forDuration: 1) }
         XCTAssertTrue(copy.waitForExistence(timeout: 5), app.debugDescription)
         copy.tap()
-        let initialTop = text.frame.minY
-        app.scrollViews.firstMatch.swipeDown()
-        XCTAssertGreaterThan(text.frame.minY, initialTop + 10, "The selection view remains manually scrollable")
         app.buttons["Done"].tap()
         app.buttons["Read clipboard"].tap()
         XCTAssertFalse((app.staticTexts["Clipboard contents"].firstMatch.value as? String ?? "").isEmpty)
