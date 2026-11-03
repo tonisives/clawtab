@@ -1149,6 +1149,14 @@ impl Service {
         if record.status == "scheduled" {
             return Err("This reminder has not been delivered yet".into());
         }
+        if record
+            .request
+            .actions
+            .iter()
+            .any(|action| action.id == action_id && action.kind == "focus")
+        {
+            return self.focus_notification(&record).await;
+        }
         record.request.validate_decisions(decisions.as_deref())?;
         if !record.request.needs_response() && action_id == "acknowledge" {
             let dismissed = self.store.dismiss_many(&[id.to_string()])?;
@@ -1180,9 +1188,6 @@ impl Service {
                 .cloned()
                 .ok_or("Unknown response action")?
         };
-        if action.kind == "focus" {
-            return self.focus_notification(&record).await;
-        }
         if action.kind != "choice" {
             validate_source(&record.request.source)?;
             let pane = record
