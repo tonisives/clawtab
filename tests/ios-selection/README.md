@@ -63,3 +63,11 @@ For notification paging, generate `node tests/mobile-pager-fixture.cjs` and run
 It sends touch events with snapshots arriving before the drag threshold and
 during animation, then checks same-shell arrivals, superseded pages and list
 position.
+
+The iOS selector fits its read-only UITextView to the measured text and uses
+an outer ScrollView for scrolling. Its initial offset is applied with
+`animated: false` while hidden, then the native selection receives focus.
+The first visible frames must already show the touched line. A screenshot
+after XCTest waits for idle cannot establish that the transition is stationary;
+record the dedicated simulator with `simctl io DEVICE recordVideo` and inspect
+the first visible frames. Keep recordings on the mounted external media volume.

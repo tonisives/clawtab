@@ -5,12 +5,12 @@ const vm = require("node:vm");
 const ts = require("../desktop/node_modules/typescript");
 const path = require("node:path");
 
-function load(file, dependencies = {}) {
+function load(file, dependencies = {}, globals = {}) {
   const exports = {};
   const source = ts.transpileModule(fs.readFileSync(path.join(__dirname, "../remote/src", file), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
-  vm.runInNewContext(source, { exports, require: name => dependencies[name] });
+  vm.runInNewContext(source, { exports, require: name => dependencies[name], ...globals });
   return exports;
 }
 
@@ -44,29 +44,66 @@ test("the static selection document escapes shell content as text", () => {
   assert.ok(html.includes("user-select:text"));
 });
 
-test("selection uses read-only native text and Copy all copies the frozen text", async () => {
-  let copied, done = false;
+test("selection positions its outer scroller before revealing and focusing native text", async () => {
+  let copied, done = false, index = 0;
+  const hooks = [], frames = [], operations = [];
   const jsx = (type, props) => ({ type, props });
+  const react = {
+    useMemo: callback => callback(),
+    useRef: current => { const slot = index++; return hooks[slot] ??= { current }; },
+    useState: initial => { const slot = index++; if (!(slot in hooks)) hooks[slot] = initial;
+      return [hooks[slot], value => { hooks[slot] = value; }]; },
+  };
   const { MessageTextSelection } = load("components/MessageTextSelection.tsx", {
-    react: { useMemo: callback => callback(), useRef: current => ({ current }), useState: value => [value, () => {}] },
-    "react/jsx-runtime": { jsx, jsxs: jsx }, "react-native": { View: "View", Text: "Text", TextInput: "TextInput", Pressable: "Pressable", Platform: { OS: "ios" } },
-    "@clawtab/shared": { colors: {} },
-    "react-native-webview": { default: "WebView" },
+    react, "react/jsx-runtime": { jsx, jsxs: jsx },
+    "react-native": { View: "View", ScrollView: "ScrollView", Text: "Text", TextInput: "TextInput", Pressable: "Pressable", Platform: { OS: "ios" } },
+    "@clawtab/shared": { colors: {} }, "react-native-webview": { default: "WebView" },
     "../lib/terminalSelectionDocument": { terminalSelectionDocument: text => text },
+    "../lib/messageSelectionLayout": load("lib/messageSelectionLayout.ts"),
     "expo-clipboard": { setStringAsync: async text => { copied = text; } },
-  });
-  const root = MessageTextSelection({ text: "frozen text", selection: { start: 0, end: 6 }, bottom: 34, onDone: () => done = true });
-  const input = root.props.children.find(node => node?.type === "TextInput");
+  }, { requestAnimationFrame: callback => frames.push(callback) });
+  const root = MessageTextSelection({ text: "frozen text", selection: { start: 7, end: 11 }, bottom: 34, onDone: () => done = true });
+  const native = root.props.children.find(node => typeof node?.type === "function");
+  const start = index;
+  const render = () => { index = start; return native.type(native.props); };
+  let tree = render();
+  tree.props.onLayout({ nativeEvent: { layout: { height: 100 } } });
+  tree.props.children[0].props.onTextLayout({ nativeEvent: { lines: [
+    { text: "frozen ", y: 0, height: 18 }, { text: "text", y: 200, height: 18 },
+  ] } });
+  tree = render();
+  const scroller = tree.props.children[1], input = scroller.props.children;
   assert.equal(input.props.editable, false);
+  assert.equal(input.props.scrollEnabled, false, "UITextView has no internal scroll animation");
   assert.equal(input.props.showSoftInputOnFocus, false);
   assert.equal(input.props.defaultValue, "frozen text");
-  assert.deepEqual(input.props.selection, { start: 0, end: 6 }, "initial native props position before first layout");
-  assert.equal(input.props.ref, undefined, "no animated imperative scroll after layout");
-  assert.ok(!JSON.stringify(root).includes("Touch and hold"));
+  assert.deepEqual(input.props.selection, { start: 7, end: 11 });
+  assert.equal(scroller.props.style.opacity, 0);
+  scroller.props.ref.current = { scrollTo: value => operations.push(value) };
+  input.props.ref.current = { focus: () => operations.push("focus") };
+  scroller.props.onContentSizeChange(300, 242);
+  assert.equal(operations.length, 1);
+  assert.equal(operations[0].animated, false);
+  assert.equal(operations[0].y, 142);
+  assert.equal(render().props.children[1].props.style.opacity, 0);
+  frames.shift()();
+  assert.equal(render().props.children[1].props.style.opacity, 1);
+  assert.equal(operations.at(-1), "focus", "focus only after the initial offset is applied");
+  scroller.props.onContentSizeChange(300, 242);
+  assert.equal(operations.length, 2, "later layout does not reposition the reader");
   const buttons = root.props.children.at(-1).props.children;
   buttons[0].props.onPress(); await Promise.resolve();
   assert.equal(copied, "frozen text");
   buttons[1].props.onPress(); assert.equal(done, true);
+});
+
+test("selection measurement follows native wrapped lines and UTF-16 offsets", () => {
+  const { messageSelectionLayout } = load("lib/messageSelectionLayout.ts");
+  const text = "日本語 😀 wrapped words\nlast";
+  const lines = [{ text: "日本語 😀 ", y: 0, height: 18 }, { text: "wrapped words\n", y: 18, height: 18 }, { text: "last", y: 36, height: 18 }];
+  assert.equal(messageSelectionLayout(text, text.indexOf("wrapped"), lines).selectedY, 30);
+  assert.equal(messageSelectionLayout(text, text.indexOf("last"), lines).selectedY, 48);
+  assert.equal(messageSelectionLayout(text, 0, lines).height, 78);
 });
 
 test("native handoff preserves UTF-16 word offsets in the displayed shell", () => {
