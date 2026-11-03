@@ -576,6 +576,7 @@
   assert(document.querySelector(".notification-settings") && !document.querySelector(".menu-overlay"), "the bar context menu opens inline settings directly");
   window.nfn.collapse(); window.fixture.records.clear();
   const external = window.fixture.record("external"); external.request.title = "Answered elsewhere";
+  external.request.source.session_id = "history-session"; external.request.source.provider = "codex";
   const following = window.fixture.record("following"); following.request.title = "Still waiting"; following.created_at = external.created_at + 1;
   window.fixture.records.set(external.id, external); window.fixture.records.set(following.id, following);
   window.nfn.receive(window.fixture.snapshot(external.id));
@@ -585,6 +586,19 @@
   document.querySelector('[aria-label="Notification list"]').click(); click("History"); await sleep(30);
   [...document.querySelectorAll(".queue-item")].find(item => item.querySelector("strong").textContent.endsWith("/Answered elsewhere")).click(); await sleep(260);
   assert(document.querySelector("h1").textContent === "Answered elsewhere", "resolved cards remain readable when opened explicitly from History");
+  assert(!document.querySelector('.acknowledge, [data-action-id="acknowledge"]'), "History cards omit Got it");
+  click("Open"); await sleep(30);
+  assert(window.fixture.calls.some(command => command.id === external.id && (command.op === "focus" || command.action_id === "focus")), "History Open requests the saved session");
+  const originalResponse = JSON.stringify(external.response);
+  const historyDraft = draft("Continue the research");
+  assert(!historyDraft.readOnly && !document.querySelector(".send").disabled, "saved History sessions accept a reply");
+  window.fixture.responseError = "Session could not start";
+  click("Send"); await sleep(30);
+  assert(document.querySelector("h1").textContent === "Answered elsewhere" && document.querySelector("textarea").value === "Continue the research" && document.querySelector(".notice").textContent === "Session could not start", "failed History replies preserve the view and draft");
+  window.fixture.responseError = null;
+  click("Send"); await sleep(30);
+  assert(document.querySelector("h1").textContent === "Answered elsewhere" && !document.querySelector("textarea").value && document.querySelector(".notice").textContent === "Reply sent", "successful History replies keep the card open and clear the draft");
+  assert(external.status === "resolved" && JSON.stringify(external.response) === originalResponse, "replying to History preserves the original decision");
   window.nfn.collapse(); window.fixture.records.clear();
   for (let i = 0; i < 67; i++) window.fixture.records.set(`bulk-${i}`, window.fixture.record(`bulk-${i}`));
   window.nfn.receive(window.fixture.snapshot()); window.nfn.receive({ type: "show" }); click("Pending");

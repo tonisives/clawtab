@@ -70,6 +70,8 @@ window.webkit = { messageHandlers: { nfn: { postMessage(value) {
     }
     if (record.request.actions.find(action => action.id === command.action_id)?.kind === "focus") {
       response = { focused: true, record };
+    } else if (command.action_id === "reply" && record.request.source.session_id && (record.status !== "pending" || record.dismissed_at || record.ignored)) {
+      response = { record, replied: true };
     } else {
       record.status = "resolved";
       record.response = { action_id: command.action_id, text: command.text, decisions: command.decisions };

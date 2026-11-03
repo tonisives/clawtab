@@ -1021,8 +1021,9 @@ impl Service {
                                 .flatten()
                                 .is_some_and(|run| run.finished_at.is_some())
                         });
-                        if source.session_id.is_none()
-                            || (!finished && record.request.deliver_at.is_none())
+                        if !saved_conversation(record)
+                            && (source.session_id.is_none()
+                                || (!finished && record.request.deliver_at.is_none()))
                         {
                             return Err(error);
                         }
@@ -1042,6 +1043,10 @@ impl Service {
             .pane_id
             .as_deref()
             .is_some_and(crate::managed::is_managed)
+            && !source
+                .group
+                .as_deref()
+                .is_some_and(crate::tmux::session_exists)
         {
             let info = crate::managed::launch(
                 crate::managed::Launch {
@@ -1098,13 +1103,13 @@ impl Service {
         }
     }
 
-    async fn reminder_reply_source(&self, record: &NfnRecord) -> Result<NfnSource, String> {
+    async fn saved_reply_source(&self, record: &NfnRecord) -> Result<NfnSource, String> {
         if record.request.source.session_id.is_none() {
-            return Err("This reminder has no linked agent session".into());
+            return Err("This message has no linked agent session".into());
         }
         let targets = session_targets(&record.request.source)?;
         if targets.len() > 1 {
-            return Err("Open the reminder and select a session pane before replying".into());
+            return Err("Open the message and select a session pane before replying".into());
         }
         let pane = if let Some(target) = targets.first() {
             target["pane_id"]
@@ -1115,7 +1120,7 @@ impl Service {
             self.open_saved_session(record, false).await?;
             self.store.get(&record.id)?.request.data["opened_session_pane"]
                 .as_str()
-                .ok_or("Could not open the reminder session")?
+                .ok_or("Could not open the saved session")?
                 .to_owned()
         };
         for _ in 0..60 {
@@ -1156,6 +1161,12 @@ impl Service {
             .any(|action| action.id == action_id && action.kind == "focus")
         {
             return self.focus_notification(&record).await;
+        }
+        if history_reply(&record, action_id) {
+            let source = self.saved_reply_source(&record).await?;
+            let pane = source.pane_id.as_deref().ok_or("Agent is unavailable")?;
+            crate::agent_plugins::submit_notification_reply(pane, text.as_deref().unwrap_or(""))?;
+            return Ok(json!({"record":self.store.get(id)?, "replied":true}));
         }
         record.request.validate_decisions(decisions.as_deref())?;
         if !record.request.needs_response() && action_id == "acknowledge" {
@@ -1237,7 +1248,7 @@ impl Service {
             };
         }
         if action_id == "reply" && record.request.deliver_at.is_some() {
-            record.request.source = self.reminder_reply_source(&record).await?;
+            record.request.source = self.saved_reply_source(&record).await?;
             self.store.save(&mut record)?;
         }
         if record.request.source.pane_id.is_some() {
@@ -1414,12 +1425,24 @@ impl Service {
 fn resumable_notice(record: &NfnRecord) -> bool {
     job_notice(record)
         || (record.request.deliver_at.is_some() && record.request.source.session_id.is_some())
+        || saved_conversation(record)
+}
+
+fn saved_conversation(record: &NfnRecord) -> bool {
+    session_resume_command(&record.request.source).is_ok()
+}
+
+fn history_reply(record: &NfnRecord, action_id: &str) -> bool {
+    action_id == "reply"
+        && (!record.pending() || record.dismissed_at.is_some() || record.ignored)
+        && saved_conversation(record)
 }
 
 fn requires_live_source(record: &NfnRecord) -> bool {
     // Successful job cards belong to the agent that produced them. Failed job
     // recovery and scheduled reminders remain available after the process exits.
-    !resumable_notice(record)
+    !(job_notice(record)
+        || (record.request.deliver_at.is_some() && record.request.source.session_id.is_some()))
         || (job_notice(record)
             && record.request.kind == "completed"
             && record.request.source.pane_id.is_some())
@@ -2178,6 +2201,27 @@ fn reply_targets_agent(record: &NfnRecord, action_id: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn history_sessions_can_resume_and_reply_without_replaying_decisions() {
+        let mut record = pending_permission();
+        record.request.source.provider = Some("codex".into());
+        record.request.source.session_id = Some("saved-session".into());
+        assert!(resumable_notice(&record));
+        assert!(requires_live_source(&record));
+        assert!(!history_reply(&record, "reply"));
+        for status in ["resolved", "expired", "superseded", "cancelled"] {
+            record.status = status.into();
+            assert!(history_reply(&record, "reply"));
+            assert!(!history_reply(&record, "approve"));
+            assert!(!history_reply(&record, "acknowledge"));
+        }
+        record.status = "pending".into();
+        record.dismissed_at = Some(now());
+        assert!(history_reply(&record, "reply"));
+        record.request.source.session_id = None;
+        assert!(!history_reply(&record, "reply"));
+    }
 
     #[test]
     fn scheduled_reminders_keep_creator_and_session_and_do_not_expire_when_the_agent_closes() {

@@ -4,6 +4,8 @@
   const host = document.getElementById("surface");
   const records = new Map(), drafts = new Map(), promises = new Map();
   const replyStates = new Map();
+  const historyReplySent = new Set();
+  let historyRecordId = null;
   const socialDrafts = new Map();
   // Submitted cards stay out of this pass until the daemon confirms their state.
   const actionsInProgress = new Map(), actionErrors = new Map(), retryIds = new Set();
@@ -734,7 +736,7 @@
   function defaultDetails(record) {
     return Boolean(record?.request.source?.job_id && (record.request.kind === "failed" || /^failed\b/.test(record.request.data?.event || "")));
   }
-  function openRecord(id) {
+  function openRecord(id, fromHistory = false) {
     if (current !== id) card?._logs?._cancelSelection?.();
     if (snapshot.remote) window.nfnPaging?.opening();
     const record = records.get(id), key = record && threadKey(record);
@@ -742,6 +744,7 @@
     shellReply = false;
     todosOpen = false;
     if (actionsInProgress.has(id)) return;
+    historyRecordId = fromHistory ? id : null;
     leaveSettings();
     const replyFocused = card?._reply && document.activeElement === card._reply;
     clearTimeout(completionTimer); pauseTimer(); stopContext(); current = id; queueReturnId = id; expanded = true; details = defaultDetails(records.get(id)) || Boolean(snapshot.shell_only || resizedSize?.showDetails) || (snapshot.remote && record?.request.source?.pane_id); queue = false; renderedId = null; menu = null;
@@ -943,6 +946,19 @@
   async function act(id, action_id, text) {
     if (records.get(id)?.request.actions?.some(action => action.id === action_id && action.kind === "focus")) {
       return focusSession(id, { op: "respond", id, action_id, text: null });
+    }
+    if (action_id === "reply" && archivedRecord(records.get(id)) && savedConversation(records.get(id))) {
+      if (!text?.trim() || actionsInProgress.has(id)) return;
+      const state = { pending: true };
+      actionsInProgress.set(id, state); actionErrors.delete(id); historyReplySent.delete(id); render();
+      try {
+        const value = await call({ op: "respond", id, action_id, text });
+        if (value.record) records.set(id, value.record);
+        drafts.delete(id); historyReplySent.add(id);
+        if (current === id && card?._reply) card._reply.value = "";
+      } catch (error) { showError(error, id); }
+      finally { actionsInProgress.delete(id); render(); }
+      return;
     }
     const target = singleSocialTarget(records.get(id));
     if (target && action_id === "reply") {
@@ -1262,6 +1278,13 @@
       if (control.disabled !== disabled) control.disabled = disabled;
     }
   }
+  function savedConversation(record) {
+    return Boolean(record?.request.source?.session_id && ["codex", "claude", "opencode", "antigravity", "hermes"].includes(record.request.source.provider));
+  }
+  function archivedRecord(record) {
+    return Boolean(record && (!pending(record) || record.dismissed_at || record.ignored));
+  }
+  function historyCard(record) { return historyRecordId === record.id || archivedRecord(record); }
   function createCard(record, readOnly = false) {
     if (!readOnly && record.details_available === false) details = false;
     const node = el("article", "card");
@@ -1321,7 +1344,7 @@
     } else if (record.request.media?.length) body.append(mediaView(record, record.request.media.map((_, index) => index)));
     const actions = el("div", "actions"); node._actions = actions;
     const choices = record.request.actions || [];
-    for (const [index, action] of choices.filter(action => !bundle && action.kind !== "focus").entries()) {
+    for (const [index, action] of choices.filter(action => !bundle && action.kind !== "focus" && !(historyCard(record) && action.id === "acknowledge")).entries()) {
       const control = button(action.label, () => action.id === "acknowledge" ? acknowledge(record) : act(record.id, action.id, drafts.get(record.id) || ""), index === 0 ? "primary" : "");
       control.title = action.label;
       control.dataset.actionId = action.id;
@@ -1334,14 +1357,14 @@
       node.append(autoYesControl(record, true));
     }
     let replyToggle = null;
-    if ((!bundle || singleSocialTarget(record)) && (record.request.source?.pane_id || record.request.deliver_at && record.request.source?.session_id || record.request.template !== "update" && hasBlock(layout, "reply"))) {
-      const toAgent = Boolean(record.question_id || record.request.response_destination === "agent_message" || record.request.template === "update" && (record.request.source?.pane_id || record.request.deliver_at && record.request.source?.session_id));
+    if ((!bundle || singleSocialTarget(record)) && (record.request.source?.pane_id || savedConversation(record) || record.request.template !== "update" && hasBlock(layout, "reply"))) {
+      const toAgent = Boolean(record.question_id || savedConversation(record) || record.request.response_destination === "agent_message" || record.request.template === "update" && (record.request.source?.pane_id || record.request.deliver_at && record.request.source?.session_id));
       const reply = el("div", "reply");
       const revision = revisionChoice(record);
       const replyLabel = revision || singleSocialTarget(record) ? "Changes to the draft" : toAgent ? "Reply to agent" : "Your reply";
       const open = replyStates.get(record.id) ?? Boolean(drafts.get(record.id));
       const toggle = button("Reply", () => {
-        if (mobileHost() && !singleSocialTarget(record) && record.request.source?.pane_id && !record.request.deliver_at) { setShellReply(true); return; }
+        if (mobileHost() && !archivedRecord(record) && !singleSocialTarget(record) && record.request.source?.pane_id && !record.request.deliver_at) { setShellReply(true); return; }
         const next = !(replyStates.get(record.id) ?? Boolean(drafts.get(record.id)));
         const previousReplyHeight = reply.hidden ? 0 : reply.offsetHeight + 12;
         replyStates.set(record.id, next); pauseTimer(); expanded = true;
@@ -1383,7 +1406,7 @@
       }, "primary open-session");
       openBrowser.title = "Open the browser session and select this pane";
       utilities.append(openBrowser);
-    } else if (record.request.source?.pane_id || choices.some(action => action.kind === "focus")) {
+    } else if (record.request.source?.pane_id || savedConversation(record) || choices.some(action => action.kind === "focus")) {
       utilities.classList.add("session-controls");
       const focus = choices.find(action => action.kind === "focus");
       const openSession = button("Open", () => focus ? act(record.id, focus.id, "") : focusSession(record.id, { op: "focus", id: record.id }), "primary open-session");
@@ -1415,7 +1438,7 @@
     if (openJob) footerActions.append(openJob);
     utilities.classList.add("session-controls");
     if (actions.parentElement === utilities) footerActions.append(actions);
-    else {
+    else if (!historyCard(record)) {
       const control = button("Got it", () => acknowledge(record), "primary acknowledge");
       node._acknowledge = control; footerActions.append(control);
     }
@@ -1493,6 +1516,7 @@
       startContext();
     }
     const isPending = pending(record) && !record.dismissed_at && !record.ignored;
+    const canReply = isPending || savedConversation(record) && archivedRecord(record);
     if (card._thread && !card._thread._positioned) { card._thread.scrollTop = card._thread.scrollHeight; card._thread._positioned = true; }
     card._wasPending = isPending;
     if (wasPending && !isPending && !preview && !shellReply && !mobileHost()) {
@@ -1516,11 +1540,13 @@
       : !isPending || busy || Boolean(record.question_id && feedback) || Boolean(revisionChoice(record) && control.dataset.actionId === "post" && feedback);
     if (card._openSession) card._openSession.disabled = busy;
     if (card._acknowledge) card._acknowledge.disabled = busy || Boolean(record.dismissed_at || record.ignored);
-    if (card._send) card._send.disabled = !isPending || busy || !card._reply.value.trim();
-    if (card._reply) card._reply.readOnly = !isPending || busy;
+    if (historyCard(record)) card.querySelectorAll('.acknowledge, [data-action-id="acknowledge"]').forEach(control => control.remove());
+    if (card._send) card._send.disabled = !canReply || busy || !card._reply.value.trim();
+    if (card._reply) card._reply.readOnly = !canReply || busy;
     for (const control of card._socialControls || []) control.disabled = !isPending || busy;
     card._updateSocial?.();
     if (actionErrors.has(current)) card._notice.textContent = actionErrors.get(current);
+    else if (historyReplySent.has(current)) card._notice.textContent = "Reply sent";
     else if (contextErrors.has(current)) card._notice.textContent = contextErrors.get(current);
     else if (record.error) card._notice.textContent = record.error;
     else if (record.ignored) card._notice.textContent = "Agent ignored";
@@ -1869,7 +1895,7 @@
         checkbox.setAttribute("aria-label", `Select ${summary.title}`);
         checkbox.addEventListener("change", () => { if (checkbox.checked) selectedNotifications.add(record.id); else selectedNotifications.delete(record.id); render(); }); row.append(checkbox);
       }
-      const item = button("", () => { records.set(record.id, record); openRecord(record.id); }, `queue-item ${record.read_at ? "" : "unread"}`);
+      const item = button("", () => { records.set(record.id, record); openRecord(record.id, history); }, `queue-item ${record.read_at ? "" : "unread"}`);
       const header = el("div", "message-header");
       header.append(el("strong", "", summary.title), relativeTimestamp(record));
       item.append(header, el("div", "meta", summary.message)); row.append(item);
@@ -2330,7 +2356,7 @@
         sendShellInput(value.text); card?._shellInput?.focus({ preventScroll: true });
       }
       else if (value.action === "reply") {
-        if (!singleSocialTarget(records.get(current)) && records.get(current)?.request.source?.pane_id && !records.get(current)?.request.deliver_at) setShellReply(true);
+        if (!archivedRecord(records.get(current)) && !singleSocialTarget(records.get(current)) && records.get(current)?.request.source?.pane_id && !records.get(current)?.request.deliver_at) setShellReply(true);
         else card?.querySelector(".reply-toggle")?.click();
       }
       else if (value.action === "open") card?.querySelector(".open-session")?.click();
