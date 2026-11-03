@@ -50,6 +50,7 @@ let loadLogin = (os, params = {}, options = {}) => {
     }) },
     'expo-web-browser': { maybeCompleteAuthSession: () => {} },
     '../src/lib/googleBrowserAuth': browserAuth,
+    '../src/lib/googleIosClientId': { googleIosClientId: 'ios-client' },
     '../src/store/auth': { useAuthStore: (selector) => selector(auth) },
     '../src/api/client': {}, '../src/theme/colors': { colors: {} }, '../src/theme/spacing': { radius: {}, spacing: {} },
     'expo-apple-authentication': {},
@@ -74,10 +75,12 @@ for (let os of ['android', 'ios', 'web']) {
     let h = loadLogin(os);
     assert.equal(h.browserRequests, os === 'web' ? 1 : 0);
     if (os !== 'web') assert.equal(h.configured.webClientId, 'web-client');
-    if (os === 'ios') assert.equal(h.render().some((node) => node.props?.children === 'Try demo'), false);
-    else { h.press('Try demo'); assert.equal(h.events[0][1], '/demo'); }
+    if (os === 'android') {
+      h.press('Try demo');
+      assert.deepEqual(h.events, [['push', '/demo']], 'demo entry must not authenticate');
+    } else assert.equal(h.render().some((node) => node.props?.children === 'Try demo'), false);
     await h.press('Sign in with Google');
-    assert.deepEqual(h.events.slice(os === 'ios' ? 0 : 1), [['login', os === 'web' ? 'web-identity' : 'native-identity'], ['replace', '/(tabs)']]);
+    assert.deepEqual(h.events.slice(os === 'android' ? 1 : 0), [['login', os === 'web' ? 'web-identity' : 'native-identity'], ['replace', '/(tabs)']]);
   });
 }
 
@@ -85,7 +88,9 @@ test('sign-in preserves the selected demo setup path', async () => {
   for (let os of ['ios', 'web']) for (let destination of ['add-machine', 'account']) {
     let h = loadLogin(os, { return_to: destination });
     await h.press('Sign in with Google');
-    assert.deepEqual(h.events.at(-1), ['replace', `/${destination}`]);
+    assert.equal(h.events.at(-1)[0], 'replace');
+    if (destination === 'add-machine') assert.equal(h.events.at(-1)[1].pathname, '/add-machine');
+    else assert.equal(h.events.at(-1)[1], '/account');
   }
 });
 

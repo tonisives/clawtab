@@ -310,6 +310,17 @@ export default function LoginScreen() {
             </View>
           )}
 
+          {Platform.OS === "android" && (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => router.push("/demo")}
+              disabled={loading}
+              style={[styles.googleBtn, loading && styles.btnDisabled]}
+            >
+              <Text style={styles.googleBtnText}>Try demo</Text>
+            </Pressable>
+          )}
+
           <Pressable onPress={() => { setTempServerUrl(serverUrl); setShowServer(true); }}>
             <Text style={styles.serverText}>
               Server: {serverUrl}
