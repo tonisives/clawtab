@@ -479,7 +479,8 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   statusIcon: {
-    width: 10,
+    minWidth: 16,
+    flexShrink: 0,
     fontSize: 14,
     lineHeight: 16,
     fontWeight: "800",
