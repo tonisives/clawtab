@@ -22,11 +22,20 @@ export const DEMO_SOCIAL_MESSAGE: MessageRecord = {
   },
 }
 
+export const DEMO_TASK = {
+  id: "demo-launch-post", text: "Review the ClawTab launch post", group: "ClawTab", depth: 0, checked: false,
+  agent: { pane: "demo-codex", state: "done", connected: true, summary: "Draft ready for review." },
+}
+
 // Demo review decisions stay in memory and never enter the live message store.
 export const useDemoMessages = create<{
   records: MessageRecord[]
+  tasks: (typeof DEMO_TASK)[]
+  updateTask: (id: string, checked: boolean) => void
   update: (record: MessageRecord) => void
 }>(set => ({
   records: [DEMO_SOCIAL_MESSAGE],
+  tasks: [DEMO_TASK],
+  updateTask: (id, checked) => set(state => ({ tasks: state.tasks.map(task => task.id === id ? { ...task, checked } : task) })),
   update: record => set(state => ({ records: state.records.map(current => current.id === record.id ? record : current) })),
 }))

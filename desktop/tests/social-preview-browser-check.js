@@ -40,7 +40,7 @@
   assert(!document.querySelector(".logs"), "opening a media review does not automatically open shell output");
   assert(preview && preview.textContent.includes("@totovoto"), "the X card shows the exact account and post copy separately from the agent note");
   assert(!preview.textContent.includes("Agent note") && !document.querySelector(".social-tabs"), "a single X draft has no full-width platform selector or agent text inside the post");
-  assert(document.querySelector(".social-feedback").hidden && document.querySelector(".social-submit").textContent === "Approve", "single-post review starts with Approve and a hidden feedback field");
+  assert(!document.querySelector(".social-feedback") && !document.querySelector(".social-deny") && document.querySelector(".social-submit").textContent === "Approve", "single-post review adds only Approve beside the existing message controls");
   const thumbnail = document.querySelector(".video-thumbnail");
   await wait(() => video.readyState >= 2 && video.poster.startsWith("data:image/jpeg") && visibleThumbnail(thumbnail), "the real local clip did not decode a visible thumbnail");
   assert(video.src.startsWith("blob:") && video.videoWidth === 1920 && video.videoHeight === 1080, "desktop video uses the bounded attachment bridge and decodes the reviewed landscape file");
@@ -80,16 +80,16 @@
   document.querySelector(".details-toggle").click(); video.pause();
   await sleep(50);
   assert(video.controls && play.hidden && getComputedStyle(play).display === "none", "pausing keeps native controls and does not bring back an extra play overlay");
-  document.querySelector('[aria-label="Request changes for x"]').click();
-  const feedback = document.querySelector(".social-feedback"), comment = feedback.querySelector("textarea");
-  assert(!feedback.hidden && document.querySelector(".social-submit").textContent === "Send feedback" && document.querySelector(".social-submit").disabled, "Request changes reveals feedback and requires text before sending");
+  document.querySelector(".reply-toggle").click();
+  const feedback = document.querySelector(".reply"), comment = feedback.querySelector("textarea");
+  assert(!feedback.hidden && document.querySelector(".send").disabled, "Reply reveals feedback and requires text before sending");
   comment.value = "Start at the session preview and make the terminal easier to read."; comment.dispatchEvent(new Event("input"));
   document.querySelector(".details-toggle").click(); document.querySelector(".details-toggle").click();
-  assert(comment.value.includes("terminal") && !feedback.hidden && !document.querySelector(".social-submit").disabled, "feedback survives Details toggles with its send control available");
-  document.querySelector(".social-submit").click(); await sleep(100);
+  assert(comment.value.includes("terminal") && !feedback.hidden && !document.querySelector(".send").disabled, "feedback survives Details toggles with its send control available");
+  document.querySelector(".send").click(); await sleep(100);
   const sent = fixture.calls.filter(call => call.op === "respond");
   assert(sent.length === 1 && sent[0].decisions[0].decision === "revise" && sent[0].decisions[0].revision === "a".repeat(64) && sent[0].decisions[0].comment === comment.value, "feedback sends the exact original revision as a revision request, never an approval");
-  for (const [id, action, expected] of [["approve-review", ".social-submit", "approve"], ["deny-review", ".social-deny", "deny"]]) {
+  for (const [id, action, expected] of [["approve-review", ".social-submit", "approve"], ["deny-review", ".acknowledge", "deny"]]) {
     post(id); open(id, true); await sleep(50);
     document.querySelector(action).click(); await sleep(80);
     const response = fixture.calls.find(call => call.op === "respond" && call.id === id);
@@ -100,12 +100,12 @@
   const retainedBody = document.querySelector(".message-content"); retainedBody.scrollTop = retainedBody.scrollHeight;
   retainedBody.dispatchEvent(new Event("scroll")); window.nfn.outsideClick();
   assert(retainedBody.scrollTop > 0 && retained.status === "pending" && !retained.dismissed_at, "scrolling or clicking outside an undecided review leaves the draft pending");
-  document.querySelector('[aria-label="Request changes for x"]').click();
-  const unsent = document.querySelector(".social-feedback textarea"); unsent.value = "Keep this unsent feedback while I check other messages."; unsent.dispatchEvent(new Event("input"));
+  document.querySelector(".reply-toggle").click();
+  const unsent = document.querySelector(".reply textarea"); unsent.value = "Keep this unsent feedback while I check other messages."; unsent.dispatchEvent(new Event("input"));
   document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
   window.nfn.receive({ ...fixture.snapshot(), remote: mobile });
   document.querySelector('[aria-label="Expand notifications"]').click(); await sleep(50);
-  assert(document.querySelector(".x-post") && document.querySelector(".social-feedback textarea").value === unsent.value && retained.status === "pending", "closing and reopening restores the undecided post and its unsent feedback");
+  assert(document.querySelector(".x-post") && document.querySelector(".reply textarea").value === unsent.value && retained.status === "pending", "closing and reopening restores the undecided post and its unsent feedback");
   const other = fixture.record("other-agent-update", 1); other.created_at = retained.created_at + 100;
   other.request = { ...other.request, title: "Agent update", template: "update", source: { ...retained.request.source }, data: { event: "agent_finished" }, actions: [{ id: "acknowledge", label: "Got it", kind: "choice" }] };
   fixture.records.set(other.id, other); window.nfn.receive({ ...fixture.snapshot(), remote: mobile });
@@ -116,7 +116,7 @@
   document.querySelector('[data-action-id="acknowledge"]').click();
   document.querySelector('.acknowledge-menu [role="menuitem"]')?.click(); await sleep(80);
   document.querySelector('[aria-label="Notification list"]').click(); retainedRow().click(); await sleep(50);
-  assert(document.querySelector(".x-post") && document.querySelector(".social-feedback textarea").value === unsent.value && !fixture.calls.some(call => call.id === retained.id && ["respond", "dismiss", "dismiss_many", "cancel"].includes(call.op)), "leaving the review and acknowledging another message never submits or dismisses the post");
+  assert(document.querySelector(".x-post") && document.querySelector(".reply textarea").value === unsent.value && !fixture.calls.some(call => call.id === retained.id && ["respond", "dismiss", "dismiss_many", "cancel"].includes(call.op)), "leaving the review and acknowledging another message never submits or dismisses the post");
   if (!mobile) {
     const limited = post("short-screen"); limited.request.data.targets[0].body = "Review this post on a shorter screen.\n".repeat(30);
     window.nfn.setPlacement({ placement: "right", max_width: 1000, max_height: 360, reduce_motion: true });

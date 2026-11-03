@@ -919,8 +919,17 @@
       render(); resumeTimer();
     }
   }
+  function singleSocialTarget(record) {
+    const targets = record?.request.template === "social-review" && record.request.data?.targets;
+    return Array.isArray(targets) && targets.length === 1 ? targets[0] : null;
+  }
   function acknowledge(record) {
     if (actionsInProgress.has(record.id)) return;
+    const target = singleSocialTarget(record);
+    if (target) {
+      performAction(record.id, { op: "respond", id: record.id, action_id: "decide", decisions: [{ target_id: target.id, revision: target.revision, decision: "deny", comment: null }] });
+      return;
+    }
     if (record.request.deliver_at) { performAction(record.id, { op: "dismiss", id: record.id }); return; }
     if (record.request.source?.pane_id) toggleMenu("acknowledge");
     else performAction(record.id, { op: "dismiss", id: record.id });
@@ -934,6 +943,12 @@
   async function act(id, action_id, text) {
     if (records.get(id)?.request.actions?.some(action => action.id === action_id && action.kind === "focus")) {
       return focusSession(id, { op: "respond", id, action_id, text: null });
+    }
+    const target = singleSocialTarget(records.get(id));
+    if (target && action_id === "reply") {
+      if (!text?.trim()) return;
+      await performAction(id, { op: "respond", id, action_id: "decide", decisions: [{ target_id: target.id, revision: target.revision, decision: "revise", comment: text.trim() }] });
+      return;
     }
     const revision = revisionChoice(records.get(id));
     if (revision && (action_id === "reply" || action_id === "post" && text?.trim())) action_id = revision.id;
@@ -1184,8 +1199,8 @@
       }, "utility social-deny");
       deny.setAttribute("aria-label", `Deny ${target.platform}`);
       controls.push(comment, revise, deny); if (!single) controls.push(approve);
-      actions.append(approve, revise, deny);
-      if (single) footer.append(feedback, actions); else panel.append(feedback, actions);
+      if (single) { actions.append(approve); footer.append(actions); }
+      else { actions.append(approve, revise, deny); panel.append(feedback, actions); }
       refresh.push(() => {
         feedback.hidden = decision.decision !== "revise";
         revise.textContent = decision.decision === "revise" ? "Cancel changes" : "Request changes";
@@ -1319,14 +1334,14 @@
       node.append(autoYesControl(record, true));
     }
     let replyToggle = null;
-    if (!bundle && (record.request.source?.pane_id || record.request.deliver_at && record.request.source?.session_id || record.request.template !== "update" && hasBlock(layout, "reply"))) {
+    if ((!bundle || singleSocialTarget(record)) && (record.request.source?.pane_id || record.request.deliver_at && record.request.source?.session_id || record.request.template !== "update" && hasBlock(layout, "reply"))) {
       const toAgent = Boolean(record.question_id || record.request.response_destination === "agent_message" || record.request.template === "update" && (record.request.source?.pane_id || record.request.deliver_at && record.request.source?.session_id));
       const reply = el("div", "reply");
       const revision = revisionChoice(record);
-      const replyLabel = revision ? "Changes to the draft" : toAgent ? "Reply to agent" : "Your reply";
+      const replyLabel = revision || singleSocialTarget(record) ? "Changes to the draft" : toAgent ? "Reply to agent" : "Your reply";
       const open = replyStates.get(record.id) ?? Boolean(drafts.get(record.id));
       const toggle = button("Reply", () => {
-        if (mobileHost() && record.request.source?.pane_id && !record.request.deliver_at) { setShellReply(true); return; }
+        if (mobileHost() && !singleSocialTarget(record) && record.request.source?.pane_id && !record.request.deliver_at) { setShellReply(true); return; }
         const next = !(replyStates.get(record.id) ?? Boolean(drafts.get(record.id)));
         const previousReplyHeight = reply.hidden ? 0 : reply.offsetHeight + 12;
         replyStates.set(record.id, next); pauseTimer(); expanded = true;
@@ -1405,7 +1420,7 @@
       node._acknowledge = control; footerActions.append(control);
     }
     const ack = footerActions.querySelector(".acknowledge, [data-action-id=acknowledge]");
-    if (ack && record.request.source?.pane_id) {
+    if (ack && !singleSocialTarget(record) && record.request.source?.pane_id) {
       ack.setAttribute("aria-haspopup", "menu"); ack.setAttribute("aria-expanded", "false");
     }
     if (replyToggle) footerActions.append(replyToggle);
@@ -2315,7 +2330,7 @@
         sendShellInput(value.text); card?._shellInput?.focus({ preventScroll: true });
       }
       else if (value.action === "reply") {
-        if (records.get(current)?.request.source?.pane_id && !records.get(current)?.request.deliver_at) setShellReply(true);
+        if (!singleSocialTarget(records.get(current)) && records.get(current)?.request.source?.pane_id && !records.get(current)?.request.deliver_at) setShellReply(true);
         else card?.querySelector(".reply-toggle")?.click();
       }
       else if (value.action === "open") card?.querySelector(".open-session")?.click();

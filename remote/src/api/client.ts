@@ -26,8 +26,22 @@ export interface DeviceInfo {
   is_online: boolean;
 }
 
-async function getServerUrl(): Promise<string> {
+export async function getServerUrl(): Promise<string> {
   return (await storage.getItem(KEYS.serverUrl)) || DEFAULT_SERVER;
+}
+
+export function normalizeRelayUrl(value: string) {
+  const url = new URL(value.trim());
+  if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
+    throw new Error("Enter an HTTP or HTTPS relay URL without credentials, a query, or a fragment.");
+  }
+  return url.toString().replace(/\/+$/, "");
+}
+
+export async function setServerUrl(value: string) {
+  const serverUrl = normalizeRelayUrl(value);
+  await storage.setItem(KEYS.serverUrl, serverUrl);
+  return serverUrl;
 }
 
 async function request<T>(
@@ -213,7 +227,6 @@ export async function clearTokens() {
   await Promise.all([
     storage.deleteItem(KEYS.accessToken),
     storage.deleteItem(KEYS.refreshToken),
-    storage.deleteItem(KEYS.serverUrl),
     storage.deleteItem(KEYS.userId),
   ]);
 }

@@ -67,6 +67,8 @@ export default function LoginScreen() {
   const [serverUrl, setServerUrl] = useState("https://relay.clawtab.cc");
   const [tempServerUrl, setTempServerUrl] = useState("");
 
+  useEffect(() => { void api.getServerUrl().then(setServerUrl); }, []);
+
   // Web: Google auth via expo-auth-session provider
   const [, googleAuthSessionResult, promptAsync] = useGoogleBrowserAuth({
     webClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB,
@@ -357,7 +359,10 @@ export default function LoginScreen() {
               </Pressable>
               <Pressable
                 style={[styles.modalBtn, styles.modalBtnPrimary]}
-                onPress={() => { setServerUrl(tempServerUrl); setShowServer(false); }}
+                onPress={async () => {
+                  try { setServerUrl(await api.setServerUrl(tempServerUrl)); setShowServer(false); setError(null); }
+                  catch (error: any) { setShowServer(false); setError(error.message); }
+                }}
               >
                 <Text style={[styles.modalBtnText, styles.modalBtnPrimaryText]}>Save</Text>
               </Pressable>

@@ -201,6 +201,7 @@ export default function RootLayout() {
             }}
           />
           <Stack.Screen name="account" options={{ title: "Account", headerShown: true, headerTintColor: colors.text, headerStyle: { backgroundColor: colors.bg }, headerBackButtonDisplayMode: "minimal", animation: "slide_from_right" }} />
+          <Stack.Screen name="connect-relay" options={{ title: "Connect your relay", headerShown: true, headerTintColor: colors.text, headerStyle: { backgroundColor: colors.bg }, headerBackButtonDisplayMode: "minimal", animation: "slide_from_right" }} />
           <Stack.Screen name="workspace" options={{ title: "Relay", headerShown: true, headerTintColor: colors.text, headerStyle: { backgroundColor: colors.bg }, headerBackButtonDisplayMode: "minimal", animation: "slide_from_right" }} />
           <Stack.Protected guard={Platform.OS !== "ios" || isAuthenticated}>
             <Stack.Screen name="demo" options={{ headerShown: false }} />

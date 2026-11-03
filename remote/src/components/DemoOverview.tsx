@@ -11,7 +11,7 @@ export let DemoOverview = ({ onConnect, showSamples = true }: { onConnect: () =>
   let { relayComplete } = useSetupProgress()
   return <ScrollView style={styles.screen} contentContainerStyle={styles.scrollContent} contentInsetAdjustmentBehavior="automatic">
     <View style={styles.content}>
-      {showSamples && <View style={styles.nextStep}>
+      {showSamples && relayComplete && <View style={styles.nextStep}>
         <Text accessibilityRole="header" style={styles.heading}>Use your own agents</Text>
         <Text style={styles.description}>Connect the computer where your Codex, Claude Code, or OpenCode sessions run. Open a live terminal, then answer an agent question from here.</Text>
         <Pressable accessibilityRole="button" onPress={connectComputer} style={styles.button}><Text style={styles.buttonText}>Connect your computer</Text></Pressable>

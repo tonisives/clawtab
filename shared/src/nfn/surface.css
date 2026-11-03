@@ -198,7 +198,7 @@ button.send { flex: none; align-self: flex-end; min-width: 54px; padding: 7px 12
 .social-feedback[hidden] { display: none; }
 .social-feedback-label { display: block; margin-bottom: 8px; color: var(--muted); }
 .social-feedback textarea { margin: 0; }
-.social-footer { flex: none; }
+.social-footer { flex: none; padding-bottom: 16px; }
 .social-library { display: block; color: var(--accent); margin: 8px 0; }
 .social-submit { margin-top: 8px; }
 .social-decisions .social-submit { margin-top: 0; }

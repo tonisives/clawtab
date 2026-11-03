@@ -3,6 +3,7 @@ import { Platform } from "react-native"
 import { useRouter } from "expo-router"
 import { messagePending } from "@clawtab/shared"
 import { useDemoMessages } from "../demo/messages"
+import { isMessageTodoCommand } from "../lib/messageTodosController"
 import { messageSurfaceController } from "../lib/messageSurfaceController"
 import { surfaceRecord } from "../lib/messagePresentation"
 import { MessageSurface } from "./MessageSurface"
@@ -10,6 +11,7 @@ import type { MessageSurfaceProps } from "./messageSurfaceTypes"
 
 export function DemoMessageInbox(props: Omit<MessageSurfaceProps, "snapshot" | "onCommand"> & { onNavigateAway?: () => void }) {
   const records = useDemoMessages(state => state.records)
+  const tasks = useDemoMessages(state => state.tasks)
   const router = useRouter()
   const controller = useMemo(() => messageSurfaceController({
     records: () => useDemoMessages.getState().records,
@@ -38,7 +40,17 @@ export function DemoMessageInbox(props: Omit<MessageSurfaceProps, "snapshot" | "
   const snapshot = useMemo(() => ({
     type: "snapshot", remote: true, native_chrome: Platform.OS !== "web" && !props.popup,
     visible: props.active !== false, records: records.map(surfaceRecord), pending_count: records.filter(messagePending).length,
+    todos: { items: tasks },
     settings: { preview_seconds: 8, hover_expand: false, placement: "right" },
-  }), [records, props.popup, props.active])
-  return <MessageSurface {...props} snapshot={snapshot} onCommand={command => controller.execute(command)} />
+  }), [records, tasks, props.popup, props.active])
+  return <MessageSurface {...props} snapshot={snapshot} onCommand={async command => {
+    if (!isMessageTodoCommand(command)) return controller.execute(command)
+    const demo = useDemoMessages.getState()
+    if (command.op === "todo_update" && typeof command.checked === "boolean") demo.updateTask(String(command.id), command.checked)
+    if (command.op === "todo_focus" && demo.tasks.some(task => task.id === command.id)) {
+      props.onNavigateAway?.()
+      router.push({ pathname: "/demo-agent", params: { id: "demo-codex", kind: "process" } })
+    }
+    return { items: useDemoMessages.getState().tasks }
+  }} />
 }
