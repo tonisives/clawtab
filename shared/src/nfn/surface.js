@@ -256,6 +256,15 @@
     const node = el("button", className, text); node.type = "button";
     node.addEventListener("click", action); return node;
   }
+  function externalLink(text, href, className = "") {
+    const link = el("a", className, text);
+    link.href = href; link.target = "_blank"; link.rel = "noopener noreferrer";
+    link.addEventListener("click", event => {
+      event.preventDefault(); event.stopPropagation();
+      native({ native: "external_link", text: href });
+    });
+    return link;
+  }
   const messageDateFormat = new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
   function messageTimestamp(record) {
     const date = new Date(record.created_at);
@@ -1104,9 +1113,7 @@
       try {
         const url = new URL(draft[field]);
         if (url.protocol !== "https:") continue;
-        const link = el("a", field === "review_url" ? "outreach-crm" : "", label);
-        link.href = url.href; link.target = "_blank"; link.rel = "noopener noreferrer";
-        links.append(link);
+        links.append(externalLink(label, url.href, field === "review_url" ? "outreach-crm" : ""));
       } catch {}
     }
     section.append(links);
@@ -1192,7 +1199,7 @@
     review.append(panels);
     const library = record.request.data?.library_url;
     if (typeof library === "string" && library.startsWith("https://content.tonis.dev/")) {
-      const link = el("a", "social-library", "Open in content library"); link.href = library; link.target = "_blank"; link.rel = "noopener"; review.append(link);
+      review.append(externalLink("Open in content library", library, "social-library"));
     }
     if (!single) footer.append(submit);
     node._socialControls = controls;
