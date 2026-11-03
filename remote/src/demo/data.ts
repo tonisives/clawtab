@@ -94,6 +94,10 @@ export const DEMO_QUESTIONS: ClaudeQuestion[] = [
   },
 ];
 
+export const demoQuestionForSelection = (id: string, kind: string) => DEMO_QUESTIONS.find((question) =>
+  kind === "process" ? question.pane_id === id : question.matched_job === id,
+);
+
 export const DEMO_LOGS: Record<string, string> = {
   "deploy-api": [
     "$ docker build -t api:latest .",
@@ -307,6 +311,8 @@ export const DEMO_TERMINALS: Record<string, string> = {
     " ▐▛███▜▌   Claude Code v2.1.159",
     "▝▜█████▛▘  Opus 4.8 with high effort · Claude Max",
     "  ▘▘ ▝▝    ~/workspace/tgs/clawtab",
+    "",
+    DEMO_QUESTIONS[0].context_lines,
     "",
     "────────────────────────────────────────────────────────────────────────────",
     "❯ Try \"create a util logging.py that...\"",

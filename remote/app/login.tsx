@@ -18,9 +18,9 @@ import { useAuthStore } from "../src/store/auth";
 import * as api from "../src/api/client";
 import { colors } from "../src/theme/colors";
 import { radius, spacing } from "../src/theme/spacing";
+import { appIcon } from "../src/lib/appIcons";
 
 const APPLE_WEB_CLIENT_ID = "cc.clawtab.web";
-const appIcon = require("../assets/icon.png");
 
 // Native-only: conditionally import Google Sign-In
 let GoogleSignin: any = null;

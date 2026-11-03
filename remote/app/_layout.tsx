@@ -3,7 +3,9 @@ import { trackFunnel } from "../src/lib/funnel";
 import { initializeWebAnalytics } from "../src/lib/analytics";
 import { MachineOnboardingProvider } from "@clawtab/shared";
 import { machineOnboardingChrome, machineOnboardingContent, machineManagementContent } from "../src/components/MachineSetup";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import * as SplashScreen from "expo-splash-screen";
+import { preloadAppIcons } from "../src/lib/appIcons";
 import { DarkTheme, Stack, ThemeProvider, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { View, ActivityIndicator, Image, Platform, Pressable, StyleSheet } from "react-native";
@@ -21,6 +23,8 @@ import { NotificationsMenuButton } from "../src/components/NotificationsMenuButt
 import { useResponsive } from "../src/hooks/useResponsive";
 import { useMobileHeaderStore } from "../src/store/mobileHeader";
 import { useJobFilterStore } from "../src/store/jobFilter";
+
+if (Platform.OS !== "web") void SplashScreen.preventAutoHideAsync();
 
 const navTheme = {
   ...DarkTheme,
@@ -136,6 +140,7 @@ function WebSocketProvider({ children, userId }: { children: React.ReactNode; us
 }
 
 export default function RootLayout() {
+  const [iconsReady, setIconsReady] = useState(false);
   useIapRecovery();
   useWebDarkScrollbars();
   const { isSplitView, isWide } = useResponsive();
@@ -148,13 +153,19 @@ export default function RootLayout() {
   const isMobileWeb = Platform.OS === "web" && !isWide && !isSplitView;
 
   useEffect(() => {
+    let active = true;
+    preloadAppIcons().finally(() => { if (active) setIconsReady(true); });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
     initializeWebAnalytics();
     void trackFunnel("app_open");
     init();
     handleColdStartAnswer();
   }, [init]);
 
-  if (loading) {
+  if (loading || !iconsReady) {
     return (
       <View style={styles.loading}>
         <ActivityIndicator color={colors.accent} />
@@ -166,7 +177,9 @@ export default function RootLayout() {
   const content = (
     <MachineOnboardingProvider chrome={machineOnboardingChrome} content={machineOnboardingContent} management={machineManagementContent}>
     <ThemeProvider value={navTheme}>
-      <View style={styles.root}>
+      <View style={styles.root} onLayout={() => {
+        if (Platform.OS !== "web") void SplashScreen.hideAsync();
+      }}>
         <Stack screenOptions={{ headerShown: false, animation: "none", orientation: "default" }}>
           <Stack.Screen
             name="(tabs)"
