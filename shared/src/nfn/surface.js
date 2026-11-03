@@ -2417,7 +2417,7 @@
     const incoming = new Set();
     for (const record of value.records || []) { records.set(record.id, record); incoming.add(record.id); }
     const activeRecord = records.get(current), activeKey = activeRecord && threadKey(activeRecord);
-    if (!mobileHost() && !shellReply && activeRecord && pending(activeRecord) && !activeRecord.dismissed_at && !activeRecord.ignored && activeKey && !actionsInProgress.has(current)) {
+    if (!mobileHost() && !expanded && !queue && !settingsOpen && !todosOpen && !menu && !shellReply && activeRecord && pending(activeRecord) && !activeRecord.dismissed_at && !activeRecord.ignored && activeKey && !actionsInProgress.has(current)) {
       const latest = pendingCards().find(item => threadKey(item) === activeKey);
       if (latest && latest.id !== current) {
         pauseTimer(); stopContext(); current = latest.id; queueReturnId = current; renderedId = null; menu = null;
@@ -2445,7 +2445,7 @@
       }).catch(error => showError(error, id));
     }
     if (value.arrival && records.has(value.arrival)) hiddenByUser = false;
-    if (!mobileHost() && value.arrival && records.has(value.arrival) && !actionsInProgress.has(value.arrival) && !current && !settingsOpen && !todosOpen && !bulkBusy && (!queue || !selectedNotifications.size)) {
+    if (!mobileHost() && value.arrival && records.has(value.arrival) && !actionsInProgress.has(value.arrival) && !current && !queue && !settingsOpen && !todosOpen && !bulkBusy) {
       clearTimeout(completionTimer); pauseTimer(); stopContext();
       const arrival = records.get(value.arrival), key = threadKey(arrival);
       current = (key && pendingCards().find(record => threadKey(record) === key)?.id) || value.arrival;
