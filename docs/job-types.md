@@ -163,9 +163,8 @@ If a job has `aerospace_workspace` set and [AeroSpace](https://github.com/nikita
 
 ## Messages from jobs
 
-Agent jobs receive instructions to format `cwt message send` bodies with
-Markdown: short paragraphs, lists, bold details, code for paths and commands,
-and descriptive links. This guidance applies to Claude jobs and folder jobs
-using an agent provider. Shell job prompts keep their executable contents.
+Keep guidance for communicating with the human in `AGENTS.md`. Agent startup
+prompts contain the requested task and any selected job policy directive.
+Use `cwt message send` with Markdown bodies for updates and questions.
 See [Markdown bodies](messages.md#markdown-bodies) for a multiline example and
 `cwt message help` for command options.
