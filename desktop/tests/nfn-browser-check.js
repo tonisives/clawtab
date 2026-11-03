@@ -281,10 +281,10 @@
   assert(document.querySelector("h1").textContent === "Reported agent title", "a sender can override the displayed agent title");
   delete approval.request.source.agent_title;
   const shortContext = approval.request.body;
-  approval.request.body = "May I run the project checks?\n" + "A longer command and its surrounding context\n".repeat(30);
+  approval.request.body = "May I run the project checks?\n" + "A longer command and its surrounding context\n".repeat(100);
   window.nfn.receive(window.fixture.snapshot());
   const contextView = document.querySelector(".message");
-  assert(document.querySelector("#surface").offsetWidth === 520 && contextView.clientHeight === 210 && contextView.scrollHeight > contextView.clientHeight && getComputedStyle(contextView).overflowY === "auto", "larger cards show more context and let the full request scroll");
+  assert(document.querySelector("#surface").offsetWidth === 520 && contextView.clientHeight > 210 && getComputedStyle(contextView).overflowY === "visible" && document.querySelector(".message-content").scrollHeight > document.querySelector(".message-content").clientHeight, "long requests use the card reading area with one outer content scroller: " + JSON.stringify({width:document.querySelector("#surface").offsetWidth,height:contextView.clientHeight,scroll:contextView.scrollHeight,overflow:getComputedStyle(contextView).overflowY,bodyHeight:document.querySelector(".message-content").clientHeight,bodyScroll:document.querySelector(".message-content").scrollHeight}));
   approval.request.body = shortContext; window.nfn.receive(window.fixture.snapshot());
   assert(document.querySelector(".reply-row").hidden && document.querySelector(".reply-toggle").getAttribute("aria-expanded") === "false", "questions with answer options start with the reply composer collapsed");
   click("Reply"); await sleep(30);
@@ -1367,5 +1367,24 @@
   window.fixture.sessionTargets = pickerTargets;
   window.fixture.records.set(pickerNotice.id, pickerNotice); window.nfn.receive(window.fixture.snapshot(pickerNotice.id));
   await sleep(50); click("Open session"); await sleep(50);
+  resetFlow();
+  const outreach = flowRecord("CRM draft", 0, true);
+  outreach.request.source = {job_id:"crm/outreach-discovery",run_id:"run",provider:"codex",session_id:"saved-session",cwd:"/workspace/crm"};
+  outreach.request.actions = [{id:"focus",kind:"focus",label:"Open session"},{id:"acknowledge",kind:"choice",label:"Got it"}];
+  outreach.request.body = "Specific request for validation advice.";
+  outreach.request.data = {outreach:{channel:"social",platform:"Reddit",recipient:"founder",body:"I built Trend Seeker. Here is a specific way to test demand.\n\n" + "Ask a customer about their last attempt. ".repeat(12),source_url:"https://reddit.com/r/test/comments/abc",review_url:"https://crm.tonis.dev/leads/lead"}};
+  window.fixture.records.set(outreach.id,outreach);window.nfn.receive(window.fixture.snapshot(outreach.id));
+  window.nfn.setPlacement({placement:"right",max_width:1000,max_height:1600,list_max_height:1600,reduce_motion:true});
+  await sleep(50);
+  assert(document.querySelector('.outreach-review .social-post') && document.querySelector('.outreach-crm'), "CRM message drafts use a rich source-linked card");
+  assert(document.querySelector('.open-session') && !document.querySelector('.social-decisions'), "CRM cards can resume Codex and keep approval in CRM");
+  resizeDrag("s",0,1000);await sleep(30);
+  const outreachBody=document.querySelector('.message-content'),outreachPost=document.querySelector('.social-post');
+  assert(outreachBody.clientHeight > 800 && outreachBody.scrollHeight <= outreachBody.clientHeight + 1, "tall resized cards use available height without a short inner scroller");
+  assert(outreachPost.getBoundingClientRect().top >= document.querySelector('.heading').getBoundingClientRect().bottom && outreachPost.getBoundingClientRect().bottom <= document.querySelector('.controls').getBoundingClientRect().top, "resized draft content stays below the heading and above footer controls");
+  outreach.request.data.outreach = {channel:"email",recipient:"creator@example.com",subject:"A resource for your validation episode",body:"Exact email copy.\n\nUseful specific advice.",email_source:"https://example.com/contact",review_url:"javascript:alert(1)"};
+  window.nfn.receive(window.fixture.snapshot());await sleep(30);
+  assert(document.querySelector('.email-recipient').textContent === 'To: creator@example.com' && document.querySelector('.email-post .social-title').textContent === 'A resource for your validation episode', "email cards keep recipient, subject and exact draft copy visible");
+  assert(!document.querySelector('a[href^="javascript:"]'), "outreach links accept HTTPS destinations only");
   return { passed: checks.length, checks };
 })()

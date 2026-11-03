@@ -58,6 +58,7 @@ button.icon-button { display: flex; align-items: center; justify-content: center
 .card { display: flex; flex: 1; flex-direction: column; min-height: 0; padding: 12px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 .card > * { flex: none; }
 .card > .message-content { flex: 0 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.user-sized .card > .message-content { flex: 1; }
 .social-card > .message-content { padding-inline-end: 12px; scrollbar-gutter: stable; scrollbar-width: thin; }
 #surface[data-desktop="true"] .social-card > .controls { margin-top: 0; }
 .details-open .card { display: flex; flex-direction: column; overflow: hidden; }
@@ -81,9 +82,9 @@ h1 { margin: 0; font-size: 15px; line-height: 1.35; font-weight: 600; overflow-w
 .status { font-size: 11px; color: var(--accent); white-space: nowrap; }
 .status:empty { display: none; }
 .status.alert { color: #ff8700; font-weight: 700; }
-.message { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; max-height: 210px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.message { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; max-height: none; overflow: visible; }
 .message:empty { display: none; }
-.message-thread { list-style: none; margin: 10px 0; padding: 0; max-height: 280px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.message-thread { list-style: none; margin: 10px 0; padding: 0; max-height: none; overflow: visible; }
 .message-thread-item { padding: 10px 0; border-bottom: 1px solid var(--line); }
 .message-thread-item:first-child { padding-top: 0; }
 .message-thread-item:last-child { border-bottom: 0; padding-bottom: 0; }
@@ -94,7 +95,7 @@ h1 { margin: 0; font-size: 15px; line-height: 1.35; font-weight: 600; overflow-w
 .message-timestamp[data-age="today"] { color: #e5c07b; }
 .message-timestamp[data-age="older"] { color: #e88b8b; }
 .message-thread .message { max-height: none; overflow: visible; margin-top: 4px; }
-.details-open .message-thread { flex: 0 1 auto; min-height: 70px; }
+.details-open .message-thread { flex: none; }
 button.reply-toggle { font-size: 12px; }
 .footer-actions { min-width: 0; max-width: 100%; }
 .session-controls .footer-actions { grid-column: 2; justify-self: center; }
@@ -318,7 +319,7 @@ button.auto-yes-button[aria-checked="true"] { background: rgba(255, 159, 10, .15
 .keyboard-hints{position:fixed;inset:0;pointer-events:none;z-index:10000}
 .keyboard-hint{position:absolute;transform:translate(-100%,-35%);background:#191919e6;color:#cfbd85;font:600 9px/1.1 ui-monospace,monospace;padding:0 2px;border:1px solid #cfbd8540;border-radius:2px;opacity:.85}
 
-#surface.user-sized > .card { flex: 1; overflow-y: auto; }
+#surface.user-sized > .card { flex: 1; overflow: hidden; }
 #surface.user-sized.details-open > .card { overflow: hidden; }
 .resize-handle { position: absolute; z-index: 5; touch-action: none; }
 .resize-handle[hidden] { display: none; }
@@ -360,3 +361,11 @@ button.session-locations{font-size:14px;line-height:20px;padding:4px 8px}
 .markdown table { display: block; overflow-x: auto; border-collapse: collapse; }
 .markdown th,.markdown td { padding: 4px 8px; border: 1px solid var(--line); text-align: left; }
 .markdown input[type="checkbox"] { min-height: 0; margin-right: 4px; }
+
+.outreach-review { margin-top: 16px; }
+.outreach-review > .block-label { margin-bottom: 8px; }
+.email-recipient { margin-bottom: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.email-post .social-title { padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.outreach-links { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
+.outreach-links a { color: #aeb8ed; font-size: 12px; }
+.outreach-crm { font-weight: 600; }
