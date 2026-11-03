@@ -119,3 +119,14 @@ cwt nfn todos list
 ```
 
 The agent mapping is optional. Checkbox changes write back to the same note. Agent completion stays separate from the source checkbox so a controller can review the work.
+
+
+## CRM draft previews
+
+An update can carry `data.outreach` with `channel` (`email` or `social`),
+`recipient`, `subject`, `body`, `platform`, `source_url`, `profile_url`,
+`email_source` and `review_url`. The shared renderer shows an email or message
+card with the exact copy and HTTPS source links. Review in CRM opens the saved
+draft. Each draft stays separate in the queue even when several share a job or
+conversation. Include the Codex `source.session_id`, `provider`, `cwd`, job/run
+identity and a focus action to open or resume its drafting conversation.

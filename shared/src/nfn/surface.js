@@ -295,7 +295,7 @@
   }
   function threadKey(record) {
     if (record.request.deliver_at) return JSON.stringify([record.machine_id, "reminder", record.id]);
-    if (record.request.template === "social-review") return JSON.stringify([record.machine_id, "review", record.id]);
+    if (record.request.template === "social-review" || record.request.data?.outreach) return JSON.stringify([record.machine_id, "review", record.id]);
     const job = record.request.source?.job_id;
     return job ? JSON.stringify([record.machine_id, "job", job]) : agentKey(record);
   }
@@ -1078,9 +1078,39 @@
     } else if (platform === "instagram" && media) {
       post.append(header, media, engagement, caption);
     } else {
-      post.append(header, caption); if (media) post.append(media); if (platform !== "x") post.append(engagement);
+      post.append(header, caption); if (media) post.append(media); if (platform !== "x" && !target.outreach) post.append(engagement);
     }
     return post;
+  }
+  function outreachCard(record) {
+    const draft = record.request.data?.outreach;
+    if (!draft || typeof draft.body !== "string") return null;
+    const section = el("section", "outreach-review");
+    section.setAttribute("aria-label", "Outreach draft");
+    const email = draft.channel === "email";
+    const post = email ? el("article", "social-post email-post") : socialPost(record, {
+      platform: draft.platform || "Message", account: draft.recipient || "Recipient",
+      display_name: draft.recipient || "Recipient", body: draft.body, outreach: true
+    });
+    if (email) {
+      post.setAttribute("aria-label", "Email draft preview");
+      post.append(el("div", "email-recipient", `To: ${draft.recipient || "Recipient"}`));
+      if (draft.subject) post.append(el("strong", "social-title", draft.subject));
+      post.append(el("div", "social-body", draft.body));
+    }
+    section.append(el("div", "block-label", email ? "Email draft" : "Message draft"), post);
+    const links = el("div", "outreach-links");
+    for (const [field, label] of [["source_url", "Original post"], ["profile_url", "Recipient profile"], ["email_source", "Published email"], ["review_url", "Review in CRM"]]) {
+      try {
+        const url = new URL(draft[field]);
+        if (url.protocol !== "https:") continue;
+        const link = el("a", field === "review_url" ? "outreach-crm" : "", label);
+        link.href = url.href; link.target = "_blank"; link.rel = "noopener noreferrer";
+        links.append(link);
+      } catch {}
+    }
+    section.append(links);
+    return section;
   }
   function socialReview(record, node) {
     const targets = record.request.data?.targets;
@@ -1260,6 +1290,8 @@
       if (snapshot.shell_only && content.scrollTop !== previousScroll) native({ native: "shell_scroll", direction: content.scrollTop < previousScroll ? "up" : "down" });
       previousScroll = content.scrollTop;
     });
+    const outreach = outreachCard(record);
+    if (outreach) body.append(outreach);
     const bundle = socialReview(record, node);
     if (bundle) {
       const review = node.querySelector(".social-review");
