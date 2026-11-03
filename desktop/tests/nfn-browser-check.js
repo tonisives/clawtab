@@ -1372,11 +1372,18 @@
   outreach.request.source = {job_id:"crm/outreach-discovery",run_id:"run",provider:"codex",session_id:"saved-session",cwd:"/workspace/crm"};
   outreach.request.actions = [{id:"focus",kind:"focus",label:"Open session"},{id:"acknowledge",kind:"choice",label:"Got it"}];
   outreach.request.body = "Specific request for validation advice.";
-  outreach.request.data = {outreach:{channel:"social",platform:"Reddit",recipient:"founder",body:"I built Trend Seeker. Here is a specific way to test demand.\n\n" + "Ask a customer about their last attempt. ".repeat(12),source_url:"https://reddit.com/r/test/comments/abc",review_url:"https://crm.tonis.dev/leads/lead"}};
+  outreach.request.data = {outreach:{channel:"social",platform:"Reddit",recipient:"founder",body:"I built Trend Seeker. Here is a specific way to test demand.\n\n" + "Ask a customer about their last attempt. ".repeat(12),source_url:"https://reddit.com/r/test/comments/abc",profile_url:"https://reddit.com/user/founder",review_url:"https://crm.tonis.dev/leads/lead?a=1&b=2"}};
   window.fixture.records.set(outreach.id,outreach);window.nfn.receive(window.fixture.snapshot(outreach.id));
   window.nfn.setPlacement({placement:"right",max_width:1000,max_height:1600,list_max_height:1600,reduce_motion:true});
   await sleep(50);
   assert(document.querySelector('.outreach-review .social-post') && document.querySelector('.outreach-crm'), "CRM message drafts use a rich source-linked card");
+  for (const link of document.querySelectorAll('.outreach-links a')) {
+    const before = window.fixture.nativeEvents.length;
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true });
+    link.dispatchEvent(event);
+    const opened = window.fixture.nativeEvents.slice(before).filter(value => value.native === 'external_link');
+    assert(event.defaultPrevented && opened.length === 1 && opened[0].text === link.href, link.textContent + " opens its exact URL through the native bridge");
+  }
   assert(document.querySelector('.open-session') && !document.querySelector('.social-decisions'), "CRM cards can resume Codex and keep approval in CRM");
   resizeDrag("s",0,1000);await sleep(30);
   const outreachBody=document.querySelector('.message-content'),outreachPost=document.querySelector('.social-post');
@@ -1386,5 +1393,7 @@
   window.nfn.receive(window.fixture.snapshot());await sleep(30);
   assert(document.querySelector('.email-recipient').textContent === 'To: creator@example.com' && document.querySelector('.email-post .social-title').textContent === 'A resource for your validation episode', "email cards keep recipient, subject and exact draft copy visible");
   assert(!document.querySelector('a[href^="javascript:"]'), "outreach links accept HTTPS destinations only");
+  document.querySelector('.outreach-links a').click();
+  assert(window.fixture.nativeEvents.at(-1)?.native === 'external_link' && window.fixture.nativeEvents.at(-1).text === 'https://example.com/contact', "published email links use the native bridge");
   return { passed: checks.length, checks };
 })()
