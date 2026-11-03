@@ -51,6 +51,7 @@ let loadLogin = (os, params = {}, options = {}) => {
     'expo-web-browser': { maybeCompleteAuthSession: () => {} },
     '../src/lib/googleBrowserAuth': browserAuth,
     '../src/lib/googleIosClientId': { googleIosClientId: 'ios-client' },
+    '../src/lib/appIcons': { appIcon: 1 },
     '../src/store/auth': { useAuthStore: (selector) => selector(auth) },
     '../src/api/client': {}, '../src/theme/colors': { colors: {} }, '../src/theme/spacing': { radius: {}, spacing: {} },
     'expo-apple-authentication': {},
