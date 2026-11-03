@@ -45,6 +45,9 @@ function fixture(file, dependencies) {
 function accountFixture() {
   let calls = [], confirmations = []
   let render = fixture("AccountSettings.tsx", {
+    "../../lib/storage": { getItem: async () => null },
+    "../../lib/funnel": { FUNNEL_DISABLED_KEY: "analytics-disabled" },
+    "../../lib/analytics": { applyAnalyticsPreference() {} },
     "expo-router": { useRouter: () => ({ replace: (route) => calls.push(route) }) },
     "../../store/auth": { useAuthStore: (select) => select({ email: "test@example.invalid", logout: async () => calls.push("logout") }) },
     "../../api/client": { deleteAccount: async () => calls.push("delete") },
@@ -86,9 +89,11 @@ async function relayFixture(subscription) {
   let useAuthStore = (select) => select(user)
   useAuthStore.getState = () => user
   let render = fixture("RelaySubscription.tsx", {
+    "../../lib/funnel": { trackFunnel: async () => {} },
     "@clawtab/shared": { HostedWorkspacePanel: "HostedWorkspacePanel", machineState: () => ({ connected: true }), reconnectMachines() {} },
     "../../hooks/useIap": { useIap: () => ({ available: true, price: "US$6.99", activation: 0, diagnostic: "StoreKit fixture", restore: async () => ({ status: "cancelled" }) }) },
     "expo-router": { useRouter: () => ({ push: (route) => calls.push(route) }) },
+    "expo-router/react-navigation": { useIsFocused: () => true },
     "../../store/auth": { useAuthStore },
     "../../api/client": { getSubscriptionStatus: async () => subscription, createPortal: async () => ({ url: "https://billing.example.invalid/portal" }), rentalApi: {} },
     "../../lib/platform": { openUrl: async (url) => calls.push(url), alertError: assert.fail },

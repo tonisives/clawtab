@@ -3,7 +3,7 @@ import { HostedWorkspacePanel, machineState, reconnectMachines } from "@clawtab/
 import { useIap } from "../../hooks/useIap"
 import { useEffect, useRef, useState } from "react"
 import { AppState, Platform, View, Text, ActivityIndicator } from "react-native"
-import { useIsFocused } from "@react-navigation/native"
+import { useIsFocused } from "expo-router/react-navigation"
 import { useRouter } from "expo-router"
 import { useAuthStore } from "../../store/auth"
 import * as api from "../../api/client"
