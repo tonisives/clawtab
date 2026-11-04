@@ -8,7 +8,7 @@ mod device;
 mod google_auth;
 mod google_callback;
 mod health;
-mod iap;
+pub(crate) mod iap;
 mod internal;
 mod login;
 mod notifications;

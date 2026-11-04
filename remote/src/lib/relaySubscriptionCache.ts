@@ -7,15 +7,20 @@ const freshness = 30_000
 
 export const cachedRelaySubscription = (userId: string | null) => userId ? subscriptions.get(userId)?.value ?? null : null
 
+export function invalidateRelaySubscription(userId: string) {
+  subscriptions.delete(userId)
+  requests.delete(userId)
+}
+
 export function loadRelaySubscription(userId: string, refresh = false): Promise<SubscriptionStatus> {
   const pending = requests.get(userId)
   if (pending) return pending
   const cached = subscriptions.get(userId)
   if (!refresh && cached && Date.now() - cached.loadedAt < freshness) return Promise.resolve(cached.value)
   const request = getSubscriptionStatus(undefined, userId).then(value => {
-    subscriptions.set(userId, { value, loadedAt: Date.now() })
+    if (requests.get(userId) === request) subscriptions.set(userId, { value, loadedAt: Date.now() })
     return value
-  }).finally(() => { requests.delete(userId) })
+  }).finally(() => { if (requests.get(userId) === request) requests.delete(userId) })
   requests.set(userId, request)
   return request
 }

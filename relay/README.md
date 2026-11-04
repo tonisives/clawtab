@@ -4,6 +4,23 @@ Real-time WebSocket relay that routes messages between desktop and mobile client
 
 This server runs in production with paying users; the code below ships from `main`.
 
+## Apple subscription reconciliation
+
+Set `APPLE_IAP_ISSUER_ID`, `APPLE_IAP_KEY_ID` and `APPLE_IAP_PRIVATE_KEY` together
+using an In-App Purchase API key. The deployed relay reads the
+`clawtab-apple-iap` Secret. ClawTab's vault copies are under
+`tgs/clawtab/APPLE_IAP_*` in gopass. PEM newlines may be literal or escaped.
+
+After migration `022`, each relay checks for due subscriptions every minute.
+Checks share a five-minute cooldown across replicas; subscriptions whose last
+period ended over seven days ago are checked daily. Apple request failures
+retain saved access. Transactions and renewal data must pass signature,
+environment, app and ownership checks before updating billing state.
+
+Run `python3 tests/iap-postgres.py` through the shared build worker to exercise
+the migration, event ordering and reconciliation cooldown against a disposable
+PostgreSQL instance.
+
 ## What it does
 
 A desktop process running on a developer's laptop pushes events (terminal output, agent questions, pane state) to the relay. Mobile and web clients subscribe over WebSocket and receive those events in real time. Mobile clients send back answers and commands which the relay forwards to the right desktop.

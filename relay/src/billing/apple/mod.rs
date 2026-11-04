@@ -1,3 +1,5 @@
+pub mod reconciliation;
+
 use app_store_server_library::{
     models::{
         app_store_environment::Environment, auto_renew_status::AutoRenewStatus,
@@ -231,3 +233,48 @@ fn verify_notification_with_roots(
 
 #[cfg(test)]
 mod tests;
+
+pub fn verify_status(
+    signed: &str,
+    renewal: &str,
+    bundle_id: &str,
+) -> Result<VerifiedNotification, VerificationError> {
+    verify_status_with_roots(signed, renewal, bundle_id, &[APPLE_ROOT.to_vec()])
+}
+
+fn verify_status_with_roots(
+    signed: &str,
+    renewal: &str,
+    bundle_id: &str,
+    roots: &[Vec<u8>],
+) -> Result<VerifiedNotification, VerificationError> {
+    let (value, verifier) = verify_in_store_environment(
+        signed,
+        bundle_id,
+        roots,
+        SignedDataVerifier::verify_and_decode_signed_transaction,
+    )?;
+    let transaction = normalize_transaction(value)?;
+    let renewal = verifier
+        .verify_and_decode_renewal_info(renewal)
+        .map_err(|_| VerificationError)?;
+    let signed_date = renewal.signed_date.ok_or(VerificationError)?;
+    if renewal.original_transaction_id.as_deref()
+        != Some(transaction.original_transaction_id.as_str())
+        || signed_date > Utc::now() + Duration::minutes(5)
+    {
+        return Err(VerificationError);
+    }
+    Ok(VerifiedNotification {
+        id: String::new(),
+        notification_type: "RECONCILIATION".into(),
+        environment: transaction.environment,
+        signed_date: transaction.signed_date,
+        transaction: Some(transaction),
+        renewal_signed_date: Some(signed_date),
+        grace_period_expires_date: renewal.grace_period_expires_date,
+        auto_renew: renewal
+            .auto_renew_status
+            .map(|value| value == AutoRenewStatus::On),
+    })
+}

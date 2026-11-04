@@ -40,6 +40,49 @@ async fn save(pool: &PgPool, user: Uuid, purchase: &apple::VerifiedTransaction) 
     persist_transaction(&mut tx, user, purchase).await.unwrap();
     tx.commit().await.unwrap();
 }
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL on port 55439"]
+async fn reconciliation_claims_once_without_modifying_billing_dates() {
+    let pool = fixture().await;
+    let user = user(&pool).await;
+    let purchase = purchase(user);
+    save(&pool, user, &purchase).await;
+    let rows = apple::reconciliation::claim_due(&pool).await.unwrap();
+    assert!(rows.iter().any(|row| row.2 == user));
+    assert!(apple::reconciliation::claim_due(&pool)
+        .await
+        .unwrap()
+        .is_empty());
+    let dates: (chrono::DateTime<Utc>, chrono::DateTime<Utc>) = sqlx::query_as(
+        "SELECT purchase_date,signed_date FROM apple_subscriptions WHERE user_id=$1",
+    )
+    .bind(user)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    // PostgreSQL stores microseconds, while signed data may have nanoseconds.
+    assert_eq!(
+        dates.0.timestamp_millis(),
+        purchase.purchase_date.timestamp_millis()
+    );
+    assert_eq!(
+        dates.1.timestamp_millis(),
+        purchase.signed_date.timestamp_millis()
+    );
+    assert!(apple_access(&pool, user).await.unwrap());
+    sqlx::query("UPDATE apple_subscriptions SET apple_checked_at=now()-interval '6 minutes' WHERE user_id=$1")
+        .bind(user).execute(&pool).await.unwrap();
+    assert_eq!(
+        apple::reconciliation::claim_due(&pool).await.unwrap().len(),
+        1
+    );
+    sqlx::query("DELETE FROM users WHERE id=$1")
+        .bind(user)
+        .execute(&pool)
+        .await
+        .unwrap();
+}
 #[tokio::test]
 #[ignore = "requires disposable PostgreSQL on port 55439"]
 async fn apple_expiry_refund_and_stale_updates_preserve_independent_stripe() {

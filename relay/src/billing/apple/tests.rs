@@ -160,6 +160,35 @@ fn transaction() -> Value {
 }
 
 #[test]
+fn reconciliation_verifies_both_signatures_environment_and_original_purchase() {
+    let signer = Signer::new();
+    let signed = signer.sign(transaction());
+    let mut renewal = json!({"environment":"Sandbox","originalTransactionId":"test-original","autoRenewStatus":0,"signedDate":Utc::now().timestamp_millis()});
+    let verify = |signed: &str, renewal: &str| {
+        verify_status_with_roots(signed, renewal, BUNDLE, std::slice::from_ref(&signer.root))
+    };
+    let status = verify(&signed, &signer.sign(renewal.clone())).unwrap();
+    assert_eq!(status.auto_renew, Some(false));
+    assert!(status.transaction.unwrap().active_at(Utc::now()));
+    assert!(verify(&signed, "forged.payload.signature").is_err());
+    assert!(verify("forged.payload.signature", &signer.sign(renewal.clone())).is_err());
+    for (key, value) in [
+        ("environment", json!("Production")),
+        ("originalTransactionId", json!("another-purchase")),
+        ("signedDate", json!(Utc::now().timestamp_millis() + 600_000)),
+    ] {
+        let mut invalid = renewal.clone();
+        invalid[key] = value;
+        assert!(verify(&signed, &signer.sign(invalid)).is_err());
+    }
+    renewal["autoRenewStatus"] = json!(1);
+    assert_eq!(
+        verify(&signed, &signer.sign(renewal)).unwrap().auto_renew,
+        Some(true)
+    );
+}
+
+#[test]
 fn signed_subscription_activates_without_a_legacy_receipt_in_both_store_environments() {
     let signer = Signer::new();
     for environment in ["Sandbox", "Production"] {

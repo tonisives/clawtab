@@ -3,14 +3,20 @@ import { AppState, Platform } from "react-native"
 import { reconnectMachines } from "@clawtab/shared"
 import { useAuthStore } from "../store/auth"
 import * as api from "../api/client"
+import { readIapDiagnostics } from "../lib/iapDiagnostics"
+import { invalidateRelaySubscription } from "../lib/relaySubscriptionCache"
 import { createIapClient, type IapResult, type IapState } from "../lib/iapClient"
 
 let client: ReturnType<typeof createIapClient> | null = null
 let getClient = () => {
   if (!client) client = createIapClient({
     loadStore: () => require("react-native-iap"),
+    readDiagnostics: readIapDiagnostics,
     verify: (signed_transaction, userId) => api.verifyIapReceipt({ signed_transaction }, userId),
-    onVerified: (userId) => { if (useAuthStore.getState().userId === userId) reconnectMachines() },
+    onVerified: (userId) => {
+      invalidateRelaySubscription(userId)
+      if (useAuthStore.getState().userId === userId) reconnectMachines()
+    },
     isActive: () => AppState.currentState === "active",
     onActive: (callback) => {
       let listener = AppState.addEventListener("change", (state) => callback(state === "active"))
@@ -39,6 +45,8 @@ export let useIap = () => {
   return {
     ...state,
     retry: () => store?.retry(),
+    refreshDiagnostics: () => store?.refreshDiagnostics(),
+    manageSubscriptions: () => store?.manageSubscriptions() ?? Promise.resolve(),
     purchase: () => store?.purchase() ?? Promise.resolve<IapResult>({ status: "failed" }),
     restore: () => store?.restore() ?? Promise.resolve<IapResult>({ status: "failed" }),
   }

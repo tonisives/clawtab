@@ -14,6 +14,7 @@ let harness = (overrides={}) => {
     fetchProducts:async()=>[{id:'cc.clawtab.pro.monthly',displayPrice:'$4.99'}],
     purchaseUpdatedListener:(callback,config)=>{updated=callback;options=config;return {remove(){}}},
     purchaseErrorListener:(callback)=>{failed=callback;return {remove(){}}},
+    showManageSubscriptionsIOS:async()=>{calls.manage=(calls.manage??0)+1},
     getAvailablePurchases:async()=>[], syncIOS:async()=>{calls.sync++},
     getTransactionJwsIOS:async()=>{calls.jws++;return 'fallback.payload.signature'},
     finishTransaction:async()=>{calls.finish++},
@@ -106,4 +107,9 @@ test('a restore sync error after a transaction callback cannot override verifica
   h.store.syncIOS=async()=>{h.update();throw Error('late sync error')};
   let result=h.client.restore();await flush();assert.equal(h.client.getState().purchasing,true);
   verification.resolve({subscribed:true});assert.equal((await result).status,'purchased');
+});
+
+test('subscription management uses the native sheet without syncing purchases',async()=>{
+  let h=harness();await h.ready();await h.client.manageSubscriptions();
+  assert.equal(h.calls.manage,1);assert.equal(h.calls.sync,0);
 });

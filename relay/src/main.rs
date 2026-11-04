@@ -105,6 +105,7 @@ async fn main() -> anyhow::Result<()> {
         .allow_methods(Any)
         .allow_headers(Any);
 
+    billing::apple::reconciliation::spawn(state.pool.clone())?;
     tokio::spawn(machines::rentals::watch(state.clone()));
     let app = Router::new()
         .route("/ws", get(ws::ws_handler))

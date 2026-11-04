@@ -16,7 +16,7 @@ import { RelayWelcome } from "../RelayWelcome"
 export let RelaySubscription = () => {
   let userId = useAuthStore((s) => s.userId)
   let [sub, setSub] = useState<api.SubscriptionStatus | null>(() => cachedRelaySubscription(userId))
-  let [subLoading, setSubLoading] = useState(() => !!userId && !cachedRelaySubscription(userId))
+  let [subLoading, setSubLoading] = useState(() => !!userId && !cachedRelaySubscription(userId)?.subscribed)
   let [actionLoading, setActionLoading] = useState(false)
   let [subscriptionError, setSubscriptionError] = useState<string | null>(null)
   let [subscriptionCheckFailed, setSubscriptionCheckFailed] = useState(false)
@@ -29,7 +29,7 @@ export let RelaySubscription = () => {
   let router = useRouter()
   let openMachines = () => router.push("/machines")
   let [diagnosticsExpanded, setDiagnosticsExpanded] = useState(false)
-  let toggleDiagnostics = () => setDiagnosticsExpanded((value) => !value)
+  let toggleDiagnostics = () => { void iap.refreshDiagnostics(); setDiagnosticsExpanded((value) => !value) }
   let openPrivacy = () => openUrl("https://clawtab.cc/privacy")
   let openTerms = () => openUrl("https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")
   let subscriptionRequest = useRef(0)
@@ -57,7 +57,7 @@ export let RelaySubscription = () => {
   }
   let handleSubscribe = async () => {
     if (Platform.OS === "android") return
-    if (actionLoading || iap.purchasing) return
+    if (actionLoading || iap.purchasing || subLoading || subscriptionCheckFailed || !sub || sub.subscribed) return
     setActionLoading(true)
     setSubscriptionError(null)
     void trackFunnel("checkout_attempt")
@@ -110,7 +110,7 @@ export let RelaySubscription = () => {
     setSubscriptionError(null)
     setSubscriptionCheckFailed(false)
     if (!userId) { setSubLoading(false); return }
-    setSubLoading(!cached)
+    setSubLoading(!cached?.subscribed)
     let active = true
     let checking = false
     let refresh = () => {
@@ -140,7 +140,8 @@ export let RelaySubscription = () => {
     setActionLoading(true)
     try {
       if (provider === "apple") {
-        await openUrl("https://apps.apple.com/account/subscriptions")
+        if (Platform.OS === "ios") await iap.manageSubscriptions()
+        else await openUrl("https://apps.apple.com/account/subscriptions")
       } else {
         let { url } = await api.createPortal()
         await openUrl(url)
@@ -188,7 +189,7 @@ export let RelaySubscription = () => {
     )}
     {!subLoading && !sub?.subscribed && <View style={styles.section}>
       {Platform.OS === "android" ? <Text style={styles.usageDescription}>Relay access requires an existing ClawTab subscription.</Text> : <>
-        <SettingsButton title={actionLoading || iap.purchasing ? "Please wait…" : Platform.OS === "ios" && iap.loading ? "Loading purchases…" : iap.price ? `Subscribe · ${iap.price} / month` : "Subscribe to Relay"} onPress={handleSubscribe} disabled={!sub || actionLoading || iap.purchasing || (Platform.OS === "ios" && !iap.available)} variant="primary" />
+        <SettingsButton title={actionLoading || iap.purchasing ? "Please wait…" : Platform.OS === "ios" && iap.loading ? "Loading purchases…" : iap.price ? `Subscribe · ${iap.price} / month` : "Subscribe to Relay"} onPress={handleSubscribe} disabled={!sub || subLoading || subscriptionCheckFailed || actionLoading || iap.purchasing || (Platform.OS === "ios" && !iap.available)} variant="primary" />
         {Platform.OS === "ios" && iap.error && <Text style={styles.usageDescription}>{iap.error}</Text>}
       </>}
     </View>}

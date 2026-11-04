@@ -8,6 +8,7 @@ export type IapState = {
   error: string | null; diagnostic: string | null; activation: number
 }
 type Dependencies = {
+  readDiagnostics?: () => Promise<string>
   loadStore: () => Store
   verify: (signed: string, userId: string) => Promise<{ subscribed: boolean }>
   onVerified: (userId: string) => void
@@ -39,9 +40,16 @@ export let createIapClient = (dependencies: Dependencies) => {
   let catalog: Promise<void> | null = null
   let recovering: Promise<void> | null = null
   let stages: string[] = []
+  let nativeDiagnostic = ""
+  let updateDiagnostic = () => set({ diagnostic: `Product: ${IAP_PRODUCT_ID}\n${stages.join("\n")}${nativeDiagnostic ? `\n${nativeDiagnostic}` : ""}` })
+  let refreshDiagnostics = async () => {
+    try { nativeDiagnostic = await dependencies.readDiagnostics?.() ?? "" }
+    catch { nativeDiagnostic = "Native diagnostics unavailable" }
+    updateDiagnostic()
+  }
   let trace = (stage: string) => {
     stages = [...stages, `${new Date().toISOString().slice(11, 19)} ${stage}`].slice(-12)
-    set({ diagnostic: `Product: ${IAP_PRODUCT_ID}\n${stages.join("\n")}` })
+    updateDiagnostic()
   }
   type Operation = {
     userId: string; generation: number; accepted: boolean; finish: (result: IapResult) => void
@@ -79,7 +87,7 @@ export let createIapClient = (dependencies: Dependencies) => {
       finish: (value) => {
         if (operation !== current) return
         clearTimeout(timer); unsubscribe(); operation = null
-        set({ purchasing: false }); trace(`${action}-${value.status}`); resolve(value)
+        set({ purchasing: false }); trace(`${action}-${value.status}`); void refreshDiagnostics(); resolve(value)
       },
       accept: () => {
         if (current.accepted) return
@@ -132,8 +140,8 @@ export let createIapClient = (dependencies: Dependencies) => {
         try { await timeout(store.finishTransaction({ purchase, isConsumable: false }), 5_000); trace("finish-complete") }
         catch { trace("finish-pending") }
         if (account !== userId || generation !== revision) return { status: "cancelled" }
-        set({ activation: state.activation + 1 })
         if (verified.subscribed) dependencies.onVerified(userId)
+        set({ activation: state.activation + 1 })
         return verified.subscribed ? { status: "purchased" } : { status: "not-found", message: "No active Apple subscription was found." }
       })().catch((): IapResult => ({ status: "pending", message: "Could not verify your purchase. Use Restore Purchases to retry." }))
       verifying.set(key, pending)
@@ -201,6 +209,11 @@ export let createIapClient = (dependencies: Dependencies) => {
       if (userId) void recover()
     },
     retry,
+    refreshDiagnostics,
+    manageSubscriptions: async () => {
+      let store = await getStore()
+      await store.showManageSubscriptionsIOS()
+    },
     purchase: async (): Promise<IapResult> => {
       if (!state.available) return { status: "failed", message: "Purchases are not ready. Retry loading purchases." }
       let current = begin("purchase")

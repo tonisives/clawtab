@@ -138,8 +138,17 @@ async fn apply_notification(
     if inserted.rows_affected() == 0 {
         return Ok(());
     }
+    persist_status(&mut tx, notification).await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+pub(crate) async fn persist_status(
+    tx: &mut Transaction<'_, Postgres>,
+    notification: apple::VerifiedNotification,
+) -> Result<(), AppError> {
     if let Some(mut transaction) = notification.transaction {
-        let owner = transaction_owner(&mut tx, &transaction).await?;
+        let owner = transaction_owner(tx, &transaction).await?;
         let user = owner.or(transaction.app_account_token);
         if let Some(user) = user {
             if !transaction.belongs_to(user) {
@@ -147,7 +156,7 @@ async fn apply_notification(
             }
             let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE id=$1)")
                 .bind(user)
-                .fetch_one(&mut *tx)
+                .fetch_one(&mut **tx)
                 .await?;
             if exists {
                 // A refund/revocation applies immediately. Cancellation of renewal
@@ -158,19 +167,18 @@ async fn apply_notification(
                         .or(Some(notification.signed_date));
                     transaction.signed_date = transaction.signed_date.max(notification.signed_date);
                 }
-                persist_transaction(&mut tx, user, &transaction).await?;
+                persist_transaction(tx, user, &transaction).await?;
                 if let Some(signed_date) = notification.renewal_signed_date {
                     sqlx::query("UPDATE apple_subscriptions SET auto_renew=$1, renewal_signed_date=$2, grace_period_expires_date=$3 \
                         WHERE environment=$4 AND original_transaction_id=$5 AND \
                         (renewal_signed_date IS NULL OR renewal_signed_date < $2)")
                         .bind(notification.auto_renew).bind(signed_date).bind(notification.grace_period_expires_date)
                         .bind(transaction.environment).bind(&transaction.original_transaction_id)
-                        .execute(&mut *tx).await?;
+                        .execute(&mut **tx).await?;
                 }
             }
         }
     }
-    tx.commit().await?;
     tracing::info!(stage="apple-notification-applied", kind=%notification.notification_type);
     Ok(())
 }
