@@ -1,4 +1,5 @@
 import { maybeCompleteAuthSession } from "expo-web-browser";
+import { completeGoogleBrowserRedirect } from "./googleBrowserRedirect";
 
 // Google returns to the root URL. Complete the popup before mounting routes or
 // playing the startup animation, even when the login route was never loaded.
@@ -8,5 +9,6 @@ export function completeBrowserAuth(): boolean {
   const params = new URLSearchParams(url.hash.slice(1));
   for (const [key, value] of url.searchParams) params.set(key, value);
   if (!params.has("state") || !(params.has("id_token") || params.has("error"))) return false;
+  if (completeGoogleBrowserRedirect(params)) return true;
   return maybeCompleteAuthSession().type === "success";
 }

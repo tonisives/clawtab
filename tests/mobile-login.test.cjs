@@ -53,6 +53,11 @@ let loadLogin = (os, params = {}, options = {}) => {
     }) },
     'expo-web-browser': { maybeCompleteAuthSession: () => {} },
     '../src/lib/googleBrowserAuth': browserAuth,
+    '../src/lib/googleBrowserRedirect': { beginGoogleBrowserRedirect: (_request, destination) => {
+      if (!options.redirect) return false;
+      events.push(['redirect', destination]);
+      return true;
+    } },
     '../src/lib/googleIosClientId': { googleIosClientId: 'ios-client' },
     '../src/lib/appIcons': { appIcon: 1 },
     '../src/components/StartupTransition': { StartupLoginMark: 'StartupLoginMark' },
@@ -154,23 +159,33 @@ test('a web OAuth result and its prompt promise exchange the token only once', a
   assert.equal(h.events.filter(([event]) => event === 'replace').length, 1);
 });
 
-function browserCallback(url, completion = 'success') {
+function browserCallback(url, completion = 'success', redirect = false) {
   let calls = 0;
   const exports = {};
   const source = ts.transpileModule(fs.readFileSync(require.resolve('../remote/src/lib/completeBrowserAuth.web.ts'), 'utf8'), {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
   }).outputText;
   vm.runInNewContext(source, { exports, URL, URLSearchParams, window: { location: { href: url } },
-    require: () => ({ maybeCompleteAuthSession: () => { calls++; return { type: completion }; } }),
+    require: name => name === './googleBrowserRedirect' ? { completeGoogleBrowserRedirect: () => redirect }
+      : { maybeCompleteAuthSession: () => { calls++; return { type: completion }; } },
   });
   return { completed: exports.completeBrowserAuth(), calls };
 }
 
 test('Google returns to the root and completes the popup without starting the app', () => {
   assert.deepEqual(browserCallback('https://remote.example.com/#id_token=fixture&state=expected'), { completed: true, calls: 1 });
+  assert.deepEqual(browserCallback('https://remote.example.com/#id_token=fixture&state=expected', 'success', true), { completed: true, calls: 0 });
   assert.deepEqual(browserCallback('https://remote.example.com/?error=access_denied&state=expected'), { completed: true, calls: 1 });
   assert.deepEqual(browserCallback('https://remote.example.com/#id_token=fixture&state=expired', 'failed'), { completed: false, calls: 1 });
   for (const url of ['https://remote.example.com/', 'https://remote.example.com/login', 'https://remote.example.com/#id_token=fixture']) {
     assert.deepEqual(browserCallback(url), { completed: false, calls: 0 });
+  }
+});
+
+test('iOS browser sign-in redirects in place and preserves the intended app screen', async () => {
+  for (const [params, expected] of [[{}, '/'], [{ return_to: 'workspace' }, '/workspace'], [{ return_to: 'add-machine', setup: 'connect' }, '/add-machine?setup=connect']]) {
+    const h = loadLogin('web', params, { redirect: true });
+    await h.press('Sign in with Google');
+    assert.deepEqual(h.events, [['redirect', expected]]);
   }
 });

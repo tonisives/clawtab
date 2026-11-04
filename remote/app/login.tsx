@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { beginGoogleBrowserRedirect } from "../src/lib/googleBrowserRedirect";
 import { useGoogleBrowserAuth } from "../src/lib/googleBrowserAuth";
 import { googleIosClientId } from "../src/lib/googleIosClientId";
 import { useAuthStore } from "../src/store/auth";
@@ -51,13 +52,13 @@ if (Platform.OS === "ios") {
 export default function LoginScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  let { return_to, setup } = useLocalSearchParams<{ return_to?: string; setup?: string }>();
+  let { return_to, setup, auth_error } = useLocalSearchParams<{ return_to?: string; setup?: string; auth_error?: string }>();
   let destination = return_to === "workspace" ? "/workspace" as const : return_to === "add-machine" ? { pathname: "/add-machine" as const, params: { setup: setup === "connect" || setup === "rent" ? setup : undefined } } : return_to === "account" ? "/account" as const : ["devices", "machines"].includes(return_to ?? "") ? "/machines" as const : "/(tabs)" as const;
   const googleLogin = useAuthStore((s) => s.googleLogin);
   const passwordLogin = useAuthStore((s) => s.passwordLogin);
   const appleLogin = useAuthStore((s) => s.appleLogin);
 
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(auth_error ?? null);
   const [loading, setLoading] = useState(false);
   const [showEmail, setShowEmail] = useState(false);
   const [email, setEmail] = useState("");
@@ -69,7 +70,7 @@ export default function LoginScreen() {
   useEffect(() => { void api.getServerUrl().then(setServerUrl); }, []);
 
   // The prompt promise completes once the root handles the browser callback.
-  const [, , promptAsync] = useGoogleBrowserAuth({
+  const [googleRequest, , promptAsync] = useGoogleBrowserAuth({
     webClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB,
     iosClientId: googleIosClientId,
   });
@@ -103,6 +104,10 @@ export default function LoginScreen() {
     setError(null);
     try {
       if (Platform.OS === "web" || !GoogleSignin || !isSuccessResponse) {
+        const redirectDestination = typeof destination === "string"
+          ? destination === "/(tabs)" ? "/" : destination
+          : `/add-machine${destination.params.setup ? `?setup=${destination.params.setup}` : ""}`;
+        if (Platform.OS === "web" && beginGoogleBrowserRedirect(googleRequest, redirectDestination)) return;
         const result = await promptAsync();
         if (result?.type === "success") {
           const idToken = result.params.id_token;
