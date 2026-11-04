@@ -240,6 +240,10 @@ impl NfnRequest {
         self.channels.is_empty() || self.channels.iter().any(|value| value == channel)
     }
 
+    pub fn independent_review(&self) -> bool {
+        self.template == "social-review" || self.data["outreach"].is_object()
+    }
+
     pub fn needs_response(&self) -> bool {
         matches!(self.message_kind(), "question" | "approval")
     }
@@ -462,6 +466,16 @@ impl NfnRecord {
     }
 }
 
+/// Editable content of an informational message. Identity and decisions stay fixed.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NfnUpdate {
+    pub title: Option<String>,
+    pub body: Option<String>,
+    pub data: Option<Value>,
+    pub media: Option<Vec<NfnMedia>>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum NfnCommand {
@@ -488,6 +502,10 @@ pub enum NfnCommand {
     },
     Send {
         request: NfnRequest,
+    },
+    Update {
+        id: String,
+        patch: NfnUpdate,
     },
     Scheduled {
         #[serde(default)]

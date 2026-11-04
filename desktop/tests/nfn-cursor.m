@@ -200,7 +200,7 @@ static void runObservations(void) {
 // Move the system pointer without activating the panel. DOM-dispatched events do
 // not exercise WebKit's tracking areas or the cursor displayed by WindowServer.
 static void hoverTarget(NSString *selector, NSString *phase, void (^finish)(NSPoint)) {
-    NSString *script = [NSString stringWithFormat:@"(() => { const b = document.querySelector('%@'); const r = b.getBoundingClientRect(); return [r.x + r.width/2, r.y + r.height/2, getComputedStyle(b).backgroundColor]; })()", selector];
+    NSString *script = [NSString stringWithFormat:@"(() => { const b = document.querySelector('%@'); const r = b.getBoundingClientRect(); return [r.x + r.width/2, r.y + r.height/2, getComputedStyle(b).backgroundColor, Boolean(b.closest('button'))]; })()", selector];
     [surface.web evaluateJavaScript:script completionHandler:^(id target, NSError *error) {
         require(!error && [target isKindOfClass:NSArray.class], @"measure hover target");
         CGFloat y = [target[1] doubleValue];
@@ -215,7 +215,7 @@ static void hoverTarget(NSString *selector, NSString *phase, void (^finish)(NSPo
                     fprintf(stderr,"Hover delivery: %s state=%s target=%s point=%s flipped=%d ignores=%d tracking=%s\n", phase.UTF8String,[state description].UTF8String,[target description].UTF8String,NSStringFromPoint(point).UTF8String,surface.web.isFlipped,surface.panel.ignoresMouseEvents,[surface.web.trackingAreas description].UTF8String);
                 }
                 require(!hoverError && [state[0] boolValue], [phase stringByAppendingString:@": real mouse movement must highlight the button before a click"]);
-                require([selector isEqual:@"textarea"] || ![state[1] isEqual:target[2]], [phase stringByAppendingString:@": CSS hover highlight must change"]);
+                require(![target[3] boolValue] || ![state[1] isEqual:target[2]], [phase stringByAppendingString:@": CSS hover highlight must change"]);
                 finish(point);
             }];
         });
@@ -236,6 +236,21 @@ static void clickAt(NSPoint point, void (^finish)(void)) {
         CGEventPost(kCGHIDEventTap,event); CFRelease(event);
     }
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC/3),dispatch_get_main_queue(),finish);
+}
+
+static void verifyLinkHover(void (^finish)(void)) {
+    NSString *script = @"const links=document.createElement('div');links.className='outreach-links';const link=document.createElement('a');link.href='https://example.com/post';link.innerHTML='<span>Original post</span>';links.append(link);document.querySelector('.message-content').append(links)";
+    [surface.web evaluateJavaScript:script completionHandler:^(id value, NSError *error) {
+        require(!error, @"Original post link fixture must render");
+        hoverTarget(@".outreach-links a span", @"original-post-link", ^(NSPoint point) {
+            sampleCursor(point, 50, @"original-post-link", NSCursor.pointingHandCursor, ^{
+                [surface.web evaluateJavaScript:@"document.querySelector('.outreach-links').remove()" completionHandler:^(id value, NSError *error) {
+                    moveTo(initialPointer);
+                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC/3), dispatch_get_main_queue(), finish);
+                }];
+            });
+        });
+    }];
 }
 
 static void verifyContentHover(NSUInteger phase, void (^finish)(void)) {
@@ -311,7 +326,7 @@ int main(int argc,const char **argv) {
                 snapshot[@"settings"] = @{ @"delivery":@"enhanced", @"focus":@"independent", @"placement":@"right", @"display":@"primary", @"preview_seconds":@120 };
                 [surface push:snapshot];
                 [surface.web evaluateJavaScript:@"document.querySelector('#surface').dispatchEvent(new MouseEvent('mouseenter'))" completionHandler:nil];
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC),dispatch_get_main_queue(),^{ verifyContentHover(0, ^{ runObservations(); }); });
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC),dispatch_get_main_queue(),^{ verifyLinkHover(^{ verifyContentHover(0, ^{ runObservations(); }); }); });
             }];
         }];
         int result = clawtab_nfn_run(html.UTF8String,NULL,0,receive);

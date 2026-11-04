@@ -2,6 +2,19 @@ use super::{templates, types::*};
 use parking_lot::Mutex;
 use rusqlite::{params, Connection, OptionalExtension};
 
+fn merge_preview_data(target: &mut serde_json::Value, patch: serde_json::Value) {
+    if let serde_json::Value::Object(fields) = patch {
+        if !target.is_object() {
+            *target = serde_json::json!({});
+        }
+        for (key, value) in fields {
+            merge_preview_data(&mut target[&key], value);
+        }
+    } else {
+        *target = patch;
+    }
+}
+
 pub struct Store {
     conn: Mutex<Connection>,
 }
@@ -32,6 +45,7 @@ impl Store {
         let store = Self {
             conn: Mutex::new(conn),
         };
+        store.recover_outreach_drafts()?;
         // An interrupted dispatch is never replayed into an agent after restart.
         for mut record in store.list_where("status = 'delivering'", 0, 10000)? {
             record.status = "cancelled".into();
@@ -42,6 +56,24 @@ impl Store {
         }
         store.conn.lock().execute("DELETE FROM notifications WHERE status NOT IN ('pending', 'delivering', 'scheduled') AND updated_at < ?1", [now() - 30 * 86400000]).map_err(|e| e.to_string())?;
         Ok(store)
+    }
+
+    fn recover_outreach_drafts(&self) -> Result<(), String> {
+        let mut conn = self.conn.lock();
+        let transaction = conn.transaction().map_err(|e| e.to_string())?;
+        transaction
+            .execute_batch("CREATE TABLE IF NOT EXISTS nfn_migrations (name TEXT PRIMARY KEY);")
+            .map_err(|e| e.to_string())?;
+        let first = transaction
+            .execute(
+                "INSERT OR IGNORE INTO nfn_migrations VALUES ('independent-outreach-drafts')",
+                [],
+            )
+            .map_err(|e| e.to_string())?;
+        if first == 1 {
+            transaction.execute("UPDATE notifications SET status='pending', record=json_set(record,'$.status','pending','$.read_at',NULL,'$.updated_at',?1), updated_at=?1 WHERE status='superseded' AND json_type(record,'$.request.data.outreach')='object' AND json_extract(record,'$.dismissed_at') IS NULL AND json_extract(record,'$.response') IS NULL AND (dedupe IS NULL OR NOT EXISTS (SELECT 1 FROM notifications AS other WHERE other.id != notifications.id AND other.dedupe=notifications.dedupe AND (other.status IN ('pending','delivering') OR (other.created_at,other.id) > (notifications.created_at,notifications.id))))", [now()]).map_err(|e| e.to_string())?;
+        }
+        transaction.commit().map_err(|e| e.to_string())
     }
 
     pub fn get(&self, id: &str) -> Result<NfnRecord, String> {
@@ -288,6 +320,54 @@ impl Store {
         Ok(())
     }
 
+    pub fn update(&self, id: &str, patch: NfnUpdate) -> Result<NfnRecord, String> {
+        let mut conn = self.conn.lock();
+        let transaction = conn.transaction().map_err(|e| e.to_string())?;
+        let raw: String = transaction
+            .query_row(
+                "SELECT record FROM notifications WHERE id=?1",
+                [id],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        let mut record: NfnRecord = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+        if record.status != "pending" || record.dismissed_at.is_some() || record.response.is_some()
+        {
+            return Err("Only pending, undismissed messages can be updated".into());
+        }
+        if record.question_id.is_some()
+            || record.request.needs_response()
+            || record.request.template == "social-review"
+        {
+            return Err("Approval and question content is fixed; send a new review".into());
+        }
+        let outreach = record.request.data["outreach"].is_object();
+        if let Some(title) = patch.title {
+            record.request.title = clawtab_protocol::notification_text(&title);
+        }
+        if let Some(body) = patch.body {
+            record.request.body = clawtab_protocol::notification_text(&body);
+        }
+        if let Some(data) = patch.data {
+            if !data.is_object() {
+                return Err("Message data patch must be an object".into());
+            }
+            merge_preview_data(&mut record.request.data, data);
+        }
+        if let Some(media) = patch.media {
+            record.request.media = media;
+        }
+        if outreach && !record.request.data["outreach"].is_object() {
+            return Err("An outreach preview must keep its outreach data".into());
+        }
+        record.request.validate()?;
+        record.updated_at = now();
+        record.read_at = None;
+        Self::write(&transaction, &record)?;
+        transaction.commit().map_err(|e| e.to_string())?;
+        Ok(record)
+    }
+
     pub fn save(&self, record: &mut NfnRecord) -> Result<(), String> {
         record.updated_at = now();
         Self::write(&self.conn.lock(), record)
@@ -353,8 +433,8 @@ impl Store {
     }
 
     pub fn supersede_previous(&self, latest: &NfnRecord) -> Result<Vec<NfnRecord>, String> {
-        // Each social review owns its exact draft revisions and publication decision.
-        if latest.request.template == "social-review" || latest.request.deliver_at.is_some() {
+        // Reviews are independent work items, even when they share an agent thread.
+        if latest.request.independent_review() || latest.request.deliver_at.is_some() {
             return Ok(Vec::new());
         }
         let mut conn = self.conn.lock();
@@ -375,7 +455,7 @@ impl Store {
         for raw in previous {
             let mut record: NfnRecord = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
             if record.dismissed_at.is_some()
-                || record.request.template == "social-review"
+                || record.request.independent_review()
                 || record.request.deliver_at.is_some()
                 || (record.created_at, &record.id) > (latest.created_at, &latest.id)
                 || !latest.request.source.same_thread(&record.request.source)
@@ -471,13 +551,138 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn outreach_request() -> NfnRequest {
+        NfnRequest {
+            title: "Draft reply".into(),
+            template: "update".into(),
+            kind: "update".into(),
+            data: serde_json::json!({"outreach":{"body":"Original copy","recipient":"founder","source_url":"https://example.com/post"}}),
+            source: NfnSource {
+                session_id: Some("research-session".into()),
+                provider: Some("codex".into()),
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn outreach_drafts_are_independent_of_summaries_and_each_other() {
+        let store = Store::from_connection(Connection::open_in_memory().unwrap()).unwrap();
+        let (first, _) = store.send(outreach_request(), None).unwrap();
+        let (second, _) = store.send(outreach_request(), None).unwrap();
+        let mut summary = outreach_request();
+        summary.data = serde_json::json!({});
+        let (summary, _) = store.send(summary, None).unwrap();
+        store.dismiss_many(&[summary.id.clone()]).unwrap();
+        assert!(store.supersede_previous(&summary).unwrap().is_empty());
+        store.dismiss_many(&[second.id.clone()]).unwrap();
+        assert!(store.supersede_previous(&second).unwrap().is_empty());
+        assert_eq!(store.get(&first.id).unwrap().status, "pending");
+        assert!(store.get(&first.id).unwrap().dismissed_at.is_none());
+        assert_eq!(store.pending_count().unwrap(), 1);
+    }
+
+    #[test]
+    fn preview_updates_keep_identity_position_and_source_and_merge_nested_data() {
+        let store = Store::from_connection(Connection::open_in_memory().unwrap()).unwrap();
+        let (original, _) = store.send(outreach_request(), None).unwrap();
+        let updated = store
+            .update(
+                &original.id,
+                NfnUpdate {
+                    data: Some(serde_json::json!({"outreach":{"body":"Revised copy"}})),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        assert_eq!(updated.id, original.id);
+        assert_eq!(updated.created_at, original.created_at);
+        assert_eq!(
+            updated.request.source.session_id,
+            original.request.source.session_id
+        );
+        assert_eq!(updated.request.data["outreach"]["body"], "Revised copy");
+        assert_eq!(updated.request.data["outreach"]["recipient"], "founder");
+        assert_eq!(
+            updated.request.data["outreach"]["source_url"],
+            "https://example.com/post"
+        );
+        assert_eq!(store.list(0).unwrap().len(), 1);
+        assert!(store
+            .update(
+                &original.id,
+                NfnUpdate {
+                    title: Some("".into()),
+                    ..Default::default()
+                }
+            )
+            .is_err());
+        assert_eq!(
+            store.get(&original.id).unwrap().request.title,
+            "Draft reply"
+        );
+        store.dismiss_many(&[original.id.clone()]).unwrap();
+        assert!(store.update(&original.id, NfnUpdate::default()).is_err());
+        let (approval, _) = store.send(request(), None).unwrap();
+        assert!(store.update(&approval.id, NfnUpdate::default()).is_err());
+        assert!(serde_json::from_value::<NfnUpdate>(serde_json::json!({"source":{}})).is_err());
+    }
+
+    #[test]
+    fn recovery_restores_only_accidentally_superseded_outreach_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("notifications.sqlite");
+        let store = Store::open(&path).unwrap();
+        let (mut lost, _) = store.send(outreach_request(), None).unwrap();
+        lost.status = "superseded".into();
+        store.save(&mut lost).unwrap();
+        let (mut dismissed, _) = store.send(outreach_request(), None).unwrap();
+        dismissed.status = "superseded".into();
+        dismissed.dismissed_at = Some(now());
+        store.save(&mut dismissed).unwrap();
+        // Simulate a database written before the recovery migration existed.
+        store
+            .conn
+            .lock()
+            .execute("DELETE FROM nfn_migrations", [])
+            .unwrap();
+        drop(store);
+        let store = Store::open(&path).unwrap();
+        assert_eq!(store.get(&lost.id).unwrap().status, "pending");
+        assert_eq!(store.get(&dismissed.id).unwrap().status, "superseded");
+        lost.status = "superseded".into();
+        store.save(&mut lost).unwrap();
+        drop(store);
+        assert_eq!(
+            Store::open(&path).unwrap().get(&lost.id).unwrap().status,
+            "superseded"
+        );
+    }
+
+    #[test]
+    fn recovery_preserves_replacements_with_the_same_dedupe_key() {
+        let store = Store::from_connection(Connection::open_in_memory().unwrap()).unwrap();
+        let mut draft = outreach_request();
+        draft.dedupe_key = Some("crm-outreach-card:message".into());
+        let (mut old, _) = store.send(draft.clone(), None).unwrap();
+        old.status = "superseded".into();
+        store.save(&mut old).unwrap();
+        let (replacement, _) = store.send(draft, None).unwrap();
+        store
+            .conn
+            .lock()
+            .execute("DELETE FROM nfn_migrations", [])
+            .unwrap();
+        store.recover_outreach_drafts().unwrap();
+        assert_eq!(store.get(&old.id).unwrap().status, "superseded");
+        assert_eq!(store.get(&replacement.id).unwrap().status, "pending");
+    }
     #[test]
     fn strips_terminal_codes_before_storing_or_updating_messages() {
         let store = Store::from_connection(Connection::open_in_memory().unwrap()).unwrap();
-        for text in [
-            "\x1b[31mReview\x1b[0m",
-            "[2m[38;2;99;168;248mReview[39m",
-        ] {
+        for text in ["\x1b[31mReview\x1b[0m", "[2m[38;2;99;168;248mReview[39m"] {
             let (record, _) = store
                 .send(
                     NfnRequest {

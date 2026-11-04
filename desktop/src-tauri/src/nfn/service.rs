@@ -856,6 +856,10 @@ impl Service {
                 }
                 json!({"records":records})
             }
+            NfnCommand::Update { id, patch } => {
+                let record = self.store.update(&id, patch)?;
+                serde_json::to_value(record).map_err(|e| e.to_string())?
+            }
             NfnCommand::Send { mut request } => {
                 request.validate()?;
                 if request.channels.iter().any(|channel| channel == "telegram") {
@@ -1441,11 +1445,12 @@ fn history_reply(record: &NfnRecord, action_id: &str) -> bool {
 fn requires_live_source(record: &NfnRecord) -> bool {
     // Successful job cards belong to the agent that produced them. Failed job
     // recovery and scheduled reminders remain available after the process exits.
-    !(job_notice(record)
-        || (record.request.deliver_at.is_some() && record.request.source.session_id.is_some()))
-        || (job_notice(record)
-            && record.request.kind == "completed"
-            && record.request.source.pane_id.is_some())
+    !record.request.independent_review()
+        && (!(job_notice(record)
+            || (record.request.deliver_at.is_some() && record.request.source.session_id.is_some()))
+            || (job_notice(record)
+                && record.request.kind == "completed"
+                && record.request.source.pane_id.is_some()))
 }
 
 fn prepare_reminder(request: &mut NfnRequest, timestamp: i64) -> Result<(), String> {
@@ -2201,6 +2206,37 @@ fn reply_targets_agent(record: &NfnRecord, action_id: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn independent_reviews_survive_the_producing_agent_closing() {
+        for social in [false, true] {
+            let mut record = pending_permission();
+            record.question_id = None;
+            record.request.kind = "update".into();
+            record.request.template = if social { "social-review" } else { "update" }.into();
+            if !social {
+                record.request.data = json!({"outreach":{"body":"Draft"}});
+            }
+            assert!(!requires_live_source(&record));
+            assert!(!refresh_pending_record(
+                &mut record,
+                None,
+                &HashSet::new(),
+                now(),
+                |_| false
+            ));
+            assert_eq!(record.status, "pending");
+            record.request.expires_at = Some(now() - 1);
+            assert!(refresh_pending_record(
+                &mut record,
+                None,
+                &HashSet::new(),
+                now(),
+                |_| false
+            ));
+            assert_eq!(record.status, "expired");
+        }
+    }
 
     #[test]
     fn history_sessions_can_resume_and_reply_without_replaying_decisions() {

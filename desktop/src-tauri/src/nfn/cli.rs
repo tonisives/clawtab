@@ -24,6 +24,17 @@ fn stdin() -> Result<String, String> {
     Ok(value)
 }
 
+fn update_command(args: &[String]) -> Result<NfnCommand, String> {
+    if args.len() != 3 || args[1].is_empty() || args[1].starts_with('-') || args[2] != "--stdin" {
+        return Err("Use cwt message update ID --stdin with a JSON content patch".into());
+    }
+    let patch = serde_json::from_str(&stdin()?).map_err(|e| e.to_string())?;
+    Ok(NfnCommand::Update {
+        id: args[1].clone(),
+        patch,
+    })
+}
+
 pub async fn message(args: &[String]) -> Result<Value, String> {
     if args.is_empty() || matches!(args[0].as_str(), "help" | "--help" | "-h") {
         return Ok(json!({"usage":[
@@ -32,6 +43,7 @@ pub async fn message(args: &[String]) -> Result<Value, String> {
             "  [--title TITLE] [--template ID] [--chat ID] [--response-destination result|agent_message]",
             "  [--image PATH_OR_URL] [--video PATH_OR_URL] (repeat for multiple attachments)",
             "cwt message send --stdin [--wait] [--timeout SECONDS]",
+            "cwt message update ID --stdin (title, body, data, media)",
             "cwt message schedule TEXT (--at RFC3339 | --in 24h) [--title TITLE] [--as-user]",
             "cwt message scheduled [--offset N] (cancel with cwt message cancel ID)",
             "cwt message list [--pending] [--offset N] [--query TEXT]",
@@ -55,6 +67,7 @@ pub async fn message(args: &[String]) -> Result<Value, String> {
             }
             submit(request, waits, timeout).await
         }
+        "update" => call(update_command(args)?).await,
         "scheduled" => {
             validate_flags(&args[1..], &[], &["--offset"])?;
             let offset = flag_value(args, "--offset")?
@@ -380,6 +393,7 @@ pub async fn run(args: &[String]) -> Result<Value, String> {
             }
             _ => Err("Use nfn todos list or nfn todos link NOTE.md [agents.json]".into()),
         },
+        "update" => call(update_command(args)?).await,
         "send" => {
             if !args.iter().any(|a| a == "--stdin") {
                 return Err("Use nfn send --stdin with a JSON request".into());

@@ -1397,6 +1397,7 @@
   await sleep(50);
   assert(document.querySelector('.outreach-review .social-post') && document.querySelector('.outreach-crm'), "CRM message drafts use a rich source-linked card");
   for (const link of document.querySelectorAll('.outreach-links a')) {
+    assert(getComputedStyle(link).cursor === 'pointer', link.textContent + " has an explicit pointing hand for passive native hover");
     const before = window.fixture.nativeEvents.length;
     const event = new MouseEvent('click', { bubbles: true, cancelable: true });
     link.dispatchEvent(event);
@@ -1404,6 +1405,14 @@
     assert(event.defaultPrevented && opened.length === 1 && opened[0].text === link.href, link.textContent + " opens its exact URL through the native bridge");
   }
   assert(document.querySelector('.open-session') && !document.querySelector('.social-decisions'), "CRM cards can resume Codex and keep approval in CRM");
+  const originalId = outreach.id, originalCreated = outreach.created_at;
+  outreach.request.data.outreach.body = "Revised preview copy kept on the same card.";
+  window.nfn.receive(window.fixture.snapshot()); await sleep(30);
+  assert(document.querySelector('.outreach-review').textContent.includes('Revised preview copy kept on the same card.'), "agent content updates refresh the visible preview");
+  assert(window.fixture.records.get(originalId).created_at === originalCreated && document.querySelector('.outreach-links a').href === 'https://reddit.com/r/test/comments/abc', "preview updates keep their card identity, queue position and source links");
+  const stableLink = document.querySelector('.outreach-links a');
+  window.nfn.receive(window.fixture.snapshot()); await sleep(30);
+  assert(document.querySelector('.outreach-links a') === stableLink, "unchanged snapshots preserve the hovered link node");
   resizeDrag("s",0,1000);await sleep(30);
   const outreachBody=document.querySelector('.message-content'),outreachPost=document.querySelector('.social-post');
   assert(outreachBody.clientHeight > 800 && outreachBody.scrollHeight <= outreachBody.clientHeight + 1, "tall resized cards use available height without a short inner scroller");

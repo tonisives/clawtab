@@ -49,6 +49,30 @@ Use the previous and next arrows to browse cards. Each card keeps its reply draf
 
 The list icon opens **Pending** and **History**. Dismissing a message moves it out of Pending without answering the agent. Collapsing the bar leaves the message pending. **Ignore agent** hides that session's messages and stops its notifications; restore it from **Ignored agents**.
 
+## Update a preview in place
+
+Agents can edit a pending informational message by its returned ID:
+
+```sh
+cwt message update MESSAGE_ID --stdin <<'JSON'
+{
+  "data": {
+    "outreach": { "body": "Revised reply text." }
+  }
+}
+JSON
+```
+
+Updates keep the message ID, original queue position, source and links. `data`
+merges recursively, so changing the draft body preserves the recipient and
+original post URL. Optional `title`, `body` and `media` fields replace those
+parts of the preview. An open card refreshes without a new arrival notification.
+
+Outreach previews remain independent of other messages from the producing
+agent. Dismissing a summary or closing that agent leaves its drafts pending.
+Dismiss each draft when finished. Answered or dismissed messages and approval
+reviews cannot be edited with this command.
+
 ## Use the keyboard
 
 | Control | Action |

@@ -2509,6 +2509,7 @@
     for (const node of next) if (!nativeHovered.has(node)) node.setAttribute("data-native-hover", "");
     nativeHovered = next;
     let cursor = next.size ? getComputedStyle(target).cursor : "default";
+    if (cursor === "auto" && target.closest('a[href]')) cursor = "pointer";
     if (cursor === "auto" && (target.closest('textarea,[contenteditable="true"]') || target instanceof HTMLInputElement && ["text", "search", "url", "email", "password", "number", "tel"].includes(target.type))) cursor = "text";
     if (cursor !== nativeCursor) { nativeCursor = cursor; native({ native: "cursor", value: cursor }); }
   }

@@ -10,6 +10,7 @@
 * { box-sizing: border-box; }
 body { display: flex; justify-content: flex-end; margin: 0; padding: 0 var(--surface-shadow-inset, 0px) var(--surface-shadow-bottom, 0px); background: transparent; overflow: hidden; }
 button, select, input, textarea { font: inherit; }
+a[href] { cursor: pointer; }
 button { cursor: pointer; border: 1px solid var(--line); background: #202020; color: inherit; padding: 8px 12px; border-radius: 6px; line-height: 1.4; }
 /* Native pointer tracking also clears WebKit hover frozen after focus loss. */
 button:is(:hover:where(:not([data-native-pointer] *)), [data-native-hover]) { background: #292929; }
