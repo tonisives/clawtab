@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react"
-import { useRouter } from "expo-router"
+import { useOpenRelay } from "../../../src/hooks/useOpenRelay"
 import { createNativeStackNavigator } from "@react-navigation/native-stack"
 import { NavigationContainer, NavigationIndependentTree, DarkTheme, useNavigationContainerRef, type NavigationState } from "@react-navigation/native"
 import { useIsFocused } from "expo-router/react-navigation"
@@ -22,7 +22,7 @@ import { colors } from "../../../src/theme/colors"
 type Routes = { [Page in SettingsRoute]: undefined } & { "machine-page": MachinePageParams }
 let Stack = createNativeStackNavigator<Routes>()
 export let SettingsHome = () => {
-  let router = useRouter()
+  let openRelay = useOpenRelay()
   let relay = useMachines()
   let unavailable = !relay.connected
   let email = useAuthStore((state) => state.email)
@@ -32,7 +32,7 @@ export let SettingsHome = () => {
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>Connections</Text>
       <SettingsGroup>
-        <SettingsRow title="Relay" detail={relay.error ?? (relay.connected ? "Connected · Subscription and workspace" : "Subscription and workspace")} onPress={() => router.push("/workspace")} />
+        <SettingsRow title="Relay" detail={relay.error ?? (relay.connected ? "Connected · Subscription and workspace" : "Subscription and workspace")} onPress={openRelay} />
         <SettingsRow title="Manage machines" detail="Connections, models, and rented boxes" onPress={open("machines")} disabled={unavailable} />
       </SettingsGroup>
     </View>

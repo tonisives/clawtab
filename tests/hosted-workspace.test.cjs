@@ -107,3 +107,11 @@ test('onboarding provisions an eligible workspace automatically only once', asyn
   ready.render({ autoStart: true }); await flush();
   assert.equal(ready.starts(), 0);
 });
+
+test('preloaded workspace paints controls immediately without auto-starting offscreen', () => {
+  let view = harness({ workspace: null });
+  let initialStatus = { enabled: true, eligible: true, workspace: null };
+  let tree = view.render({ initialStatus, autoStart: false });
+  assert.ok(find(tree, 'Start included workspace'));
+  assert.equal(view.starts(), 0);
+});

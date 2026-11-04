@@ -32,6 +32,7 @@ function settingsFixture(inModal = false) {
     "react-native": { Platform: { OS: "ios" }, Text: "Text", View: "View" },
     "react-native-safe-area-context": { useSafeAreaInsets: () => ({ bottom: 34 }) },
     "../../../src/store/auth": { useAuthStore: (select) => select({ email: "test@example.invalid" }) },
+    "../../../src/hooks/useOpenRelay": { useOpenRelay: () => () => pushes.push("/workspace") },
     "../../../src/hooks/useResponsive": { useResponsive: () => ({ isWide: false, isSplitView: false, isIosPadPortrait: false }) },
     "../../../src/components/ApiTokensSection": { ApiTokensSection: "ApiTokensSection" },
     "../../../src/components/MachineNavigation": { EmbeddedMachineNavigation: { Provider: "EmbeddedMachineNavigation" }, MachinePageHistoryProvider: "MachinePageHistoryProvider", MachinePageScreen: "MachinePageScreen" },

@@ -15,7 +15,7 @@ function fixture(file, dependencies) {
   let react = {
     useState: (initial) => {
       let key = index++
-      if (!(key in state)) state[key] = initial
+      if (!(key in state)) state[key] = typeof initial === "function" ? initial() : initial
       return [state[key], (value) => { state[key] = typeof value === "function" ? value(state[key]) : value }]
     },
     useRef: (initial) => {
@@ -83,25 +83,26 @@ test("Delete account remains in the bottom Danger Zone with confirmation", async
   assert.deepEqual(calls.slice(-3), ["delete", "logout", "/login"])
 })
 
-async function relayFixture(subscription) {
+async function relayFixture(subscription, preloaded = false, focused = true) {
   let calls = []
   let user = { userId: "test-user" }
   let useAuthStore = (select) => select(user)
   useAuthStore.getState = () => user
   let render = fixture("RelaySubscription.tsx", {
+    "../../lib/relaySubscriptionCache": { cachedRelaySubscription: () => preloaded ? subscription : null, cachedRelayWorkspace: () => null, loadRelaySubscription: async () => subscription },
     "../../lib/funnel": { trackFunnel: async () => {} },
     "@clawtab/shared": { HostedWorkspacePanel: "HostedWorkspacePanel", machineState: () => ({ connected: true }), reconnectMachines() {} },
     "../../hooks/useIap": { useIap: () => ({ available: true, price: "US$6.99", activation: 0, diagnostic: "StoreKit fixture", restore: async () => ({ status: "cancelled" }) }) },
     "expo-router": { useRouter: () => ({ push: (route) => calls.push(route) }) },
-    "expo-router/react-navigation": { useIsFocused: () => true },
+    "expo-router/react-navigation": { useIsFocused: () => focused },
     "../../store/auth": { useAuthStore },
     "../../api/client": { getSubscriptionStatus: async () => subscription, createPortal: async () => ({ url: "https://billing.example.invalid/portal" }), rentalApi: {} },
     "../../lib/platform": { openUrl: async (url) => calls.push(url), alertError: assert.fail },
     "../RelayWelcome": { RelayWelcome: "RelayWelcome" },
   })
-  render()
+  let initial = render()
   await new Promise(setImmediate)
-  return { tree: render(), calls }
+  return { tree: render(), initial, calls }
 }
 
 test("Relay contains subscribe, restore, and diagnostics for an inactive subscription", async () => {
@@ -129,4 +130,21 @@ test("Relay opens connected machines for relay access included with a box", asyn
   assert.ok(machines)
   machines.props.onPress()
   assert.deepEqual(calls, ["/machines"])
+})
+
+test("preloaded Relay subscription paints the correct workspace on its first render", async () => {
+  let { initial } = await relayFixture({ subscribed: true, hosted_workspace_eligible: true }, true)
+  assert.ok(elements(initial).some(node => node.type === "HostedWorkspacePanel"))
+  assert.ok(!elements(initial).some(node => node.type === "RelayWelcome" || node.type === "ActivityIndicator"))
+})
+
+test("an unprepared Relay route waits for status instead of flashing a setup card", async () => {
+  let { initial } = await relayFixture({ subscribed: true, hosted_workspace_eligible: true })
+  assert.equal(initial.type, "ActivityIndicator")
+  assert.ok(!elements(initial).some(node => node.type === "RelayWelcome"))
+})
+
+test("prefetching Relay keeps automatic workspace provisioning inactive", async () => {
+  let { initial } = await relayFixture({ subscribed: true, hosted_workspace_eligible: true }, true, false)
+  assert.equal(elements(initial).find(node => node.type === "HostedWorkspacePanel").props.autoStart, false)
 })

@@ -1,3 +1,4 @@
+import { cachedRelaySubscription, cachedRelayWorkspace, loadRelaySubscription } from "../../lib/relaySubscriptionCache"
 import { trackFunnel } from "../../lib/funnel"
 import { HostedWorkspacePanel, machineState, reconnectMachines } from "@clawtab/shared"
 import { useIap } from "../../hooks/useIap"
@@ -14,8 +15,8 @@ import { RelayWelcome } from "../RelayWelcome"
 
 export let RelaySubscription = () => {
   let userId = useAuthStore((s) => s.userId)
-  let [sub, setSub] = useState<api.SubscriptionStatus | null>(null)
-  let [subLoading, setSubLoading] = useState(true)
+  let [sub, setSub] = useState<api.SubscriptionStatus | null>(() => cachedRelaySubscription(userId))
+  let [subLoading, setSubLoading] = useState(() => !!userId && !cachedRelaySubscription(userId))
   let [actionLoading, setActionLoading] = useState(false)
   let [subscriptionError, setSubscriptionError] = useState<string | null>(null)
   let [subscriptionCheckFailed, setSubscriptionCheckFailed] = useState(false)
@@ -35,7 +36,7 @@ export let RelaySubscription = () => {
   let refreshSubscription = async () => {
     let revision = ++subscriptionRequest.current
     let updated: api.SubscriptionStatus
-    try { updated = await api.getSubscriptionStatus(undefined, userId ?? undefined) }
+    try { updated = await loadRelaySubscription(userId!, true) }
     catch (error) {
       if (revision !== subscriptionRequest.current || useAuthStore.getState().userId !== userId) return null
       setSubscriptionCheckFailed(true)
@@ -104,18 +105,19 @@ export let RelaySubscription = () => {
   }
   useEffect(() => {
     ++subscriptionRequest.current
-    setSub(null)
+    let cached = cachedRelaySubscription(userId)
+    setSub(cached)
     setSubscriptionError(null)
     setSubscriptionCheckFailed(false)
     if (!userId) { setSubLoading(false); return }
-    setSubLoading(true)
+    setSubLoading(!cached)
     let active = true
     let checking = false
     let refresh = () => {
       if (checking) return Promise.resolve()
       checking = true
       let revision = ++subscriptionRequest.current
-      return api.getSubscriptionStatus(undefined, userId ?? undefined).then((value) => {
+      return loadRelaySubscription(userId!, true).then((value) => {
         if (!active || revision !== subscriptionRequest.current) return
         setSub(value)
         setSubscriptionError(null)
@@ -129,10 +131,10 @@ export let RelaySubscription = () => {
       }).finally(() => { checking = false; if (active) setSubLoading(false) })
     }
     void refresh()
-    let timer = setInterval(() => { void refresh() }, 5_000)
-    let listener = AppState.addEventListener("change", (state) => { if (state === "active") void refresh() })
-    return () => { active = false; ++subscriptionRequest.current; listener.remove(); clearInterval(timer) }
-  }, [userId, iap.activation])
+    let timer = focused ? setInterval(() => { void refresh() }, 5_000) : undefined
+    let listener = AppState.addEventListener("change", (state) => { if (state === "active" && focused) void refresh() })
+    return () => { active = false; ++subscriptionRequest.current; listener.remove(); if (timer) clearInterval(timer) }
+  }, [userId, iap.activation, focused])
   let handleManageProvider = async (provider: string | null) => {
     if (Platform.OS === "android") return
     setActionLoading(true)
@@ -155,7 +157,7 @@ export let RelaySubscription = () => {
   let manageStripe = () => handleManageProvider("stripe")
   let content = <View style={styles.section}>
     {subLoading && <ActivityIndicator color={colors.accent} />}
-    {sub?.hosted_workspace_eligible && <HostedWorkspacePanel key={userId} api={api.rentalApi} autoStart />}
+    {sub?.hosted_workspace_eligible && <HostedWorkspacePanel key={userId} api={api.rentalApi} initialStatus={cachedRelayWorkspace(userId)} autoStart={focused} />}
     {!subLoading && sub?.subscribed && (
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Subscription</Text>
@@ -209,5 +211,6 @@ export let RelaySubscription = () => {
       </View>
     </View>}
   </View>
+  if (subLoading && !sub) return <ActivityIndicator color={colors.accent} />
   return !sub?.hosted_workspace_eligible ? <RelayWelcome>{content}</RelayWelcome> : content
 }

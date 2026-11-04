@@ -1,3 +1,4 @@
+import { useOpenRelay } from "../../../src/hooks/useOpenRelay"
 import type { ComponentRef } from "react";
 import { DemoAgentPane, type DemoSelection } from "../../../src/components/DemoAgentPane"
 import { DemoOverview } from "../../../src/components/DemoOverview"
@@ -877,7 +878,8 @@ function JobsWorkspace({ bounds }: { bounds: { x: number; y: number; width: numb
   useEffect(() => {
     if (sidebarSection === "settings") setSettingsMounted(true)
   }, [sidebarSection])
-  let connectRelay = () => authenticated ? router.push("/workspace") : router.push({ pathname: "/login", params: { return_to: "workspace" } })
+  let openRelay = useOpenRelay("push")
+  let connectRelay = () => authenticated ? openRelay() : router.push({ pathname: "/login", params: { return_to: "workspace" } })
   let connectionLoading = viewState.loading ? <ConnectionLoadingView label={viewState.loading} error={machines.error} onAccount={() => authenticated ? router.push("/account") : router.push({ pathname: "/login", params: { return_to: "account" } })} /> : null
 
   const bannerContent = (

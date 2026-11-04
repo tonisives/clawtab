@@ -317,6 +317,8 @@ test("offline replies stay visible until the host confirms a decision", async ()
 test("generated mobile document uses the production surface and native bridge", () => {
   const { messageDocument } = require("../remote/scripts/message-surface.cjs");
   const document = messageDocument();
+  assert.match(document, /maximum-scale=1,user-scalable=no/);
+  assert.doesNotMatch(document, /touch-action:pan-y pinch-zoom/);
   assert.ok(document.includes(fs.readFileSync(path.resolve(__dirname, "../shared/src/nfn/surface.js"), "utf8")));
   assert.ok(document.includes("window.ReactNativeWebView.postMessage"));
   assert.ok(document.includes("media-src https: clawtab-nfn:"));

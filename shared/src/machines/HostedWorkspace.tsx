@@ -7,12 +7,13 @@ import { MachineTerminalScreen } from "./Terminal"
 
 type Api = (method: string, path: string, body?: Record<string, unknown>) => Promise<any>
 type Workspace = { id: string; machine_id: string | null; state: string; delete_at: string | null; error: string | null; setup: Record<string, any> }
-type Status = { enabled: boolean; eligible: boolean; workspace: Workspace | null }
+export type HostedWorkspaceStatus = { enabled: boolean; eligible: boolean; workspace: Workspace | null }
+type Status = HostedWorkspaceStatus
 type Terminal = { pane_id: string; tmux_session: string; machine: string; login: boolean }
 
-export let HostedWorkspacePanel = ({ api, autoStart = false }: { api: Api; autoStart?: boolean }) => {
+export let HostedWorkspacePanel = ({ api, autoStart = false, initialStatus = null }: { api: Api; autoStart?: boolean; initialStatus?: HostedWorkspaceStatus | null }) => {
   let machines = useMachines()
-  let [status, setStatus] = useState<Status | null>(null)
+  let [status, setStatus] = useState<Status | null>(initialStatus)
   let [usage, setUsage] = useState<Record<string, any> | null>(null)
   let [error, setError] = useState<string | null>(null)
   let [busy, setBusy] = useState(false)

@@ -136,7 +136,7 @@ export function MessageSurface(props: MessageSurfaceProps) {
     style={{ flex: 1, minHeight: 0, backgroundColor: "#161616", ...contentLayout }}>
     <WebView<object> ref={view} source={source.current.value} style={{ flex: 1, backgroundColor: "#161616" }}
     containerStyle={{ display: selectionText === null ? "flex" : "none" }}
-    scrollEnabled={false} textInteractionEnabled dataDetectorTypes="none"
+    scrollEnabled={false} setBuiltInZoomControls={false} setDisplayZoomControls={false} textInteractionEnabled dataDetectorTypes="none"
     javaScriptEnabled originWhitelist={["*"]} allowsInlineMediaPlayback mediaPlaybackRequiresUserAction
     keyboardDisplayRequiresUserAction={false} hideKeyboardAccessoryView
     automaticallyAdjustContentInsets={false} contentInsetAdjustmentBehavior="never" bounces={false}
