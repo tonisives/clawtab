@@ -1,0 +1,222 @@
+internal import Expo
+import UserNotifications
+internal import ExpoNotifications
+import React
+import ReactAppDependencyProvider
+
+@main
+class AppDelegate: ExpoAppDelegate, ExpoReactNativeFactoryProvider {
+  var window: UIWindow?
+
+  var reactNativeDelegate: ExpoReactNativeFactoryDelegate?
+  var reactNativeFactory: RCTReactNativeFactory?
+
+  public override func application(
+    _ application: UIApplication,
+    didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+  ) -> Bool {
+    let delegate = ReactNativeDelegate()
+    let factory = ExpoReactNativeFactory(delegate: delegate)
+    delegate.dependencyProvider = RCTAppDependencyProvider()
+
+    reactNativeDelegate = delegate
+    reactNativeFactory = factory
+
+    // The window is created and React Native is started by `SceneDelegate` under the
+    // scene-based life cycle (required by the iOS 27 SDK).
+    // Register native answer handler with expo-notifications
+    let handler = NativeAnswerHandler()
+    objc_setAssociatedObject(self, "nativeAnswerHandler", handler, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+    NotificationCenterManager.shared.addDelegate(handler)
+    NSLog("[ClawTab] NativeAnswerHandler registered")
+    NSLog("[ClawTab] keychain check: access_token=%@, refresh_token=%@, server_url=%@",
+      handler.hasKey("clawtab_access_token") ? "YES" : "NO",
+      handler.hasKey("clawtab_refresh_token") ? "YES" : "NO",
+      handler.hasKey("clawtab_server_url") ? "YES" : "NO")
+
+    return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+}
+
+class ReactNativeDelegate: ExpoReactNativeFactoryDelegate {
+  // Extension point for config-plugins
+
+  override func sourceURL(for bridge: RCTBridge) -> URL? {
+    // needed to return the correct URL for expo-dev-client.
+    bridge.bundleURL ?? bundleURL()
+  }
+
+  override func bundleURL() -> URL? {
+#if DEBUG
+    return RCTBundleURLProvider.sharedSettings().jsBundleURL(forBundleRoot: ".expo/.virtual-metro-entry")
+#else
+    return Bundle.main.url(forResource: "main", withExtension: "jsbundle")
+#endif
+  }
+}
+
+
+class NativeAnswerHandler: NSObject, NotificationDelegate {
+
+  func hasKey(_ key: String) -> Bool {
+    return readKeychain(key) != nil
+  }
+
+  func didReceive(_ response: UNNotificationResponse, completionHandler: @escaping () -> Void) -> Bool {
+    let actionId = response.actionIdentifier
+    if actionId == UNNotificationDefaultActionIdentifier || actionId == UNNotificationDismissActionIdentifier {
+      return false
+    }
+
+    let userInfo = response.notification.request.content.userInfo
+    guard let clawtab = userInfo["clawtab"] as? [String: Any],
+          let questionId = clawtab["question_id"] as? String,
+          let paneId = clawtab["pane_id"] as? String else {
+      return false
+    }
+
+    // For text input actions, find the "Type something" option number and send as freetext
+    let answer: String
+    var freetext: String? = nil
+    if let textResponse = response as? UNTextInputNotificationResponse {
+      let userText = textResponse.userText
+      // Find the "Type something" option number from the notification payload
+      if let options = clawtab["options"] as? [[String: Any]] {
+        var typeSomethingNumber: String? = nil
+        for opt in options {
+          if let label = opt["label"] as? String,
+             label.lowercased().hasPrefix("type something") {
+            typeSomethingNumber = opt["number"] as? String
+            break
+          }
+        }
+        if let num = typeSomethingNumber {
+          answer = num
+          freetext = userText
+        } else {
+          answer = userText
+        }
+      } else {
+        answer = userText
+      }
+    } else {
+      answer = actionId
+    }
+
+    NSLog("[ClawTab] action tapped: question=%@ answer=%@ freetext=%@", questionId, answer, freetext ?? "(nil)")
+
+    // Request our own background execution time. The shared completionHandler
+    // gets called immediately by EmitterModule and NotificationCenterManager,
+    // so we can't rely on it to keep the process alive for our HTTP request.
+    let taskId = UIApplication.shared.beginBackgroundTask(withName: "ClawTabAnswer") {
+      NSLog("[ClawTab] background task expired")
+    }
+    NSLog("[ClawTab] background task started: %d", taskId.rawValue)
+
+    postAnswer(questionId: questionId, paneId: paneId, answer: answer, freetext: freetext) {
+      NSLog("[ClawTab] ending background task: %d", taskId.rawValue)
+      UIApplication.shared.endBackgroundTask(taskId)
+    }
+
+    return true
+  }
+
+  private func postAnswer(questionId: String, paneId: String, answer: String, freetext: String? = nil, completion: @escaping () -> Void) {
+    let serverUrl = readKeychain("clawtab_server_url") ?? "https://relay.clawtab.cc"
+    guard let token = readKeychain("clawtab_access_token") else {
+      NSLog("[ClawTab] no access token, trying refresh")
+      refreshAndPost(serverUrl: serverUrl, questionId: questionId, paneId: paneId, answer: answer, freetext: freetext, completion: completion)
+      return
+    }
+    doPost(serverUrl: serverUrl, token: token, questionId: questionId, paneId: paneId, answer: answer, freetext: freetext) { status in
+      if status == 401 {
+        NSLog("[ClawTab] 401, refreshing")
+        self.refreshAndPost(serverUrl: serverUrl, questionId: questionId, paneId: paneId, answer: answer, freetext: freetext, completion: completion)
+      } else {
+        NSLog("[ClawTab] answer posted, status=%d", status ?? 0)
+        completion()
+      }
+    }
+  }
+
+  private func refreshAndPost(serverUrl: String, questionId: String, paneId: String, answer: String, freetext: String? = nil, completion: @escaping () -> Void) {
+    guard let rt = readKeychain("clawtab_refresh_token") else {
+      NSLog("[ClawTab] no refresh token")
+      completion()
+      return
+    }
+    let url = URL(string: "\(serverUrl)/auth/refresh")!
+    var req = URLRequest(url: url)
+    req.httpMethod = "POST"
+    req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    req.httpBody = try? JSONSerialization.data(withJSONObject: ["refresh_token": rt])
+    URLSession.shared.dataTask(with: req) { data, response, error in
+      guard let http = response as? HTTPURLResponse, http.statusCode == 200,
+            let data = data,
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let newAccess = json["access_token"] as? String,
+            let newRefresh = json["refresh_token"] as? String else {
+        NSLog("[ClawTab] refresh failed: %@", error?.localizedDescription ?? "bad response")
+        completion()
+        return
+      }
+      self.writeKeychain("clawtab_access_token", value: newAccess)
+      self.writeKeychain("clawtab_refresh_token", value: newRefresh)
+      self.doPost(serverUrl: serverUrl, token: newAccess, questionId: questionId, paneId: paneId, answer: answer, freetext: freetext) { status in
+        NSLog("[ClawTab] answer after refresh, status=%d", status ?? 0)
+        completion()
+      }
+    }.resume()
+  }
+
+  private func doPost(serverUrl: String, token: String, questionId: String, paneId: String, answer: String, freetext: String? = nil, completion: @escaping (Int?) -> Void) {
+    let url = URL(string: "\(serverUrl)/api/answer")!
+    var req = URLRequest(url: url)
+    req.httpMethod = "POST"
+    req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    var body: [String: Any] = [
+      "question_id": questionId, "pane_id": paneId, "answer": answer,
+    ]
+    if let ft = freetext {
+      body["freetext"] = ft
+    }
+    req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+    URLSession.shared.dataTask(with: req) { _, response, error in
+      if let error = error { NSLog("[ClawTab] POST error: %@", error.localizedDescription) }
+      completion((response as? HTTPURLResponse)?.statusCode)
+    }.resume()
+  }
+
+  private func readKeychain(_ key: String) -> String? {
+    guard let k = key.data(using: .utf8) else { return nil }
+    let q: [String: Any] = [
+      kSecClass as String: kSecClassGenericPassword,
+      kSecAttrService as String: "app:no-auth",
+      kSecAttrAccount as String: k, kSecAttrGeneric as String: k,
+      kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne,
+    ]
+    var r: AnyObject?
+    guard SecItemCopyMatching(q as CFDictionary, &r) == errSecSuccess, let d = r as? Data else {
+      NSLog("[ClawTab] keychain read MISS for %@", key)
+      return nil
+    }
+    NSLog("[ClawTab] keychain read HIT for %@", key)
+    return String(data: d, encoding: .utf8)
+  }
+
+  private func writeKeychain(_ key: String, value: String) {
+    guard let k = key.data(using: .utf8), let v = value.data(using: .utf8) else { return }
+    let q: [String: Any] = [
+      kSecClass as String: kSecClassGenericPassword,
+      kSecAttrService as String: "app:no-auth",
+      kSecAttrAccount as String: k, kSecAttrGeneric as String: k,
+    ]
+    let u: [String: Any] = [kSecValueData as String: v]
+    if SecItemUpdate(q as CFDictionary, u as CFDictionary) == errSecItemNotFound {
+      var a = q; a[kSecValueData as String] = v
+      a[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+      SecItemAdd(a as CFDictionary, nil)
+    }
+  }
+}
