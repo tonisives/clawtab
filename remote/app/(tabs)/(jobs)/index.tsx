@@ -294,7 +294,7 @@ function JobsWorkspace({ bounds }: { bounds: { x: number; y: number; width: numb
   const [settingsMounted, setSettingsMounted] = useState(false)
   const [sidebarSection, setSidebarSection] = useState<SidebarSection>("jobs")
   const [stoppingJobSlugs, setStoppingJobSlugs] = useState<Set<string>>(() => new Set())
-  const { width, isIosPad, isIosPadPortrait, isIosPhone, isSplitView: responsiveSplit, isWide } = useResponsive()
+  const { width, isIosPad, isIosPadPortrait, isIosPhone, isIosPhoneLandscape, isSplitView: responsiveSplit, isWide } = useResponsive()
   const windowSize = useWindowDimensions()
   const regions = useReservedRegions()
   const regionsReady = useReservedRegionsReady()
@@ -1280,10 +1280,10 @@ function JobsWorkspace({ bounds }: { bounds: { x: number; y: number; width: numb
     <View
       style={[
         styles.sidebarHeader,
-        { paddingTop: Platform.OS === "web" ? 12 : insets.top + 8 },
+        { paddingTop: Platform.OS === "web" ? 12 : isIosPhone ? 8 : insets.top + 8 },
       ]}
     >
-      <View style={styles.sidebarTitleRow}>
+      {(!isIosPhone || isIosPhoneLandscape) && <View style={styles.sidebarTitleRow}>
         <Pressable
           onPress={() => Linking.openURL("https://clawtab.cc")}
           style={styles.listPaneBrand}
@@ -1304,10 +1304,15 @@ function JobsWorkspace({ bounds }: { bounds: { x: number; y: number; width: numb
             <Ionicons name="settings-outline" size={20} color={sidebarSection === "settings" ? colors.accent : colors.textSecondary} />
           </Pressable>
           <NotificationsMenuButton variant="compact" onOpen={handleOpenSidebarNotifications} active={sidebarSection === "notifications"} />
+        </View> : isIosPhoneLandscape ? <View style={styles.sidebarIconButtons}>
+          <Pressable style={styles.sidebarIconButton} onPress={openSearch} accessibilityRole="button" accessibilityLabel="Search jobs">
+            <Ionicons name="search" size={20} color={colors.textSecondary} />
+          </Pressable>
+          <NotificationsMenuButton countOnly />
         </View> : !isIosPad ? <NotificationsMenuButton variant={isWide ? "compact" : "fluid"} /> : null}
-      </View>
+      </View>}
 
-      {Platform.OS !== "web" && !isIosPad && (
+      {Platform.OS !== "web" && !isIosPad && !isIosPhoneLandscape && (
         <>
           <View style={styles.sidebarSearchField}>
             <Ionicons name="search" size={17} color={colors.textMuted} />
@@ -1354,7 +1359,7 @@ function JobsWorkspace({ bounds }: { bounds: { x: number; y: number; width: numb
       <View style={[styles.listPane, { width: splitListWidth }, compactPhone && { width: "100%", display: phoneDetailVisible ? "none" : "flex" }]}>
         {!isIosPad && !isIosPhone ? sidebarHeader : null}
         <View style={styles.listPaneScrollArea}>
-          {connectionLoading ?? (demoMode ? <DemoJobList onConnect={connectRelay} onShowOverview={() => setDemoSelection(null)} selectedSlug={demoSelection?.id} onSelectJob={(job) => setDemoSelection({ id: job.slug, kind: "job" })} onSelectProcess={(process) => setDemoSelection({ id: process.pane_id, kind: "process" })} /> : <JobListView
+          {connectionLoading ?? (demoMode ? <DemoJobList embedded onConnect={connectRelay} onShowOverview={() => setDemoSelection(null)} selectedSlug={demoSelection?.id} onSelectJob={(job) => setDemoSelection({ id: job.slug, kind: "job" })} onSelectProcess={(process) => setDemoSelection({ id: process.pane_id, kind: "process" })} /> : <JobListView
             machineOnboarding={machineOnboardingContent}
             machineManagement={machineManagementContent}
             machineChrome={machineOnboardingChrome}

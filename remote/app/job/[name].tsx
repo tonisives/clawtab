@@ -118,9 +118,7 @@ export default function JobDetailScreen() {
   const loaded = useJobsStore((s) => s.loaded);
   const isRunningWithShell = !!statusPaneId;
   const landscapeHeader = useLandscapeTerminalHeader(isRunningWithShell);
-  const containerStyle = landscapeHeader.isLandscape && isRunningWithShell
-    ? [styles.container, { paddingLeft: insets.left, paddingRight: insets.right }]
-    : styles.container;
+  const containerStyle = styles.container;
   const renderTerminal = useCallback(() => <ShellSurface paneId={statusPaneId} onScrollGesture={landscapeHeader.onScrollGesture} />, [statusPaneId, landscapeHeader.onScrollGesture]);
   const loadingHeaderOptions = useMemo(() => ({
     animation: landscapeHandoff === "1" ? "none" as const : "slide_from_right" as const,

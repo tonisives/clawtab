@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, Dimensions, Keyboard, Platform, type KeyboardEvent, type KeyboardMetrics, type View, useWindowDimensions } from "react-native";
 
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { remainingSafeArea } from "../lib/remainingSafeArea";
 
 // Native message routes reach the bottom of the modal. Use the keyboard height
 // there; a sheet's measured origin can differ from the keyboard's window origin.
@@ -10,17 +11,17 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 export function useMessageKeyboard(bottomAnchored = true) {
   const host = useRef<ComponentRef<typeof View>>(null);
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
-  const [horizontalInsets, setHorizontalInsets] = useState({ left: 0, right: 0 });
+  const { width, height: windowHeight } = useWindowDimensions();
+  const [safeAreaInsets, setSafeAreaInsets] = useState({ left: 0, right: 0, bottom: 0 });
   const keyboardFrame = useRef<KeyboardMetrics | null>(null);
   const [overlap, setOverlap] = useState(0);
   const measure = useCallback(() => {
     const frame = keyboardFrame.current;
     host.current?.measureInWindow((x, y, hostWidth, height) => {
-      setHorizontalInsets({ left: Math.max(0, insets.left - x), right: Math.max(0, x + hostWidth - width + insets.right) });
+      setSafeAreaInsets(remainingSafeArea({ x, y, width: hostWidth, height }, { width, height: windowHeight }, insets));
       if (keyboardFrame.current === frame) setOverlap(frame === null ? 0 : bottomAnchored ? frame.height : Math.max(0, Math.min(height, y + height - frame.screenY)));
     });
-  }, [width, insets.left, insets.right, bottomAnchored]);
+  }, [width, windowHeight, insets.left, insets.right, insets.bottom, bottomAnchored]);
   useEffect(measure, [measure]);
   useEffect(() => {
     if (Platform.OS !== "ios") return;
@@ -51,5 +52,5 @@ export function useMessageKeyboard(bottomAnchored = true) {
     if (current) apply(current);
     return () => subscriptions.forEach(subscription => subscription.remove());
   }, [measure, bottomAnchored]);
-  return { host, overlap, horizontalInsets, onLayout: measure };
+  return { host, overlap, horizontalInsets: safeAreaInsets, safeAreaInsets, onLayout: measure };
 }

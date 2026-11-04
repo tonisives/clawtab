@@ -4,12 +4,14 @@ import { ScrollView, StyleSheet, Text, View } from "react-native"
 import { colors } from "@clawtab/shared"
 import { useSetupProgress } from "../hooks/useSetupProgress"
 import { AdvancedSetupOptions, RelayWelcome } from "./RelayWelcome"
+import { useResponsive } from "../hooks/useResponsive"
 
 export let DemoOverview = ({ onConnect, showSamples = true }: { onConnect: () => void; showSamples?: boolean }) => {
+  let { isIosPhoneLandscape } = useResponsive()
   let router = useRouter()
   let connectComputer = () => router.push({ pathname: "/add-machine", params: { setup: "connect" } })
   let { relayComplete } = useSetupProgress()
-  return <ScrollView style={styles.screen} contentContainerStyle={styles.scrollContent} contentInsetAdjustmentBehavior="automatic">
+  return <ScrollView style={styles.screen} contentContainerStyle={[styles.scrollContent, isIosPhoneLandscape && { padding: 12, paddingBottom: 16 }]} contentInsetAdjustmentBehavior="automatic">
     <View style={styles.content}>
       {showSamples && relayComplete && <View style={styles.nextStep}>
         <Text accessibilityRole="header" style={styles.heading}>Use your own agents</Text>

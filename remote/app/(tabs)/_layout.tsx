@@ -104,6 +104,7 @@ function TabsContent({
         >
           <NativeTabs.Trigger
             name="(jobs)"
+            disableAutomaticContentInsets={isIosPhone && isSplitView}
             contentStyle={{ backgroundColor: colors.bg }}
             listeners={{ tabPress: () => setMobileHeaderTab("jobs") }}
           >

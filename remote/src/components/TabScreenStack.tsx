@@ -9,8 +9,8 @@ export function TabScreenStack({ screen, title }: { screen: string; title: strin
   const router = useRouter();
   const pendingCount = usePendingMessageCount();
   const nativeBadgeAvailable = Platform.OS === "ios" && Number.parseInt(String(Platform.Version), 10) >= 26;
-  const { isIosPhone, isIosPadPortrait, isSplitView, isWide } = useResponsive();
-  const showHeader = Platform.OS !== "web" && !isWide && (isIosPhone || (!isSplitView && !isIosPadPortrait));
+  const { isIosPhone, isIosPhoneLandscape, isIosPadPortrait, isSplitView, isWide } = useResponsive();
+  const showHeader = Platform.OS !== "web" && !isWide && !isIosPhoneLandscape && (isIosPhone || (!isSplitView && !isIosPadPortrait));
   const largeTitle = showHeader && Platform.OS === "ios" && !isSplitView;
 
   return (

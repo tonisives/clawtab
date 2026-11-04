@@ -85,6 +85,7 @@ test("machine setup follows Relay and its card opens the self-hosted connection 
     "@expo/vector-icons": { Ionicons: "Ionicons" },
     "@clawtab/shared": { colors: {} },
     "../hooks/useSetupProgress": { useSetupProgress: () => ({ relayComplete }) },
+    "../hooks/useResponsive": { useResponsive: () => ({ isIosPhoneLandscape: false }) },
   }
   const relay = load("src/components/RelayWelcome.tsx", modules)
   const { DemoOverview } = load("src/components/DemoOverview.tsx", { ...modules, "./RelayWelcome": relay })

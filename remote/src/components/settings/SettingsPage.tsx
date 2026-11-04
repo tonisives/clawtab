@@ -4,11 +4,13 @@ import { Ionicons } from "@expo/vector-icons"
 import { ContentContainer } from "../ContentContainer"
 import { colors } from "../../theme/colors"
 import { radius, spacing } from "../../theme/spacing"
+import { useResponsive } from "../../hooks/useResponsive"
 
 export let SettingsBottomInset = createContext(0)
 
 export let SettingsPage = ({ children, wide = false }: { children: ReactNode; wide?: boolean }) => {
   let bottomInset = useContext(SettingsBottomInset)
+  let { isIosPhoneLandscape } = useResponsive()
   return <ScrollView
     style={styles.scrollContainer}
     contentInsetAdjustmentBehavior="automatic"
@@ -19,7 +21,7 @@ export let SettingsPage = ({ children, wide = false }: { children: ReactNode; wi
     keyboardShouldPersistTaps="handled"
     automaticallyAdjustKeyboardInsets
   >
-    <ContentContainer wide={wide}><View style={styles.container}>{children}</View></ContentContainer>
+    <ContentContainer wide={wide}><View style={[styles.container, isIosPhoneLandscape && { padding: 12, gap: 16 }]}>{children}</View></ContentContainer>
   </ScrollView>
 }
 export let SettingsGroup = ({ children }: { children: ReactNode }) => <View style={styles.listGroup}>

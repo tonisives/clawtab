@@ -1,0 +1,25 @@
+name: LayoutTests
+options:
+  deploymentTarget:
+    iOS: '18.0'
+settings:
+  base:
+    SWIFT_VERSION: '5.0'
+    CODE_SIGNING_ALLOWED: NO
+targets:
+  LayoutTests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [UITests]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: cc.clawtab.layout-tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: ""
+schemes:
+  LayoutTests:
+    build:
+      targets:
+        LayoutTests: [test]
+    test:
+      targets: [LayoutTests]

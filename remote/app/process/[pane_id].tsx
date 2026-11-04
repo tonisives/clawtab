@@ -54,9 +54,7 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, fromSplit, landscapeHan
   const { isWide } = useResponsive();
   const landscapeHeader = useLandscapeTerminalHeader(true);
   const showLandscapeSidebar = useLandscapeShellNavigation({ kind: "process", paneId: pane_id }, fromSplit);
-  const containerStyle = landscapeHeader.isLandscape
-    ? [styles.container, { paddingLeft: insets.left, paddingRight: insets.right }]
-    : styles.container;
+  const containerStyle = styles.container;
 
   const storeProcess = useJobsStore((s) =>
     s.detectedProcesses.find((p) => p.pane_id === pane_id),

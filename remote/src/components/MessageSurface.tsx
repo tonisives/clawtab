@@ -6,7 +6,6 @@ import { useCallback, useEffect, useRef, useState, type ComponentRef } from "rea
 import WebView from "react-native-webview";
 import { Keyboard, Linking, Platform, View } from "react-native";
 import { ShellKeyboardInput } from "./ShellKeyboardInput";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useMessageKeyboard } from "../hooks/useMessageKeyboard";
 import document from "../lib/messageSurfaceDocument.generated";
 import { messageSurfaceDefaultView, messageSurfaceInitialDocument } from "../lib/messageSurfaceBootstrap";
@@ -33,10 +32,9 @@ export function MessageSurface(props: MessageSurfaceProps) {
   if (!source.current || source.current.document !== document) source.current = { document, value: { html: messageSurfaceInitialDocument(document, { ...props, snapshot: { ...props.snapshot, native_keyboard: nativeShellKeyboard, native_selection: nativeShellKeyboard } }) } };
   const view = useRef<WebView<object>>(null);
   const shellKeyboard = useRef<ComponentRef<typeof ShellKeyboardInput>>(null);
-  const insets = useSafeAreaInsets();
   const keyboard = useMessageKeyboard(!props.popup);
   const contentLayout = selectionLayout ?? {
-    paddingBottom: chrome.reply && selectionText === null ? Math.max(keyboard.overlap, insets.bottom) : keyboard.overlap,
+    paddingBottom: chrome.reply && selectionText === null ? Math.max(keyboard.overlap, keyboard.safeAreaInsets.bottom) : keyboard.overlap,
     paddingLeft: keyboard.horizontalInsets.left, paddingRight: keyboard.horizontalInsets.right,
   };
   const layoutRef = useRef(contentLayout);
@@ -47,8 +45,8 @@ export function MessageSurface(props: MessageSurfaceProps) {
   const selected = useRef<string | null>(null);
   const footerOwnsSafeArea = !props.popup && !props.snapshot.shell_only && !props.snapshot.demo && chrome.screen === "message" && !chrome.reply;
   const applyInsets = useCallback(() => {
-    view.current?.injectJavaScript(`window.nfnMobile?.setInsets(${props.popup || footerOwnsSafeArea ? 0 : insets.bottom},${keyboard.overlap > 0});true;`);
-  }, [insets.bottom, props.popup, keyboard.overlap, footerOwnsSafeArea]);
+    view.current?.injectJavaScript(`window.nfnMobile?.setInsets(${props.popup || footerOwnsSafeArea ? 0 : keyboard.safeAreaInsets.bottom},${keyboard.overlap > 0});true;`);
+  }, [keyboard.safeAreaInsets.bottom, props.popup, keyboard.overlap, footerOwnsSafeArea]);
   useEffect(applyInsets, [applyInsets]);
   const send = useCallback((value: unknown) => {
     const json = JSON.stringify(value).replace(/</g, "\\u003c").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
@@ -144,10 +142,10 @@ export function MessageSurface(props: MessageSurfaceProps) {
     onShouldStartLoadWithRequest={request => request.url === "about:blank"}
     onLoadStart={() => { ready.current = false; }} />
     {nativeShellKeyboard ? <ShellKeyboardInput ref={shellKeyboard} onSend={sendTerminalText} /> : null}
-    {selectionText !== null ? <MessageTextSelection text={selectionText} selection={selectionRange} bottom={insets.bottom} onDone={() => {
+    {selectionText !== null ? <MessageTextSelection text={selectionText} selection={selectionRange} bottom={keyboard.safeAreaInsets.bottom} onDone={() => {
       selectingText.current = false; setSelectionText(null);
     }} /> : null}
-    {!props.popup && !props.snapshot.shell_only && props.active !== false && selectionText === null ? <NotificationChrome state={chrome} send={action} bottom={insets.bottom} demo={Boolean(props.snapshot.demo)} enabled /> : null}
+    {!props.popup && !props.snapshot.shell_only && props.active !== false && selectionText === null ? <NotificationChrome state={chrome} send={action} bottom={keyboard.safeAreaInsets.bottom} demo={Boolean(props.snapshot.demo)} enabled /> : null}
     {chrome.reply && props.active !== false && selectionText === null ? <TerminalKeyboardToolbar
       bottom={0} inline
       dismissIcon="close"
