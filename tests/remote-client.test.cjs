@@ -314,7 +314,7 @@ test('saved groups load without a desktop and are cleared on account logout', as
 
 for (let platform of ['web', 'ios']) {
   test(`${platform} foreground preserves pending actions while recovering suspended native connections`, () => {
-    let onStateChange, cleanup, reconnects = 0, replays = 0;
+    let onStateChange, cleanup, reconnects = 0, replays = 0, releases = 0;
     let noop = () => {};
     let state = { connected: true, controllers: {} };
     let store = Object.assign(() => true, { setState: noop, getInitialState: () => ({}), getState: () => new Proxy({}, { get: () => noop }) });
@@ -328,17 +328,28 @@ for (let platform of ['web', 'ios']) {
       },
       '../lib/notifications': { getPushToken: async () => null },
       '../lib/terminalCache': { terminalCache: { clear: noop } },
-      './usePty': { releaseActivePtySubscriptions: noop, replayActivePtySubscriptions: () => { replays++; } },
+      './usePty': { releaseActivePtySubscriptions: () => { releases++; }, replayActivePtySubscriptions: () => { replays++; } },
     };
     let exports = {};
     let source = ts.transpileModule(fs.readFileSync(require.resolve('../remote/src/hooks/useWebSocket.ts'), 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
     vm.runInNewContext(source, { exports, require: (name) => modules[name] ?? new Proxy({}, { get: (_, key) => String(key).startsWith('use') ? store : noop }) });
     exports.useWebSocket();
+    // A permission alert must preserve even an offline demo list.
+    for (const connected of [true, false]) {
+      state.connected = connected;
+      onStateChange('inactive');
+      onStateChange('active');
+      assert.equal(reconnects, 0);
+      assert.equal(replays, 0);
+      assert.equal(releases, 0);
+    }
+    state.connected = true;
     onStateChange('background');
     onStateChange('active');
     assert.equal(reconnects, platform === 'web' ? 0 : 1);
     assert.equal(replays, platform === 'web' ? 1 : 0);
     state.connected = false;
+    onStateChange('background');
     onStateChange('active');
     assert.equal(reconnects, platform === 'web' ? 1 : 2);
     cleanup();

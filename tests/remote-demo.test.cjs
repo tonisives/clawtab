@@ -183,7 +183,7 @@ test('native demo keeps navigation to sample detail screens', () => {
   assert.equal(tree.props.onSelectJob, undefined);
 });
 
-test('demo requires Relay before machine setup and puts the own-relay link below hosting docs', () => {
+test('demo requires Relay before machine setup and keeps advanced options collapsed', () => {
   let connected = false;
   let demo = loadDemo('overview', {}, 'web');
   let nodes = all(demo.render({ onConnect: () => { connected = true; } }));
@@ -192,11 +192,13 @@ test('demo requires Relay before machine setup and puts the own-relay link below
   let text = labels.join('\n');
   for (let phrase of ['existing Claude, Codex', '2 agents at once', 'US$6.99', 'Advanced setup']) assert.ok(text.includes(phrase), phrase);
   assert.doesNotMatch(text, /Connect a machine|Rent a server|Demo uses sample agents/);
-  assert.ok(labels.indexOf('Host your own relay') < labels.indexOf('Connect your own relay'));
+  assert.ok(!labels.includes('Connect your own relay'));
+  assert.ok(!labels.includes('Host your own relay'));
+  press('Advanced setup');
+  nodes = all(demo.render({ onConnect: () => { connected = true; } }));
   press('Set up Relay');
   assert.equal(connected, true);
-  press('Host your own relay');
-  assert.match(demo.writes[0], /docs#deploy/);
+  assert.equal(demo.writes.length, 0);
   press('Connect your own relay');
   assert.equal(demo.pushed[0], '/connect-relay');
 });

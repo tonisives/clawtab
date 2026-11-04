@@ -74,11 +74,11 @@ test("demo notification and task actions remain inert", async () => {
 })
 
 test("machine setup follows Relay and its card opens the self-hosted connection form", () => {
-  let relayComplete = false
+  let relayComplete = false, expanded = false
   const pushes = [], jsx = (type, props) => ({ type, props })
   const elements = node => Array.isArray(node) ? node.flatMap(elements) : node && typeof node === "object" ? [node, ...elements(node.props?.children)] : []
   const modules = {
-    react: { useState: () => [false, () => {}] },
+    react: { useState: () => [expanded, update => { expanded = update(expanded) }] },
     "react/jsx-runtime": { jsx, jsxs: jsx },
     "react-native": { Platform: { OS: "web" }, Pressable: "Pressable", ScrollView: "ScrollView", View: "View", Text: "Text", StyleSheet: { create: value => value } },
     "expo-router": { useRouter: () => ({ push: route => pushes.push(route) }) },
@@ -91,10 +91,34 @@ test("machine setup follows Relay and its card opens the self-hosted connection 
   assert.ok(!elements(DemoOverview({ onConnect() {} })).some(node => node.props?.children === "Connect your computer"))
   assert.ok(!elements(relay.AdvancedSetupOptions()).some(node => node.props?.title === "Connect a machine"))
   assert.ok(!elements(relay.RelayWelcome({})).some(node => node.type === "Pressable"))
-  const button = elements(relay.AdvancedSetupOptions()).find(node => node.type === "Pressable")
+  const toggle = elements(relay.AdvancedSetupOptions()).find(node => node.props?.accessibilityLabel === "Advanced setup")
+  assert.equal(toggle.props.accessibilityState.expanded, false)
+  assert.ok(!elements(relay.AdvancedSetupOptions()).some(node => node.props?.children === "Connect your own relay"))
+  toggle.props.onPress()
+  assert.equal(elements(relay.AdvancedSetupOptions()).find(node => node.props?.accessibilityLabel === "Advanced setup").props.accessibilityState.expanded, true)
+  const button = elements(relay.AdvancedSetupOptions()).find(node => node.type === "Pressable" && elements(node).some(child => child.props?.children === "Connect your own relay"))
   button.props.onPress()
   assert.equal(pushes[0], "/connect-relay")
+  assert.ok(!elements(relay.AdvancedSetupOptions()).some(node => node.props?.title === "Host your own relay"))
   relayComplete = true
   assert.ok(elements(DemoOverview({ onConnect() {} })).some(node => node.props?.children === "Connect your computer"))
   assert.ok(elements(relay.AdvancedSetupOptions()).some(node => node.props?.title === "Connect a machine"))
+})
+
+
+test("demo agent answers stay pending and use the inert renderer", async () => {
+  const jsx = (type, props) => ({ type, props })
+  const { DemoQuestionSurface } = load("src/components/DemoQuestionSurface.tsx", {
+    react: { useMemo: callback => callback(), useCallback: callback => callback },
+    "react/jsx-runtime": { jsx },
+    "./MessageSurface": { MessageSurface: "MessageSurface" },
+  })
+  const question = { question_id: "demo-question", pane_id: "demo-pane", options: [{ number: "1", label: "Yes" }] }
+  const { snapshot, onCommand } = DemoQuestionSurface({ question, output: "Sample output" }).props
+  assert.equal(snapshot.demo, true)
+  for (const command of [{ op: "respond", action_id: "1" }, { op: "auto_yes" }, { op: "dismiss" }]) {
+    await onCommand({ ...command, id: question.question_id })
+    assert.equal(snapshot.records[0].status, "pending")
+    assert.equal(snapshot.records[0].id, question.question_id)
+  }
 })

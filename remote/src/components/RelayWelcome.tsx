@@ -25,18 +25,22 @@ export let RelayWelcome = ({ onContinue, connected = false, children }: { onCont
 
 export let AdvancedSetupOptions = () => {
   let router = useRouter()
+  let [expanded, setExpanded] = useState(false)
   let { relayComplete } = useSetupProgress()
   let connect = () => router.push({ pathname: "/add-machine", params: { setup: "connect" } })
   let rent = () => router.push({ pathname: "/add-machine", params: { setup: "rent" } })
   let serverGuide = () => { void Linking.openURL("https://clawtab.cc/articles/setup-remote-machines") }
-  let relayGuide = () => { void Linking.openURL("https://clawtab.cc/docs#deploy") }
   return <View style={styles.advanced}>
-    <Text accessibilityRole="header" style={styles.heading}>Advanced setup</Text>
-    {relayComplete && <Option title="Connect a machine" detail="Connect the agents and projects on your computer or server." onPress={connect} />}
-    {relayComplete && Platform.OS === "web" && <Option title="Rent a server" detail="Get a dedicated server with more CPU, memory, and storage." onPress={rent} />}
-    {relayComplete && <Option title="Install on your server" detail="Install the ClawTab daemon on Linux or Kubernetes." onPress={serverGuide} external />}
-    <Option title="Host your own relay" detail="Manage the relay infrastructure yourself." onPress={relayGuide} external />
-    <Pressable accessibilityRole="button" onPress={() => router.push("/connect-relay")} style={styles.ownRelay}><Text style={styles.ownRelayText}>Connect your own relay</Text></Pressable>
+    <Pressable accessibilityRole="button" accessibilityLabel="Advanced setup" accessibilityState={{ expanded }} onPress={() => setExpanded(value => !value)} style={styles.disclosure}>
+      <Text style={styles.heading}>Advanced setup</Text>
+      <Ionicons name={expanded ? "chevron-up" : "chevron-down"} size={20} color={colors.textSecondary} />
+    </Pressable>
+    {expanded && <View style={styles.options}>
+      {relayComplete && <Option title="Connect a machine" detail="Connect the agents and projects on your computer or server." onPress={connect} />}
+      {relayComplete && Platform.OS === "web" && <Option title="Rent a server" detail="Get a dedicated server with more CPU, memory, and storage." onPress={rent} />}
+      {relayComplete && <Option title="Install on your server" detail="Install the ClawTab daemon on Linux or Kubernetes." onPress={serverGuide} external />}
+      <Pressable accessibilityRole="button" onPress={() => router.push("/connect-relay")} style={styles.ownRelay}><Text style={styles.ownRelayText}>Connect your own relay</Text></Pressable>
+    </View>}
   </View>
 }
 
@@ -78,6 +82,8 @@ let styles = StyleSheet.create({
   emphasis: { fontWeight: "600" },
   description: { color: colors.textSecondary, fontSize: 15, lineHeight: 23 },
   card: { padding: 20, gap: 16, width: "100%", minWidth: 0, borderRadius: 20, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
+  disclosure: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", minHeight: 48, gap: 16 },
+  options: { gap: 8, minWidth: 0 },
   heading: { color: colors.text, fontSize: 18, fontWeight: "600", lineHeight: 26 },
   price: { color: colors.text, fontSize: 22, fontWeight: "600" },
   detail: { color: colors.textSecondary, fontSize: 13, lineHeight: 20 },
