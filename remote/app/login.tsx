@@ -7,7 +7,6 @@ import {
   StyleSheet,
   Platform,
   Modal,
-  Image,
   ScrollView,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -18,7 +17,9 @@ import { useAuthStore } from "../src/store/auth";
 import * as api from "../src/api/client";
 import { colors } from "../src/theme/colors";
 import { radius, spacing } from "../src/theme/spacing";
-import { appIcon } from "../src/lib/appIcons";
+import { StartupLoginMark } from "../src/components/StartupTransition";
+import { startupBackground } from "../src/lib/clawArrivalDocument";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const APPLE_WEB_CLIENT_ID = "cc.clawtab.web";
 
@@ -52,6 +53,7 @@ WebBrowser.maybeCompleteAuthSession();
 
 export default function LoginScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   let { return_to, setup } = useLocalSearchParams<{ return_to?: string; setup?: string }>();
   let destination = return_to === "workspace" ? "/workspace" as const : return_to === "add-machine" ? { pathname: "/add-machine" as const, params: { setup: setup === "connect" || setup === "rent" ? setup : undefined } } : return_to === "account" ? "/account" as const : ["devices", "machines"].includes(return_to ?? "") ? "/machines" as const : "/(tabs)" as const;
   const googleLogin = useAuthStore((s) => s.googleLogin);
@@ -241,10 +243,10 @@ export default function LoginScreen() {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+    <ScrollView contentContainerStyle={[styles.container, { paddingTop: insets.top + 64, paddingBottom: insets.bottom + 32 }]} keyboardShouldPersistTaps="handled">
       <View style={styles.card}>
         <View style={styles.header}>
-          <Image source={appIcon} style={styles.logo} resizeMode="contain" />
+          <StartupLoginMark />
           <Text style={styles.title}>ClawTab</Text>
           <Text style={styles.subtitle}>Remote job control</Text>
         </View>
@@ -377,10 +379,10 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
-    justifyContent: "center",
+    justifyContent: "flex-start",
     alignItems: "center",
     padding: spacing.xl,
-    backgroundColor: colors.bg,
+    backgroundColor: startupBackground,
   },
   card: {
     width: "100%",
@@ -389,12 +391,6 @@ const styles = StyleSheet.create({
   header: {
     alignItems: "center",
     marginBottom: spacing.xxl,
-  },
-  logo: {
-    width: 116,
-    height: 116,
-    borderRadius: 26,
-    marginBottom: spacing.lg,
   },
   title: {
     fontSize: 32,

@@ -60,10 +60,10 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/splash.png",
+          "image": "./assets/icon.png",
+          "imageWidth": 192,
           "resizeMode": "contain",
-          "backgroundColor": "#4F51AB",
-          "enableFullScreenImage_legacy": true
+          "backgroundColor": "#11111f"
         }
       ],
       "expo-secure-store",

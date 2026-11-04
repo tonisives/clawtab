@@ -8,7 +8,7 @@ import * as SplashScreen from "expo-splash-screen";
 import { preloadAppIcons } from "../src/lib/appIcons";
 import { DarkTheme, Stack, ThemeProvider, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { View, ActivityIndicator, Image, Platform, Pressable, StyleSheet } from "react-native";
+import { View, Image, Platform, Pressable, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuthStore } from "../src/store/auth";
 import { useWebSocket } from "../src/hooks/useWebSocket";
@@ -23,6 +23,7 @@ import { NotificationsMenuButton } from "../src/components/NotificationsMenuButt
 import { useResponsive } from "../src/hooks/useResponsive";
 import { useMobileHeaderStore } from "../src/store/mobileHeader";
 import { useJobFilterStore } from "../src/store/jobFilter";
+import { StartupTransition } from "../src/components/StartupTransition";
 import { useDemoMode } from "../src/hooks/useDemoMode";
 
 if (Platform.OS !== "web") void SplashScreen.preventAutoHideAsync();
@@ -167,21 +168,12 @@ export default function RootLayout() {
     handleColdStartAnswer();
   }, [init]);
 
-  if (loading || !iconsReady) {
-    return (
-      <View style={styles.loading}>
-        <ActivityIndicator color={colors.accent} />
-        <StatusBar style="light" />
-      </View>
-    );
-  }
+  const ready = !loading && iconsReady;
 
   const content = (
     <MachineOnboardingProvider chrome={machineOnboardingChrome} content={machineOnboardingContent} management={machineManagementContent}>
     <ThemeProvider value={navTheme}>
-      <View style={styles.root} onLayout={() => {
-        if (Platform.OS !== "web") void SplashScreen.hideAsync();
-      }}>
+      <View style={styles.root}>
         <Stack screenOptions={{ headerShown: false, animation: "none", orientation: "default" }}>
           <Stack.Screen
             name="(tabs)"
@@ -231,26 +223,18 @@ export default function RootLayout() {
     </MachineOnboardingProvider>
   );
 
-  if (!isAuthenticated || !userId) {
-    return content;
-  }
-
   return (
-    <WebSocketProvider key={userId} userId={userId}>
-      {content}
-    </WebSocketProvider>
+    <StartupTransition ready={ready} authenticated={isAuthenticated}>
+      {ready && (isAuthenticated && userId
+        ? <WebSocketProvider key={userId} userId={userId}>{content}</WebSocketProvider>
+        : content)}
+    </StartupTransition>
   );
 }
 
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: colors.bg,
-  },
-  loading: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
     backgroundColor: colors.bg,
   },
   headerTitle: {
