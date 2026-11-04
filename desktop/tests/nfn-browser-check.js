@@ -676,7 +676,7 @@
   assert(document.querySelector(".queue") && document.querySelector(".queue-item")?.textContent.includes("First notification"), "the first arrival populates an open empty pending list");
   window.nfn.collapse(); window.nfn.receive({ ...window.fixture.snapshot(), visible: false });
   window.nfn.receive({ type: "latest" }); await sleep(30);
-  assert(document.querySelector("h1")?.textContent === "First notification" && !document.querySelector("#surface").classList.contains("empty"), "the menu bar opens the latest card even when automatic overlay delivery is disabled");
+  assert(document.querySelector(".queue-item")?.textContent.includes("First notification") && !document.querySelector("#surface").classList.contains("empty"), "the menu bar restores the list even when automatic overlay delivery is disabled");
   window.nfn.collapse();
   assert(document.querySelector("#surface").classList.contains("empty") && window.fixture.nativeEvents.some(event => event.native === "presentation" && !event.active), "closing an explicitly opened card restores automatic delivery rules");
   const past = window.fixture.records.get("from-empty"); past.status = "resolved";
@@ -723,7 +723,9 @@
   window.nfn.receive(window.fixture.snapshot());
   assert(document.querySelector("#surface").classList.contains("empty") && window.fixture.records.get(nextArrival.id).status === "pending", "Close bar hides pending notifications without dismissing or responding to them");
   window.nfn.receive({ type: "latest" });
-  assert(document.querySelector("h1")?.textContent === nextArrival.request.title, "the menu icon reopens pending notifications after Close bar");
+  assert(document.querySelector(".notification-settings"), "the menu icon restores settings after Close bar");
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  assert(document.querySelector("h1")?.textContent === nextArrival.request.title, "closing restored settings returns to the selected message");
 
   const resetFlow = () => {
     window.nfn.collapse(); window.fixture.records.clear(); window.fixture.autoYesPanes.clear();
@@ -742,6 +744,24 @@
     window.fixture.deferred.splice(index, 1)[0].complete(error);
   };
   const title = () => document.querySelector(".card h1")?.textContent;
+  resetFlow();
+  flowRecord("position-a", 0, true); flowRecord("position-b", 1, true); flowRecord("position-c", 2, true);
+  window.nfn.receive(window.fixture.snapshot("position-c")); nav("Previous");
+  window.nfn.collapse(); window.nfn.receive({ type: "latest" });
+  assert(title() === "position-b" && document.querySelector(".count").textContent === "2 / 3", "reopening from the menu bar restores the selected message position");
+  window.nfn.receive({ type: "keyboard_collapse" }); window.nfn.receive({ type: "keyboard_focus", active: true });
+  assert(title() === "position-b", "reopening with the focus shortcut restores the selected message position");
+  const closedSession = window.fixture.records.get("position-b");
+  window.fixture.records.set(closedSession.id, { ...closedSession, status: "expired", error: "The originating agent session is no longer available" });
+  window.nfn.receive(window.fixture.snapshot()); await sleep(240);
+  assert(title() === "position-c" && document.querySelector("#surface").classList.contains("expanded"), "closing the viewed session advances to the next message and keeps the bar open");
+  window.fixture.records.set("position-a", { ...window.fixture.records.get("position-a"), status: "expired" });
+  window.nfn.receive(window.fixture.snapshot()); await sleep(240);
+  assert(title() === "position-c", "closing another session preserves the current message");
+  window.fixture.records.set("position-c", { ...window.fixture.records.get("position-c"), status: "expired" });
+  window.nfn.receive(window.fixture.snapshot()); await sleep(240);
+  assert(document.querySelector("#surface").classList.contains("pill"), "closing the final session leaves the empty message bar open");
+
   resetFlow();
   flowRecord("notice-a", 0, true); flowRecord("notice-b", 1, true); flowRecord("notice-c", 2, true);
   window.fixture.heldOps.add("dismiss");

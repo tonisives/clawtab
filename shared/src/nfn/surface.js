@@ -709,11 +709,14 @@
   function hideBar() {
     hiddenByUser = true; queueReturnId = null; collapse(false);
   }
-  function closeResumedCompletion(previous) {
-    if (mobileHost() || previous?.id !== current || !pending(previous) || previous.request.data?.event !== "agent_finished"
-      || records.get(current)?.status !== "resolved") return;
+  function advanceClosedSession(previous) {
+    if (mobileHost() || previous?.id !== current || !pending(previous)) return;
+    const record = records.get(current);
+    const closed = previous.request.source?.pane_id && record?.status === "expired";
+    const resumed = previous.request.data?.event === "agent_finished" && record?.status === "resolved";
+    if (!closed && !resumed) return;
     queueReturnId = null;
-    collapse(false);
+    advanceAfter(previous, Boolean(closed));
   }
   function resetHandledActions() {
     for (const [id, action] of actionsInProgress) if (!action.pending) actionsInProgress.delete(id);
@@ -839,7 +842,7 @@
     const notice = host.querySelector(".notice"); if (notice) notice.textContent = message;
     const menuNotice = host.querySelector(".menu-notice"); if (menuNotice) menuNotice.textContent = message;
   }
-  async function advanceAfter(record) {
+  async function advanceAfter(record, keepVisible = false) {
     const version = reviewVersion;
     const next = () => {
       const items = pendingCards();
@@ -850,7 +853,7 @@
     while (current === record.id && version === reviewVersion && !queue && !settingsOpen) {
       const item = next();
       if (item) { openRecord(item.id); return; }
-      if (!unseenPending) { collapse(false, true); return; }
+      if (!unseenPending) { collapse(keepVisible, true); return; }
       try {
         const result = await call({ op: "list", offset, pending_only: true });
         addPendingPage(result); offset = result.next_offset ?? offset + 50;
@@ -2428,7 +2431,9 @@
       if (value.type === "latest" && !pendingCount() && !host.classList.contains("empty")) { hideBar(); return; }
       hiddenByUser = false;
       explicitOpen = true; native({ native: "presentation", active: true });
-      if (value.type === "latest") openLatest(); else showQueue();
+      if (value.type === "latest") {
+        if (pendingCount()) restoreBarView(); else openLatest();
+      } else showQueue();
       return;
     }
     if (value.type === "settings") { openSettings(); return; }
@@ -2467,12 +2472,12 @@
     for (const id of records.keys()) if (id !== current && !incoming.has(id) && !selectedNotifications.has(id) && !actionsInProgress.has(id) && !retryIds.has(id)) records.delete(id);
     updateUnseenPending();
     pendingOffset = 50;
-    if (!shellReply) closeResumedCompletion(previousCurrent);
+    if (!shellReply) advanceClosedSession(previousCurrent);
     if (current && !incoming.has(current) && !preview) {
       const id = current;
       call({ op: "get", id }).then(record => {
         const previous = records.get(id);
-        records.set(id, record); updateUnseenPending(); closeResumedCompletion(previous); render();
+        records.set(id, record); updateUnseenPending(); advanceClosedSession(previous); render();
       }).catch(error => showError(error, id));
     }
     if (value.arrival && records.has(value.arrival)) hiddenByUser = false;
