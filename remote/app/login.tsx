@@ -12,7 +12,6 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useGoogleBrowserAuth } from "../src/lib/googleBrowserAuth";
 import { googleIosClientId } from "../src/lib/googleIosClientId";
-import * as WebBrowser from "expo-web-browser";
 import { useAuthStore } from "../src/store/auth";
 import * as api from "../src/api/client";
 import { colors } from "../src/theme/colors";
@@ -49,8 +48,6 @@ if (Platform.OS === "ios") {
   AppleAuthentication = require("expo-apple-authentication");
 }
 
-WebBrowser.maybeCompleteAuthSession();
-
 export default function LoginScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -71,8 +68,8 @@ export default function LoginScreen() {
 
   useEffect(() => { void api.getServerUrl().then(setServerUrl); }, []);
 
-  // Web: Google auth via expo-auth-session provider
-  const [, googleAuthSessionResult, promptAsync] = useGoogleBrowserAuth({
+  // The prompt promise completes once the root handles the browser callback.
+  const [, , promptAsync] = useGoogleBrowserAuth({
     webClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB,
     iosClientId: googleIosClientId,
   });
@@ -81,28 +78,6 @@ export default function LoginScreen() {
     await googleLogin(idToken);
     router.replace(destination);
   }, [googleLogin, router, destination]);
-
-  useEffect(() => {
-    if (!loading || !googleAuthSessionResult) return;
-    if (Platform.OS !== "web" && GoogleSignin && isSuccessResponse) return;
-    const idToken = googleAuthSessionResult.type === "success"
-      ? googleAuthSessionResult.params.id_token
-      : null;
-    if (!idToken) return;
-
-    let cancelled = false;
-    completeGoogleLogin(idToken)
-      .catch((e: any) => {
-        if (!cancelled) setError(e.message || "Google sign-in failed");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [completeGoogleLogin, googleAuthSessionResult, loading]);
 
   const handlePasswordLogin = async () => {
     if (loading) return;
@@ -126,7 +101,6 @@ export default function LoginScreen() {
   const handleGoogleLogin = async () => {
     setLoading(true);
     setError(null);
-    let keepLoading = false;
     try {
       if (Platform.OS === "web" || !GoogleSignin || !isSuccessResponse) {
         const result = await promptAsync();
@@ -134,8 +108,6 @@ export default function LoginScreen() {
           const idToken = result.params.id_token;
           if (idToken) {
             await completeGoogleLogin(idToken);
-          } else if (Platform.OS !== "web" && result.params.code) {
-            keepLoading = true;
           } else {
             setError("No ID token received from Google");
           }
@@ -162,7 +134,7 @@ export default function LoginScreen() {
       console.log("[google] error:", e.message, e.code);
       setError(e.message || "Google sign-in failed");
     } finally {
-      if (!keepLoading) setLoading(false);
+      setLoading(false);
     }
   };
 

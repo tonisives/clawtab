@@ -1,3 +1,4 @@
+import { completeBrowserAuth } from "../src/lib/completeBrowserAuth";
 import { useIapRecovery } from "../src/hooks/useIap";
 import { trackFunnel } from "../src/lib/funnel";
 import { initializeWebAnalytics } from "../src/lib/analytics";
@@ -26,6 +27,7 @@ import { useJobFilterStore } from "../src/store/jobFilter";
 import { StartupTransition } from "../src/components/StartupTransition";
 import { useDemoMode } from "../src/hooks/useDemoMode";
 
+const completingBrowserAuth = completeBrowserAuth();
 if (Platform.OS !== "web") void SplashScreen.preventAutoHideAsync();
 
 const navTheme = {
@@ -142,6 +144,10 @@ function WebSocketProvider({ children, userId }: { children: React.ReactNode; us
 }
 
 export default function RootLayout() {
+  return completingBrowserAuth ? null : <AppLayout />;
+}
+
+function AppLayout() {
   const demo = useDemoMode();
   const [iconsReady, setIconsReady] = useState(false);
   useIapRecovery();

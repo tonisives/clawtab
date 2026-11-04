@@ -14,7 +14,7 @@ export function DemoQuestionSurface({ question, output }: { question: ClaudeQues
   }), [question])
   const snapshot = useMemo(() => ({
     type: "snapshot", remote: true, demo: true, native_chrome: true, shell_only: true, shell_answers: true, visible: true,
-    pending_count: 1, records: [record], shell_cache: { [question.pane_id]: output }, auto_yes_panes: [],
+    pending_count: 1, records: [record], shell_cache: { [record.id]: output }, auto_yes_panes: [],
     templates: { templates: [{ id: "question", layout: [{ type: "logs" }] }] },
     settings: { hover_expand: false, placement: "right" },
   }), [question.pane_id, output, record])

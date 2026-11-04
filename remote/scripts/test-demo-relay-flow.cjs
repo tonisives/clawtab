@@ -116,6 +116,7 @@ test("demo agent answers stay pending and use the inert renderer", async () => {
   const question = { question_id: "demo-question", pane_id: "demo-pane", options: [{ number: "1", label: "Yes" }] }
   const { snapshot, onCommand } = DemoQuestionSurface({ question, output: "Sample output" }).props
   assert.equal(snapshot.demo, true)
+  assert.equal(snapshot.shell_cache[snapshot.records[0].id], "Sample output")
   for (const command of [{ op: "respond", action_id: "1" }, { op: "auto_yes" }, { op: "dismiss" }]) {
     await onCommand({ ...command, id: question.question_id })
     assert.equal(snapshot.records[0].status, "pending")

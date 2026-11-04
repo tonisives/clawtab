@@ -6,12 +6,15 @@ const ts = require('../desktop/node_modules/typescript');
 
 let loadLogin = (os, params = {}, options = {}) => {
   let events = [], browserRequests = 0, configured;
-  let state = [], cursor = 0;
+  let state = [], cursor = 0, effects = [], browserResult = null;
   let provider = { useIdTokenAuthRequest: (config) => {
     browserRequests++;
     assert.equal(os, 'web', 'native rendering must not create a browser OAuth request');
     assert.equal(config.webClientId, 'web-client');
-    return [null, null, async () => ({ type: 'success', params: { id_token: 'web-identity' } })];
+    return [null, browserResult, async () => {
+      browserResult = { type: 'success', params: { id_token: 'web-identity' } };
+      return browserResult;
+    }];
   } };
   let load = (file, dependencies) => {
     let exports = {};
@@ -41,10 +44,10 @@ let loadLogin = (os, params = {}, options = {}) => {
       let index = cursor++;
       if (!(index in state)) state[index] = initial;
       return [state[index], (value) => { state[index] = value; }];
-    }, useCallback: (fn) => fn, useEffect: () => {} },
+    }, useCallback: (fn) => fn, useEffect: effect => effects.push(effect) },
     'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
     'react-native': { Platform: { OS: os }, StyleSheet: { create: (value) => value },
-      View: 'View', Text: 'Text', TextInput: 'TextInput', Pressable: 'Pressable', Modal: 'Modal', Image: 'Image', ScrollView: 'ScrollView' },
+      View: 'View', Text: 'Text', TextInput: 'TextInput', Pressable: 'Pressable', Modal: 'Modal', Image: 'Image', ScrollView: 'ScrollView', KeyboardAvoidingView: 'KeyboardAvoidingView' },
     'expo-router': { useLocalSearchParams: () => params, useRouter: () => ({
       push: (route) => events.push(['push', route]), replace: (route) => events.push(['replace', route]),
     }) },
@@ -52,8 +55,11 @@ let loadLogin = (os, params = {}, options = {}) => {
     '../src/lib/googleBrowserAuth': browserAuth,
     '../src/lib/googleIosClientId': { googleIosClientId: 'ios-client' },
     '../src/lib/appIcons': { appIcon: 1 },
+    '../src/components/StartupTransition': { StartupLoginMark: 'StartupLoginMark' },
+    '../src/lib/clawArrivalDocument': { startupBackground: '#11111f' },
+    'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) },
     '../src/store/auth': { useAuthStore: (selector) => selector(auth) },
-    '../src/api/client': {}, '../src/theme/colors': { colors: {} }, '../src/theme/spacing': { radius: {}, spacing: {} },
+    '../src/api/client': { getServerUrl: async () => 'https://relay.example.com' }, '../src/theme/colors': { colors: {} }, '../src/theme/spacing': { radius: {}, spacing: {} },
     'expo-apple-authentication': {},
     '@react-native-google-signin/google-signin': {
       GoogleSignin: { configure: (config) => { configured = config; },
@@ -63,7 +69,12 @@ let loadLogin = (os, params = {}, options = {}) => {
   });
   let all = (node) => Array.isArray(node) ? node.flatMap(all) : node && typeof node === 'object'
     ? [node, ...all(node.props?.children)] : [];
-  let render = () => { cursor = 0; return all(login.default()); };
+  let render = () => {
+    cursor = 0;
+    const nodes = all(login.default());
+    effects.splice(0).forEach(effect => effect());
+    return nodes;
+  };
   let press = (label) => render().find((node) => node.type === 'Pressable'
     && all(node).some((child) => child.type === 'Text' && child.props.children === label)).props.onPress();
   let input = (label) => render().find((node) => node.type === 'TextInput' && node.props.accessibilityLabel === label);
@@ -131,3 +142,35 @@ test('email sign-in validates missing fields and keeps rejected credentials on t
    h.press('Sign in with email');
    assert.equal(h.input('Email'), undefined);
  });
+
+
+test('a web OAuth result and its prompt promise exchange the token only once', async () => {
+  const h = loadLogin('web');
+  const signingIn = h.press('Sign in with Google');
+  h.render();
+  await signingIn;
+  h.render();
+  assert.equal(h.events.filter(([event]) => event === 'login').length, 1);
+  assert.equal(h.events.filter(([event]) => event === 'replace').length, 1);
+});
+
+function browserCallback(url, completion = 'success') {
+  let calls = 0;
+  const exports = {};
+  const source = ts.transpileModule(fs.readFileSync(require.resolve('../remote/src/lib/completeBrowserAuth.web.ts'), 'utf8'), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
+  }).outputText;
+  vm.runInNewContext(source, { exports, URL, URLSearchParams, window: { location: { href: url } },
+    require: () => ({ maybeCompleteAuthSession: () => { calls++; return { type: completion }; } }),
+  });
+  return { completed: exports.completeBrowserAuth(), calls };
+}
+
+test('Google returns to the root and completes the popup without starting the app', () => {
+  assert.deepEqual(browserCallback('https://remote.example.com/#id_token=fixture&state=expected'), { completed: true, calls: 1 });
+  assert.deepEqual(browserCallback('https://remote.example.com/?error=access_denied&state=expected'), { completed: true, calls: 1 });
+  assert.deepEqual(browserCallback('https://remote.example.com/#id_token=fixture&state=expired', 'failed'), { completed: false, calls: 1 });
+  for (const url of ['https://remote.example.com/', 'https://remote.example.com/login', 'https://remote.example.com/#id_token=fixture']) {
+    assert.deepEqual(browserCallback(url), { completed: false, calls: 0 });
+  }
+});

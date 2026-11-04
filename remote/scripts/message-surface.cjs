@@ -75,7 +75,7 @@ button.auto-yes-button{width:100%;min-height:44px;padding:8px 16px;border-radius
 .native-mobile .answer-auto-yes{flex-shrink:0}
 .native-mobile .reply,.native-mobile .notice:not(:empty){padding-bottom:16px}
 .demo-surface .social-footer .social-decisions{justify-content:center}
-.demo-surface .card>.controls,.demo-surface .options-toggle,.demo-surface .card>.reply,.demo-surface .details-content{display:none!important}
+.demo-surface .card>.controls,.demo-surface .options-toggle,.demo-surface .card>.reply,.demo-surface:not(.shell-only) .details-content{display:none!important}
 .demo-surface .card>.notice{display:none}
 .shell-only .message-content>:not(.details-content){display:none}
 .shell-only .details-content{margin:0;min-height:0;flex:1}
