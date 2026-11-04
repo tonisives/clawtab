@@ -7,7 +7,7 @@ import {
   StyleSheet,
   Platform,
   Modal,
-  ScrollView,
+  KeyboardAvoidingView,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useGoogleBrowserAuth } from "../src/lib/googleBrowserAuth";
@@ -243,7 +243,10 @@ export default function LoginScreen() {
   };
 
   return (
-    <ScrollView contentContainerStyle={[styles.container, { paddingTop: insets.top + 64, paddingBottom: insets.bottom + 32 }]} keyboardShouldPersistTaps="handled">
+    <KeyboardAvoidingView
+      style={[styles.container, { paddingTop: insets.top + spacing.xl, paddingBottom: insets.bottom + spacing.xl }]}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+    >
       <View style={styles.card}>
         <View style={styles.header}>
           <StartupLoginMark />
@@ -372,14 +375,14 @@ export default function LoginScreen() {
           </View>
         </Pressable>
       </Modal>
-    </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flexGrow: 1,
-    justifyContent: "flex-start",
+    flex: 1,
+    justifyContent: "center",
     alignItems: "center",
     padding: spacing.xl,
     backgroundColor: startupBackground,
