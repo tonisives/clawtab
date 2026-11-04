@@ -27,7 +27,7 @@ def repair_request(run, current_sha, commit_message, device_id):
         return None, "Automatic repair failed; stopping for human investigation."
     return {
         "device_id": device_id,
-        "idempotency_key": f"clawtab-ci-repair:{current_sha}",
+        "idempotency_key": f"clawtab-ci-repair:{run['head_sha']}",
         "job": "clawtab/ci-repair",
         "params": {"commit": run["head_sha"]},
         "wait": False,
