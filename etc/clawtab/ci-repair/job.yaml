@@ -1,8 +1,9 @@
 name: ci-repair
-job_type: claude
+job_type: binary
 enabled: true
-path: /Users/tonis/.config/clawtab/jobs/clawtab/ci-repair/job.md
-args: []
+path: /usr/bin/python3
+args:
+- /Users/tonis/workspace/tgs/clawtab/public/scripts/run-ci-repair.py
 secret_keys: []
 env: {}
 work_dir: /Users/tonis/workspace/tgs/clawtab
@@ -15,9 +16,9 @@ telegram_chat_id: null
 telegram_log_mode: on_prompt
 notify:
   start: false
-  working: true
-  logs: true
-  finish: true
+  working: false
+  logs: false
+  finish: false
 notify_target: none
 group: clawtab
 slug: clawtab/ci-repair

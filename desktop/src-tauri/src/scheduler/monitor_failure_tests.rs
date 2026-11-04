@@ -278,3 +278,27 @@ fn existing_settings_enable_local_failure_banners_by_default() {
         serde_yml::from_str("{}").expect("existing config");
     assert!(settings.notify_job_failures_local);
 }
+
+#[tokio::test]
+async fn explicitly_silent_controller_never_delivers_job_messages() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut params = params(directory.path(), NotifyTarget::None, false);
+    params.notify = JobNotify {
+        start: false,
+        working: false,
+        logs: false,
+        finish: false,
+    };
+    let notifier = Arc::new(RecordingNotifier::default());
+    params.notifier = Some(notifier.clone());
+    notify_start(&params, false, false).await;
+    notify_finish(&params, false, false, Some(1), false).await;
+    notify_finish(&params, false, false, Some(0), true).await;
+    assert!(notifier.0.lock().is_empty());
+    assert!(params
+        .history
+        .lock()
+        .pending_failure_notifications()
+        .unwrap()
+        .is_empty());
+}

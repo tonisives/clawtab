@@ -168,3 +168,10 @@ prompts contain the requested task and any selected job policy directive.
 Use `cwt message send` with Markdown bodies for updates and questions.
 See [Markdown bodies](messages.md#markdown-bodies) for a multiline example and
 `cwt message help` for command options.
+
+Set `notify_target: none` and all four `notify` flags (`start`, `working`,
+`logs`, `finish`) to `false` for a silent controller job. It still records run
+status, logs and trigger results, but sends no job messages, including failure
+alerts. The controller can send messages linked to a child agent with
+`cwt message send --stdin` and an explicit `source` containing the provider,
+conversation ID, working directory, job ID and run ID.

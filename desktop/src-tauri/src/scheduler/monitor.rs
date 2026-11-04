@@ -620,6 +620,9 @@ async fn notify_finish(
     exit_code: Option<i32>,
     succeeded: bool,
 ) {
+    if params.notify.is_silent(&params.notify_target) {
+        return;
+    }
     if !succeeded {
         let local_enabled = params.settings.lock().notify_job_failures_local;
         crate::notifications::notify_job_failure(

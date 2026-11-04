@@ -246,6 +246,10 @@ fn record_history(rc: &RunCtx<'_>, outcome: &RunOutcome<'_>, finished_at: &str) 
 async fn dispatch_notification(rc: &RunCtx<'_>, outcome: &RunOutcome<'_>) {
     let job = rc.job;
     let ctx = rc.ctx;
+    // Binary controllers can deliver messages for their child agents themselves.
+    if job.notify.is_silent(&job.notify_target) {
+        return;
+    }
     if !outcome.success {
         let local_enabled = ctx.settings.lock().notify_job_failures_local;
         crate::notifications::notify_job_failure(

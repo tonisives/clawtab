@@ -54,6 +54,12 @@ pub struct JobNotify {
     pub finish: bool,
 }
 
+impl JobNotify {
+    pub(crate) fn is_silent(&self, target: &NotifyTarget) -> bool {
+        *target == NotifyTarget::None && !self.start && !self.working && !self.logs && !self.finish
+    }
+}
+
 fn bool_true() -> bool {
     true
 }
