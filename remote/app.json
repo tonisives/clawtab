@@ -36,7 +36,8 @@
           "$(AppIdentifierPrefix)cc.clawtab"
         ],
         "aps-environment": "production"
-      }
+      },
+      "appleTeamId": "S73DD99TM7"
     },
     "android": {
       "versionCode": 6,

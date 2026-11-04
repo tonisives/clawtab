@@ -1,0 +1,8 @@
+{
+  "app_dir": "remote",
+  "scheme": "ClawTab",
+  "bundle_id": "cc.clawtab",
+  "repository": "tonisives/clawtab",
+  "dispatch_branch": "main",
+  "workflow": "Mobile TestFlight"
+}
