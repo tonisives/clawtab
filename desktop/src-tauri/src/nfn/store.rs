@@ -15,6 +15,9 @@ fn merge_preview_data(target: &mut serde_json::Value, patch: serde_json::Value) 
     }
 }
 
+// Delivery updates and automatic superseding are not human interactions.
+const HISTORY_ORDER: &str = "MAX(COALESCE(json_extract(record,'$.dismissed_at'),0), COALESCE(json_extract(record,'$.response.responded_at'),0)) DESC, created_at DESC, id";
+
 pub struct Store {
     conn: Mutex<Connection>,
 }
@@ -97,8 +100,18 @@ impl Store {
         offset: usize,
         limit: usize,
     ) -> Result<Vec<NfnRecord>, String> {
+        self.list_where_ordered(clause, offset, limit, "created_at DESC, id")
+    }
+
+    fn list_where_ordered(
+        &self,
+        clause: &str,
+        offset: usize,
+        limit: usize,
+        order: &str,
+    ) -> Result<Vec<NfnRecord>, String> {
         let conn = self.conn.lock();
-        let mut statement = conn.prepare(&format!("SELECT record FROM notifications WHERE {clause} ORDER BY created_at DESC, id LIMIT ?1 OFFSET ?2")).map_err(|e| e.to_string())?;
+        let mut statement = conn.prepare(&format!("SELECT record FROM notifications WHERE {clause} ORDER BY {order} LIMIT ?1 OFFSET ?2")).map_err(|e| e.to_string())?;
         let rows = statement
             .query_map(params![limit as i64, offset as i64], |row| {
                 row.get::<_, String>(0)
@@ -173,7 +186,7 @@ impl Store {
             return if pending_only {
                 self.pending_page(offset)
             } else {
-                self.list(offset)
+                self.list_where_ordered("status != 'scheduled'", offset, 50, HISTORY_ORDER)
             };
         }
         let mut clause = if pending_only {
@@ -186,8 +199,13 @@ impl Store {
             values.push(term.to_owned().into());
             clause.push_str(&format!(" AND EXISTS (SELECT 1 FROM json_tree(notifications.record,'$.request') WHERE type='text' AND instr(lower(atom),lower(?{}))>0)", values.len()));
         }
+        let order = if pending_only {
+            "created_at DESC, id"
+        } else {
+            HISTORY_ORDER
+        };
         let conn = self.conn.lock();
-        let mut statement = conn.prepare(&format!("SELECT record FROM notifications WHERE {clause} ORDER BY created_at DESC, id LIMIT ?1 OFFSET ?2")).map_err(|e| e.to_string())?;
+        let mut statement = conn.prepare(&format!("SELECT record FROM notifications WHERE {clause} ORDER BY {order} LIMIT ?1 OFFSET ?2")).map_err(|e| e.to_string())?;
         let rows = statement
             .query_map(rusqlite::params_from_iter(values), |row| {
                 row.get::<_, String>(0)
@@ -782,6 +800,64 @@ mod tests {
             ..Default::default()
         }
     }
+    #[test]
+    fn history_orders_interactions_before_newer_messages_and_before_pagination() {
+        let store = Store::from_connection(Connection::open_in_memory().unwrap()).unwrap();
+        let mut ids = Vec::new();
+        for index in 0..55 {
+            let (mut record, _) = store
+                .send(
+                    NfnRequest {
+                        title: format!("History {index}"),
+                        dedupe_key: None,
+                        ..request()
+                    },
+                    None,
+                )
+                .unwrap();
+            record.created_at = 100 + index;
+            match index {
+                0 => record.dismissed_at = Some(300),
+                1 | 2 => {
+                    record.response = Some(NfnResponse {
+                        request_id: record.id.clone(),
+                        action_id: "approve".into(),
+                        text: None,
+                        decisions: None,
+                        status: "resolved".into(),
+                        responded_at: 300 + index * 100,
+                    });
+                    if index == 2 {
+                        record.dismissed_at = Some(200);
+                    }
+                }
+                54 => {
+                    record.read_at = Some(900);
+                    record.status = "superseded".into();
+                }
+                _ => {}
+            }
+            store.save(&mut record).unwrap();
+            ids.push(record.id);
+        }
+        let expected = [ids[2].clone(), ids[1].clone(), ids[0].clone()];
+        for query in ["", "History"] {
+            let first = store.search(0, false, query).unwrap();
+            assert_eq!(first.len(), 50);
+            assert_eq!(
+                first[..3].iter().map(|r| r.id.clone()).collect::<Vec<_>>(),
+                expected
+            );
+            assert_eq!(first[3].id, ids[54]);
+            let second = store.search(50, false, query).unwrap();
+            assert_eq!(second.len(), 5);
+            assert!(second
+                .iter()
+                .all(|r| first.iter().all(|other| other.id != r.id)));
+        }
+        assert_eq!(store.search(0, true, "History").unwrap()[0].id, ids[53]);
+    }
+
     #[test]
     fn search_matches_content_and_source_before_pagination_and_respects_pending_scope() {
         let store = Store::from_connection(Connection::open_in_memory().unwrap()).unwrap();

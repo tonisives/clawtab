@@ -91,7 +91,9 @@ export function messageSurfaceController(options: Options) {
         const records = [...listed.values(), ...all().filter(record => !onlineIds.has(record.machine_id))]
           .filter(record => !command.pending_only || messagePending(record))
           .filter(record => String(command.query || "").toLowerCase().split(/\s+/).filter(Boolean).every(term => JSON.stringify(record.request).toLowerCase().includes(term)))
-          .sort((a, b) => b.created_at - a.created_at || surfaceId(a).localeCompare(surfaceId(b)));
+          .sort((a, b) => (command.pending_only ? 0 :
+            Math.max(b.dismissed_at || 0, b.response?.responded_at || 0) - Math.max(a.dismissed_at || 0, a.response?.responded_at || 0))
+            || b.created_at - a.created_at || surfaceId(a).localeCompare(surfaceId(b)));
         return { records: records.slice(offset, offset + 50).map(surfaceRecord), next_offset: offset + 50 };
       }
       if (op === "dismiss_many") {

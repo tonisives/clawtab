@@ -21,7 +21,7 @@ export type MessageRecord = {
   updated_at: number
   question_id?: string | null
   error?: string | null
-  response?: { action_id: string; text?: string | null; decisions?: SocialDecision[] } | null
+  response?: { responded_at?: number; action_id: string; text?: string | null; decisions?: SocialDecision[] } | null
 }
 
 export const messageKind = (record: MessageRecord): string => record.request.kind || (
