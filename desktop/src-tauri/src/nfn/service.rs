@@ -464,7 +464,7 @@ impl Service {
         native::push(
             json!({"type":"snapshot", "records":surface_records(records), "pending_count":count, "arrival":arrival, "sound":sound,
             "settings": settings.enhanced_notifications, "templates":templates::list(), "visible":visible,
-            "platform":*platform, "auto_yes_panes":auto_yes_panes, "todos":todos}),
+            "platform":*platform, "auto_yes_panes":auto_yes_panes, "todos":todos, "ignored_jobs":self.store.ignored_job_successes().unwrap_or_default(), "ignored_agents":self.store.ignored_agents().unwrap_or_default()}),
         );
     }
 
@@ -610,7 +610,11 @@ impl Service {
                 )
             }
             NfnCommand::Templates => return Ok(templates::list()),
-            NfnCommand::IgnoredAgents => return Ok(json!({"agents":self.store.ignored_agents()?})),
+            NfnCommand::IgnoredAgents => {
+                return Ok(
+                    json!({"agents":self.store.ignored_agents()?,"jobs":self.store.ignored_job_successes()?}),
+                )
+            }
             NfnCommand::Info => {
                 let auto_yes_panes: Vec<_> =
                     self.ctx.auto_yes_panes.lock().iter().cloned().collect();
@@ -834,6 +838,10 @@ impl Service {
         };
         let _guard = self.mutation.lock().await;
         let result = match command {
+            NfnCommand::IgnoreJobSuccess { job_id, ignored } => {
+                let records = self.store.set_job_success_ignored(&job_id, ignored)?;
+                json!({"records":records,"jobs":self.store.ignored_job_successes()?})
+            }
             NfnCommand::Ignore { id } | NfnCommand::Unignore { id } => {
                 let records = self.store.set_ignored(&id, operation == "ignore")?;
                 json!({"records":records,"agents":self.store.ignored_agents()?})

@@ -53,6 +53,7 @@ fn allowed(command: &NfnCommand) -> bool {
             | NfnCommand::Ignore { .. }
             | NfnCommand::Unignore { .. }
             | NfnCommand::IgnoredAgents
+            | NfnCommand::IgnoreJobSuccess { .. }
             | NfnCommand::Cancel { .. }
             | NfnCommand::Context { .. }
             | NfnCommand::PaneContext { .. }

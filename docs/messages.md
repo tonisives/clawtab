@@ -49,6 +49,10 @@ Use the previous and next arrows to browse cards. Each card keeps its reply draf
 
 The list icon opens **Pending** and **History**. Dismissing a message moves it out of Pending without answering the agent. Collapsing the bar leaves the message pending. **Ignore agent** hides that session's messages and stops its notifications; restore it from **Ignored agents**.
 
+The bell beside a job's title toggles **Ignore successful runs** for that job. It uses the static job ID, such as `bmux/ci-repair`, across runs and agent title changes. Successful completion messages stay in History; failures, questions, approvals, and other updates keep their existing delivery settings. Restore success notifications with the bell in History or **Notify on success** under **Ignored agents**. The setting persists on the machine that runs the job and applies to all message channels.
+
+Use `cwt message ignore-job-success GROUP/JOB` or `cwt message unignore-job-success GROUP/JOB` from the CLI. `cwt message ignored-agents` also lists jobs whose successful runs are ignored.
+
 ## Update a preview in place
 
 Agents can edit a pending informational message by its returned ID:

@@ -50,6 +50,7 @@ pub async fn message(args: &[String]) -> Result<Value, String> {
             "cwt message get|wait|cancel|read|dismiss ID [--timeout SECONDS]",
             "cwt message ignore|unignore ID",
             "cwt message ignored-agents",
+            "cwt message ignore-job-success|unignore-job-success JOB_ID",
             "cwt message focus ID",
             "cwt message reply ID [TEXT] [--action ID]",
             "cwt message show|settings|templates [args]"
@@ -90,6 +91,16 @@ pub async fn message(args: &[String]) -> Result<Value, String> {
             .await
         }
         "ignored-agents" => call(NfnCommand::IgnoredAgents).await,
+        "ignore-job-success" | "unignore-job-success" => {
+            if args.len() != 2 {
+                return Err("Pass a job ID".into());
+            }
+            call(NfnCommand::IgnoreJobSuccess {
+                job_id: args[1].clone(),
+                ignored: args[0] == "ignore-job-success",
+            })
+            .await
+        }
         "read" | "dismiss" | "ignore" | "unignore" => {
             if args.len() != 2 {
                 return Err("Pass a message ID".into());

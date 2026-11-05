@@ -42,7 +42,8 @@ impl Store {
             CREATE INDEX IF NOT EXISTS nfn_scheduled_due ON notifications(json_extract(record,'$.request.deliver_at')) WHERE status='scheduled';
             CREATE UNIQUE INDEX IF NOT EXISTS nfn_active_dedupe ON notifications(dedupe)
                 WHERE status IN ('pending', 'delivering') AND dedupe IS NOT NULL;
-            CREATE TABLE IF NOT EXISTS ignored_agents (key TEXT PRIMARY KEY, record TEXT NOT NULL);",
+            CREATE TABLE IF NOT EXISTS ignored_agents (key TEXT PRIMARY KEY, record TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS ignored_job_successes (job_id TEXT PRIMARY KEY);",
         )
         .map_err(|e| e.to_string())?;
         let store = Self {
@@ -255,16 +256,7 @@ impl Store {
             )
         });
         let conn = self.conn.lock();
-        let ignored = if let Some(key) = request.source.agent_key() {
-            conn.query_row(
-                "SELECT EXISTS(SELECT 1 FROM ignored_agents WHERE key=?1)",
-                [key],
-                |row| row.get::<_, bool>(0),
-            )
-            .map_err(|e| e.to_string())?
-        } else {
-            false
-        };
+        let ignored = Self::request_ignored(&conn, &request)?;
         if let Some(key) = &dedupe {
             let raw: Option<String> = conn.query_row("SELECT record FROM notifications WHERE dedupe=?1 AND status IN ('pending','delivering')", [key], |row| row.get(0)).optional().map_err(|e| e.to_string())?;
             if let Some(raw) = raw {
@@ -490,6 +482,76 @@ impl Store {
         Ok(superseded)
     }
 
+    fn request_ignored(conn: &Connection, request: &NfnRequest) -> Result<bool, String> {
+        let agent = request.source.agent_key();
+        let job = request
+            .source
+            .job_id
+            .as_deref()
+            .filter(|_| request.message_kind() == "completed");
+        conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM ignored_agents WHERE key=?1) OR EXISTS(SELECT 1 FROM ignored_job_successes WHERE job_id=?2)",
+            params![agent, job], |row| row.get(0),
+        ).map_err(|e| e.to_string())
+    }
+
+    pub fn ignored_job_successes(&self) -> Result<Vec<String>, String> {
+        let conn = self.conn.lock();
+        let mut statement = conn
+            .prepare("SELECT job_id FROM ignored_job_successes ORDER BY job_id")
+            .map_err(|e| e.to_string())?;
+        let rows = statement
+            .query_map([], |row| row.get(0))
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn set_job_success_ignored(
+        &self,
+        job_id: &str,
+        ignored: bool,
+    ) -> Result<Vec<NfnRecord>, String> {
+        if job_id.trim().is_empty() {
+            return Err("Pass a job ID".into());
+        }
+        let mut conn = self.conn.lock();
+        let transaction = conn.transaction().map_err(|e| e.to_string())?;
+        if ignored {
+            transaction.execute(
+                "INSERT OR IGNORE INTO ignored_job_successes(job_id) VALUES(?1)",
+                [job_id],
+            )
+        } else {
+            transaction.execute(
+                "DELETE FROM ignored_job_successes WHERE job_id=?1",
+                [job_id],
+            )
+        }
+        .map_err(|e| e.to_string())?;
+        let pending = {
+            let mut statement = transaction.prepare("SELECT record FROM notifications WHERE status IN ('pending','delivering','scheduled') AND json_extract(record,'$.request.source.job_id')=?1").map_err(|e| e.to_string())?;
+            let rows = statement
+                .query_map([job_id], |row| row.get::<_, String>(0))
+                .map_err(|e| e.to_string())?;
+            rows.collect::<Result<Vec<_>, _>>()
+                .map_err(|e| e.to_string())?
+        };
+        let mut changed = Vec::new();
+        for raw in pending {
+            let mut record: NfnRecord = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+            let ignored = Self::request_ignored(&transaction, &record.request)?;
+            if record.ignored != ignored {
+                record.ignored = ignored;
+                record.updated_at = now();
+                Self::write(&transaction, &record)?;
+                changed.push(record);
+            }
+        }
+        transaction.commit().map_err(|e| e.to_string())?;
+        Ok(changed)
+    }
+
     pub fn ignored_agents(&self) -> Result<Vec<IgnoredAgent>, String> {
         let conn = self.conn.lock();
         let mut statement = conn
@@ -555,7 +617,7 @@ impl Store {
         for raw in pending {
             let mut record: NfnRecord = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
             if agent.source.same_agent(&record.request.source) {
-                record.ignored = ignored;
+                record.ignored = Self::request_ignored(&transaction, &record.request)?;
                 record.updated_at = now();
                 Self::write(&transaction, &record)?;
                 changed.push(record);
@@ -1062,6 +1124,98 @@ mod tests {
         }
         assert_eq!(store.get(&delivering.id).unwrap().status, "delivering");
         assert!(store.supersede_previous(&latest).unwrap().is_empty());
+    }
+
+    #[test]
+    fn ignoring_job_successes_survives_restart_and_matches_static_job_identity() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("messages.db");
+        let store = Store::open(&path).unwrap();
+        let mut success = NfnRequest {
+            kind: "completed".into(),
+            dedupe_key: None,
+            source: NfnSource {
+                job_id: Some("project/repair".into()),
+                run_id: Some("run-a".into()),
+                agent_title: Some("Original title".into()),
+                ..Default::default()
+            },
+            ..request()
+        };
+        let (first, _) = store.send(success.clone(), None).unwrap();
+        assert_eq!(
+            store
+                .set_job_success_ignored("project/repair", true)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(store.get(&first.id).unwrap().ignored);
+        assert_eq!(store.pending_count().unwrap(), 0);
+        drop(store);
+        let store = Store::open(&path).unwrap();
+        success.source.run_id = Some("run-b".into());
+        success.source.agent_title = Some("Renamed title".into());
+        let (next, _) = store.send(success.clone(), None).unwrap();
+        assert!(next.ignored);
+        for kind in ["failed", "update", "question", "approval"] {
+            let (record, _) = store
+                .send(
+                    NfnRequest {
+                        kind: kind.into(),
+                        ..success.clone()
+                    },
+                    None,
+                )
+                .unwrap();
+            assert!(!record.ignored, "{kind} must still be delivered");
+        }
+        let mut other = success.clone();
+        other.source.job_id = Some("other/repair".into());
+        assert!(!store.send(other, None).unwrap().0.ignored);
+        assert_eq!(store.ignored_job_successes().unwrap(), ["project/repair"]);
+        assert_eq!(
+            store
+                .set_job_success_ignored("project/repair", false)
+                .unwrap()
+                .len(),
+            2
+        );
+        assert!(!store.get(&first.id).unwrap().ignored);
+        assert!(!store.send(success, None).unwrap().0.ignored);
+        assert!(store.ignored_job_successes().unwrap().is_empty());
+    }
+
+    #[test]
+    fn job_success_and_agent_ignore_rules_can_be_removed_independently() {
+        let store = Store::from_connection(Connection::open_in_memory().unwrap()).unwrap();
+        let (record, _) = store
+            .send(
+                NfnRequest {
+                    kind: "completed".into(),
+                    source: NfnSource {
+                        job_id: Some("project/repair".into()),
+                        run_id: Some("run-a".into()),
+                        ..Default::default()
+                    },
+                    ..request()
+                },
+                None,
+            )
+            .unwrap();
+        store
+            .set_job_success_ignored("project/repair", true)
+            .unwrap();
+        store.set_ignored(&record.id, true).unwrap();
+        store.set_ignored(&record.id, false).unwrap();
+        assert!(store.get(&record.id).unwrap().ignored);
+        store.set_ignored(&record.id, true).unwrap();
+        store
+            .set_job_success_ignored("project/repair", false)
+            .unwrap();
+        assert!(store.get(&record.id).unwrap().ignored);
+        store.set_ignored(&record.id, false).unwrap();
+        assert!(!store.get(&record.id).unwrap().ignored);
     }
 
     #[test]

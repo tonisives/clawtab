@@ -70,6 +70,23 @@ test("ignored agents from different machines retain their host when restored", a
   assert.equal(h.calls.filter(command => command.op === "get").length, 0);
 });
 
+test("job success preferences are scoped to the owning machine", async () => {
+  const h = harness([]);
+  h.options.host = async (machine, command) => {
+    h.calls.push({ machine, ...command });
+    if (command.op === "ignored_agents") return { jobs: ["project/repair"] };
+    return { records: [record(machine, "completion", { ignored: command.ignored })] };
+  };
+  const result = await h.controller.execute({ op: "ignored_agents" });
+  assert.deepEqual(Array.from(result.jobs).sort(), ["mac-a::project/repair", "mac-b::project/repair"]);
+  const muted = await h.controller.execute({ op: "ignore_job_success", job_id: "mac-b::project/repair", ignored: true });
+  assert.equal(muted.records[0].id, "mac-b::completion");
+  assert.equal(muted.records[0].ignored, true);
+  assert.deepEqual(h.calls.at(-1), { machine: "mac-b", op: "ignore_job_success", job_id: "project/repair", ignored: true });
+  await h.controller.execute({ op: "ignore_job_success", job_id: "mac-a::project/repair", ignored: false });
+  assert.deepEqual(h.calls.at(-1), { machine: "mac-a", op: "ignore_job_success", job_id: "project/repair", ignored: false });
+});
+
 test("ignoring an agent updates its messages from the owning host", async () => {
   const h = harness();
   h.options.host = async (machine, command) => {

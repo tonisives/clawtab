@@ -55,7 +55,11 @@ window.webkit = { messageHandlers: { nfn: { postMessage(value) {
   if (command.op === "dismiss_many") {
     response = { records: command.ids.map(id => { const record = fixture.records.get(id); record.dismissed_at = Date.now(); record.read_at = Date.now(); return record; }) };
   }
-  if (command.op === "ignored_agents") response = { agents: fixture.ignoredAgents };
+  if (command.op === "ignored_agents") response = { agents: fixture.ignoredAgents, jobs: fixture.ignoredJobs || [] };
+  if (command.op === "ignore_job_success") {
+    fixture.ignoredJobs = command.ignored ? [...new Set([...(fixture.ignoredJobs || []), command.job_id])] : (fixture.ignoredJobs || []).filter(job => job !== command.job_id);
+    response = { records: [...fixture.records.values()].filter(record => record.request.source.job_id === command.job_id && record.request.kind === "completed").map(record => { record.ignored = command.ignored; return record; }) };
+  }
   if (command.op === "ignore" || command.op === "unignore") {
     const ignored = command.op === "ignore";
     const agent = ignored ? { id: record.id, source: record.request.source, title: record.request.title } : fixture.ignoredAgents.find(agent => agent.id === command.id);

@@ -74,6 +74,11 @@ button.icon-button { display: flex; align-items: center; justify-content: center
 .heading-tools { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
 .agent-heading { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2.5fr) minmax(0, 1fr); }
 .agent-heading h1 { text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.job-heading { display: flex; align-items: center; justify-content: center; gap: 4px; min-width: 0; }
+.heading:not(.agent-heading) .job-heading { flex: 1; justify-content: flex-start; }
+.job-heading h1 { min-width: 0; }
+.job-success-bell { flex: none; }
+.job-success-bell[aria-pressed="true"] { color: var(--accent); }
 .source-group { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .notification-title { margin-top: 10px; font-weight: 600; }
 .notification-title + .message:not(:empty) { margin-top: 8px; }

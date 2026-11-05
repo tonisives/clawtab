@@ -50,7 +50,11 @@ export function messageSurfaceController(options: Options) {
     if (existing) return existing;
     return remember(target.machine, await options.host(target.machine, { op: "get", id: target.id }));
   };
-  const scopedAgents = (machine: string, agents: Result[]) => agents.map(agent => ({ ...agent, machine_id: machine, id: resourceKey(machine, agent.id) }));
+  const scopedAgents = (machine: string, agents: Result[]) => agents.map(agent => ({ ...agent, machine_id: machine, id: resourceKey(machine, agent.id), source: {
+    ...agent.source,
+    pane_id: agent.source?.pane_id && resourceKey(machine, agent.source.pane_id),
+    job_id: agent.source?.job_id && resourceKey(machine, agent.source.job_id),
+  } }));
 
   return {
     async execute(command: Command): Promise<Result> {
@@ -58,16 +62,23 @@ export function messageSurfaceController(options: Options) {
       if (op === "ignored_agents") {
         const agents = await Promise.all(options.machines().filter(machine => machine.online).map(async machine => {
           const result = await options.host(machine.id, { op });
-          return scopedAgents(machine.id, result.agents || []);
+          return { agents: scopedAgents(machine.id, result.agents || []), jobs: (result.jobs || []).map((job: string) => resourceKey(machine.id, job)) };
         }));
-        return { agents: agents.flat() };
+        return { agents: agents.flatMap(result => result.agents), jobs: agents.flatMap(result => result.jobs) };
+      }
+      if (op === "ignore_job_success" && typeof command.job_id === "string") {
+        const { machine, id } = parseSurfaceId(command.job_id);
+        const result = await options.host(machine, { op, job_id: id, ignored: command.ignored });
+        const records = (result.records || []).map((raw: Result) => remember(machine, raw));
+        for (const record of records) options.update(record);
+        return { records: records.map(surfaceRecord) };
       }
       if ((op === "ignore" || op === "unignore") && typeof command.id === "string") {
         const { machine, id } = parseSurfaceId(command.id);
         const result = await options.host(machine, { op, id });
         const records = (result.records || []).map((raw: Result) => remember(machine, raw));
         for (const record of records) options.update(record);
-        return { records: records.map(surfaceRecord) };
+        return { records: records.map(surfaceRecord), agents: scopedAgents(machine, result.agents || []) };
       }
       if (op === "templates" && typeof command.machine === "string") {
         return options.host(command.machine, { op: "templates" });

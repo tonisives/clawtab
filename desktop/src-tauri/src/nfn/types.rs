@@ -544,6 +544,10 @@ pub enum NfnCommand {
         id: String,
     },
     IgnoredAgents,
+    IgnoreJobSuccess {
+        job_id: String,
+        ignored: bool,
+    },
     Respond {
         id: String,
         action_id: String,

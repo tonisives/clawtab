@@ -30,6 +30,7 @@
   const selectedNotifications = new Set();
   let bulkBusy = false, queueError = "";
   let ignoredOpen = false, ignoredAgents = [], ignoredBusy = false;
+  let ignoredJobs = [], ignoredJobsLoaded = false;
   let settingsTab = "appearance";
   let queueQuery = "", queueCursor = null, queueCount = "";
   let checkMode = false, savedBarView = null, queueRestore = null;
@@ -338,7 +339,7 @@
     return [...records.values()].filter(item => item.id === record.id || (key && threadKey(item) === key
       && pending(item) && !item.dismissed_at && !item.ignored && messageOrder(item, record) < 0)).sort(messageOrder);
   }
-  function cardSignature(record) { return JSON.stringify([cardMessages(record).map(item => [item.id, item.created_at, item.request]), template(record), record.details_available, record.response]); }
+  function cardSignature(record) { return JSON.stringify([cardMessages(record).map(item => [item.id, item.created_at, item.request]), template(record), record.details_available, record.response, ignoredJobs.includes(record.request.source?.job_id)]); }
   function pendingCount() { return pendingCards().length + unseenPending; }
   function updateUnseenPending() {
     const incoming = new Set((snapshot.records || []).map(record => record.id));
@@ -1298,9 +1299,17 @@
     node._wasPending = pending(record) && !record.dismissed_at;
     node._signature = cardSignature(record);
     const heading = el("div", "heading"), agent = hasAgent(record), identity = sourceHeading(record);
-    const title = el("h1", "", agent ? identity.title : record.request.title); title.title = title.textContent;
+    const job = record.request.source?.job_id;
+    const title = el("h1", "", agent ? identity.title : record.request.title); title.title = job || title.textContent;
     if (agent) { heading.classList.add("agent-heading"); const group = el("span", "source-group", identity.group); group.title = identity.group; heading.append(group); }
-    heading.append(title);
+    if (job) {
+      const jobHeading = el("div", "job-heading");
+      const ignored = ignoredJobs.includes(job);
+      const label = `${ignored ? "Notify on" : "Ignore"} successful runs for ${job}`;
+      const bell = iconButton(label, ignored ? "M3 3l18 18M9 5a6 6 0 0 1 9 5c0 7 3 7 3 7H7M6 6a6 6 0 0 0 0 4c0 7-3 7-3 7m7 4h4" : "M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4", () => setJobSuccessIgnored(job, !ignored, record), "job-success-bell");
+      bell.title = label; bell.setAttribute("aria-pressed", String(ignored)); bell.disabled = ignoredBusy;
+      jobHeading.append(title, bell); heading.append(jobHeading);
+    } else heading.append(title);
     const tools = el("div", "heading-tools"); heading.append(tools);
     tools.append(relativeTimestamp(record));
     const status = el("span", "status"); tools.append(status); node._status = status;
@@ -1556,7 +1565,7 @@
     else if (historyReplySent.has(current)) card._notice.textContent = "Reply sent";
     else if (contextErrors.has(current)) card._notice.textContent = contextErrors.get(current);
     else if (record.error) card._notice.textContent = record.error;
-    else if (record.ignored) card._notice.textContent = "Agent ignored";
+    else if (record.ignored) card._notice.textContent = record.request.kind === "completed" && ignoredJobs.includes(record.request.source?.job_id) ? "Successful runs ignored for this job" : "Agent ignored";
     else if (!isPending) card._notice.textContent = record.response ? (update ? "Acknowledged" : "Reply sent") : `Request ${record.status}`;
     else card._notice.textContent = "";
     updateAutoYes();
@@ -1751,9 +1760,22 @@
   }
   async function loadIgnoredAgents() {
     ignoredBusy = true; queueError = ""; render();
-    try { ignoredAgents = (await call({ op: "ignored_agents" })).agents || []; }
+    try { const result = await call({ op: "ignored_agents" }); ignoredAgents = result.agents || []; ignoredJobs = result.jobs || []; }
     catch (error) { queueError = String(error.message || error); }
     finally { ignoredBusy = false; render(); }
+  }
+  async function setJobSuccessIgnored(job, ignored, record) {
+    if (ignoredBusy) return;
+    ignoredBusy = true;
+    try {
+      const result = await call({ op: "ignore_job_success", job_id: job, ignored });
+      for (const item of result.records || []) records.set(item.id, item);
+      ignoredJobs = ignored ? [...new Set([...ignoredJobs, job])] : ignoredJobs.filter(item => item !== job);
+      queueError = "";
+      if (record && current === record.id && records.get(record.id)?.ignored) await advanceAfter(record);
+    } catch (error) {
+      if (record) showError(error, record.id); else queueError = String(error.message || error);
+    } finally { ignoredBusy = false; render(); }
   }
   async function setAgentIgnored(record, ignored) {
     if (ignoredBusy) return;
@@ -1761,6 +1783,7 @@
     try {
       const result = await call({ op: ignored ? "ignore" : "unignore", id: record.id });
       for (const item of result.records || []) records.set(item.id, item);
+      if (result.agents) ignoredAgents = result.agents;
       if (ignored) {
         menu = null;
         if (current === record.id) await advanceAfter(record);
@@ -1854,7 +1877,7 @@
     if (list._search.value !== queueQuery) list._search.value = queueQuery;
     for (const tab of list.querySelectorAll('[role="tab"]')) tab.setAttribute("aria-selected", String(ignoredOpen ? tab.dataset.ignored === "true" : tab.dataset.history === String(history)));
     if (ignoredOpen) {
-      const signature = JSON.stringify(["ignored", ignoredAgents, ignoredBusy, queueError]);
+      const signature = JSON.stringify(["ignored", ignoredAgents, ignoredJobs, ignoredBusy, queueError]);
       if (list.dataset.signature === signature) return list;
       list.dataset.signature = signature; list._content.replaceChildren();
       if (queueError) list._content.append(el("div", "notice", queueError));
@@ -1865,7 +1888,13 @@
         const restore = button("Stop ignoring", () => setAgentIgnored(agent, false), "utility"); restore.disabled = ignoredBusy;
         row.append(label, restore); list._content.append(row);
       }
-      if (!ignoredAgents.length) list._content.append(el("div", "empty-state", ignoredBusy ? "Loading..." : "No ignored agents"));
+      for (const job of ignoredJobs) {
+        const row = el("div", "queue-row ignored-job");
+        const label = el("div", "queue-item"); label.append(el("strong", "", job), el("div", "meta", "Successful runs ignored"));
+        const restore = button("Notify on success", () => setJobSuccessIgnored(job, false), "utility"); restore.disabled = ignoredBusy;
+        row.append(label, restore); list._content.append(row);
+      }
+      if (!ignoredAgents.length && !ignoredJobs.length) list._content.append(el("div", "empty-state", ignoredBusy ? "Loading..." : "No ignored agents or jobs"));
       return list;
     }
     const searching = Boolean(queueQuery.trim()), items = searching ? searchItems : history ? historyItems : pendingCards();
@@ -1985,7 +2014,8 @@
         controls.setAttribute("aria-haspopup", "dialog"); panel.append(controls);
       }
       if (agentKey(record)) {
-        const ignore = button(record.ignored ? "Stop ignoring agent" : "Ignore agent", () => setAgentIgnored(record, !record.ignored), "utility menu-link");
+        const agentIgnored = ignoredAgents.some(agent => agentKey({ machine_id: agent.machine_id, request: { source: agent.source } }) === agentKey(record));
+        const ignore = button(agentIgnored ? "Stop ignoring agent" : "Ignore agent", () => setAgentIgnored(record, !agentIgnored), "utility menu-link");
         ignore.disabled = ignoredBusy; panel.append(ignore);
       }
       panel.append(button("Notification settings", openSettings, "utility menu-link"));
@@ -2438,6 +2468,12 @@
     }
     if (value.type === "settings") { openSettings(); return; }
     if (value.type !== "snapshot") return;
+    if (value.ignored_agents) ignoredAgents = value.ignored_agents;
+    if (value.ignored_jobs) { ignoredJobs = value.ignored_jobs; ignoredJobsLoaded = true; }
+    if (value.remote && !ignoredJobsLoaded) {
+      ignoredJobsLoaded = true;
+      call({ op: "ignored_agents" }).then(result => { ignoredJobs = result.jobs || []; ignoredAgents = result.agents || []; render(); }).catch(() => { ignoredJobsLoaded = false; });
+    }
     if (value.remote && window.nfnPaging?.deferSnapshot(value)) return;
     if (value.remote) for (const [id, log] of Object.entries(value.shell_cache || {})) {
       if (typeof log === "string" && !mobileShellCache.has(id)) mobileShellCache.set(id, log);
