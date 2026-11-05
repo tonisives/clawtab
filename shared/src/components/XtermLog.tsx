@@ -311,7 +311,7 @@ function reportResize() {
   window.ReactNativeWebView.postMessage(JSON.stringify({type:'resize',cols:size.cols,rows:size.rows}));
 }
 window.setTerminalFontSize = function(size) {
-  var next = Math.max(9, Math.min(22, Math.round(size)));
+  var next = Math.max(8, Math.min(22, Math.round(size)));
   if (term.options.fontSize === next) return;
   term.options.fontSize = next;
   fitScreen();
@@ -520,7 +520,7 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
     }, []);
 
     useEffect(() => {
-      injectOperation(`window.setTerminalFontSize && window.setTerminalFontSize(${Math.max(9, Math.min(22, fontSize))});true;`);
+      injectOperation(`window.setTerminalFontSize && window.setTerminalFontSize(${Math.max(8, Math.min(22, fontSize))});true;`);
     }, [fontSize, injectOperation]);
 
     const flushPendingWrites = useCallback(() => {

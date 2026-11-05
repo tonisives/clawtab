@@ -47,8 +47,9 @@ node --test scripts/test-landscape-components.cjs
 ```
 
 The component tests cover the single Demo button, smaller landscape terminal
-font, portrait restoration, and sidebar Search and Settings actions. The native
-runner also asserts that the shell reaches the bottom safe area.
+font (8 points), portrait restoration, the live answer bar with and without
+Yes all, and sidebar Search and Settings actions. The native runner asserts
+that the shell reaches the screen bottom within one point.
 
 For the rendered shell CSS, generate a standalone browser fixture from the
 public repository root:
@@ -60,3 +61,5 @@ node tests/mobile-pager-fixture.cjs /private/tmp/clawtab-landscape-shell-fixture
 Load that file in a background bmux pane, set its viewport to 874 by 402, and
 evaluate `tests/landscape-shell-browser-check.js`. Repeat at 402 by 874. It checks
 the computed font size, line height, footer padding and horizontal overflow.
+At the portrait-shaped viewport, set `window.fixture.phoneLandscape = true`
+and run it again to verify a narrow split pane still uses landscape sizing.

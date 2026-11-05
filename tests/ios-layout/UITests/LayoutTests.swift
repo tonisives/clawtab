@@ -53,7 +53,7 @@ final class LayoutTests: XCTestCase {
       XCTAssertEqual(app.buttons.matching(identifier: "About demo mode").count, 1)
       XCTAssertTrue(app.buttons["Search jobs"].firstMatch.isHittable)
       XCTAssertTrue(app.buttons["Settings"].firstMatch.isHittable)
-      XCTAssertGreaterThan(app.webViews.firstMatch.frame.maxY, app.frame.maxY - 35,
+      XCTAssertGreaterThan(app.webViews.firstMatch.frame.maxY, app.frame.maxY - 1,
         "Landscape shell must use the space previously reserved for the tab bar")
     }
   }

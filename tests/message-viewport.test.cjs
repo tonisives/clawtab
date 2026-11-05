@@ -6,7 +6,8 @@ const path = require("node:path");
 
 function viewport() {
   const listeners = {}, frames = [], properties = {}, scrolled = [];
-  const root = { style: { setProperty: (key, value) => properties[key] = value } };
+  const classes = new Set();
+  const root = { classList: { toggle: (name, active) => active ? classes.add(name) : classes.delete(name), contains: name => classes.has(name) }, style: { setProperty: (key, value) => properties[key] = value } };
   const document = { documentElement: root, activeElement: null,
     addEventListener: (name, callback) => listeners[name] = callback };
   const window = { addEventListener: (name, callback) => listeners[name] = callback,
@@ -214,4 +215,16 @@ test("inline shell input retains focus and its cached scroll position during key
   assert.deepEqual(v.scrolled, []);
   v.tap(false);
   assert.equal(v.document.activeElement, v.field);
+});
+
+test("native phone orientation controls compact shell even in a portrait-shaped split pane", () => {
+  const v = viewport();
+  v.window.nfnMobile.setInsets(0, false, true);
+  assert.equal(v.document.documentElement.classList.contains("phone-landscape"), true);
+  v.context.innerHeight = 900;
+  v.listeners.resize(); v.flush();
+  assert.equal(v.document.documentElement.classList.contains("phone-landscape"), true);
+  v.window.nfnMobile.setInsets(34, false, false);
+  assert.equal(v.document.documentElement.classList.contains("phone-landscape"), false);
+  assert.equal(v.properties["--message-safe-bottom"], "34px");
 });

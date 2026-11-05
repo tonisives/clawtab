@@ -75,7 +75,8 @@
       };
       reset(); requestAnimationFrame(reset);
     },
-    setInsets(bottom, keyboard) {
+    setInsets(bottom, keyboard, phoneLandscape = false) {
+      root.classList.toggle("phone-landscape", phoneLandscape);
       safeBottom = Math.max(0, bottom);
       nativeKeyboard = keyboard;
       layout();

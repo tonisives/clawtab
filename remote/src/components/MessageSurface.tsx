@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState, type ComponentRef } from "rea
 import WebView from "react-native-webview";
 import { Keyboard, Linking, Platform, View } from "react-native";
 import { ShellKeyboardInput } from "./ShellKeyboardInput";
+import { useResponsive } from "../hooks/useResponsive";
 import { useMessageKeyboard } from "../hooks/useMessageKeyboard";
 import document from "../lib/messageSurfaceDocument.generated";
 import { messageSurfaceDefaultView, messageSurfaceInitialDocument } from "../lib/messageSurfaceBootstrap";
@@ -17,6 +18,8 @@ const nativeShellKeyboard = Platform.OS === "ios";
 
 export function MessageSurface(props: MessageSurfaceProps) {
   const focused = useIsFocused();
+  const { isIosPhoneLandscape } = useResponsive();
+  const compactShell = isIosPhoneLandscape && Boolean(props.snapshot.shell_only);
   const focusedRef = useRef(focused);
   focusedRef.current = focused;
   const [selectionText, setSelectionText] = useState<string | null>(null);
@@ -34,7 +37,7 @@ export function MessageSurface(props: MessageSurfaceProps) {
   const shellKeyboard = useRef<ComponentRef<typeof ShellKeyboardInput>>(null);
   const keyboard = useMessageKeyboard(!props.popup);
   const contentLayout = selectionLayout ?? {
-    paddingBottom: chrome.reply && selectionText === null ? Math.max(keyboard.overlap, keyboard.safeAreaInsets.bottom) : keyboard.overlap,
+    paddingBottom: chrome.reply && selectionText === null ? Math.max(keyboard.overlap, compactShell ? 0 : keyboard.safeAreaInsets.bottom) : keyboard.overlap,
     paddingLeft: keyboard.horizontalInsets.left, paddingRight: keyboard.horizontalInsets.right,
   };
   const layoutRef = useRef(contentLayout);
@@ -45,8 +48,8 @@ export function MessageSurface(props: MessageSurfaceProps) {
   const selected = useRef<string | null>(null);
   const footerOwnsSafeArea = !props.popup && !props.snapshot.shell_only && !props.snapshot.demo && chrome.screen === "message" && !chrome.reply;
   const applyInsets = useCallback(() => {
-    view.current?.injectJavaScript(`window.nfnMobile?.setInsets(${props.popup || footerOwnsSafeArea ? 0 : keyboard.safeAreaInsets.bottom},${keyboard.overlap > 0});true;`);
-  }, [keyboard.safeAreaInsets.bottom, props.popup, keyboard.overlap, footerOwnsSafeArea]);
+    view.current?.injectJavaScript(`window.nfnMobile?.setInsets(${props.popup || footerOwnsSafeArea || compactShell ? 0 : keyboard.safeAreaInsets.bottom},${keyboard.overlap > 0},${compactShell});true;`);
+  }, [keyboard.safeAreaInsets.bottom, props.popup, keyboard.overlap, footerOwnsSafeArea, compactShell]);
   useEffect(applyInsets, [applyInsets]);
   const send = useCallback((value: unknown) => {
     const json = JSON.stringify(value).replace(/</g, "\\u003c").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");

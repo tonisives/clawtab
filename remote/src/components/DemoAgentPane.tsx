@@ -43,7 +43,7 @@ export let DemoAgentPane = ({ id, kind, onShowOverview }: DemoSelection & { onSh
         <Ionicons name="ellipsis-horizontal" size={22} color={colors.text} />
       </Pressable>
     </View>
-    <View style={styles.terminal} accessibilityLabel="Shell logs">{question ? <DemoQuestionSurface question={question} output={shell.output} /> : <XtermLog ref={terminal} interactive={false} forceDarkTheme fontSize={isIosPhoneLandscape ? 10 : undefined} />}</View>
+    <View style={styles.terminal} accessibilityLabel="Shell logs">{question ? <DemoQuestionSurface question={question} output={shell.output} /> : <XtermLog ref={terminal} interactive={false} forceDarkTheme fontSize={isIosPhoneLandscape ? 8 : undefined} />}</View>
     {!question && <View style={styles.composer}>
       <TextInput value={draft} onChangeText={setDraft} placeholder={shell.placeholder} placeholderTextColor={colors.textMuted} accessibilityLabel="Demo prompt" accessibilityHint="Try typing locally. Demo prompts are not sent to an agent." multiline autoCapitalize="none" autoCorrect={false} style={styles.input} />
       <Text style={styles.model}>{shell.model}</Text>

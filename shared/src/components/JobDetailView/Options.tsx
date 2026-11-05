@@ -1,4 +1,4 @@
-import { View, Text, TouchableOpacity, ScrollView, useWindowDimensions } from "react-native";
+import { View, Text, TouchableOpacity, ScrollView, Platform, useWindowDimensions } from "react-native";
 import { isFreetextOption, questionOptionLabel } from "../../util/jobs";
 import { styles } from "./styles";
 
@@ -27,10 +27,11 @@ export function OptionButtons({ options, onSend, onFreetextOption, autoYesActive
   overlay?: boolean;
   onHeightChange?: (height: number) => void;
 }) {
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   if (options.length === 0) return null;
 
-  const bottomPadding = Math.max(6, bottomInset + 10);
+  const phoneLandscape = Platform.OS === "ios" && !Platform.isPad && width > height;
+  const bottomPadding = phoneLandscape ? 0 : Math.max(6, bottomInset + 10);
   const hasAutoYes = Boolean(onToggleAutoYes);
   const barHeight = bottomPadding + 62 + (hasAutoYes ? 54 : 0);
   const maxButtonWidth = Math.min(520, Math.max(240, Math.floor(width * 0.66)));

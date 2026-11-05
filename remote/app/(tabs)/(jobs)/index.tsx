@@ -308,7 +308,7 @@ function JobsWorkspace({ bounds }: { bounds: { x: number; y: number; width: numb
   }
   const phoneLayout = workspaceLayout(
     (bounds.width || width) - phoneInsets.left - phoneInsets.right,
-    (bounds.height || windowSize.height) - phoneInsets.bottom,
+    (bounds.height || windowSize.height) - (isIosPhoneLandscape ? 0 : phoneInsets.bottom),
     windowSize.fontScale,
     regions.filter((region) => region.kind === "division").map(({ frame }) => ({ ...frame, x: frame.x - phoneInsets.left, y: frame.y })),
   )
@@ -1495,7 +1495,7 @@ function JobsWorkspace({ bounds }: { bounds: { x: number; y: number; width: numb
         paddingLeft: phoneInsets.left + phoneLayout.clearance.left,
         paddingRight: phoneInsets.right + phoneLayout.clearance.right,
         paddingTop: phoneLayout.clearance.top,
-        paddingBottom: phoneInsets.bottom + phoneLayout.clearance.bottom,
+        paddingBottom: (isIosPhoneLandscape ? 0 : phoneInsets.bottom) + phoneLayout.clearance.bottom,
       }]}>
         {splitContent}
         {searchModal}
