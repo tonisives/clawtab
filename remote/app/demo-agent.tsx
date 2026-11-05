@@ -10,8 +10,10 @@ import { DEMO_JOBS, DEMO_LOGS, DEMO_PROCESSES, demoQuestionForSelection } from "
 import { useMessageKeyboard } from "../src/hooks/useMessageKeyboard"
 import { DemoQuestionSurface } from "../src/components/DemoQuestionSurface"
 import { demoShell } from "../src/demo/shell"
+import { useResponsive } from "../src/hooks/useResponsive"
 
 let DemoAgentScreen = () => {
+  let { isIosPhoneLandscape } = useResponsive()
   let { id, kind } = useLocalSearchParams<{ id: string; kind?: string }>()
   let router = useRouter()
   let terminal = useRef<XtermLogHandle | null>(null)
@@ -37,8 +39,8 @@ let DemoAgentScreen = () => {
   let headerRight = () => <Pressable accessibilityRole="button" accessibilityLabel="Open pane overview" onPress={openDetails} style={styles.menu} hitSlop={8}><Ionicons name="ellipsis-horizontal" size={22} color={colors.text} /></Pressable>
   return <View ref={keyboard.host} onLayout={keyboard.onLayout} style={[styles.screen, { paddingBottom: keyboard.overlap }]}>
     <Stack.Screen options={{ title, headerTitle, headerRight }} />
-    <Pressable style={styles.notice} accessibilityRole="button" accessibilityLabel="About demo mode" onPress={() => router.push("/demo-overview")}><Ionicons name="information-circle-outline" size={18} color={colors.warning} /><Text style={styles.noticeText}>Demo</Text></Pressable>
-    <View style={styles.terminal} accessibilityLabel="Shell logs">{question ? <DemoQuestionSurface question={question} output={shell.output} /> : <XtermLog ref={terminal} interactive={false} forceDarkTheme extendedViewport />}</View>
+    {!isIosPhoneLandscape && <Pressable style={styles.notice} accessibilityRole="button" accessibilityLabel="About demo mode" onPress={() => router.push("/demo-overview")}><Ionicons name="information-circle-outline" size={18} color={colors.warning} /><Text style={styles.noticeText}>Demo</Text></Pressable>}
+    <View style={styles.terminal} accessibilityLabel="Shell logs">{question ? <DemoQuestionSurface question={question} output={shell.output} /> : <XtermLog ref={terminal} interactive={false} forceDarkTheme extendedViewport fontSize={isIosPhoneLandscape ? 10 : undefined} />}</View>
     {!question && <SafeAreaView edges={keyboard.overlap > 0 ? [] : ["bottom"]} style={styles.composer}>
       <TextInput ref={input} value={draft} onChangeText={setDraft} placeholder={shell.placeholder} placeholderTextColor="#a1a1aa" accessibilityLabel="Demo prompt" accessibilityHint="Try typing locally. Demo prompts are not sent to an agent." multiline submitBehavior="blurAndSubmit" blurOnSubmit onSubmitEditing={dismissInput} returnKeyType="done" autoCapitalize="none" autoCorrect={false} style={styles.input} />
       <View style={styles.inputFooter}><Text style={styles.model}>{shell.model}</Text><Pressable accessibilityRole="button" accessibilityLabel="Show keyboard" onPress={focusInput} style={styles.menu}><Ionicons name="keypad-outline" size={22} color="#a1a1aa" /></Pressable></View>

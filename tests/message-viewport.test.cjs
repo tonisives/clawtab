@@ -107,15 +107,19 @@ test("returning from details clears stale selection and outer scroll without rep
 function nativeKeyboard({ bottomAnchored = true, current } = {}) {
   const ts = require("../desktop/node_modules/typescript");
   const events = {}, cleanups = [], values = [], refs = [], animations = [], exports = {};
+  const safeArea = {};
+  vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.resolve(__dirname, "../remote/src/lib/remainingSafeArea.ts"), "utf8"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS },
+  }).outputText, { exports: safeArea });
   const source = ts.transpileModule(fs.readFileSync(path.resolve(__dirname, "../remote/src/hooks/useMessageKeyboard.ts"), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText;
   const subscribe = (name, callback) => { events[name] = callback; return { remove() { delete events[name]; } }; };
-  vm.runInNewContext(source, { exports, require: name => name === "react" ? {
+  vm.runInNewContext(source, { exports, require: name => name === "../lib/remainingSafeArea" ? safeArea : name === "react" ? {
     useRef: current => { const ref = { current }; refs.push(ref); return ref; },
     useState: value => [value, next => values.push(next)], useCallback: callback => callback,
     useEffect: effect => cleanups.push(effect()),
-  } : name === "react-native-safe-area-context" ? { useSafeAreaInsets: () => ({ left: 40, right: 0 }) } : { useWindowDimensions: () => ({ width: 390 }), Platform: { OS: "ios" }, Dimensions: { get: () => ({ height: 844 }) },
+  } : name === "react-native-safe-area-context" ? { useSafeAreaInsets: () => ({ left: 40, right: 0, bottom: 34 }) } : { useWindowDimensions: () => ({ width: 390, height: 844 }), Platform: { OS: "ios" }, Dimensions: { get: () => ({ height: 844 }) },
     Keyboard: { addListener: subscribe, isVisible: () => false, metrics: () => current, scheduleLayoutAnimation: event => animations.push(event) }, AppState: { addEventListener: subscribe } } });
   const hook = exports.useMessageKeyboard(bottomAnchored);
   const frame = (name, screenY, height) => {

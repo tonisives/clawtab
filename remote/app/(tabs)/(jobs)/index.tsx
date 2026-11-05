@@ -1308,6 +1308,9 @@ function JobsWorkspace({ bounds }: { bounds: { x: number; y: number; width: numb
           <Pressable style={styles.sidebarIconButton} onPress={openSearch} accessibilityRole="button" accessibilityLabel="Search jobs">
             <Ionicons name="search" size={20} color={colors.textSecondary} />
           </Pressable>
+          <Pressable style={styles.sidebarIconButton} onPress={() => router.push("/settings")} accessibilityRole="button" accessibilityLabel="Settings">
+            <Ionicons name="settings-outline" size={20} color={colors.textSecondary} />
+          </Pressable>
           <NotificationsMenuButton countOnly />
         </View> : !isIosPad ? <NotificationsMenuButton variant={isWide ? "compact" : "fluid"} /> : null}
       </View>}

@@ -49,5 +49,12 @@ final class LayoutTests: XCTestCase {
     sleep(2)
     capture("landscape-right-selected")
     XCTAssertTrue(details.exists)
+    if app.frame.width > app.frame.height {
+      XCTAssertEqual(app.buttons.matching(identifier: "About demo mode").count, 1)
+      XCTAssertTrue(app.buttons["Search jobs"].firstMatch.isHittable)
+      XCTAssertTrue(app.buttons["Settings"].firstMatch.isHittable)
+      XCTAssertGreaterThan(app.webViews.firstMatch.frame.maxY, app.frame.maxY - 35,
+        "Landscape shell must use the space previously reserved for the tab bar")
+    }
   }
 }

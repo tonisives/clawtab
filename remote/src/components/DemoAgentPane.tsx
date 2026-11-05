@@ -7,10 +7,12 @@ import { DEMO_JOBS, DEMO_LOGS, DEMO_PROCESSES, demoQuestionForSelection } from "
 import { DemoQuestionSurface } from "./DemoQuestionSurface"
 import { demoShell } from "../demo/shell"
 import { DemoDetailsContent } from "./DemoDetailsContent"
+import { useResponsive } from "../hooks/useResponsive"
 
 export type DemoSelection = { id: string; kind: "job" | "process" }
 
 export let DemoAgentPane = ({ id, kind, onShowOverview }: DemoSelection & { onShowOverview: () => void }) => {
+  let { isIosPhoneLandscape } = useResponsive()
   let terminal = useRef<XtermLogHandle | null>(null)
   let [draft, setDraft] = useState("")
   let [detailsOpen, setDetailsOpen] = useState(false)
@@ -33,15 +35,15 @@ export let DemoAgentPane = ({ id, kind, onShowOverview }: DemoSelection & { onSh
     <View style={styles.header}>
       <JobKindIcon kind={process ? kindForProcess(process) : "shell"} size={24} bare />
       <Text style={styles.title} numberOfLines={1}>{title}</Text>
-      <Pressable accessibilityRole="button" accessibilityLabel="About demo mode" onPress={onShowOverview} style={styles.demoButton}>
+      {!isIosPhoneLandscape && <Pressable accessibilityRole="button" accessibilityLabel="About demo mode" onPress={onShowOverview} style={styles.demoButton}>
         <Ionicons name="information-circle-outline" size={18} color={colors.warning} />
         <Text style={styles.demo}>Demo</Text>
-      </Pressable>
+      </Pressable>}
       <Pressable accessibilityRole="button" accessibilityLabel="Agent details" onPress={openDetails} style={styles.menu}>
         <Ionicons name="ellipsis-horizontal" size={22} color={colors.text} />
       </Pressable>
     </View>
-    <View style={styles.terminal} accessibilityLabel="Shell logs">{question ? <DemoQuestionSurface question={question} output={shell.output} /> : <XtermLog ref={terminal} interactive={false} forceDarkTheme />}</View>
+    <View style={styles.terminal} accessibilityLabel="Shell logs">{question ? <DemoQuestionSurface question={question} output={shell.output} /> : <XtermLog ref={terminal} interactive={false} forceDarkTheme fontSize={isIosPhoneLandscape ? 10 : undefined} />}</View>
     {!question && <View style={styles.composer}>
       <TextInput value={draft} onChangeText={setDraft} placeholder={shell.placeholder} placeholderTextColor={colors.textMuted} accessibilityLabel="Demo prompt" accessibilityHint="Try typing locally. Demo prompts are not sent to an agent." multiline autoCapitalize="none" autoCorrect={false} style={styles.input} />
       <Text style={styles.model}>{shell.model}</Text>

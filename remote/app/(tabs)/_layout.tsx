@@ -64,6 +64,7 @@ function TabsContent({
   const insets = useSafeAreaInsets();
   const settingsActive = pathname.endsWith("/settings");
   const isIosPhone = Platform.OS === "ios" && !Platform.isPad;
+  const { isIosPhoneLandscape } = useResponsive();
 
   useEffect(() => {
     setMobileHeaderTab(settingsActive ? "settings" : "jobs");
@@ -95,6 +96,7 @@ function TabsContent({
     return (
       <View style={styles.nativeTabsFrame}>
         <NativeTabs
+          hidden={isIosPhoneLandscape && isSplitView && !settingsActive}
           tintColor={colors.accent}
           iconColor={{ default: colors.textMuted, selected: colors.accent }}
           backgroundColor={colors.bg}

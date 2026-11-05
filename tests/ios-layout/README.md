@@ -43,4 +43,20 @@ split panes and partial safe areas:
 ```sh
 cd remote
 node --test scripts/test-landscape-insets.cjs
+node --test scripts/test-landscape-components.cjs
 ```
+
+The component tests cover the single Demo button, smaller landscape terminal
+font, portrait restoration, and sidebar Search and Settings actions. The native
+runner also asserts that the shell reaches the bottom safe area.
+
+For the rendered shell CSS, generate a standalone browser fixture from the
+public repository root:
+
+```sh
+node tests/mobile-pager-fixture.cjs /private/tmp/clawtab-landscape-shell-fixture.html
+```
+
+Load that file in a background bmux pane, set its viewport to 874 by 402, and
+evaluate `tests/landscape-shell-browser-check.js`. Repeat at 402 by 874. It checks
+the computed font size, line height, footer padding and horizontal overflow.

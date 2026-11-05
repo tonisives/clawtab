@@ -24,6 +24,7 @@ export let DemoJobList = ({ onSelectJob, onSelectProcess, selectedSlug, onShowOv
   let showOverview = onShowOverview ?? (() => router.push("/demo-overview"))
   let searchQuery = useJobFilterStore((state) => state.query)
   let setSearchQuery = useJobFilterStore((state) => state.setQuery)
+  let openSearch = useJobFilterStore((state) => state.openSearch)
   let [collapsedGroups, setCollapsedGroups] = useState(new Set<string>())
   let [listMode, setListMode] = useState<JobListMode>("tabs")
   let [groupTabView, setGroupTabView] = useState<Record<string, "tabs" | "jobs">>({})
@@ -43,7 +44,15 @@ export let DemoJobList = ({ onSelectJob, onSelectProcess, selectedSlug, onShowOv
       <Ionicons name="information-circle-outline" size={20} color={colors.warning} />
       <Text style={styles.title}>Demo</Text>
     </Pressable>
-    {compactLandscape && <NotificationsMenuButton countOnly />}
+    {compactLandscape && <View style={styles.landscapeControls}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Search jobs" onPress={openSearch} style={styles.iconButton}>
+        <Ionicons name="search" size={20} color={colors.textSecondary} />
+      </Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="Settings" onPress={() => router.push("/settings")} style={styles.iconButton}>
+        <Ionicons name="settings-outline" size={20} color={colors.textSecondary} />
+      </Pressable>
+      <NotificationsMenuButton countOnly />
+    </View>}
   </View>
   return <JobListView selectedSlug={selectedSlug} jobs={DEMO_JOBS} statuses={DEMO_STATUSES} detectedProcesses={DEMO_PROCESSES} savedGroups={savedGroups} compactMobileToolbar mobileAppearance searchQuery={searchQuery} onSearchQueryChange={setSearchQuery} groupTabView={groupTabView} onGroupTabViewChange={changeGroupView} onSetAllGroupTabView={changeAllGroupViews} collapsedGroups={collapsedGroups} onToggleGroup={toggleGroup} listMode={listMode} onListModeChange={setListMode} sortMode={sortMode} onSortChange={setSortMode} onSelectJob={openJob} onSelectProcess={openProcess} headerContent={notice} edgeToEdge={embedded && isIosPhone} contentContainerStyle={styles.content} contentInsetAdjustmentBehavior={embedded || Platform.OS === "web" ? "never" : "automatic"} renderAsScrollRoot={Platform.OS !== "web"} showEmpty />
 }
@@ -52,6 +61,8 @@ let styles = StyleSheet.create({
   content: { width: "100%", padding: 0 },
   notice: { paddingHorizontal: 24, paddingVertical: 16, flexDirection: "row", alignItems: "center", justifyContent: "center", flexWrap: "wrap", gap: 8 },
   landscapeNotice: { paddingHorizontal: 8, paddingVertical: 0, justifyContent: "space-between", flexWrap: "nowrap" },
+  landscapeControls: { flexDirection: "row", alignItems: "center", gap: 4 },
+  iconButton: { width: 32, height: 44, alignItems: "center", justifyContent: "center" },
   title: { color: colors.warning, fontSize: 16, fontWeight: "600" },
   demoButton: { minHeight: 44, flexDirection: "row", alignItems: "center", gap: 8 },
 })
