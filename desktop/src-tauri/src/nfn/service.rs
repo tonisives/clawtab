@@ -807,7 +807,9 @@ impl Service {
                     return Ok(json!({"focused":true}));
                 }
                 let result = self.focus_notification(&record).await?;
-                self.changed();
+                if result.get("record").is_some() {
+                    self.changed();
+                }
                 return Ok(result);
             }
             NfnCommand::AutoYes { id } => {
@@ -1069,8 +1071,12 @@ impl Service {
             }
         }
         if record.request.source.pane_id.is_some() {
+            let started = std::time::Instant::now();
             validate_direct_source(&record.request.source)?;
+            log::info!("[nfn] direct focus validation in {} ms", started.elapsed().as_millis());
+            let started = std::time::Instant::now();
             focus_source(&record.request.source).await?;
+            log::info!("[nfn] direct terminal switch in {} ms", started.elapsed().as_millis());
             return Ok(json!({"focused":true}));
         }
         if resumable_notice(record) {
