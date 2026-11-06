@@ -69,7 +69,7 @@ export let MachineSetup = ({ onNavigate, manage = false, setup }: { onNavigate?:
     {manage && <View style={styles.managementNavigation}><AddMachineButton /></View>}
     {!setup && <HostedWorkspacePanel api={rentalApi} />}
     {(manage || allowNewRentals) && <RentalsPanel style={manage ? styles.managementPanel : undefined} showExistingRentals={manage} allowNewRentals={allowNewRentals} onOrderingChange={setOrdering} api={rentalApi} {...checkout} platform={Platform.OS === "ios" ? "ios" : Platform.OS === "android" ? "android" : "web"} openUrl={openCheckout}>
-      {manage && <MachinesPanel presentation="panel" approvePairing={approveMachinePairing} api={machineApi} />}
+      {manage && <MachinesPanel presentation="panel" approvePairing={approveMachinePairing} api={machineApi} hostedApi={rentalApi} />}
     </RentalsPanel>}
     {allowNewRentals && !checkout.purchases && <View style={styles.unavailable}>
       <Text style={styles.unavailableTitle}>Rent a machine</Text>

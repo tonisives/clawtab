@@ -7,6 +7,7 @@ import { MachineMark } from "../machines/Badge";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform, useWindowDimensions } from "react-native";
 import type { DetectedProcess } from "../types/process";
+import { resolveProcessAgentState } from "../types/process";
 import { PopupMenu } from "./PopupMenu";
 import { compactProcessQuery, processDisplayTitle, shortenPath, timeAgo } from "../util/format";
 import { Tooltip } from "./Tooltip";
@@ -103,11 +104,7 @@ export function ProcessCard({
     !process._last_log_change
     || activityClock - process._last_log_change < AGENT_ACTIVITY_WINDOW_MS
   );
-  const effectiveAgentState = agentState === "alert" || agentState === "asking"
-    ? agentState
-    : agentState === "working" || recentActivity
-      ? "working"
-      : "finished";
+  const effectiveAgentState = resolveProcessAgentState(agentState, recentActivity);
   const alertSize = effectiveAgentState === "alert" ? sessionSizeAlertLabel(process._agent_alert) : null;
   const agentStatusLabel = effectiveAgentState === "alert"
     ? `${agentAlertTitle(process._agent_alert)}${process._agent_alert ? `: ${process._agent_alert}` : ""}`

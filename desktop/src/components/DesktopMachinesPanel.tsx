@@ -27,6 +27,7 @@ export let DesktopMachinesPanel = ({ onOpenAccount, manage = true }: { onOpenAcc
     approvePairing={approveDesktopMachine}
     localRequest={localHostRequest}
     api={desktopMachineApi}
+    hostedApi={desktopMachineApi}
   />
   return <MachineOnboardingProvider
     content={(close) => <DesktopMachinesPanel manage={false} onOpenAccount={() => { close(); onOpenAccount() }} />}

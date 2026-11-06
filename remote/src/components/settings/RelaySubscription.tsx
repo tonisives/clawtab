@@ -193,7 +193,7 @@ export let RelaySubscription = () => {
         {Platform.OS === "ios" && iap.error && <Text style={styles.usageDescription}>{iap.error}</Text>}
       </>}
     </View>}
-    {sub?.subscribed && !sub.hosted_workspace_eligible && <SettingsGroup><SettingsRow title="Open your connected machines" detail="Your rented box includes relay access. Use its remote workspace or connect your own machine." onPress={openMachines} /></SettingsGroup>}
+    {sub?.subscribed && <SettingsGroup><SettingsRow title={sub.hosted_workspace_eligible ? "Open ClawTab machine" : "Open your connected machines"} detail={sub.hosted_workspace_eligible ? undefined : "Your rented box includes relay access. Use its remote workspace or connect your own machine."} onPress={openMachines} /></SettingsGroup>}
     {Platform.OS === "ios" && !sub?.subscribed && !!iap.error && <View style={styles.section}>
       <SettingsButton title="Retry loading purchases" onPress={iap.retry} disabled={iap.loading || actionLoading || iap.purchasing} />
     </View>}

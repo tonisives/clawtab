@@ -11,7 +11,7 @@ export type HostedWorkspaceStatus = { enabled: boolean; eligible: boolean; works
 type Status = HostedWorkspaceStatus
 type Terminal = { pane_id: string; tmux_session: string; machine: string; login: boolean }
 
-export let HostedWorkspacePanel = ({ api, autoStart = false, initialStatus = null }: { api: Api; autoStart?: boolean; initialStatus?: HostedWorkspaceStatus | null }) => {
+export let HostedWorkspacePanel = ({ api, autoStart = false, initialStatus = null, details = false }: { api: Api; autoStart?: boolean; initialStatus?: HostedWorkspaceStatus | null; details?: boolean }) => {
   let machines = useMachines()
   let [status, setStatus] = useState<Status | null>(initialStatus)
   let [usage, setUsage] = useState<Record<string, any> | null>(null)
@@ -19,12 +19,14 @@ export let HostedWorkspacePanel = ({ api, autoStart = false, initialStatus = nul
   let [busy, setBusy] = useState(false)
   let pending = useRef(false)
   let started = useRef(false)
+  let waitingSince = useRef(Date.now())
   let [loadError, setLoadError] = useState(false)
   let [provider, setProvider] = useState("codex")
   let [terminal, setTerminal] = useState<Terminal | null>(null)
   let workspace = status?.workspace
   let machine = machines.machines.find((candidate) => candidate.id === workspace?.machine_id)
-  let online = workspace?.state === "ready" && machine?.online
+  let online = !!machine?.online && ["ready", "provisioning"].includes(workspace?.state ?? "")
+  useEffect(() => { waitingSince.current = Date.now() }, [workspace?.id, online])
   let refresh = async () => setStatus(await api("GET", "/hosted-workspace"))
   useEffect(() => {
     let active = true
@@ -85,7 +87,7 @@ export let HostedWorkspacePanel = ({ api, autoStart = false, initialStatus = nul
         work_dir: "/home/clawtab/workspace", operation_id: setup[`${action}_operation_id`],
       }, 120_000)
     } catch (error) {
-      if (error instanceof Error && error.message.includes("Both included workspace sessions are in use")) {
+      if (error instanceof Error && ((error as Error & { status?: string }).status === "rejected" || error.message.includes("Both included workspace sessions are in use"))) {
         await api("POST", "/hosted-workspace/setup", { provider, action: `restart_${action}` })
       }
       throw error
@@ -109,16 +111,24 @@ export let HostedWorkspacePanel = ({ api, autoStart = false, initialStatus = nul
   let choose = () => { if (workspace?.machine_id) selectMachine(workspace.machine_id) }
   if (!status) return autoStart ? <View style={styles.panel}><Text accessibilityLiveRegion="polite" style={styles.detail}>{loadError ? "Could not load your workspace. Retrying…" : "Connecting your Relay workspace…"}</Text></View> : null
   if ((!status.enabled && !workspace) || (!status.eligible && !workspace)) return autoStart ? <View style={styles.panel}><Text style={styles.detail}>{!status.enabled ? "Included workspaces are currently unavailable. Please try again shortly." : "Confirming your Relay subscription… Your workspace will appear here when it is active."}</Text></View> : null
+  if (online && !details) return null
   let setup = workspace?.setup?.providers?.[provider] ?? {}
+  let stage = online ? 3 : workspace?.state === "ready" ? 2 : workspace?.machine_id ? 1 : 0
+  let preparing = busy || ["provisioning", "ready"].includes(workspace?.state ?? "")
   return <View style={styles.panel}>
-    <Text style={styles.heading}>Your Relay workspace</Text>
-    <Text style={styles.detail}>Run two agents at once with your existing AI subscription. Your workspace connects to Relay automatically.</Text>
+    <Text style={styles.heading}>ClawTab</Text>
     {workspace?.state === "suspended" && <Text style={styles.detail}>Your subscription has ended. Renew to restore this workspace before {workspace.delete_at ? new Date(workspace.delete_at).toLocaleDateString() : "the retention period ends"}.</Text>}
-    {workspace?.state === "provisioning" && <Text accessibilityLiveRegion="polite" style={styles.detail}>Preparing your workspace… It will connect automatically.</Text>}
-    {workspace?.state === "ready" && !online && <Text style={styles.detail}>Connecting to your workspace…</Text>}
+    {preparing && !online && <View style={styles.progress}>
+      <Text accessibilityLiveRegion="polite" style={styles.detail}>{loadError ? "Could not refresh setup. Retrying…" : workspace?.error ? "Workspace setup needs attention. Retrying…" : Date.now() - waitingSince.current > 90_000 ? "Setup is taking longer than expected. Still checking the connection…" : ["Creating workspace…", "Starting workspace…", "Connecting to Relay…"][stage]}</Text>
+      <View accessibilityRole="progressbar" accessibilityLabel="Workspace setup" accessibilityValue={{ min: 0, max: 3, now: stage, text: `${stage} of 3 setup stages complete` }} style={styles.progressTrack}>
+        {[0, 1, 2].map((step) => <View key={step} style={[styles.progressStep, step < stage && styles.progressDone]} />)}
+      </View>
+      <Button label="Refresh status" onPress={() => act(refresh)} disabled={busy} />
+    </View>}
     {(error || workspace?.error) && <Text accessibilityRole="alert" style={styles.error}>{error ?? workspace?.error}</Text>}
     {status.eligible && !["provisioning", "ready", "deleting"].includes(workspace?.state ?? "") && <Button disabled={busy || !status.enabled} label={busy ? "Preparing…" : workspace?.state === "suspended" ? "Restore workspace" : "Start included workspace"} onPress={start} />}
     {online && <>
+      {busy && <Text accessibilityLiveRegion="polite" style={styles.detail}>Starting session…</Text>}
       <Text style={styles.detail}>Choose your agent and sign in to the AI account you already use. Then start your first agent below.</Text>
       {usage && <Text style={styles.detail}>{usage.usage?.sessions ?? "–"}/2 sessions · {usage.usage?.jobs ?? "–"}/2 saved jobs · {usage.usage?.storage_bytes == null ? "–" : Math.ceil(usage.usage.storage_bytes / 1_048_576)} / 500 MiB used{usage.pending_jobs?.length ? ` · ${usage.pending_jobs.length} scheduled jobs waiting` : ""}</Text>}
       <View style={styles.row} accessibilityRole="radiogroup" accessibilityLabel="Choose your agent">{RENTAL_AGENTS.map((agent) => <Pressable key={agent.id} accessibilityRole="radio" accessibilityLabel={agent.name} accessibilityState={{ checked: provider === agent.id }} onPress={() => setProvider(agent.id)} style={[styles.button, provider === agent.id && styles.selected]}><Text style={styles.action}>{agent.name}</Text></Pressable>)}</View>
@@ -132,13 +142,15 @@ export let HostedWorkspacePanel = ({ api, autoStart = false, initialStatus = nul
       </View>
       <Text style={styles.detail}>Sign-in and shell sessions use the same two slots as agents and jobs. Stop a session to free its slot.</Text>
     </>}
-    <Text style={styles.detail}>Includes two saved jobs, 0.5 CPU, 500 MiB memory, and 500 MiB storage. Scheduled jobs keep running when you disconnect.</Text>
+    {details && <Text style={styles.detail}>Your Relay subscription includes two agents at once, two saved jobs, 0.5 CPU, 500 MiB memory, and 500 MiB storage. For more agents, add a local machine or server. Scheduled jobs keep running when you disconnect.</Text>}
     {terminal && <MachineTerminalScreen machineId={terminal.machine} paneId={terminal.pane_id} tmuxSession={terminal.tmux_session} title={terminal.login ? "AI account sign-in" : "Included workspace"} signIn={terminal.login} onClose={() => setTerminal(null)} />}
   </View>
 }
 
 let Button = ({ label, onPress, disabled = false }: { label: string; onPress: () => void; disabled?: boolean }) => <Pressable accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={[styles.button, disabled && styles.disabled]}><Text style={styles.action}>{label}</Text></Pressable>
 let styles = StyleSheet.create({
+  progress: { gap: 8 }, progressTrack: { flexDirection: "row", gap: 4 },
+  progressStep: { flex: 1, height: 4, backgroundColor: colors.border, borderRadius: 2 }, progressDone: { backgroundColor: colors.accent },
   panel: { padding: 16, gap: 12 }, heading: { color: colors.text, fontSize: 17, fontWeight: "600" },
   detail: { color: colors.textSecondary, fontSize: 13, lineHeight: 20 }, row: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   button: { minHeight: 44, borderRadius: 999, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.groupedSurface, paddingHorizontal: 16, justifyContent: "center" },

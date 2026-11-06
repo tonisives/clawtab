@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { Modal, Pressable, StyleSheet, Text, TextInput, View, type GestureResponderEvent } from "react-native"
+import { Image, Modal, Pressable, StyleSheet, Text, TextInput, View, type GestureResponderEvent } from "react-native"
 import { colors } from "../theme/colors"
 import { saveAccountPreferences, useMachines, type Machine, type MachineAppearance, type PreferencesApi } from "./client"
 
@@ -23,10 +23,11 @@ let defaultColor = (index: number) => {
 }
 
 export let machineAppearance = (
-  machine?: Pick<Machine, "id" | "platform">,
+  machine?: Pick<Machine, "id" | "platform"> & Partial<Pick<Machine, "hosted">>,
   configured?: Record<string, MachineAppearance>,
   machines: Pick<Machine, "id">[] = [],
 ): MachineAppearance => {
+  if (machine?.hosted) return { icon: "clawtab", color: colors.accent }
   let saved = machine && configured?.[machine.id]
   if (saved) return saved
   let orderedIds = machines.map((item) => item.id).sort()
@@ -50,7 +51,8 @@ export let MachineIcon = ({ appearance, size = 20, strokeWidth = 1.5 }: { appear
     terminal: { color: appearance.color, fontSize: size * 0.5, fontWeight: "700", textAlign: "center" },
   }), [appearance.color, size, strokeWidth])
   return <View style={iconStyles.frame} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-    {appearance.icon === "server" ? <View style={iconStyles.tower}><View style={iconStyles.slot} /><View style={iconStyles.slot} /><View style={iconStyles.lights}><View style={iconStyles.dot} /><View style={iconStyles.dot} /></View></View>
+    {appearance.icon === "clawtab" ? <Image source={{ uri: "https://cdn.clawtab.cc/assets/app-icon.png" }} style={{ width: size, height: size }} />
+      : appearance.icon === "server" ? <View style={iconStyles.tower}><View style={iconStyles.slot} /><View style={iconStyles.slot} /><View style={iconStyles.lights}><View style={iconStyles.dot} /><View style={iconStyles.dot} /></View></View>
       : appearance.icon === "chip" ? <><View style={iconStyles.pins} /><View style={iconStyles.pinsAcross} /><View style={iconStyles.chip} /></>
       : <><View style={iconStyles.screen}>{appearance.icon === "terminal" && <Text style={iconStyles.terminal}>{">_"}</Text>}</View>{appearance.icon === "desktop" && <View style={iconStyles.stand} />}{appearance.icon === "laptop" && <View style={iconStyles.base} />}</>}
   </View>

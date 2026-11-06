@@ -78,6 +78,10 @@ export type AgentActivity = {
 
 export type ProcessAgentState = "working" | "asking" | "alert" | "finished";
 
+export function resolveProcessAgentState(state: ProcessAgentState | undefined, recentActivity: boolean): ProcessAgentState {
+  return state ?? (recentActivity ? "working" : "finished");
+}
+
 export interface DetectedProcess {
   pane_label?: string;
   machine_id?: string;

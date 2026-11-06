@@ -44,7 +44,7 @@ let load = async () => {
   let reply = (id, message, host = machine) => socket.onmessage({ data: JSON.stringify({
     type: 'machine_event', machine_id: host, request_id: id, message,
   }) });
-  return { request, reply, stop };
+  return { request, reply, stop, timers, sent, tick, recover: exports.recoverMachineOperation };
 };
 
 test('ordinary commands reject unsigned responses decorated with a secure field', async () => {
@@ -92,5 +92,32 @@ test('terminal forwarding receipts remain usable without authenticating command 
   let stop = await app.request({ type: 'stop_detected_process', pane_id: '%12' });
   let rejected = assert.rejects(stop.result, /unauthenticated/);
   await app.reply(stop.id, { type: 'sent' });
+  await rejected; app.stop();
+});
+
+test('lost launch acknowledgement recovers its saved result without another launch', async () => {
+  let app = await load();
+  let { result, id } = await app.request({ type: 'run_agent', prompt: 'fixture', operation_id: 'stable-operation' });
+  let deadline = [...app.timers.values()].at(-1);
+  deadline(); await app.tick();
+  let query = app.sent.at(-1);
+  assert.equal(query.message.request.action, 'operation');
+  assert.equal(query.message.request.operation_id, 'stable-operation');
+  await app.reply(query.request_id, { type: 'secure_response', envelope: { request_id: query.request_id, response: {
+    type: 'host_response', result: { status: 'completed', result: { success: true, pane_id: 'managed:1' } },
+  } } });
+  assert.equal((await result).pane_id, 'managed:1');
+  assert.equal(app.sent.filter(message => message.message.type === 'run_agent').length, 1);
+  app.stop();
+});
+
+test('failed launch recovery surfaces the error and capacity guidance', async () => {
+  let app = await load();
+  let result = app.recover(machine, 'stable-operation'); await app.tick();
+  let query = app.sent.at(-1);
+  let rejected = assert.rejects(result, /two agents at once.*local machine or server/);
+  await app.reply(query.request_id, { type: 'secure_response', envelope: { request_id: query.request_id, response: {
+    type: 'host_response', result: { status: 'failed', result: { success: false, status: 'rejected', error: 'Both included workspace sessions are in use' } },
+  } } });
   await rejected; app.stop();
 });

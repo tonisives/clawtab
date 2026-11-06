@@ -1,3 +1,4 @@
+import { HostedWorkspacePanel } from "./HostedWorkspace"
 import { MachineSettingsPageButton } from "./Onboarding"
 import { ModelManager } from "./Models"
 import { hostModelCatalog, resolveEnabledModels } from "../util/agentModels"
@@ -29,10 +30,11 @@ type Props = {
   onOpenAccount?: () => void
   localMachineId?: string
   api?: (method: string, path: string, body?: MachineMessage) => Promise<MachineMessage>
+  hostedApi?: (method: string, path: string, body?: MachineMessage) => Promise<MachineMessage>
   approvePairing: (code: string) => Promise<unknown>
   localRequest?: (request: MachineMessage) => Promise<MachineMessage>
 }
-export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, localMachineId, presentation = "compact", showConnectionStatus = true, machineType, managementSection, machineListAction }: Props) => {
+export let MachinesPanel = ({ approvePairing, localRequest, api, hostedApi, onOpenAccount, localMachineId, presentation = "compact", showConnectionStatus = true, machineType, managementSection, machineListAction }: Props) => {
   let styles = presentation === "panel" ? desktopStyles : compactStyles
   let state = useMachines()
   let [tab, setTab] = useState(managementSection ?? "agents")
@@ -354,7 +356,8 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, onOpenAccount, 
       {(expanded || presentation === "panel") && (
         <ScrollView style={presentation === "panel" ? styles.panelBody : styles.body}>
           {presentation === "panel" && tab !== "pair" && machineChoices}
-          {presentation === "panel" && machine?.owned && api && <MachineAppearanceButton key={machine.id} machine={machine} api={api} />}
+          {presentation === "panel" && !managementSection && machine?.hosted && hostedApi && <HostedWorkspacePanel key={machine.id} api={hostedApi} details />}
+          {presentation === "panel" && machine?.owned && !machine.hosted && api && <MachineAppearanceButton key={machine.id} machine={machine} api={api} />}
           {Platform.OS !== "web" && presentation === "panel" && !managementSection ? <View style={machine ? styles.settingsPages : styles.settingsHint}>
             {machine && ["agents", "jobs", "repositories", ...(localRequest ? ["transfers"] : []), "models", "access"].map((section) => <MachineSettingsPageButton key={section} title={section[0].toUpperCase() + section.slice(1)}>
               <MachinesPanel managementSection={section} presentation="panel" approvePairing={approvePairing} localRequest={localRequest} api={api} localMachineId={localMachineId} machineType={machineType} showConnectionStatus={false} />

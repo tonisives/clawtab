@@ -46,7 +46,7 @@ let harness = ({ eligible = true, workspace = { id: 'included', machine_id: 'hos
     } else if (body.action !== 'prepare') setup[`${body.action}_terminal`] = body.terminal;
     return { ...setup };
   };
-  let render = (props = {}) => { cursor = 0; let tree = exports.HostedWorkspacePanel({ api, ...props }); effects.splice(0).forEach((effect) => effect()); return tree; };
+  let render = (props = {}) => { cursor = 0; let tree = exports.HostedWorkspacePanel({ api, details: true, ...props }); effects.splice(0).forEach((effect) => effect()); return tree; };
   return { render, requests, calls, machines, starts: () => starts };
 };
 
@@ -114,4 +114,21 @@ test('preloaded workspace paints controls immediately without auto-starting offs
   let tree = view.render({ initialStatus, autoStart: false });
   assert.ok(find(tree, 'Start included workspace'));
   assert.equal(view.starts(), 0);
+});
+
+test('connected workspace replaces provisioning copy with controls inside machine details', async () => {
+  let view = harness({ workspace: { id: 'included', machine_id: 'hosted-only', state: 'provisioning', setup: {} } });
+  view.render(); await flush();
+  assert.ok(find(view.render(), 'Start agent'));
+  assert.equal(view.render({ details: false }), null);
+});
+
+test('provisioning shows stages from enrollment rather than a permanent promise', async () => {
+  let view = harness({ workspace: { id: 'included', machine_id: null, state: 'provisioning', setup: {} } });
+  view.render(); await flush();
+  let tree = view.render();
+  const collect = (node) => !node ? [] : Array.isArray(node) ? node.flatMap(collect) : [node, ...collect(node.props?.children)];
+  let bar = collect(tree).find(node => node.props?.accessibilityRole === 'progressbar');
+  assert.equal(bar.props.accessibilityValue.now, 0);
+  assert.ok(find(tree, 'Refresh status'));
 });

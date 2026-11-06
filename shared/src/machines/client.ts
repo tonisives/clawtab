@@ -25,7 +25,7 @@ export type AgentModelPreferences = {
   default_provider: string
   default_model?: string | null
 }
-export type MachineAppearance = { icon: "desktop" | "laptop" | "server" | "terminal" | "chip"; color: string }
+export type MachineAppearance = { icon: "clawtab" | "desktop" | "laptop" | "server" | "terminal" | "chip"; color: string }
 export type PreferencesApi = (method: string, path: string, body?: Record<string, unknown>) => Promise<Record<string, any>>
 export type MachineState = {
   connected: boolean
@@ -168,13 +168,15 @@ export let machineRequest = async (
     payload.execution_id = executionFor(machine, payload.pane_id)
   if (["run_agent", "run_job", "create_job"].includes(payload.type))
     payload.operation_id ??= newOperationId()
+  let operationId = payload.operation_id
   if (secure) payload = await signedCommand(machine, payload)
   if (socket !== connection || connection.readyState !== WebSocket.OPEN)
     throw new Error("Connection changed; reopen Move or check operation status")
   return new Promise((resolve, reject) => {
     let timer = setTimeout(() => {
       pending.delete(requestId)
-      reject(new Error("Machine request timed out; check operation status before retrying"))
+      if (operationId) void recoverMachineOperation(machine, operationId).then(resolve, reject)
+      else reject(new Error("Machine request timed out. Check the machine connection and try again."))
     }, timeout)
     // Lease replies and fire-and-forget forwarding receipts belong to the relay.
     // A "sent" receipt confirms forwarding, not execution on the host.
@@ -187,6 +189,22 @@ export let machineRequest = async (
     )
   })
 }
+export let launchErrorMessage = (message: string) => message.includes("Both included workspace sessions are in use")
+  ? "Your Relay subscription includes two agents at once on ClawTab. Both slots are in use. Stop a session, or add a local machine or server to run more agents. ClawTab includes 0.5 CPU, 500 MiB memory, 500 MiB storage, and two saved jobs."
+  : message
+
+// Recover the acknowledgement from the journal without launching a second agent.
+export let recoverMachineOperation = async (machine: string, operationId: string): Promise<MachineMessage> => {
+  for (let attempt = 0; attempt < 6; attempt++) {
+    let operation = await machineHostRequest(machine, { action: "operation", operation_id: operationId }, 10_000)
+    if (operation.status === "completed") return operation.result
+    if (operation.status === "failed" || operation.status === "interrupted")
+      throw Object.assign(new Error(launchErrorMessage(operation.error ?? operation.result?.error ?? operation.result?.message ?? operation.message ?? "Agent launch failed. Try again.")), { status: operation.result?.status ?? operation.status })
+    if (attempt < 5) await new Promise((resolve) => setTimeout(resolve, 5_000))
+  }
+  throw new Error("Could not confirm the agent launch. Reconnect to the machine and check its agents before starting another.")
+}
+
 export let secureHostRequest = async (machine: string, request: MachineMessage) => {
   let security = machineSecurity()
   let requestId = security.randomId()
@@ -340,6 +358,7 @@ export let connectMachines = (getUrl: () => Promise<string>, preferencesApi?: Pr
           }
         }
         if (data.type === "machines") {
+          data.machines = data.machines.map((machine: Machine) => machine.hosted ? { ...machine, name: "ClawTab" } : machine)
           clearTimeout(watchdog)
           backoff = 1000
           let machines = data.machines as Machine[]
@@ -389,12 +408,12 @@ export let connectMachines = (getUrl: () => Promise<string>, preferencesApi?: Pr
             data.message?.type === "error"
           )
             request.reject(
-              new Error(
+              Object.assign(new Error(launchErrorMessage(
                 data.message?.error ??
                   data.message?.message ??
-                  data.message ??
+                  (typeof data.message === "string" ? data.message : null) ??
                   "Machine request failed",
-              ),
+              )), { status: data.message?.status }),
             )
           else request.resolve(data.message)
         }
