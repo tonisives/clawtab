@@ -303,7 +303,23 @@ fn command_failure_preserves_its_exit_code() {
             data: b"fail\r".to_vec(),
         })
         .unwrap();
-    wait_for(|| session.saved().status == Status::Exited);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while session.saved().status != Status::Exited {
+        assert!(
+            Instant::now() < deadline,
+            "command did not exit: saved={:?}, owner_error={:?}, snapshot={:?}",
+            session.saved(),
+            std::fs::read_to_string(
+                session
+                    .directory
+                    .path()
+                    .join(session.info.id.strip_prefix("managed:").unwrap())
+                    .join("error.json")
+            ),
+            client.request(Request::Snapshot { after: None }),
+        );
+        std::thread::sleep(Duration::from_millis(30));
+    }
     assert_eq!(session.saved().exit_code, Some(7));
 }
 
