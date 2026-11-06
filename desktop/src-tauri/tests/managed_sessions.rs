@@ -295,32 +295,35 @@ fn close_policy_stops_only_on_origin_loss_and_explicit_detach_keeps_running() {
 
 #[test]
 fn command_failure_preserves_its_exit_code() {
-    let session = Session::start();
-    let mut client = session.connect();
-    wait_for(|| snapshot(&mut client).text.contains("FIXTURE_READY"));
-    client
-        .request(Request::AutomationInput {
-            data: b"fail\r".to_vec(),
-        })
-        .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(10);
-    while session.saved().status != Status::Exited {
-        assert!(
-            Instant::now() < deadline,
-            "command did not exit: saved={:?}, owner_error={:?}, snapshot={:?}",
-            session.saved(),
-            std::fs::read_to_string(
-                session
-                    .directory
-                    .path()
-                    .join(session.info.id.strip_prefix("managed:").unwrap())
-                    .join("error.json")
-            ),
-            client.request(Request::Snapshot { after: None }),
-        );
-        std::thread::sleep(Duration::from_millis(30));
+    for iteration in 0..50 {
+        eprintln!("exit-code stress iteration {iteration}");
+        let session = Session::start();
+        let mut client = session.connect();
+        wait_for(|| snapshot(&mut client).text.contains("FIXTURE_READY"));
+        client
+            .request(Request::AutomationInput {
+                data: b"fail\r".to_vec(),
+            })
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while session.saved().status != Status::Exited {
+            assert!(
+                Instant::now() < deadline,
+                "command did not exit: saved={:?}, owner_error={:?}, snapshot={:?}",
+                session.saved(),
+                std::fs::read_to_string(
+                    session
+                        .directory
+                        .path()
+                        .join(session.info.id.strip_prefix("managed:").unwrap())
+                        .join("error.json")
+                ),
+                client.request(Request::Snapshot { after: None }),
+            );
+            std::thread::sleep(Duration::from_millis(30));
+        }
+        assert_eq!(session.saved().exit_code, Some(7));
     }
-    assert_eq!(session.saved().exit_code, Some(7));
 }
 
 #[test]
