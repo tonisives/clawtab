@@ -1,4 +1,5 @@
 import type { SavedJobGroup } from "../util/jobGroups"
+import { agentSetupAlert } from "../util/alert"
 import { useSyncExternalStore } from "react"
 import type { AgentActivity, DetectedProcess } from "../types/process"
 import type { RemoteJob, JobStatus } from "../types/job"
@@ -631,7 +632,8 @@ export let machineProcesses = (exclude?: string): DetectedProcess[] =>
       let processes: DetectedProcess[] = snapshot?.detected_processes?.processes ?? [];
       return scopedMessage(m.id, { processes: processes.map((process) => {
         let item = activity.get(process.pane_id);
-        return { ...process, _agent_alert: item?.alert, _agent_state: item ? (item.alert ? "alert" : item.asking ? "asking" : item.working ? "working" : "finished") : undefined };
+        let alert = item?.alert ?? agentSetupAlert(process);
+        return { ...process, _agent_alert: alert, _agent_state: alert ? "alert" : item ? (item.asking ? "asking" : item.working ? "working" : "finished") : undefined };
       }) }).processes;
     })
 

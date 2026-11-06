@@ -1,6 +1,6 @@
 import { cachedRelaySubscription, cachedRelayWorkspace, loadRelaySubscription } from "../../lib/relaySubscriptionCache"
 import { trackFunnel } from "../../lib/funnel"
-import { HostedWorkspacePanel, machineState, reconnectMachines } from "@clawtab/shared"
+import { HostedWorkspacePanel, machineState, reconnectMachines, selectMachine } from "@clawtab/shared"
 import { useIap } from "../../hooks/useIap"
 import { useEffect, useRef, useState } from "react"
 import { AppState, Platform, View, Text, ActivityIndicator, Pressable } from "react-native"
@@ -27,7 +27,11 @@ export let RelaySubscription = () => {
   }, [focused, subLoading, sub])
 
   let router = useRouter()
-  let openMachines = () => router.push("/machines")
+  let openMachines = () => {
+    let workspace = machineState().machines.find(machine => machine.hosted)
+    if (sub?.hosted_workspace_eligible && workspace) selectMachine(workspace.id)
+    router.push("/machines")
+  }
   let [diagnosticsExpanded, setDiagnosticsExpanded] = useState(false)
   let toggleDiagnostics = () => { void iap.refreshDiagnostics(); setDiagnosticsExpanded((value) => !value) }
   let openPrivacy = () => openUrl("https://clawtab.cc/privacy")

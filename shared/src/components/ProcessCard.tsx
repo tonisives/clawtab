@@ -101,8 +101,8 @@ export function ProcessCard({
   const agentState = process._agent_state;
   const [activityClock, setActivityClock] = useState(() => Date.now());
   const recentActivity = !transient && (
-    !process._last_log_change
-    || activityClock - process._last_log_change < AGENT_ACTIVITY_WINDOW_MS
+    activityClock - (process._last_log_change
+      ?? (process.session_started_at ? Date.parse(process.session_started_at) : 0)) < AGENT_ACTIVITY_WINDOW_MS
   );
   const effectiveAgentState = resolveProcessAgentState(agentState, recentActivity);
   const alertSize = effectiveAgentState === "alert" ? sessionSizeAlertLabel(process._agent_alert) : null;
