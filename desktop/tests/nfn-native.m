@@ -254,6 +254,26 @@ static void verifyPresentationLifetime(void (^finish)(void)) {
     });
 }
 
+static void verifyPendingMenuToggle(void (^finish)(void)) {
+    [surface.statusItem.button performClick:nil];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 5), dispatch_get_main_queue(), ^{
+        if (!surface.panel.visible || !surface.notificationsVisible) { fprintf(stderr, "Menu icon did not reopen pending messages\n"); exit(1); }
+        [surface.statusItem.button performClick:nil];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 5), dispatch_get_main_queue(), ^{
+            [surface.web evaluateJavaScript:@"document.querySelector('#surface').classList.contains('empty')" completionHandler:^(id hidden, NSError *error) {
+                if (error || ![hidden boolValue] || surface.panel.visible || surface.notificationsVisible) { fprintf(stderr, "Second menu icon click did not hide pending messages\n"); exit(1); }
+                [surface.statusItem.button performClick:nil];
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 5), dispatch_get_main_queue(), ^{
+                    [surface.web evaluateJavaScript:@"Boolean(document.querySelector('.card, .queue'))" completionHandler:^(id reopened, NSError *reopenError) {
+                        if (reopenError || ![reopened boolValue] || !surface.panel.visible || !surface.notificationsVisible) { fprintf(stderr, "Menu icon did not restore hidden pending messages\n"); exit(1); }
+                        finish();
+                    }];
+                });
+            }];
+        });
+    });
+}
+
 static void verifyEmptyBarToggle(void (^finish)(void)) {
     NSString *script = @"document.querySelector('.bar-toggle').click(); const historyOpened = document.querySelector('[data-history=true]')?.getAttribute('aria-selected') === 'true'; document.querySelector('.bar-toggle').click(); historyOpened && document.querySelector('#surface').classList.contains('pill')";
     [surface.web evaluateJavaScript:script completionHandler:^(id kept, NSError *error) {
@@ -594,7 +614,7 @@ int main(int argc, const char **argv) {
                         if (geometryOnly) {
                             verifyExpansion(^{
                                 printf("Native geometry checks passed: passive arrival, notch overlap, window cycling excluded, expansion follows Reduce Motion, and fixed top anchor.\n");
-                                verifyResizeCorners(^{ verifyMenuLayout(^{ verifyDragging(^{ verifyPresentationLifetime(^{ verifyInlineSettings(^{ clawtab_nfn_stop(); }); }); }); }); });
+                                verifyResizeCorners(^{ verifyMenuLayout(^{ verifyDragging(^{ verifyPresentationLifetime(^{ verifyPendingMenuToggle(^{ verifyInlineSettings(^{ clawtab_nfn_stop(); }); }); }); }); }); });
                             });
                             return;
                         }
@@ -605,7 +625,7 @@ int main(int argc, const char **argv) {
                                     clawtab_nfn_activate(previousApplication);
                                     verifyExpansion(^{
                                         printf("Native checks passed: platform JSON booleans, passive panel, foreground preserved, notch overlap, window cycling excluded, reply focus, Command-A selection, expansion follows Reduce Motion, and fixed top anchor. Screenshots: /tmp/clawtab-nfn-native.png, /tmp/clawtab-nfn-expanded.png\n");
-                                        verifyResizeCorners(^{ verifyMenuLayout(^{ verifyDragging(^{ verifyPresentationLifetime(^{ verifyInlineSettings(^{ clawtab_nfn_stop(); }); }); }); }); });
+                                        verifyResizeCorners(^{ verifyMenuLayout(^{ verifyDragging(^{ verifyPresentationLifetime(^{ verifyPendingMenuToggle(^{ verifyInlineSettings(^{ clawtab_nfn_stop(); }); }); }); }); }); });
                                     });
                                 }); });
                             });

@@ -359,7 +359,7 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
     self.statusItem.button.target = self;
     self.statusItem.button.action = @selector(openNotifications:);
 }
-- (void)openNotifications:(id)sender { [self push:@{@"type":@"latest"}]; }
+- (void)openNotifications:(id)sender { [self push:@{@"type":@"toggle_notifications"}]; }
 - (void)screensChanged:(NSNotification *)notification {
     NSMutableSet *connected = [NSMutableSet set];
     for (NSScreen *screen in NSScreen.screens) [connected addObject:[screen.deviceDescription[@"NSScreenNumber"] stringValue]];
@@ -675,7 +675,7 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
         if (!self.ready) self.pendingPresentation = value;
     }
     BOOL opensRecord = [value[@"type"] isEqual:@"open_record"];
-    if ([value[@"type"] isEqual:@"show"] || [value[@"type"] isEqual:@"latest"] || opensRecord) {
+    if ([value[@"type"] isEqual:@"show"] || [value[@"type"] isEqual:@"latest"] || [value[@"type"] isEqual:@"toggle_notifications"] || opensRecord) {
         self.notificationsVisible = YES;
         if (!self.ready) self.pendingPresentation = value;
     }

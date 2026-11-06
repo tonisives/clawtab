@@ -2483,6 +2483,10 @@
       });
       return;
     }
+    if (value.type === "toggle_notifications") {
+      if (!host.classList.contains("empty")) { hideBar(); return; }
+      receive({ type: "latest" }); return;
+    }
     if (value.type === "show" || value.type === "latest") {
       resetHandledActions();
       if (value.type === "latest" && !pendingCount() && !host.classList.contains("empty")) { hideBar(); return; }
