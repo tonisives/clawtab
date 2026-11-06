@@ -1,9 +1,11 @@
 import { useRouter } from "expo-router"
-import { Pressable } from "react-native"
+import { Platform, Pressable } from "react-native"
 import { ScrollView, StyleSheet, Text, View } from "react-native"
 import { colors } from "@clawtab/shared"
 import { useSetupProgress } from "../hooks/useSetupProgress"
 import { AdvancedSetupOptions, RelayWelcome } from "./RelayWelcome"
+import { RelaySubscription } from "./settings/RelaySubscription"
+import { useAuthStore } from "../store/auth"
 import { useResponsive } from "../hooks/useResponsive"
 
 export let DemoOverview = ({ onConnect, showSamples = true }: { onConnect: () => void; showSamples?: boolean }) => {
@@ -11,6 +13,7 @@ export let DemoOverview = ({ onConnect, showSamples = true }: { onConnect: () =>
   let router = useRouter()
   let connectComputer = () => router.push({ pathname: "/add-machine", params: { setup: "connect" } })
   let { relayComplete } = useSetupProgress()
+  let authenticated = useAuthStore((state) => state.isAuthenticated)
   return <ScrollView style={styles.screen} contentContainerStyle={[styles.scrollContent, isIosPhoneLandscape && { padding: 12, paddingBottom: 16 }]} contentInsetAdjustmentBehavior="automatic">
     <View style={styles.content}>
       {showSamples && relayComplete && <View style={styles.nextStep}>
@@ -19,7 +22,7 @@ export let DemoOverview = ({ onConnect, showSamples = true }: { onConnect: () =>
         <Pressable accessibilityRole="button" onPress={connectComputer} style={styles.button}><Text style={styles.buttonText}>Connect your computer</Text></Pressable>
         <Text style={styles.hint}>Hosted Relay needs a subscription; you can also host your own relay.</Text>
       </View>}
-      <RelayWelcome onContinue={onConnect} connected={relayComplete} />
+      {Platform.OS === "web" && authenticated && !relayComplete ? <RelaySubscription /> : <RelayWelcome onContinue={onConnect} connected={relayComplete} />}
       <AdvancedSetupOptions />
     </View>
   </ScrollView>

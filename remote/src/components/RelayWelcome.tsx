@@ -18,7 +18,7 @@ export let RelayWelcome = ({ onContinue, connected = false, children }: { onCont
       </Feature>
     </View>
     <Text style={styles.description}>Use your existing Claude, Codex, or other AI account.</Text>
-    {onContinue && <Pressable accessibilityRole="button" onPress={onContinue} style={styles.button}><Text style={styles.buttonText}>{connected ? "Open workspace" : "Set up Relay"}</Text></Pressable>}
+    {onContinue && <Pressable accessibilityRole="button" onPress={onContinue} style={styles.button}><Text style={styles.buttonText}>{connected ? "Open workspace" : Platform.OS === "web" ? "Subscribe to Relay" : "Set up Relay"}</Text></Pressable>}
     {children}
   </View>
 }

@@ -74,7 +74,7 @@ test("demo notification and task actions remain inert", async () => {
 })
 
 test("machine setup follows Relay and its card opens the self-hosted connection form", () => {
-  let relayComplete = false, expanded = false
+  let relayComplete = false, expanded = false, authenticated = false
   const pushes = [], jsx = (type, props) => ({ type, props })
   const elements = node => Array.isArray(node) ? node.flatMap(elements) : node && typeof node === "object" ? [node, ...elements(node.props?.children)] : []
   const modules = {
@@ -86,6 +86,8 @@ test("machine setup follows Relay and its card opens the self-hosted connection 
     "@clawtab/shared": { colors: {} },
     "../hooks/useSetupProgress": { useSetupProgress: () => ({ relayComplete }) },
     "../hooks/useResponsive": { useResponsive: () => ({ isIosPhoneLandscape: false }) },
+    "./settings/RelaySubscription": { RelaySubscription: "RelaySubscription" },
+    "../store/auth": { useAuthStore: select => select({ isAuthenticated: authenticated }) },
   }
   const relay = load("src/components/RelayWelcome.tsx", modules)
   const { DemoOverview } = load("src/components/DemoOverview.tsx", { ...modules, "./RelayWelcome": relay })
@@ -101,7 +103,11 @@ test("machine setup follows Relay and its card opens the self-hosted connection 
   button.props.onPress()
   assert.equal(pushes[0], "/connect-relay")
   assert.ok(!elements(relay.AdvancedSetupOptions()).some(node => node.props?.title === "Host your own relay"))
+  assert.ok(elements(relay.RelayWelcome({ onContinue() {} })).some(node => node.props?.children === "Subscribe to Relay"))
+  authenticated = true
+  assert.ok(elements(DemoOverview({ onConnect() {} })).some(node => node.type === "RelaySubscription"))
   relayComplete = true
+  assert.ok(!elements(DemoOverview({ onConnect() {} })).some(node => node.type === "RelaySubscription"))
   assert.ok(elements(DemoOverview({ onConnect() {} })).some(node => node.props?.children === "Connect your computer"))
   assert.ok(elements(relay.AdvancedSetupOptions()).some(node => node.props?.title === "Connect a machine"))
 })
