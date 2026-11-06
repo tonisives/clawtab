@@ -1073,10 +1073,16 @@ impl Service {
         if record.request.source.pane_id.is_some() {
             let started = std::time::Instant::now();
             validate_direct_source(&record.request.source)?;
-            log::info!("[nfn] direct focus validation in {} ms", started.elapsed().as_millis());
+            log::info!(
+                "[nfn] direct focus validation in {} ms",
+                started.elapsed().as_millis()
+            );
             let started = std::time::Instant::now();
             focus_source(&record.request.source).await?;
-            log::info!("[nfn] direct terminal switch in {} ms", started.elapsed().as_millis());
+            log::info!(
+                "[nfn] direct terminal switch in {} ms",
+                started.elapsed().as_millis()
+            );
             return Ok(json!({"focused":true}));
         }
         if resumable_notice(record) {
@@ -2307,6 +2313,36 @@ fn validate_direct_source(source: &NfnSource) -> Result<(), String> {
         .pane_id
         .as_deref()
         .ok_or("This message has no recorded agent pane")?;
+    if crate::managed::is_managed(pane) {
+        let info = crate::terminal_backend::info(pane)?;
+        if info.status != crate::managed::Status::Running
+            || source.pane_pid.as_deref() != Some(info.child_pid.to_string().as_str())
+            || source.process_started_at != Some(info.started_at as i64)
+            || info
+                .launch
+                .conversation_id
+                .as_ref()
+                .zip(source.session_id.as_ref())
+                .is_some_and(|(a, b)| a != b)
+        {
+            return Err("The recorded agent process has changed".into());
+        }
+        if let Some(pid) = source
+            .agent_pid
+            .as_deref()
+            .filter(|pid| *pid != info.child_pid.to_string())
+        {
+            let snapshot = crate::agent_session::ProcessSnapshot::capture_pids(&[pid]);
+            if snapshot.command_for_pid(pid).is_none()
+                || source
+                    .agent_started_at
+                    .is_some_and(|time| snapshot.start_epoch_for_pid(pid) != Some(time))
+            {
+                return Err("The recorded agent process has changed".into());
+            }
+        }
+        return Ok(());
+    }
     if source.pane_pid.is_none()
         || (if crate::managed::is_managed(pane) {
             crate::terminal_backend::pane_pid(pane)

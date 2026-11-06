@@ -200,14 +200,17 @@ impl ProcessSnapshot {
     }
     #[cfg(unix)]
     pub fn capture() -> Self {
-        Self::capture_processes(&["-Ao", "pid=,ppid=,lstart=,command="])
+        Self::capture_processes(&["-Ao", "pid=,ppid=,lstart=,command="], true)
     }
 
     pub fn capture_pids(pids: &[&str]) -> Self {
-        Self::capture_processes(&["-p", &pids.join(","), "-o", "pid=,ppid=,lstart=,command="])
+        Self::capture_processes(
+            &["-p", &pids.join(","), "-o", "pid=,ppid=,lstart=,command="],
+            false,
+        )
     }
 
-    fn capture_processes(args: &[&str]) -> Self {
+    fn capture_processes(args: &[&str], include_managed: bool) -> Self {
         let output = match Command::new("ps").args(args).output() {
             Ok(o) if o.status.success() => o,
             _ => return Self::default(),
@@ -244,7 +247,9 @@ impl ProcessSnapshot {
                 snapshot.start_epoch.insert(pid.to_string(), epoch);
             }
         }
-        snapshot.add_managed();
+        if include_managed {
+            snapshot.add_managed();
+        }
         snapshot
     }
 
@@ -588,6 +593,15 @@ fn provider_for_command(command: Option<&str>) -> Option<ProcessProvider> {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
+    #[test]
+    fn targeted_process_snapshot_contains_only_the_requested_pid() {
+        let pid = std::process::id().to_string();
+        let snapshot = super::ProcessSnapshot::capture_pids(&[&pid]);
+        assert_eq!(snapshot.commands.len(), 1);
+        assert!(snapshot.commands.contains_key(&pid));
+        assert!(snapshot.managed.is_empty());
+    }
     use super::{ProcessProvider, ProcessSnapshot};
 
     #[test]
