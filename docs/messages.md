@@ -158,3 +158,29 @@ card with the exact copy and HTTPS source links. Review in CRM opens the saved
 draft. Each draft stays separate in the queue even when several share a job or
 conversation. Include the Codex `source.session_id`, `provider`, `cwd`, job/run
 identity and a focus action to open or resume its drafting conversation.
+
+## Agent identification
+
+Messages can carry `source.agent` with `id`, `type`, and a string map `data`.
+For tmux, use `{"id":"my-agent","type":"tmux","data":{"paneId":"%7"}}`.
+`cwt message source` prints the current context. Send it using `--agent-id`,
+`--agent-type`, and `--agent-data`, or `CWT_AGENT_ID`, `CWT_AGENT_TYPE`, and
+`CWT_AGENT_DATA`. Explicit flags override JSON, then environment defaults.
+Missing terminal context is resolved when sending; Open uses the recorded pane.
+A changed or closed pane returns an error rather than searching other panes.
+
+Message settings include **Require agent identification**. In
+`notifications.yaml`, configure `require_agent_identity` and custom types:
+
+```yaml
+require_agent_identity: true
+agent_definitions:
+  editor:
+    required_fields: [workspace]
+    identifier_field: workspace
+    focus_command: /absolute/path/to/focus-editor
+```
+
+Focus commands receive `CWT_AGENT_ID`, `CWT_AGENT_TYPE`, `CWT_AGENT_DATA`, and
+`CWT_AGENT_ORIGIN` as environment variables. They have a ten second timeout.
+Plain messages, jobs, browser messages, and standalone reminders remain supported.

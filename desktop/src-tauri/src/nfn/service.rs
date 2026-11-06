@@ -791,16 +791,18 @@ impl Service {
                 );
             }
             NfnCommand::Focus { id, pane_id } => {
-                let _guard = self.mutation.lock().await;
                 let record = self.store.get(&id)?;
                 if let Some(pane) = pane_id {
-                    let source = resolve_source(&pane, None)?;
+                    if record.request.source.pane_id.as_deref() != Some(&pane) {
+                        return Err("Open the recorded agent pane".into());
+                    }
+                    let source = record.request.source.clone();
                     if !same_conversation(&record.request.source, &source) {
                         return Err(
                             "This pane is no longer showing the message's conversation".into()
                         );
                     }
-                    validate_source(&source)?;
+                    validate_direct_source(&source)?;
                     focus_source(&source).await?;
                     return Ok(json!({"focused":true}));
                 }
@@ -868,6 +870,17 @@ impl Service {
             }
             _ => {}
         }
+        if let NfnCommand::Respond { id, action_id, .. } = &command {
+            let record = self.store.get(id)?;
+            if record
+                .request
+                .actions
+                .iter()
+                .any(|action| action.id == *action_id && action.kind == "focus")
+            {
+                return self.focus_notification(&record).await;
+            }
+        }
         let operation = match &command {
             NfnCommand::Read { .. } => "read",
             NfnCommand::Dismiss { .. } => "dismiss",
@@ -924,8 +937,21 @@ impl Service {
                         return Err("Telegram chat is not configured".into());
                     }
                 }
+                if let Some(agent) = &request.source.agent {
+                    if agent.r#type == "tmux" || agent.r#type == "clawtab" {
+                        request.source.pane_id = request
+                            .source
+                            .pane_id
+                            .clone()
+                            .or_else(|| agent.data.get("paneId").cloned());
+                    }
+                }
                 if let Some(pane) = request.source.pane_id.clone() {
-                    let source = resolve_source(&pane, request.source.client_tty.clone())?;
+                    let source = resolve_source_at(
+                        &pane,
+                        request.source.client_tty.clone(),
+                        request.source.tmux_socket.as_deref(),
+                    )?;
                     if request
                         .source
                         .session_id
@@ -937,6 +963,10 @@ impl Service {
                     request.source =
                         merge_reported_source(source, std::mem::take(&mut request.source));
                 }
+                bind_message_agent(
+                    &mut request.source,
+                    &self.ctx.settings.lock().enhanced_notifications,
+                )?;
                 if request.response_destination == "agent_message"
                     && request.source.agent_pid.is_none()
                 {
@@ -992,22 +1022,55 @@ impl Service {
     }
 
     async fn focus_notification(&self, record: &NfnRecord) -> Result<Value, String> {
-        let targets = session_targets(&record.request.source)?;
-        if targets.len() > 1 {
-            return Ok(json!({"targets":targets}));
+        if job_notice(record) || record.request.deliver_at.is_some() {
+            self.open_saved_session(record, true).await?;
+            return Ok(json!({"focused":true,"record":self.store.get(&record.id)?}));
         }
-        if let Some(target) = targets.first() {
-            let pane = target["pane_id"]
-                .as_str()
-                .ok_or("Session target has no pane")?;
-            let source = resolve_source(pane, None)?;
-            if !same_conversation(&record.request.source, &source) {
-                return Err(
-                    "The conversation moved. Open the message again to refresh its panes".into(),
-                );
+        if let Some(agent) = &record.request.source.agent {
+            if agent.r#type != "tmux" && agent.r#type != "clawtab" {
+                let definition = self
+                    .ctx
+                    .settings
+                    .lock()
+                    .enhanced_notifications
+                    .agent_definitions
+                    .get(&agent.r#type)
+                    .cloned()
+                    .ok_or("Unknown agent type")?;
+                let command = definition
+                    .focus_command
+                    .ok_or("This agent type has no focus command")?;
+                let mut child = tokio::process::Command::new("/bin/sh");
+                child
+                    .args(["-c", &command])
+                    .stdin(std::process::Stdio::null())
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .env("CWT_AGENT_ID", &agent.id)
+                    .env("CWT_AGENT_TYPE", &agent.r#type)
+                    .env(
+                        "CWT_AGENT_DATA",
+                        serde_json::to_string(&agent.data).map_err(|e| e.to_string())?,
+                    )
+                    .env(
+                        "CWT_AGENT_ORIGIN",
+                        serde_json::to_string(&record.request.source).map_err(|e| e.to_string())?,
+                    )
+                    .kill_on_drop(true);
+                let output =
+                    tokio::time::timeout(std::time::Duration::from_secs(10), child.output())
+                        .await
+                        .map_err(|_| "Agent focus command timed out")?
+                        .map_err(|e| e.to_string())?;
+                if !output.status.success() {
+                    return Err("Agent focus command failed".into());
+                }
+                return Ok(json!({"focused":true}));
             }
-            validate_source(&source)?;
-            focus_source(&source).await?;
+        }
+        if record.request.source.pane_id.is_some() {
+            validate_direct_source(&record.request.source)?;
+            focus_source(&record.request.source).await?;
             return Ok(json!({"focused":true}));
         }
         if resumable_notice(record) {
@@ -1757,6 +1820,15 @@ fn request_for_question(question: &ClaudeQuestion, dedupe_key: String) -> NfnReq
     }
 }
 
+fn tmux_at(socket: Option<&str>, args: &[&str]) -> Result<String, String> {
+    let mut scoped = Vec::new();
+    if let Some(socket) = socket {
+        scoped.extend(["-S", socket]);
+    }
+    scoped.extend_from_slice(args);
+    tmux(&scoped)
+}
+
 pub(super) fn tmux(args: &[&str]) -> Result<String, String> {
     let output = std::process::Command::new("tmux")
         .args(args)
@@ -1944,6 +2016,8 @@ fn job_request(slug: &str, event: &str, run_id: Option<&str>, mut source: NfnSou
 }
 
 fn merge_reported_source(mut source: NfnSource, reported: NfnSource) -> NfnSource {
+    source.agent = reported.agent;
+    source.tmux_socket = reported.tmux_socket.or(source.tmux_socket);
     source.browser_pane_id = reported.browser_pane_id;
     source.browser_session = reported.browser_session;
     source.task = reported.task.or(source.task);
@@ -1955,8 +2029,25 @@ fn merge_reported_source(mut source: NfnSource, reported: NfnSource) -> NfnSourc
 }
 
 pub fn resolve_source(pane: &str, client_tty: Option<String>) -> Result<NfnSource, String> {
-    let pid = crate::terminal_backend::pane_pid(pane)?;
-    let cwd = crate::terminal_backend::get_pane_path(pane)?;
+    resolve_source_at(pane, client_tty, None)
+}
+
+fn resolve_source_at(
+    pane: &str,
+    client_tty: Option<String>,
+    socket: Option<&str>,
+) -> Result<NfnSource, String> {
+    let tmux = |args: &[&str]| tmux_at(socket, args);
+    let pid = if crate::managed::is_managed(pane) {
+        crate::terminal_backend::pane_pid(pane)?
+    } else {
+        tmux(&["display-message", "-p", "-t", pane, "#{pane_pid}"])?
+    };
+    let cwd = if crate::managed::is_managed(pane) {
+        crate::terminal_backend::get_pane_path(pane)?
+    } else {
+        tmux(&["display-message", "-p", "-t", pane, "#{pane_current_path}"])?
+    };
     let snapshot = crate::agent_session::ProcessSnapshot::capture();
     let provider = crate::agent_session::detect_process_provider(&pid, Some(&snapshot));
     let agent_pid = crate::agent_session::provider_process_pid(&pid, &snapshot);
@@ -1982,6 +2073,7 @@ pub fn resolve_source(pane: &str, client_tty: Option<String>) -> Result<NfnSourc
         .cloned();
     let mut source = NfnSource {
         pane_id: Some(pane.into()),
+        tmux_socket: socket.map(str::to_owned),
         pane_pid: Some(pid.clone()),
         process_started_at: snapshot.start_epoch_for_pid(&pid),
         agent_started_at: agent_pid
@@ -2125,6 +2217,125 @@ fn close_message_session(
         // The session may exit between validation and the kill request.
         if validate(source).is_ok() {
             return Err(error);
+        }
+    }
+    Ok(())
+}
+
+fn bind_message_agent(source: &mut NfnSource, settings: &NfnSettings) -> Result<(), String> {
+    if source.agent.is_none() {
+        if let Some(pane) = source.pane_id.as_ref() {
+            source.agent = Some(MessageAgent {
+                id: source.session_id.clone().unwrap_or_else(|| pane.clone()),
+                r#type: if crate::managed::is_managed(pane) {
+                    "clawtab"
+                } else {
+                    "tmux"
+                }
+                .into(),
+                data: [("paneId".into(), pane.clone())].into(),
+            });
+        }
+    }
+    if let Some(agent) = source.agent.as_mut() {
+        if agent.r#type.is_empty() && source.pane_id.is_some() {
+            agent.r#type = if source
+                .pane_id
+                .as_deref()
+                .is_some_and(crate::managed::is_managed)
+            {
+                "clawtab"
+            } else {
+                "tmux"
+            }
+            .into();
+        }
+        if agent.r#type == "tmux" || agent.r#type == "clawtab" {
+            if agent.id.trim().is_empty() {
+                agent.id = source
+                    .session_id
+                    .clone()
+                    .or(source.pane_id.clone())
+                    .unwrap_or_default();
+            }
+            if let Some(pane) = source.pane_id.clone() {
+                agent.data.entry("paneId".into()).or_insert(pane);
+            }
+        }
+        if agent.id.trim().is_empty() || agent.r#type.trim().is_empty() {
+            return Err("Agent id and type must be nonempty".into());
+        }
+        if agent.r#type == "tmux" || agent.r#type == "clawtab" {
+            if agent.data.get("paneId") != source.pane_id.as_ref() {
+                return Err("Agent requires data.paneId matching source.pane_id".into());
+            }
+        } else {
+            let definition = settings
+                .agent_definitions
+                .get(&agent.r#type)
+                .ok_or("Unknown agent type; configure agent_definitions in notifications.yaml")?;
+            for field in &definition.required_fields {
+                if agent
+                    .data
+                    .get(field)
+                    .is_none_or(|value| value.trim().is_empty())
+                {
+                    return Err(format!("Agent {} requires data.{field}", agent.r#type));
+                }
+            }
+        }
+    } else if settings.require_agent_identity
+        && source.provider.is_some()
+        && source.job_id.is_none()
+    {
+        return Err(
+            "Agent identification required: provide source.agent with id, type and data".into(),
+        );
+    }
+    Ok(())
+}
+
+fn validate_direct_source(source: &NfnSource) -> Result<(), String> {
+    let tmux = |args: &[&str]| tmux_at(source.tmux_socket.as_deref(), args);
+    let pane = source
+        .pane_id
+        .as_deref()
+        .ok_or("This message has no recorded agent pane")?;
+    if source.pane_pid.is_none()
+        || (if crate::managed::is_managed(pane) {
+            crate::terminal_backend::pane_pid(pane)
+        } else {
+            tmux(&["display-message", "-p", "-t", pane, "#{pane_pid}"])
+        })
+        .ok()
+        .as_ref()
+            != source.pane_pid.as_ref()
+    {
+        return Err("The recorded agent pane has changed".into());
+    }
+    if source.provider.as_deref() == Some("codex") {
+        if let Some(session) = source.session_id.as_deref() {
+            let title = tmux(&["display-message", "-p", "-t", pane, "#{pane_title}"])?;
+            if !crate::agent_session::codex_title_matches(session, &title) {
+                return Err("The recorded agent conversation has changed".into());
+            }
+        }
+    }
+    let pids: Vec<&str> = [source.pane_pid.as_deref(), source.agent_pid.as_deref()]
+        .into_iter()
+        .flatten()
+        .collect();
+    let snapshot = crate::agent_session::ProcessSnapshot::capture_pids(&pids);
+    for (pid, started) in [
+        (source.pane_pid.as_deref(), source.process_started_at),
+        (source.agent_pid.as_deref(), source.agent_started_at),
+    ] {
+        if let Some(pid) = pid {
+            if snapshot.command_for_pid(pid).is_none()
+                || started.is_some_and(|time| snapshot.start_epoch_for_pid(pid) != Some(time))
+            {
+                return Err("The recorded agent process has changed".into());
+            }
         }
     }
     Ok(())
@@ -2279,6 +2490,50 @@ fn reply_targets_agent(record: &NfnRecord, action_id: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn typed_agents_validate_custom_fields_and_preserve_plain_messages() {
+        let mut settings = NfnSettings::default();
+        let mut plain = NfnSource::default();
+        assert!(bind_message_agent(&mut plain, &settings).is_ok());
+        let mut terminal = NfnSource {
+            pane_id: Some("%7".into()),
+            ..Default::default()
+        };
+        bind_message_agent(&mut terminal, &settings).unwrap();
+        assert_eq!(terminal.agent.as_ref().unwrap().data["paneId"], "%7");
+        let mut custom = NfnSource {
+            agent: Some(MessageAgent {
+                id: "task".into(),
+                r#type: "editor".into(),
+                data: Default::default(),
+            }),
+            ..Default::default()
+        };
+        assert!(bind_message_agent(&mut custom, &settings).is_err());
+        settings.agent_definitions.insert(
+            "editor".into(),
+            AgentDefinition {
+                required_fields: vec!["workspace".into()],
+                ..Default::default()
+            },
+        );
+        assert!(bind_message_agent(&mut custom, &settings).is_err());
+        custom
+            .agent
+            .as_mut()
+            .unwrap()
+            .data
+            .insert("workspace".into(), "project".into());
+        bind_message_agent(&mut custom, &settings).unwrap();
+        terminal
+            .agent
+            .as_mut()
+            .unwrap()
+            .data
+            .insert("paneId".into(), "%8".into());
+        assert!(bind_message_agent(&mut terminal, &settings).is_err());
+    }
 
     #[test]
     fn pinned_surface_records_follow_pane_and_job_pins() {
@@ -3445,6 +3700,7 @@ async fn open_notification_settings() -> Result<(), String> {
 }
 
 async fn focus_source(source: &NfnSource) -> Result<(), String> {
+    let tmux = |args: &[&str]| tmux_at(source.tmux_socket.as_deref(), args);
     let pane = source
         .pane_id
         .as_deref()

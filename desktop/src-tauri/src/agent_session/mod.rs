@@ -14,6 +14,7 @@ pub use identities::{agent_identities, AgentIdentity};
 
 pub(crate) use codex::session_activity_for_pane as codex_session_activity_for_pane;
 pub(crate) use codex::thread_id_for_pane as codex_thread_id_for_pane;
+pub(crate) use codex::title_matches as codex_title_matches;
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -199,10 +200,15 @@ impl ProcessSnapshot {
     }
     #[cfg(unix)]
     pub fn capture() -> Self {
-        let output = match Command::new("ps")
-            .args(["-Ao", "pid=,ppid=,lstart=,command="])
-            .output()
-        {
+        Self::capture_processes(&["-Ao", "pid=,ppid=,lstart=,command="])
+    }
+
+    pub fn capture_pids(pids: &[&str]) -> Self {
+        Self::capture_processes(&["-p", &pids.join(","), "-o", "pid=,ppid=,lstart=,command="])
+    }
+
+    fn capture_processes(args: &[&str]) -> Self {
+        let output = match Command::new("ps").args(args).output() {
             Ok(o) if o.status.success() => o,
             _ => return Self::default(),
         };

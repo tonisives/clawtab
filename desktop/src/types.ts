@@ -172,6 +172,8 @@ export interface AppSettings {
 }
 
 export interface EnhancedNotificationSettings {
+  require_agent_identity: boolean;
+  agent_definitions: Record<string, { required_fields?: string[]; identifier_field?: string; focus_command?: string }>;
   delivery: "enhanced" | "native" | "both";
   placement: "notch" | "right" | "custom";
   position?: { right: number; top: number } | null;

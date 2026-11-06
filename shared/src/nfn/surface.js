@@ -900,7 +900,7 @@
     finally { openingSessions.delete(id); render(); }
   }
   async function loadSessionTargets(record, node) {
-    if (preview || !record.request.source?.session_id) return;
+    if (preview || record.request.source?.pane_id || record.request.source?.agent || !record.request.source?.session_id) return;
     try {
       const value = await call({ op: "session_targets", id: record.id });
       sessionTargets.set(record.id, value.targets || []);
@@ -1346,7 +1346,9 @@
     if (record.request.data?.reminder) body.append(el("div", "notification-title source-attribution", `Scheduled by ${record.request.data.reminder.creator_label}`));
     if (!agent) {
       const source = record.request.source || {};
-      const label = [source.group, source.agent_title || source.task, source.browser_pane_id ? `BMUX pane ${source.browser_pane_id}` : source.pane_id ? `Pane ${source.pane_id}` : ""].filter(Boolean).join(" · ");
+      const definition = snapshot.settings?.agent_definitions?.[source.agent?.type];
+      const identifier = source.agent?.data?.[definition?.identifier_field] || source.agent?.id;
+      const label = [source.group, source.agent_title || source.task || identifier, source.browser_pane_id ? `BMUX pane ${source.browser_pane_id}` : source.pane_id ? `Pane ${source.pane_id}` : ""].filter(Boolean).join(" · ");
       if (label) body.append(el("div", "notification-title source-attribution", label));
     }
     if (agent && !record.question_id && record.request.title !== identity.group && record.request.title !== identity.title) body.append(el("div", "notification-title", record.request.title));
@@ -1446,7 +1448,7 @@
       }, "primary open-session");
       openBrowser.title = "Open the browser session and select this pane";
       utilities.append(openBrowser);
-    } else if (record.request.source?.pane_id || savedConversation(record) || choices.some(action => action.kind === "focus")) {
+    } else if (record.request.source?.pane_id || snapshot.settings?.agent_definitions?.[record.request.source?.agent?.type]?.focus_command || savedConversation(record) || choices.some(action => action.kind === "focus")) {
       utilities.classList.add("session-controls");
       const focus = choices.find(action => action.kind === "focus");
       const openSession = button("Open", () => focus ? act(record.id, focus.id, "") : focusSession(record.id, { op: "focus", id: record.id }), "primary open-session");
@@ -2116,6 +2118,7 @@
         ["focus_shortcut", "Focus shortcut", "text"],
         ["sound", "Sound", "checkbox"],
         ["menu_bar_icon", "Menu bar icon", "checkbox"],
+        ["require_agent_identity", "Require agent identification", "checkbox"],
         ["mobile_when_idle", "Send to mobile when idle", "checkbox"],
         ["idle_seconds", "Idle time before mobile delivery", null],
       ];

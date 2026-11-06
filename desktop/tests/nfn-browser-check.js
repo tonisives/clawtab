@@ -1414,13 +1414,12 @@
   window.fixture.sessionTargets = pickerTargets;
   window.nfn.receive(window.fixture.snapshot(pickerNotice.id));
   await sleep(50);
-  assert(document.querySelector(".open-session").textContent === "Open (2)" && document.querySelector(".session-locations").textContent.includes("2 panes"), "shared conversation shows its pane count before opening");
+  assert(document.querySelector(".open-session").textContent === "Open" && !document.querySelector(".session-locations"), "recorded pane opens directly without loading alternative conversation targets");
+  window.fixture.sessionTargets = [];
+  const beforeOpen = window.fixture.calls.length;
   click("Open session"); await sleep(50);
-  assert(document.querySelectorAll(".session-target").length === 2 && document.querySelector('.menu-panel[aria-label="Choose a pane"]'), "Open offers both panes for a shared conversation");
-  assert(document.querySelectorAll(".session-target")[1].textContent.includes("Message origin"), "pane picker identifies the message origin");
-  document.querySelector(".session-target").click(); await sleep(50);
-  assert(window.fixture.calls.some(command => command.op === "focus" && command.pane_id === "%10"), "choosing another pane sends that exact target");
-  assert(!pickerNotice.dismissed_at && pickerNotice.status === "pending" && !document.querySelector(".menu-overlay"), "opening a selected pane closes the picker and keeps the message pending");
+  assert(window.fixture.calls.slice(beforeOpen).some(command => command.op === "focus" || command.op === "respond"), "Open calls the recorded message target");
+  assert(!document.querySelector(".session-target"), "direct Open does not show a pane picker");
   window.fixture.sessionTargets = [];
   resetFlow();
   window.fixture.records.set(menuPreview.id, menuPreview); window.nfn.receive(window.fixture.snapshot(menuPreview.id));

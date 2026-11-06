@@ -52,6 +52,8 @@ pub async fn message(args: &[String]) -> Result<Value, String> {
             "cwt message ignored-agents",
             "cwt message ignore-job-success|unignore-job-success JOB_ID",
             "cwt message focus ID",
+            "cwt message source (print current agent identity)",
+            "send identity: --agent-id ID --agent-type TYPE --agent-data JSON (or CWT_AGENT_ID, CWT_AGENT_TYPE, CWT_AGENT_DATA)",
             "cwt message reply ID [TEXT] [--action ID]",
             "cwt message show|settings|templates [args]"
         ], "formatting": [
@@ -67,6 +69,24 @@ pub async fn message(args: &[String]) -> Result<Value, String> {
                 return Err("Schedule requires --at RFC3339 or --in 24h".into());
             }
             submit(request, waits, timeout).await
+        }
+        "source" => {
+            let mut source = NfnSource::default();
+            infer_source(
+                &mut source,
+                std::env::var("CODEX_THREAD_ID").ok().as_deref(),
+                std::env::var("CLAWTAB_SESSION_ID").ok().as_deref(),
+                std::env::var("TMUX_PANE").ok().as_deref(),
+                agent_session::agent_identities,
+            )?;
+            let pane = source
+                .pane_id
+                .as_deref()
+                .ok_or("No agent pane; provide explicit agent context")?;
+            let resolved = super::resolve_source(pane, None)?;
+            Ok(
+                json!({"id":resolved.session_id.as_deref().unwrap_or(pane),"type":if crate::managed::is_managed(pane) { "clawtab" } else { "tmux" },"data":{"paneId":pane}}),
+            )
         }
         "update" => call(update_command(args)?).await,
         "scheduled" => {
@@ -167,6 +187,9 @@ fn parse_message(args: &[String]) -> Result<(NfnRequest, bool, Option<u64>), Str
             | "--video"
             | "--at"
             | "--in"
+            | "--agent-id"
+            | "--agent-type"
+            | "--agent-data"
             | "--response-destination" => {
                 let next = values
                     .next()
@@ -214,6 +237,32 @@ fn parse_message(args: &[String]) -> Result<(NfnRequest, bool, Option<u64>), Str
             ..Default::default()
         }
     };
+    let supplied = request.source.agent.clone();
+    let id = value("--agent-id")
+        .map(str::to_owned)
+        .or_else(|| supplied.as_ref().map(|a| a.id.clone()))
+        .or_else(|| std::env::var("CWT_AGENT_ID").ok());
+    let kind = value("--agent-type")
+        .map(str::to_owned)
+        .or_else(|| supplied.as_ref().map(|a| a.r#type.clone()))
+        .or_else(|| std::env::var("CWT_AGENT_TYPE").ok());
+    let data = value("--agent-data").map(str::to_owned).or_else(|| {
+        std::env::var("CWT_AGENT_DATA")
+            .ok()
+            .filter(|_| supplied.is_none())
+    });
+    if id.is_some() || kind.is_some() || data.is_some() {
+        request.source.agent = Some(super::MessageAgent {
+            id: id.unwrap_or_default(),
+            r#type: kind.unwrap_or_default(),
+            data: match data {
+                Some(data) => {
+                    serde_json::from_str(&data).map_err(|e| format!("Invalid agent data: {e}"))?
+                }
+                None => supplied.map(|a| a.data).unwrap_or_default(),
+            },
+        });
+    }
     if let Some(kind) = value("--kind") {
         request.kind = kind.into();
         if !input && value("--template").is_none() {
@@ -330,6 +379,11 @@ async fn submit(
     timeout: Option<u64>,
 ) -> Result<Value, String> {
     if request.data["reminder_as_user"] != true {
+        request.source.tmux_socket = request.source.tmux_socket.or_else(|| {
+            std::env::var("TMUX")
+                .ok()
+                .and_then(|value| value.split(',').next().map(str::to_owned))
+        });
         infer_source(
             &mut request.source,
             std::env::var("CODEX_THREAD_ID").ok().as_deref(),
@@ -526,6 +580,16 @@ fn infer_source(
     tmux_pane: Option<&str>,
     identities: impl FnOnce() -> Result<Vec<AgentIdentity>, String>,
 ) -> Result<(), String> {
+    if let Some(agent) = &source.agent {
+        if agent.r#type == "tmux" || agent.r#type == "clawtab" {
+            source.pane_id = source
+                .pane_id
+                .clone()
+                .or_else(|| agent.data.get("paneId").cloned());
+        } else if !agent.r#type.is_empty() {
+            return Ok(());
+        }
+    }
     if source.pane_id.is_some() || source.job_id.is_some() {
         return Ok(());
     }

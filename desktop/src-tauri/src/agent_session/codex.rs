@@ -259,6 +259,14 @@ fn read_pane_title_sessions() -> Option<HashMap<String, PaneTitleSession>> {
     Some(sessions)
 }
 
+pub(crate) fn title_matches(thread_id: &str, title: &str) -> bool {
+    let Some(name) = read_codex_thread(thread_id).and_then(|thread| thread.name) else {
+        return false;
+    };
+    session_name_from_title(title)
+        .is_some_and(|current| current.replace('\u{00ad}', "") == name.replace('\u{00ad}', ""))
+}
+
 fn session_name_from_title(title: &str) -> Option<&str> {
     let (name, _) = title.rsplit_once(" | ")?;
     // The TUI replaces its spinner with either phase of a blinking marker
@@ -281,7 +289,11 @@ fn session_name_from_title(title: &str) -> Option<&str> {
     Some(name)
 }
 
-fn session_for_resumed_title(conn: &Connection, title: &str, command: &str) -> Option<PaneTitleSession> {
+fn session_for_resumed_title(
+    conn: &Connection,
+    title: &str,
+    command: &str,
+) -> Option<PaneTitleSession> {
     let name = session_name_from_title(title)?;
     let words: Vec<_> = command.split_whitespace().collect();
     let id = words.windows(2).find(|pair| pair[0] == "resume")?[1];
@@ -1103,8 +1115,10 @@ mod tests {
     fn resumed_sessions_in_another_directory_require_a_matching_id_and_visible_name() {
         let conn = rusqlite::Connection::open_in_memory().unwrap();
         let id = "01a15d2f-67df-79c1-a979-04764b3494b1";
-        conn.execute_batch("create table threads (id text, name text, cwd text, archived integer);")
-            .unwrap();
+        conn.execute_batch(
+            "create table threads (id text, name text, cwd text, archived integer);",
+        )
+        .unwrap();
         conn.execute("insert into threads values (?1, 'Inspect healthcheck failures', '/deployments/k3s', 0)", [id]).unwrap();
         let title = "Inspect healthcheck failures | deployments";
         assert!(super::session_for_title(&conn, title, "/bmux").is_none());
@@ -1116,7 +1130,9 @@ mod tests {
                 .as_deref(),
             Some(id)
         );
-        assert!(super::session_for_resumed_title(&conn, "Another session | bmux", &command).is_none());
+        assert!(
+            super::session_for_resumed_title(&conn, "Another session | bmux", &command).is_none()
+        );
         assert!(super::session_for_resumed_title(&conn, title, "codex resume --last").is_none());
         conn.execute("update threads set archived = 1", []).unwrap();
         assert!(super::session_for_resumed_title(&conn, title, &command).is_none());

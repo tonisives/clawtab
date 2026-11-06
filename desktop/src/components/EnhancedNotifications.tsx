@@ -161,6 +161,7 @@ export function EnhancedNotifications({ settings: initialSettings, onChange }: {
         onChange={e => { const seconds = Number(e.target.value); if (seconds >= 10 && seconds <= 3600) change({ idle_seconds: seconds }) }} /></label>
       <label>Focus message bar shortcut<input aria-label="Focus message bar shortcut" defaultValue={settings.focus_shortcut ?? "Ctrl+Alt+w"} onBlur={e => change({ focus_shortcut: e.target.value })} /></label>
       <div className="nfn-options">
+        <label className="checkbox-label"><input type="checkbox" checked={settings.require_agent_identity ?? true} onChange={e => change({ require_agent_identity: e.target.checked })} />Require agent identification</label>
         <label className="checkbox-label"><input type="checkbox" checked={settings.keyboard_hints ?? false} onChange={e => change({ keyboard_hints: e.target.checked })} />Keyboard hints (double Option while the bar is focused)</label>
         <label className="checkbox-label"><input type="checkbox" checked={settings.hover_expand} onChange={e => change({ hover_expand: e.target.checked })} />Expand on hover</label>
         <label className="checkbox-label"><input type="checkbox" checked={settings.sound} onChange={e => change({ sound: e.target.checked })} />Sound</label>

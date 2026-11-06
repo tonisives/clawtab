@@ -4,6 +4,8 @@ use serde_json::Value;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct NfnSettings {
+    pub require_agent_identity: bool,
+    pub agent_definitions: std::collections::BTreeMap<String, AgentDefinition>,
     pub delivery: String,
     pub placement: String,
     pub focus: String,
@@ -22,6 +24,8 @@ pub struct NfnSettings {
 impl Default for NfnSettings {
     fn default() -> Self {
         Self {
+            require_agent_identity: true,
+            agent_definitions: Default::default(),
             delivery: "enhanced".into(),
             placement: "notch".into(),
             focus: "follow".into(),
@@ -41,6 +45,23 @@ impl Default for NfnSettings {
 
 impl NfnSettings {
     pub fn validate(&self) -> Result<(), String> {
+        for (name, definition) in &self.agent_definitions {
+            if name.trim().is_empty()
+                || name.len() > 128
+                || definition
+                    .required_fields
+                    .iter()
+                    .any(|field| field.trim().is_empty())
+                || definition
+                    .focus_command
+                    .as_ref()
+                    .is_some_and(|command| command.trim().is_empty() || command.len() > 16000)
+            {
+                return Err(
+                    "Agent definitions need nonempty names, fields and focus commands".into(),
+                );
+            }
+        }
         if !self.focus_shortcut.is_empty() {
             let binding = self.focus_shortcut.to_ascii_lowercase();
             let parts: Vec<_> = binding.split('+').collect();
@@ -81,8 +102,28 @@ pub struct NfnPosition {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct AgentDefinition {
+    #[serde(default)]
+    pub required_fields: Vec<String>,
+    pub identifier_field: Option<String>,
+    pub focus_command: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct MessageAgent {
+    pub id: String,
+    pub r#type: String,
+    #[serde(default)]
+    pub data: std::collections::BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct NfnSource {
+    pub agent: Option<MessageAgent>,
+    pub tmux_socket: Option<String>,
     pub browser_pane_id: Option<String>,
     pub browser_session: Option<String>,
     pub pane_id: Option<String>,
@@ -110,6 +151,11 @@ pub struct NfnSource {
 
 impl NfnSource {
     pub fn agent_key(&self) -> Option<String> {
+        if self.pane_id.is_none() && self.job_id.is_none() {
+            return self.agent.as_ref().map(|agent| {
+                serde_json::to_string(&("custom", &agent.r#type, &agent.id)).unwrap()
+            });
+        }
         (self.pane_id.is_some() || (self.job_id.is_some() && self.run_id.is_some())).then(|| {
             serde_json::to_string(&(
                 &self.pane_id,
@@ -124,6 +170,17 @@ impl NfnSource {
     }
 
     pub fn same_agent(&self, other: &Self) -> bool {
+        if self.pane_id.is_none()
+            && other.pane_id.is_none()
+            && self.job_id.is_none()
+            && other.job_id.is_none()
+        {
+            return self
+                .agent
+                .as_ref()
+                .zip(other.agent.as_ref())
+                .is_some_and(|(a, b)| a.id == b.id && a.r#type == b.r#type);
+        }
         let identified = self.pane_id.is_some() || (self.job_id.is_some() && self.run_id.is_some());
         identified
             && self.pane_id == other.pane_id
