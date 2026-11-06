@@ -303,11 +303,11 @@
     const marker = el("span", "pinned-session"); marker.title = "Pinned session";
     marker.setAttribute("role", "img"); marker.setAttribute("aria-label", "Pinned session");
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svg.setAttribute("viewBox", "0 0 256 256"); svg.setAttribute("fill", "none");
-    svg.setAttribute("stroke", "currentColor"); svg.setAttribute("stroke-width", "16");
+    svg.setAttribute("viewBox", "0 0 448 512"); svg.setAttribute("fill", "currentColor");
+    svg.setAttribute("stroke", "currentColor"); svg.setAttribute("stroke-width", "0");
     svg.setAttribute("stroke-linecap", "round"); svg.setAttribute("stroke-linejoin", "round"); svg.setAttribute("aria-hidden", "true");
     const shape = document.createElementNS(svg.namespaceURI, "path");
-    shape.setAttribute("d", "m88 168-56 56M104 32l120 120-40 8-24 56-120-120 56-24Z");
+    shape.setAttribute("d", "M320 32H128v32h32v160l-64 64v32h112v128l16 32 16-32V320h112v-32l-64-64V64h32Z");
     svg.append(shape); marker.append(svg); return marker;
   }
   function hasAgent(record) { const source = record.request.source; return Boolean(source?.pane_id && (source.agent_pid || source.provider || record.question_id)); }
@@ -751,6 +751,8 @@
     }
   }
   function restoreBarView() {
+    const priority = priorityCompletion(pendingCards());
+    if (priority) { openRecord(priority.id); return; }
     const view = savedBarView;
     if (view?.kind === "queue") { showQueue(view.history, view); return; }
     if (view?.kind === "todos") { toggleTodos(); return; }

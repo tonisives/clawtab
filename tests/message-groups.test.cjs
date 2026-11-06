@@ -8,7 +8,7 @@ function surface() {
   const window = { matchMedia: () => ({ matches: true, addEventListener() {} }), addEventListener() {} };
   window.parent = window;
   const source = fs.readFileSync(require.resolve("../shared/src/nfn/surface.js"), "utf8")
-    .replace("  window.nfn = {", "  window.groups = { records, pendingCards, navigationCards, navigationTarget, navigate, cardMessages, addPendingPage, performAction, actionsInProgress, select(id) { current = id; expanded = true; }, state() { return { current, expanded }; } }; hiddenByUser = true; render = () => {};\n  window.nfn = {");
+    .replace("  window.nfn = {", "  window.groups = { records, restoreBarView, pendingCards, navigationCards, navigationTarget, navigate, cardMessages, addPendingPage, performAction, actionsInProgress, select(id) { current = id; expanded = true; }, state() { return { current, expanded }; } }; hiddenByUser = true; render = () => {};\n  window.nfn = {");
   vm.runInNewContext(source, {
     window, document: { getElementById: () => host, addEventListener() {},
       createElement: () => ({ setAttribute() {} }), body: { append() {} } },
@@ -252,4 +252,17 @@ test("a failed latest response restores the entire group for retry", async () =>
   await app.performAction("latest", { op: "respond", id: "latest", action_id: "approve" });
   assert.equal(app.actionsInProgress.size, 0);
   assert.deepEqual(Array.from(app.cardMessages(app.pendingCards()[0]), item => item.id), ["old", "latest"]);
+});
+
+test("reopening the bar surfaces an unseen pinned completion first", () => {
+  const app = surface();
+  const completion = record("pin", 1, { pane_id: "%pin" }, { pinned: true });
+  completion.request.data = { event: "agent_finished" };
+  app.receive({ type: "snapshot", records: [completion, record("latest", 2)], pending_count: 2 });
+  app.select(null);
+  app.window.webkit = { messageHandlers: { nfn: { postMessage({ token }) {
+    app.receive({ type: "response", token, value: completion });
+  } } } };
+  app.restoreBarView();
+  assert.equal(app.state().current, "pin");
 });
