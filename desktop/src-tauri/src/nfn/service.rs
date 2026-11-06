@@ -157,14 +157,33 @@ impl Service {
             // every pending card. Re-read records after taking the lock below.
             let records = self.store.pending().unwrap_or_default();
             let check_identity = ticks.is_multiple_of(10);
-            let invalid_sources = tokio::task::spawn_blocking(move || {
+            let (invalid_sources, completion_sources) = tokio::task::spawn_blocking(move || {
                 let mut invalid = closed_pending_sources(&records, || {
                     tmux(&["list-panes", "-a", "-F", "#{pane_id}"])
                 });
                 if check_identity {
                     invalid.extend(invalid_pending_sources(&records));
                 }
-                invalid
+                let mut sources = HashMap::new();
+                if check_identity {
+                    for record in &records {
+                        if record.request.data["event"] != "agent_finished" {
+                            continue;
+                        }
+                        if let Some(pane) = record
+                            .request
+                            .source
+                            .pane_id
+                            .as_deref()
+                            .filter(|pane| pane.starts_with('%'))
+                        {
+                            sources
+                                .entry(pane.to_string())
+                                .or_insert_with(|| resolve_source(pane, None).ok());
+                        }
+                    }
+                }
+                (invalid, sources)
             })
             .await
             .unwrap_or_default();
@@ -188,13 +207,22 @@ impl Service {
             if let Ok(records) = self.store.pending() {
                 for mut record in records {
                     let invalid_source = invalid_sources.contains(&record.id);
+                    let labels_changed = record
+                        .request
+                        .source
+                        .pane_id
+                        .as_ref()
+                        .and_then(|pane| completion_sources.get(pane))
+                        .and_then(Option::as_ref)
+                        .is_some_and(|source| refresh_completion_labels(&mut record, source));
                     if !refresh_pending_record(
                         &mut record,
                         current_questions,
                         &auto_yes_panes,
                         now(),
                         |_| !invalid_source,
-                    ) {
+                    ) && !labels_changed
+                    {
                         continue;
                     }
                     if let Err(error) = self.store.save(&mut record) {
@@ -1581,6 +1609,25 @@ fn refresh_pending_record(
     } else {
         return false;
     }
+    true
+}
+
+fn refresh_completion_labels(record: &mut NfnRecord, current: &NfnSource) -> bool {
+    if record.request.data["event"] != "agent_finished"
+        || !same_source(&record.request.source, current)
+    {
+        return false;
+    }
+    let source = &mut record.request.source;
+    if source.group == current.group
+        && source.window_name == current.window_name
+        && source.pane_title == current.pane_title
+    {
+        return false;
+    }
+    source.group = current.group.clone();
+    source.window_name = current.window_name.clone();
+    source.pane_title = current.pane_title.clone();
     true
 }
 
@@ -3068,6 +3115,42 @@ mod tests {
         store.save(&mut next).unwrap();
         assert!(!resolve_resumed_completions(&store, &activity).unwrap());
         assert!(store.get(&next.id).unwrap().pending());
+    }
+
+    #[test]
+    fn completion_labels_follow_the_same_agent_when_its_pane_moves() {
+        let original = NfnSource {
+            pane_id: Some("%61".into()),
+            pane_pid: Some("73589".into()),
+            agent_pid: Some("74970".into()),
+            session_id: Some("tskr-conversation".into()),
+            provider: Some("codex".into()),
+            group: Some("clawtab".into()),
+            window_name: Some("mobile".into()),
+            task: Some("Add iOS idea validation".into()),
+            ..Default::default()
+        };
+        let mut record = pending_permission();
+        record.request.data = json!({"event":"agent_finished"});
+        record.request.source = original.clone();
+        let mut current = original.clone();
+        current.group = Some("tskr".into());
+        current.window_name = Some("Add iOS idea validation".into());
+        current.pane_title = Some("Add idea validation to iOS and web | tskr".into());
+        assert!(refresh_completion_labels(&mut record, &current));
+        assert_eq!(record.request.source.group.as_deref(), Some("tskr"));
+        assert_eq!(record.request.source.window_name, current.window_name);
+        assert_eq!(record.request.source.pane_id, original.pane_id);
+        assert_eq!(record.request.source.session_id, original.session_id);
+        assert_eq!(record.request.source.task, original.task);
+        assert!(!refresh_completion_labels(&mut record, &current));
+        current.session_id = Some("replacement-conversation".into());
+        current.group = Some("other-project".into());
+        assert!(!refresh_completion_labels(&mut record, &current));
+        assert_eq!(record.request.source.group.as_deref(), Some("tskr"));
+        record.request.data = json!({"event":"custom-update"});
+        current.session_id = original.session_id;
+        assert!(!refresh_completion_labels(&mut record, &current));
     }
 
     #[test]
