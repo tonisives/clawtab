@@ -84,3 +84,29 @@ test('box terminal encodes toolbar input for its own pane only while online and 
   render().props.onKey('\x1b[B');
   assert.equal(requests.length, 1);
 });
+
+test('Manage machines starts and displays the included machine only while focused', () => {
+  let focused = true;
+  let { MachineSetup } = load('remote/src/components/MachineSetup.tsx', {
+    react: { useEffect() {}, useState: (value) => [value, () => {}] },
+    'react/jsx-runtime': jsx,
+    'react-native': { ...native, Platform: { OS: 'web' } },
+    '@expo/vector-icons': {},
+    './MachineNavigation': { MachineNavigation: 'MachineNavigation' },
+    './settings/SettingsPage': { styles: {} },
+    './MachineNavigationModal': {},
+    'expo-router': { useRouter: () => ({}) },
+    'expo-router/react-navigation': { useIsFocused: () => focused },
+    'expo-web-browser': {},
+    '@clawtab/shared': { HostedWorkspacePanel: 'HostedWorkspacePanel', MachineOnboardingProvider: 'MachineOnboardingProvider', colors: {} },
+    '../api/client': {},
+    '../store/auth': { useAuthStore: (select) => select({ isAuthenticated: true }) },
+    '../lib/rentalAvailability': {},
+    '../lib/funnel': {},
+  });
+  let panel = () => find(MachineSetup({ manage: true }), node => node.type === 'HostedWorkspacePanel');
+  assert.equal(panel().props.autoStart, true);
+  assert.equal(panel().props.overview, true);
+  focused = false;
+  assert.equal(panel().props.autoStart, false);
+});

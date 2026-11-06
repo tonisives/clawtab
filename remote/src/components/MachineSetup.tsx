@@ -6,6 +6,7 @@ import { MachineNavigation } from "./MachineNavigation"
 import { styles as settingsStyles } from "./settings/SettingsPage"
 import { MachineNavigationModal } from "./MachineNavigationModal"
 import { useRouter } from "expo-router"
+import { useIsFocused } from "expo-router/react-navigation"
 import { openBrowserAsync } from "expo-web-browser"
 import { MachinesPanel, RentalsPanel, HostedWorkspacePanel, ConnectMachine, AddMachineButton, ManageMachinesButton, MachineOnboardingProvider, colors, type MachineActionButtonProps, type MachineOnboardingChrome, type MachineOnboardingContent } from "@clawtab/shared"
 import { approveMachinePairing, machineApi, rentalApi } from "../api/client"
@@ -42,6 +43,7 @@ export let MachineSetup = ({ onNavigate, manage = false, setup }: { onNavigate?:
   useEffect(() => { if (!manage && setup === "connect") void trackFunnel("setup_started") }, [manage, setup])
   let authenticated = useAuthStore((state) => state.isAuthenticated)
   let router = useRouter()
+  let focused = useIsFocused()
   let [ordering, setOrdering] = useState(false)
   let [attempt, setAttempt] = useState(0)
   let [loading, setLoading] = useState(true)
@@ -67,7 +69,7 @@ export let MachineSetup = ({ onNavigate, manage = false, setup }: { onNavigate?:
   </View>
   return <MachineNavigation><MachineOnboardingProvider content={machineOnboardingContent} management={machineManagementContent} chrome={machineOnboardingChrome}>
     {manage && <View style={styles.managementNavigation}><AddMachineButton /></View>}
-    {!setup && <HostedWorkspacePanel api={rentalApi} />}
+    {!setup && <HostedWorkspacePanel api={rentalApi} autoStart={manage && focused} overview={manage} />}
     {(manage || allowNewRentals) && <RentalsPanel style={manage ? styles.managementPanel : undefined} showExistingRentals={manage} allowNewRentals={allowNewRentals} onOrderingChange={setOrdering} api={rentalApi} {...checkout} platform={Platform.OS === "ios" ? "ios" : Platform.OS === "android" ? "android" : "web"} openUrl={openCheckout}>
       {manage && <MachinesPanel presentation="panel" approvePairing={approveMachinePairing} api={machineApi} hostedApi={rentalApi} />}
     </RentalsPanel>}

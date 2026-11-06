@@ -11,7 +11,7 @@ export type HostedWorkspaceStatus = { enabled: boolean; eligible: boolean; works
 type Status = HostedWorkspaceStatus
 type Terminal = { pane_id: string; tmux_session: string; machine: string; login: boolean }
 
-export let HostedWorkspacePanel = ({ api, autoStart = false, initialStatus = null, details = false }: { api: Api; autoStart?: boolean; initialStatus?: HostedWorkspaceStatus | null; details?: boolean }) => {
+export let HostedWorkspacePanel = ({ api, autoStart = false, initialStatus = null, details = false, overview = false }: { api: Api; autoStart?: boolean; initialStatus?: HostedWorkspaceStatus | null; details?: boolean; overview?: boolean }) => {
   let machines = useMachines()
   let [status, setStatus] = useState<Status | null>(initialStatus)
   let [usage, setUsage] = useState<Record<string, any> | null>(null)
@@ -110,13 +110,14 @@ export let HostedWorkspacePanel = ({ api, autoStart = false, initialStatus = nul
   })
   let choose = () => { if (workspace?.machine_id) selectMachine(workspace.machine_id) }
   if (!status) return autoStart ? <View style={styles.panel}><Text accessibilityLiveRegion="polite" style={styles.detail}>{loadError ? "Could not load your workspace. Retrying…" : "Connecting your Relay workspace…"}</Text></View> : null
-  if ((!status.enabled && !workspace) || (!status.eligible && !workspace)) return autoStart ? <View style={styles.panel}><Text style={styles.detail}>{!status.enabled ? "Included workspaces are currently unavailable. Please try again shortly." : "Confirming your Relay subscription… Your workspace will appear here when it is active."}</Text></View> : null
-  if (online && !details) return null
+  if ((!status.enabled && !workspace) || (!status.eligible && !workspace)) return autoStart && (!overview || status.eligible) ? <View style={styles.panel}><Text style={styles.detail}>{!status.enabled ? "Included workspaces are currently unavailable. Please try again shortly." : "Confirming your Relay subscription… Your workspace will appear here when it is active."}</Text></View> : null
+  if (online && !details && !overview) return null
   let setup = workspace?.setup?.providers?.[provider] ?? {}
   let stage = online ? 3 : workspace?.state === "ready" ? 2 : workspace?.machine_id ? 1 : 0
   let preparing = busy || ["provisioning", "ready"].includes(workspace?.state ?? "")
   return <View style={styles.panel}>
-    <Text style={styles.heading}>ClawTab</Text>
+    <Text style={styles.heading}>ClawTab machine</Text>
+    <Text style={styles.detail}>Included with Relay · 2 agents at once</Text>
     {workspace?.state === "suspended" && <Text style={styles.detail}>Your subscription has ended. Renew to restore this workspace before {workspace.delete_at ? new Date(workspace.delete_at).toLocaleDateString() : "the retention period ends"}.</Text>}
     {preparing && !online && <View style={styles.progress}>
       <Text accessibilityLiveRegion="polite" style={styles.detail}>{loadError ? "Could not refresh setup. Retrying…" : workspace?.error ? "Workspace setup needs attention. Retrying…" : Date.now() - waitingSince.current > 90_000 ? "Setup is taking longer than expected. Still checking the connection…" : ["Creating workspace…", "Starting workspace…", "Connecting to Relay…"][stage]}</Text>
@@ -127,8 +128,9 @@ export let HostedWorkspacePanel = ({ api, autoStart = false, initialStatus = nul
     </View>}
     {(error || workspace?.error) && <Text accessibilityRole="alert" style={styles.error}>{error ?? workspace?.error}</Text>}
     {status.eligible && !["provisioning", "ready", "deleting"].includes(workspace?.state ?? "") && <Button disabled={busy || !status.enabled} label={busy ? "Preparing…" : workspace?.state === "suspended" ? "Restore workspace" : "Start included workspace"} onPress={start} />}
-    {online && <>
-      {busy && <Text accessibilityLiveRegion="polite" style={styles.detail}>Starting session…</Text>}
+    {online && overview && <><Text accessibilityLiveRegion="polite" style={styles.detail}>Online · Ready to use</Text><Button label="Select workspace" onPress={choose} /></>}
+    {online && !overview && <>
+      <Text accessibilityLiveRegion="polite" style={styles.detail}>{busy ? "Starting session…" : "Online · Ready to use"}</Text>
       <Text style={styles.detail}>Choose your agent and sign in to the AI account you already use. Then start your first agent below.</Text>
       {usage && <Text style={styles.detail}>{usage.usage?.sessions ?? "–"}/2 sessions · {usage.usage?.jobs ?? "–"}/2 saved jobs · {usage.usage?.storage_bytes == null ? "–" : Math.ceil(usage.usage.storage_bytes / 1_048_576)} / 500 MiB used{usage.pending_jobs?.length ? ` · ${usage.pending_jobs.length} scheduled jobs waiting` : ""}</Text>}
       <View style={styles.row} accessibilityRole="radiogroup" accessibilityLabel="Choose your agent">{RENTAL_AGENTS.map((agent) => <Pressable key={agent.id} accessibilityRole="radio" accessibilityLabel={agent.name} accessibilityState={{ checked: provider === agent.id }} onPress={() => setProvider(agent.id)} style={[styles.button, provider === agent.id && styles.selected]}><Text style={styles.action}>{agent.name}</Text></Pressable>)}</View>

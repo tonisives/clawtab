@@ -132,3 +132,28 @@ test('provisioning shows stages from enrollment rather than a permanent promise'
   assert.equal(bar.props.accessibilityValue.now, 0);
   assert.ok(find(tree, 'Refresh status'));
 });
+
+const text = (node) => !node ? '' : Array.isArray(node) ? node.map(text).join(' ') : typeof node === 'object' ? text(node.props?.children) : String(node);
+
+test('machine management shows setup before enrollment and the included offer when online', async () => {
+  let view = harness({ workspace: null });
+  assert.match(text(view.render({ autoStart: true, overview: true, details: false })), /Connecting your Relay workspace/);
+  await flush();
+  view.render({ autoStart: true, overview: true, details: false }); await flush();
+  assert.equal(view.starts(), 1);
+  let provisioning = harness({ workspace: { id: 'included', machine_id: null, state: 'provisioning', setup: {} } });
+  provisioning.render({ autoStart: true, overview: true, details: false }); await flush();
+  assert.match(text(provisioning.render({ autoStart: true, overview: true, details: false })), /Creating workspace/);
+  let ready = harness(); ready.render({ autoStart: true, overview: true, details: false }); await flush();
+  let content = text(ready.render({ autoStart: true, overview: true, details: false }));
+  assert.match(content, /ClawTab machine/);
+  assert.match(content, /2 agents at once/);
+  assert.match(content, /Online · Ready to use/);
+});
+
+test('machine management does not promise a machine without a paid entitlement', async () => {
+  let view = harness({ eligible: false, workspace: null });
+  view.render({ autoStart: true, overview: true, details: false }); await flush();
+  assert.equal(view.render({ autoStart: true, overview: true, details: false }), null);
+  assert.equal(view.starts(), 0);
+});
