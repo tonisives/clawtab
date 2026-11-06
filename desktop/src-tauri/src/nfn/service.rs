@@ -2496,6 +2496,14 @@ mod tests {
         let mut settings = NfnSettings::default();
         let mut plain = NfnSource::default();
         assert!(bind_message_agent(&mut plain, &settings).is_ok());
+        let mut missing = NfnSource {
+            provider: Some("codex".into()),
+            ..Default::default()
+        };
+        assert!(bind_message_agent(&mut missing, &settings).is_err());
+        settings.require_agent_identity = false;
+        assert!(bind_message_agent(&mut missing, &settings).is_ok());
+        settings.require_agent_identity = true;
         let mut terminal = NfnSource {
             pane_id: Some("%7".into()),
             ..Default::default()
