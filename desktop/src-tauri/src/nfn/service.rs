@@ -1588,10 +1588,9 @@ fn resolve_resumed_completions(
     store: &Store,
     activity: &[crate::ipc::AgentActivity],
 ) -> Result<bool, String> {
-    let active: HashSet<_> = activity
+    let active: HashMap<_, _> = activity
         .iter()
-        .filter(|item| item.working || item.asking)
-        .map(|item| item.pane_id.as_str())
+        .map(|item| (item.pane_id.as_str(), item))
         .collect();
     if active.is_empty() {
         return Ok(false);
@@ -1605,7 +1604,16 @@ fn resolve_resumed_completions(
                 .source
                 .pane_id
                 .as_deref()
-                .is_some_and(|pane| active.contains(pane))
+                .and_then(|pane| active.get(pane))
+                .is_some_and(|item| {
+                    item.working
+                        || item.asking
+                        // A new prompt can arrive and finish between activity polls,
+                        // or while an alert masks the working state.
+                        || item.last_action_at_ms.is_some_and(|timestamp| {
+                            i64::try_from(timestamp).is_ok_and(|at| at > record.created_at)
+                        })
+                })
         {
             record.status = "resolved".into();
             store.save(&mut record)?;
@@ -2997,6 +3005,69 @@ mod tests {
             let (next_turn, _) = store.send(request_for_completion(source), None).unwrap();
             assert!(next_turn.pending());
         }
+    }
+
+    #[test]
+    fn new_actions_resolve_completions_even_when_the_agent_is_not_marked_working() {
+        use crate::ipc::AgentActivity;
+
+        let directory = tempfile::tempdir().unwrap();
+        let store = Store::open(&directory.path().join("notifications.sqlite")).unwrap();
+        let source = NfnSource {
+            pane_id: Some("%13".into()),
+            ..Default::default()
+        };
+        let (completion, _) = store
+            .send(request_for_completion(source.clone()), None)
+            .unwrap();
+        let (other, _) = store
+            .send(
+                request_for_completion(NfnSource {
+                    pane_id: Some("%14".into()),
+                    ..Default::default()
+                }),
+                None,
+            )
+            .unwrap();
+        let (update, _) = store
+            .send(
+                NfnRequest {
+                    title: "Review this change".into(),
+                    template: "update".into(),
+                    source: source.clone(),
+                    ..Default::default()
+                },
+                None,
+            )
+            .unwrap();
+        let mut activity = vec![AgentActivity {
+            pane_id: "%13".into(),
+            working: false,
+            asking: false,
+            last_action_at_ms: None,
+            alert: Some("Context compacting".into()),
+        }];
+        for timestamp in [
+            None,
+            Some(completion.created_at as u64 - 1),
+            Some(completion.created_at as u64),
+        ] {
+            activity[0].last_action_at_ms = timestamp;
+            assert!(!resolve_resumed_completions(&store, &activity).unwrap());
+        }
+        activity[0].last_action_at_ms = Some(completion.created_at as u64 + 1);
+        assert!(resolve_resumed_completions(&store, &activity).unwrap());
+        assert_eq!(store.get(&completion.id).unwrap().status, "resolved");
+        assert!(store.get(&completion.id).unwrap().response.is_none());
+        for record in [other, update] {
+            assert_eq!(store.get(&record.id).unwrap().status, "pending");
+        }
+        // The action that cleared the previous turn must not clear the next completion.
+        let (mut next, _) = store.send(request_for_completion(source), None).unwrap();
+        next.created_at = completion.created_at + 2;
+        store.save(&mut next).unwrap();
+        assert!(!resolve_resumed_completions(&store, &activity).unwrap());
+        assert!(store.get(&next.id).unwrap().pending());
     }
 
     #[test]

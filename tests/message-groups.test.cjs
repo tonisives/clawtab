@@ -84,6 +84,26 @@ test("an open completion card closes when the agent resumes, while history remai
   assert.equal(app.state().current, completion.id, "an explicitly reopened history entry stays open");
 });
 
+test("resuming the displayed agent removes its completion and opens the next pending card", () => {
+  const app = surface();
+  const completion = record("finished", 1);
+  completion.request.data = { event: "agent_finished" };
+  const next = record("next", 2, { pane_id: "%2", session_id: "b" });
+  app.records.set(completion.id, completion);
+  app.records.set(next.id, next);
+  app.select(completion.id);
+  app.window.webkit = { messageHandlers: { nfn: { postMessage({ token, command }) {
+    if (!command) return;
+    assert.equal(command.op, "read");
+    assert.equal(command.id, next.id);
+    app.receive({ type: "response", token, value: next });
+  } } } };
+  app.receive({ type: "snapshot", records: [{ ...completion, status: "resolved" }, next], pending_count: 1 });
+  assert.equal(app.state().current, next.id);
+  assert.equal(app.state().expanded, true);
+  assert.deepEqual(Array.from(app.pendingCards(), item => item.id), [next.id]);
+});
+
 test("resolving another agent's completion leaves the current card open", () => {
   const app = surface();
   const current = record("review", 2, { pane_id: "%2" });
