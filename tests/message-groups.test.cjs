@@ -8,7 +8,7 @@ function surface() {
   const window = { matchMedia: () => ({ matches: true, addEventListener() {} }), addEventListener() {} };
   window.parent = window;
   const source = fs.readFileSync(require.resolve("../shared/src/nfn/surface.js"), "utf8")
-    .replace("  window.nfn = {", "  window.groups = { records, pendingCards, cardMessages, addPendingPage, performAction, actionsInProgress, select(id) { current = id; expanded = true; }, state() { return { current, expanded }; } }; hiddenByUser = true; render = () => {};\n  window.nfn = {");
+    .replace("  window.nfn = {", "  window.groups = { records, pendingCards, navigationCards, navigationTarget, navigate, cardMessages, addPendingPage, performAction, actionsInProgress, select(id) { current = id; expanded = true; }, state() { return { current, expanded }; } }; hiddenByUser = true; render = () => {};\n  window.nfn = {");
   vm.runInNewContext(source, {
     window, document: { getElementById: () => host, addEventListener() {},
       createElement: () => ({ setAttribute() {} }), body: { append() {} } },
@@ -18,6 +18,53 @@ function surface() {
 }
 const record = (id, time, source = { pane_id: "%1", session_id: "a" }, extra = {}) => ({
   id, created_at: time, status: "pending", request: { source, title: id, body: id }, ...extra,
+});
+
+test("an unseen pinned completion is next in either direction without replacing the current card", async () => {
+  for (const step of [-1, 1]) {
+    const app = surface();
+    const items = ["older", "current", "newer", "pinned"].map((id, time) => record(id, time, { pane_id: `%${id}` }));
+    const completion = items.at(-1);
+    completion.pinned = true; completion.request.data = { event: "agent_finished" };
+    app.select("current");
+    app.receive({ type: "snapshot", records: items, pending_count: 100 });
+    assert.equal(app.state().current, "current");
+    assert.equal(app.navigationTarget(app.navigationCards(), step).id, "pinned");
+    app.window.webkit = { messageHandlers: { nfn: { postMessage({ token, command }) {
+      if (!command) return;
+      assert.equal(command.op, "read", "priority completion bypasses page loading");
+      app.receive({ type: "response", token, value: completion });
+    } } } };
+    await app.navigate(step);
+    assert.equal(app.state().current, "pinned");
+    app.select("current");
+    assert.equal(app.navigationTarget(app.navigationCards(), step).id, step < 0 ? "older" : "newer");
+  }
+});
+
+test("seen, unpinned and resolved completions keep normal navigation", () => {
+  for (const extra of [{ read_at: 5 }, { pinned: false }, { status: "resolved" }, { ignored: true }, { dismissed_at: 5 }]) {
+    const app = surface();
+    for (const [time, id] of ["older", "current", "newer", "pinned"].entries()) {
+      const item = record(id, time, { pane_id: `%${id}` });
+      if (id === "pinned") Object.assign(item, { pinned: true, request: { ...item.request, data: { event: "agent_finished" } } }, extra);
+      app.records.set(id, item);
+    }
+    app.select("current");
+    assert.equal(app.navigationTarget(app.navigationCards(), -1).id, "older");
+    assert.equal(app.navigationTarget(app.navigationCards(), 1).id, "newer");
+  }
+});
+
+test("pinning and unpinning pending completions immediately updates priority", () => {
+  const app = surface();
+  const items = ["older", "current", "newer", "pinned"].map((id, time) => record(id, time, { pane_id: `%${id}` }));
+  items.at(-1).request.data = { event: "agent_finished" };
+  app.select("current");
+  for (const pinned of [true, false, true]) {
+    app.receive({ type: "snapshot", records: items.map(item => ({ ...item, pinned: item.id === "pinned" && pinned })), pending_count: 4 });
+    assert.equal(app.navigationTarget(app.navigationCards(), -1).id, pinned ? "pinned" : "older");
+  }
 });
 
 test("an open completion card closes when the agent resumes, while history remains available", () => {

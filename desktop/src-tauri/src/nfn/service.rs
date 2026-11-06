@@ -443,7 +443,7 @@ impl Service {
             })
             .collect();
         let count = pending.len();
-        let mut records: Vec<_> = pending.into_iter().take(50).collect();
+        let mut records = pending_surface_page(pending, &settings.pinned_items);
         for record in self.store.list(0).unwrap_or_default() {
             if record.request.channel("desktop")
                 && local_enabled(&settings, &record)
@@ -462,7 +462,7 @@ impl Service {
                 || (platform.focused == Some(false) && platform.authorized == Some(true)));
         let auto_yes_panes: Vec<_> = self.ctx.auto_yes_panes.lock().iter().cloned().collect();
         native::push(
-            json!({"type":"snapshot", "records":surface_records(records), "pending_count":count, "arrival":arrival, "sound":sound,
+            json!({"type":"snapshot", "records":surface_records(records, &settings.pinned_items), "pending_count":count, "arrival":arrival, "sound":sound,
             "settings": settings.enhanced_notifications, "templates":templates::list(), "visible":visible,
             "platform":*platform, "auto_yes_panes":auto_yes_panes, "todos":todos, "ignored_jobs":self.store.ignored_job_successes().unwrap_or_default(), "ignored_agents":self.store.ignored_agents().unwrap_or_default()}),
         );
@@ -599,14 +599,19 @@ impl Service {
                 focus_source(&source).await?;
                 return Ok(json!({"focused":true}));
             }
-            NfnCommand::Get { id } => return Ok(surface_record(self.store.get(&id)?)),
+            NfnCommand::Get { id } => {
+                return Ok(surface_record(
+                    self.store.get(&id)?,
+                    &self.ctx.settings.lock().pinned_items,
+                ))
+            }
             NfnCommand::List {
                 offset,
                 pending_only,
                 query,
             } => {
                 return Ok(
-                    json!({"records":surface_records(self.store.search(offset, pending_only, &query)?),"offset":offset,"next_offset":offset+50}),
+                    json!({"records":surface_records(self.store.search(offset, pending_only, &query)?, &self.ctx.settings.lock().pinned_items),"offset":offset,"next_offset":offset+50}),
                 )
             }
             NfnCommand::Templates => return Ok(templates::list()),
@@ -618,8 +623,10 @@ impl Service {
             NfnCommand::Info => {
                 let auto_yes_panes: Vec<_> =
                     self.ctx.auto_yes_panes.lock().iter().cloned().collect();
+                let settings = self.ctx.settings.lock();
+                let pending = pending_surface_page(self.store.pending()?, &settings.pinned_items);
                 return Ok(
-                    json!({"records":surface_records(self.store.pending_page(0)?),"pending_count":self.store.pending_count()?,"settings":self.ctx.settings.lock().enhanced_notifications,"platform":*self.platform.lock(),"templates":templates::list(),"auto_yes_panes":auto_yes_panes}),
+                    json!({"records":surface_records(pending, &settings.pinned_items),"pending_count":self.store.pending_count()?,"settings":settings.enhanced_notifications,"platform":*self.platform.lock(),"templates":templates::list(),"auto_yes_panes":auto_yes_panes}),
                 );
             }
             NfnCommand::Validate { yaml } => {
@@ -668,7 +675,8 @@ impl Service {
                 return Ok(json!({}));
             }
             NfnCommand::Reveal { id } => {
-                let record = surface_record(self.store.get(&id)?);
+                let record =
+                    surface_record(self.store.get(&id)?, &self.ctx.settings.lock().pinned_items);
                 if !cfg!(target_os = "macos") {
                     return Err("Message focus requires the macOS desktop message bar".into());
                 }
@@ -750,7 +758,9 @@ impl Service {
                 record.request.source.pane_id = record.request.data["opened_session_pane"]
                     .as_str()
                     .map(str::to_owned);
-                return Ok(json!({"record":surface_record(record)}));
+                return Ok(
+                    json!({"record":surface_record(record, &self.ctx.settings.lock().pinned_items)}),
+                );
             }
             NfnCommand::Focus { id, pane_id } => {
                 let _guard = self.mutation.lock().await;
@@ -2216,6 +2226,43 @@ mod tests {
     use super::*;
 
     #[test]
+    fn pinned_surface_records_follow_pane_and_job_pins() {
+        let mut record = pending_permission();
+        assert_eq!(surface_record(record.clone(), &[])["pinned"], false);
+        assert_eq!(
+            surface_record(record.clone(), &["pane:%10".into()])["pinned"],
+            true
+        );
+        assert_eq!(
+            surface_record(record.clone(), &["pane:%11".into()])["pinned"],
+            false
+        );
+        record.request.source.job_id = Some("project/check".into());
+        assert_eq!(
+            surface_record(record, &["job:project/check".into()])["pinned"],
+            true
+        );
+    }
+
+    #[test]
+    fn pinned_completions_outside_first_page_reach_the_surface() {
+        let mut records: Vec<_> = (0..60)
+            .map(|index| {
+                let mut record = pending_permission();
+                record.id = index.to_string();
+                record.request.source.pane_id = Some(format!("%{index}"));
+                record
+            })
+            .collect();
+        records[55].request.data = json!({"event":"agent_finished"});
+        records[56].request.data = json!({"event":"agent_finished"});
+        let page = pending_surface_page(records, &["pane:%55".into(), "pane:%57".into()]);
+        assert_eq!(page.len(), 51);
+        assert_eq!(page[49].id, "49");
+        assert_eq!(page[50].id, "55");
+    }
+
+    #[test]
     fn independent_reviews_survive_the_producing_agent_closing() {
         for social in [false, true] {
             let mut record = pending_permission();
@@ -3105,20 +3152,50 @@ mod tests {
     }
 }
 
-fn surface_record(record: NfnRecord) -> Value {
+fn record_pinned(record: &NfnRecord, pins: &[String]) -> bool {
+    let source = &record.request.source;
+    pins.iter().any(|key| {
+        key.strip_prefix("pane:")
+            .is_some_and(|pane| source.pane_id.as_deref() == Some(pane))
+            || key
+                .strip_prefix("job:")
+                .is_some_and(|job| source.job_id.as_deref() == Some(job))
+    })
+}
+
+fn pending_surface_page(records: Vec<NfnRecord>, pins: &[String]) -> Vec<NfnRecord> {
+    records
+        .into_iter()
+        .filter(|record| record.dismissed_at.is_none() && !record.ignored)
+        .enumerate()
+        .filter_map(|(index, record)| {
+            (index < 50
+                || (record_pinned(&record, pins)
+                    && record.request.data["event"] == "agent_finished"))
+                .then_some(record)
+        })
+        .collect()
+}
+
+fn surface_record(record: NfnRecord, pins: &[String]) -> Value {
     let job_available = record
         .request
         .source
         .job_id
         .as_deref()
         .is_none_or(|job| job_directory(job).is_ok());
+    let pinned = record_pinned(&record, pins);
     let mut value = json!(record);
+    value["pinned"] = json!(pinned);
     value["details_available"] = json!(job_available);
     value
 }
 
-fn surface_records(records: Vec<NfnRecord>) -> Vec<Value> {
-    records.into_iter().map(surface_record).collect()
+fn surface_records(records: Vec<NfnRecord>, pins: &[String]) -> Vec<Value> {
+    records
+        .into_iter()
+        .map(|record| surface_record(record, pins))
+        .collect()
 }
 
 fn job_directory(job: &str) -> Result<std::path::PathBuf, String> {

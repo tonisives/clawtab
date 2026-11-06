@@ -744,6 +744,30 @@
     window.fixture.deferred.splice(index, 1)[0].complete(error);
   };
   const title = () => document.querySelector(".card h1")?.textContent;
+  for (const direction of ["Previous", "Next"]) {
+    resetFlow();
+    flowRecord(`pin-${direction}-older`, 0, true);
+    const currentPinReview = flowRecord(`pin-${direction}-current`, 1, true);
+    flowRecord(`pin-${direction}-newer`, 2, true);
+    window.nfn.receive(window.fixture.snapshot(currentPinReview.id));
+    window.nfn.receive({ type: "open_record", id: currentPinReview.id });
+    const readyPin = flowRecord(`pin-${direction}-finished`, 3, true);
+    readyPin.pinned = true; readyPin.request.data = { event: "agent_finished" };
+    window.nfn.receive(window.fixture.snapshot(readyPin.id));
+    assert(title() === currentPinReview.id, `${direction}: a pinned completion leaves the current card in place`);
+    nav(direction); await sleep(30);
+    assert(title() === readyPin.id, `${direction}: the next scroll opens the pinned completion`);
+    const pin = document.querySelector('.heading [aria-label="Pinned session"]');
+    assert(pin?.querySelector('svg') && pin.getBoundingClientRect().width === 16, `${direction}: the message has a visible pin icon`);
+    const input = draft("Keep this draft while pin state changes");
+    readyPin.pinned = false; window.nfn.receive(window.fixture.snapshot()); await sleep(30);
+    assert(!document.querySelector('.heading .pinned-session') && document.querySelector('textarea').value === input.value, "unpinning updates the icon and preserves the reply draft");
+    readyPin.pinned = true; window.nfn.receive(window.fixture.snapshot()); await sleep(30);
+    assert(document.querySelector('.heading .pinned-session'), "pinning restores the indicator on the visible card");
+    window.nfn.receive({ type: "open_record", id: currentPinReview.id });
+    nav(direction); await sleep(30);
+    assert(title() === `pin-${direction}-${direction === "Previous" ? "older" : "newer"}`, "a viewed pinned completion does not trap scrolling");
+  }
   resetFlow();
   flowRecord("position-a", 0, true); flowRecord("position-b", 1, true); flowRecord("position-c", 2, true);
   window.nfn.receive(window.fixture.snapshot("position-c")); nav("Previous");

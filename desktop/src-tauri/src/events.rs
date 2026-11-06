@@ -132,6 +132,9 @@ impl EventSink for IpcBroadcastEventSink {
     }
 
     fn emit_pinned_items_changed(&self, items: Vec<String>) {
+        if let Some(service) = crate::nfn::service() {
+            service.push(None, false);
+        }
         self.spawn_broadcast(IpcEvent::PinnedItemsChanged(items));
     }
 

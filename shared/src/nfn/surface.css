@@ -72,6 +72,9 @@ button.icon-button { display: flex; align-items: center; justify-content: center
 .heading { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
 .heading h1 { flex: 1; }
 .heading-tools { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.pinned-session { display: inline-flex; align-items: center; flex: none; color: var(--accent); }
+.pinned-session svg { display: block; width: 16px; height: 16px; }
+.queue-title { display: flex; align-items: center; gap: 8px; }
 .agent-heading { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2.5fr) minmax(0, 1fr); }
 .agent-heading h1 { text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .job-heading { display: flex; align-items: center; justify-content: center; gap: 4px; min-width: 0; }

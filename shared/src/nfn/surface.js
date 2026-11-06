@@ -25,6 +25,7 @@
   let nativeWindowFocus = null;
   const autoYesBusy = new Set();
   const openingSessions = new Set();
+  const viewedPinnedCompletions = new Set();
   const sessionTargets = new Map();
   const remoteMedia = new Map();
   const selectedNotifications = new Set();
@@ -298,6 +299,17 @@
     return control;
   }
   function pending(record) { return record.status === "pending" || record.status === "delivering"; }
+  function pinIndicator() {
+    const marker = el("span", "pinned-session"); marker.title = "Pinned session";
+    marker.setAttribute("role", "img"); marker.setAttribute("aria-label", "Pinned session");
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 256 256"); svg.setAttribute("fill", "none");
+    svg.setAttribute("stroke", "currentColor"); svg.setAttribute("stroke-width", "16");
+    svg.setAttribute("stroke-linecap", "round"); svg.setAttribute("stroke-linejoin", "round"); svg.setAttribute("aria-hidden", "true");
+    const shape = document.createElementNS(svg.namespaceURI, "path");
+    shape.setAttribute("d", "m88 168-56 56M104 32l120 120-40 8-24 56-120-120 56-24Z");
+    svg.append(shape); marker.append(svg); return marker;
+  }
   function hasAgent(record) { const source = record.request.source; return Boolean(source?.pane_id && (source.agent_pid || source.provider || record.question_id)); }
   function pendingRecords(includeActions = false) { return [...records.values()].filter(r => pending(r) && !r.dismissed_at && !r.ignored && (includeActions || !actionInProgress(r))).sort((a, b) => a.created_at - b.created_at); }
   function agentKey(record) {
@@ -334,12 +346,21 @@
       && !items.some(record => record.id === viewed.id)) items.push(viewed);
     return items.sort(messageOrder);
   }
+  function priorityCompletion(items) {
+    return items.find(record => record.id !== current && record.pinned && !record.read_at
+      && !viewedPinnedCompletions.has(record.id) && record.request.data?.event === "agent_finished");
+  }
+  function navigationTarget(items, step) {
+    const index = items.findIndex(record => record.id === current);
+    return priorityCompletion(items) || (step > 0 && items.find(record => record.id !== current && retryIds.has(record.id)))
+      || items[(Math.max(index, 0) + step + items.length) % items.length];
+  }
   function cardMessages(record) {
     const key = threadKey(record);
     return [...records.values()].filter(item => item.id === record.id || (key && threadKey(item) === key
       && pending(item) && !item.dismissed_at && !item.ignored && messageOrder(item, record) < 0)).sort(messageOrder);
   }
-  function cardSignature(record) { return JSON.stringify([cardMessages(record).map(item => [item.id, item.created_at, item.request]), template(record), record.details_available, record.response, ignoredJobs.includes(record.request.source?.job_id)]); }
+  function cardSignature(record) { return JSON.stringify([cardMessages(record).map(item => [item.id, item.created_at, item.request]), template(record), record.details_available, record.pinned, record.response, ignoredJobs.includes(record.request.source?.job_id)]); }
   function pendingCount() { return pendingCards().length + unseenPending; }
   function updateUnseenPending() {
     const incoming = new Set((snapshot.records || []).map(record => record.id));
@@ -749,6 +770,7 @@
     shellReply = false;
     todosOpen = false;
     if (actionsInProgress.has(id)) return;
+    if (record?.pinned && record.request.data?.event === "agent_finished") viewedPinnedCompletions.add(id);
     historyRecordId = fromHistory ? id : null;
     leaveSettings();
     const replyFocused = card?._reply && document.activeElement === card._reply;
@@ -770,15 +792,14 @@
     navigating = true;
     try {
       let items = navigationCards(), index = items.findIndex(record => record.id === current);
-      while (unseenPending > 0 && (index + step >= items.length || index + step < 0)) {
+      while (!priorityCompletion(items) && unseenPending > 0 && (index + step >= items.length || index + step < 0)) {
         const result = await call({ op: "list", offset: pendingOffset, pending_only: true });
         addPendingPage(result);
         if (current !== id || version !== reviewVersion || queue || settingsOpen) return;
         items = navigationCards(); index = items.findIndex(record => record.id === current);
       }
-      const retry = step > 0 && items.find(record => record.id !== current && retryIds.has(record.id));
       if (items.length) {
-        const next = retry || items[(Math.max(index, 0) + step + items.length) % items.length];
+        const next = navigationTarget(items, step);
         if (snapshot.remote && next.id !== current) window.nfnPaging?.willNavigate(step);
         openRecord(next.id);
         if (snapshot.remote) window.nfnPaging?.didNavigate();
@@ -1311,6 +1332,7 @@
       jobHeading.append(title, bell); heading.append(jobHeading);
     } else heading.append(title);
     const tools = el("div", "heading-tools"); heading.append(tools);
+    if (record.pinned) tools.append(pinIndicator());
     tools.append(relativeTimestamp(record));
     const status = el("span", "status"); tools.append(status); node._status = status;
     if (hasAgent(record)) {
@@ -1898,7 +1920,7 @@
       return list;
     }
     const searching = Boolean(queueQuery.trim()), items = searching ? searchItems : history ? historyItems : pendingCards();
-    const signature = JSON.stringify([history, checkMode, queueQuery, items.map(record => [record.id, record.created_at, record.read_at, queueSummary(record)]), [...selectedNotifications], bulkBusy, queueError, loadingQueue, hasMoreHistory, unseenPending, searchBusy, searchMore]);
+    const signature = JSON.stringify([history, checkMode, queueQuery, items.map(record => [record.id, record.created_at, record.read_at, record.pinned, queueSummary(record)]), [...selectedNotifications], bulkBusy, queueError, loadingQueue, hasMoreHistory, unseenPending, searchBusy, searchMore]);
     if (list.dataset.signature === signature) { updateQueueCursor(list); return list; }
     list.dataset.signature = signature;
     const content = list._content, scroll = content.scrollTop, rowFocused = Boolean(document.activeElement?.closest("[data-queue-record]"));
@@ -1933,7 +1955,10 @@
       }
       const item = button("", () => { records.set(record.id, record); openRecord(record.id, history); }, `queue-item ${record.read_at ? "" : "unread"}`);
       const header = el("div", "message-header");
-      header.append(el("strong", "", summary.title), relativeTimestamp(record));
+      const title = el("span", "queue-title");
+      if (record.pinned) title.append(pinIndicator());
+      title.append(el("strong", "", summary.title));
+      header.append(title, relativeTimestamp(record));
       item.append(header, el("div", "meta", summary.message)); row.append(item);
       if (!history) {
         const dismiss = iconButton(`Dismiss ${summary.title}`, "M6 6l12 12M18 6L6 18", () => dismissNotifications([record.id]), "dismiss-item");
@@ -2758,9 +2783,8 @@
     if (!snapshot.remote || !current || queue || menu || settingsOpen || todosOpen) return null;
     const items = navigationCards(), index = items.findIndex(record => record.id === current);
     if (items.length < 2 || index < 0) return null;
-    if (unseenPending > 0 && (index + step >= items.length || index + step < 0)) return null;
-    const retry = step > 0 && items.find(record => record.id !== current && retryIds.has(record.id));
-    const record = retry || items[(index + step + items.length) % items.length];
+    if (!priorityCompletion(items) && unseenPending > 0 && (index + step >= items.length || index + step < 0)) return null;
+    const record = navigationTarget(items, step);
     const node = createCard(record, true);
     const showDetails = record.details_available !== false && Boolean(details || snapshot.remote && record.request.source?.pane_id);
     syncCardDetails(record, node, showDetails);
