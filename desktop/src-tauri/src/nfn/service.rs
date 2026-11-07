@@ -65,6 +65,25 @@ pub fn viewed_pane(pane_id: &str) -> bool {
     service().is_some_and(|s| s.is_viewed(pane_id))
 }
 
+fn template_watcher(
+    changes: Arc<tokio::sync::Notify>,
+) -> notify::Result<notify::RecommendedWatcher> {
+    notify::recommended_watcher(move |event: Result<notify::Event, notify::Error>| {
+        if let Ok(event) = event {
+            // Reading templates while publishing a snapshot emits Linux access
+            // events. Those must not trigger another snapshot of the same files.
+            if matches!(
+                event.kind,
+                notify::EventKind::Create(_)
+                    | notify::EventKind::Modify(_)
+                    | notify::EventKind::Remove(_)
+            ) {
+                changes.notify_one();
+            }
+        }
+    })
+}
+
 impl Service {
     fn recover_job_sessions(&self) {
         let mut offset = 0;
@@ -109,14 +128,7 @@ impl Service {
             }
         }
         let _ = std::fs::create_dir_all(templates::directory());
-        let changes = self.template_changes.clone();
-        let mut watcher =
-            notify::recommended_watcher(move |event: Result<notify::Event, notify::Error>| {
-                if event.is_ok() {
-                    changes.notify_one();
-                }
-            })
-            .ok();
+        let mut watcher = template_watcher(self.template_changes.clone()).ok();
         if let Some(watcher) = watcher.as_mut() {
             let _ = watcher.watch(&templates::directory(), notify::RecursiveMode::NonRecursive);
         }
@@ -2664,6 +2676,64 @@ fn reply_targets_agent(record: &NfnRecord, action_id: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn template_watcher_ignores_snapshot_reads() {
+        use notify::Watcher;
+        use std::time::Duration;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("custom.yaml");
+        std::fs::write(&path, "version: 1\n").unwrap();
+        let changes = Arc::new(tokio::sync::Notify::new());
+        let mut watcher = template_watcher(changes.clone()).unwrap();
+        watcher
+            .watch(dir.path(), notify::RecursiveMode::NonRecursive)
+            .unwrap();
+
+        for _ in 0..10 {
+            assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+            std::fs::read_to_string(&path).unwrap();
+        }
+        assert!(
+            tokio::time::timeout(Duration::from_millis(200), changes.notified())
+                .await
+                .is_err()
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn template_watcher_notices_atomic_replacements_and_deletions() {
+        use notify::Watcher;
+        use std::time::Duration;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("custom.yaml");
+        let temporary = dir.path().join("custom.tmp");
+        std::fs::write(&path, "old").unwrap();
+        std::fs::write(&temporary, "new").unwrap();
+        let changes = Arc::new(tokio::sync::Notify::new());
+        let mut watcher = template_watcher(changes.clone()).unwrap();
+        watcher
+            .watch(dir.path(), notify::RecursiveMode::NonRecursive)
+            .unwrap();
+
+        std::fs::rename(&temporary, &path).unwrap();
+        tokio::time::timeout(Duration::from_secs(2), changes.notified())
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        while tokio::time::timeout(Duration::from_millis(100), changes.notified())
+            .await
+            .is_ok()
+        {}
+        std::fs::remove_file(&path).unwrap();
+        tokio::time::timeout(Duration::from_secs(2), changes.notified())
+            .await
+            .unwrap();
+    }
 
     #[test]
     fn typed_agents_validate_custom_fields_and_preserve_plain_messages() {
