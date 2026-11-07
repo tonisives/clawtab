@@ -15,6 +15,7 @@
   record.request.template = "question";
   fixture.records.set(record.id, record);
   const snapshot = () => ({ ...fixture.snapshot(), remote: true, arrival: record.id });
+  fixture.heldOps.add("context");
   window.nfn.collapse(); window.nfn.receive(snapshot());
   document.getElementById("surface").dispatchEvent(new MouseEvent("mouseenter"));
   const surface = document.getElementById("surface"), card = document.querySelector(".card");
@@ -29,12 +30,12 @@
   assert(!surface.getAnimations().length && !card.getAnimations().length, "opening Reply has no delayed reveal or fade");
   input.value = "Please check the newest output"; input.dispatchEvent(new Event("input"));
   input.setSelectionRange(7, 12);
-  fixture.heldOps.add("context"); click("Details");
+  assert(getComputedStyle(document.querySelector(".details-toggle")).display === "none", "web remote hides the details chevron while shell output is visible by default");
   const reading = document.querySelector(".details-content");
-  assert(!document.querySelector(".message-content").hidden && reading && document.querySelector(".actions") === actions, "Details appends below the message while preserving the action buttons");
+  assert(!document.querySelector(".message-content").hidden && reading && document.querySelector(".actions") === actions, "shell output opens below the message while preserving the action buttons");
   reading.scrollIntoView({ block: "end" });
-  assert(document.querySelector("textarea") === input && input.value === "Please check the newest output" && input.selectionStart === 7, "switching to Details preserves the reply draft and selection");
-  assert(visible(actions) && visible(document.querySelector(".controls")) && visible(document.querySelector(".reply")), "actions, reply, and Hide details stay visible below the log");
+  assert(document.querySelector("textarea") === input && input.value === "Please check the newest output" && input.selectionStart === 7, "the default shell view preserves the reply draft and selection");
+  assert(visible(actions) && visible(document.querySelector(".controls")) && visible(document.querySelector(".reply")), "actions and reply stay visible below the log");
   assert(bounds(reading).bottom <= bounds(actions).top && reading.clientHeight > 60 && bounds(surface).height === innerHeight, "the log fills the available top reading area without overflowing the screen");
   assert(!surface.getAnimations().length && !card.getAnimations().length, "Details is visible immediately while context is still loading");
   fixture.heldOps.delete("context"); fixture.deferred.splice(0).forEach(request => request.complete());
@@ -43,9 +44,7 @@
   assert(document.querySelector(".card") === card && document.querySelector(".actions") === actions && getComputedStyle(card).opacity === "1", "loading logs does not rebuild or fade the card or actions");
   reading.scrollTop = 0; fixture.log += "\nAnother line"; await sleep(1100);
   assert(reading.scrollTop === 0, "new output preserves the reader's position when they scroll upward");
-  click("Hide details");
-  assert(!document.querySelector(".message-content").hidden && !document.querySelector(".details-content:not([hidden])") && document.querySelector(".card") === card, "Hide details restores the same message view immediately");
-  assert(document.querySelector("textarea") === input && input.value === "Please check the newest output", "hiding Details retains the composer and draft");
+  assert(document.querySelector("textarea") === input && input.value === "Please check the newest output", "shell refreshes retain the composer and draft");
   input.blur();
   document.querySelector('.acknowledge').click();
   const popup = document.querySelector('.acknowledge-menu');

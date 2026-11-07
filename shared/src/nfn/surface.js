@@ -402,7 +402,7 @@
     return request;
   }
   function preloadMobileShells() {
-    if (!mobileHost() || preview || document.hidden || !snapshot.visible || hiddenByUser || settingsOpen || todosOpen || !queue && !current) return;
+    if (!snapshot.remote || preview || document.hidden || !snapshot.visible || hiddenByUser || settingsOpen || todosOpen || !queue && !current) return;
     const now = Date.now();
     for (const record of pendingCards().reverse()) {
       if (mobilePreloads >= 2) break;
@@ -782,7 +782,7 @@
     if (view?.kind === "settings") { settingsTab = view.tab; openSettings(); }
   }
   function defaultDetails(record) {
-    return Boolean(record?.request.source?.job_id && (record.request.kind === "failed" || /^failed\b/.test(record.request.data?.event || "")));
+    return Boolean(snapshot.remote && record?.request.source?.pane_id) || Boolean(record?.request.source?.job_id && (record.request.kind === "failed" || /^failed\b/.test(record.request.data?.event || "")));
   }
   function openRecord(id, fromHistory = false) {
     if (current !== id) card?._logs?._cancelSelection?.();
@@ -1671,7 +1671,7 @@
     if (hasBlock(layout, "logs")) {
       const section = el("div", "log-output");
       if (!mobileHost()) section.append(el("div", "block-label", "Recent output"));
-      const cached = mobileHost() ? mobileShellCache.get(record.id) : null;
+      const cached = snapshot.remote ? mobileShellCache.get(record.id) : null;
       const logs = el("pre", "logs", cached == null ? "Loading recent output..." : "");
       if (cached != null) { logs._raw = cached; renderAnsi(logs, cached); }
       if (mobileHost()) installLogSelection(logs, Boolean(record.request.source?.pane_id));
@@ -1850,7 +1850,7 @@
     const ownsContext = () => contextRequest === request && id === current && card === request.card
       && (details || menu === "agent") && !queue && !settingsOpen;
     try {
-      const value = await (mobileHost() ? captureMobileShell(id) : call({ op: "context", id }));
+      const value = await (snapshot.remote ? captureMobileShell(id) : call({ op: "context", id }));
       if (!ownsContext()) return;
       contextErrors.delete(id);
       if (actionErrors.get(id) === "Machine is offline") actionErrors.delete(id);

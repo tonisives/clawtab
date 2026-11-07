@@ -42,8 +42,12 @@ button.auto-yes-button{width:100%;min-height:44px;padding:8px 16px;border-radius
 .todo-heading,.todo-row{align-items:center}
 .todo-add{grid-template-columns:minmax(0,1fr) auto}
 .icon-button{min-height:36px}
-.footer-actions.segmented-control{display:flex;padding:4px;border:1px solid var(--line);border-radius:999px;background:#202020;gap:4px}
-.footer-actions.segmented-control button{border-radius:999px;flex:1}
+.controls.session-controls{grid-template-columns:minmax(0,1fr);gap:0;margin-left:0;margin-right:0}
+.controls .details-toggle{display:none}
+.session-controls .footer-actions{grid-column:1;justify-self:stretch;width:100%}
+.footer-actions.segmented-control{display:flex;padding:0;border:1px solid #7986cb80;border-radius:8px;background:#7986cb80;gap:1px;overflow:hidden}
+.controls .footer-actions.segmented-control button{flex:1 1 auto;min-width:0;max-width:none;margin:0;border:0;border-radius:0;padding:8px;font-family:inherit;font-size:14px;line-height:20px;font-weight:600;color:#aeb8ed;background:#272727;white-space:nowrap;overflow:visible;text-overflow:clip}
+.controls .footer-actions.segmented-control button:is(:hover,:active,[aria-expanded="true"]){background:#313131;color:#aeb8ed}
 
 .native-chrome>.top{display:none}
 .native-chrome .footer-actions{display:none}
