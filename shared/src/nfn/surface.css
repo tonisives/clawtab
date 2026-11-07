@@ -342,8 +342,6 @@ button.auto-yes-button[aria-checked="true"] { background: rgba(255, 159, 10, .15
 .session-locations-summary{margin:0;padding:8px 12px}
 button.session-locations{font-size:14px;line-height:20px;padding:4px 8px}
 
-.segmented-control button.open-job { background: #181818; color: #e4e4e4; }
-.segmented-control button.open-job:is(:hover:where(:not([data-native-pointer] *)), [data-native-hover]) { background: #313131; }
 .segmented-control > .actions:only-child button { border-radius: 8px; }
 
 .message.markdown { white-space: normal; }
@@ -405,3 +403,8 @@ button.session-locations{font-size:14px;line-height:20px;padding:4px 8px}
 .job-notification-toggle, .confirm-ignore { width: 100%; text-align: left; }
 
 .settings-heading .nav-step { font-size: 13px; border-radius: 6px; }
+
+.open-menu .menu-link { justify-content: flex-start; gap: 8px; }
+.open-menu .menu-link::after { content: none; }
+.open-menu .menu-link svg { width: 16px; height: 16px; flex: none; }
+.open-session[aria-haspopup="dialog"]::after { content: "⌄"; margin-left: 8px; }

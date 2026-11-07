@@ -2146,6 +2146,15 @@
           const context = openContext; menu = null;
           focusSession(context.record.id, { op: "focus", id: context.record.id, ...(context.item ? { card_id: context.item.id } : {}) });
         }, "utility menu-link") : externalLink(option.label, option.url, "menu-link");
+        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("fill", "none");
+        svg.setAttribute("stroke", "currentColor"); svg.setAttribute("stroke-width", "2");
+        svg.setAttribute("stroke-linecap", "round"); svg.setAttribute("stroke-linejoin", "round"); svg.setAttribute("aria-hidden", "true");
+        const path = document.createElementNS(svg.namespaceURI, "path");
+        path.setAttribute("d", option.kind === "agent"
+          ? "M12 3v3m-7 4H3v6h2m14-6h2v6h-2M5 6h14v14H5ZM9 11h.01M15 11h.01M9 16h6"
+          : "M10 13a5 5 0 0 0 7 .2l3-3a5 5 0 0 0-7-7l-2 2m3 6a5 5 0 0 0-7-.2l-3 3a5 5 0 0 0 7 7l2-2");
+        svg.append(path); action.prepend(svg);
         panel.append(action);
       }
     } else if (menu === "sessions") {
