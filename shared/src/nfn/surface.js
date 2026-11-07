@@ -494,7 +494,7 @@
   }
   window.addEventListener("resize", () => { requestAnimationFrame(followMobileShell); });
   window.addEventListener("message_layout", followMobileShell);
-  function stripAnsi(text) { return String(text || "").replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "").replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, ""); }
+  function stripAnsi(text) { return String(text || "").replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "").replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, ""); }
   function renderAnsi(parent, raw) {
     // Match the palette in shared/util/ansi.ts, using text nodes for terminal output.
     const palette = ["#4a4a4a", "#ff6b6b", "#69db7c", "#ffd43b", "#74c0fc", "#da77f2", "#66d9e8", "#dee2e6", "#868e96", "#ff8787", "#8ce99a", "#ffe066", "#a5d8ff", "#e599f7", "#99e9f2", "#f8f9fa"];
@@ -512,20 +512,25 @@
     while (lines.length && !stripAnsi(lines[0]).trim()) prefix += (lines.shift().match(/\x1b\[[0-?]*[ -/]*[@-~]/g) || []).join("");
     const visibleRows = lines.map(line => Boolean(stripAnsi(line).trim()));
     const text = prefix + lines.join("\n"), fragment = document.createDocumentFragment();
-    let row = 0;
+    let row = 0, hyperlink;
     let last = 0, foreground, background, bold = false, dim = false, italic = false, underline = false, inverse = false;
     const append = value => {
       if (!value) return;
       for (const part of value.split(/(\n)/)) {
         if (part === "\n") { fragment.append(document.createTextNode(part)); row++; continue; }
         if (!part || !visibleRows[row]) continue;
-        const node = el("span", "", part);
+        const node = hyperlink ? externalLink(part, hyperlink) : el("span", "", part);
         Object.assign(node.style, { color: inverse ? background || "#000" : foreground || "", backgroundColor: inverse ? foreground || "#dee2e6" : background || "", fontWeight: bold ? "bold" : "", opacity: dim ? ".6" : "", fontStyle: italic ? "italic" : "", textDecoration: underline ? "underline" : "" });
         fragment.append(node);
       }
     };
     for (const match of text.matchAll(/\x1b\[([0-?]*[ -/]*)([@-~])|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[ -/]*[@-~]/g)) {
       append(text.slice(last, match.index)); last = match.index + match[0].length;
+      if (match[0].startsWith("\x1b]8;")) {
+        const href = match[0].slice(4).replace(/^[^;]*;/, "").replace(/(?:\x07|\x1b\\)$/, "");
+        try { const url = new URL(href); hyperlink = ["http:", "https:"].includes(url.protocol) ? href : undefined; }
+        catch { hyperlink = undefined; }
+      }
       if (match[2] !== "m") continue;
       const params = (match[1] || "0").split(";");
       for (let i = 0; i < params.length; i++) {
