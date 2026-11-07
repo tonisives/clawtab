@@ -1563,6 +1563,9 @@
   const tallPage = document.querySelector('.section-page');
   assert(stackTallHeight > stackShortHeight && tallPage.scrollHeight > tallPage.clientHeight && tallPage.clientHeight <= innerHeight * .6 + 2, 'longer cards grow the whole bar immediately and clip at the reading limit');
   assert(document.querySelector('.controls').getBoundingClientRect().bottom <= document.querySelector('#surface').getBoundingClientRect().bottom, 'tall replies preserve the bottom controls');
+  assert(document.querySelector('.section-page .section-dismiss'), 'dismiss control belongs to the draft card');
+  document.querySelector('.section-handled').click(); await sleep(50);
+  assert(document.querySelector('.section-handled').getAttribute('aria-pressed') === 'true', 'handled drafts retain a visible checkmark');
   document.querySelector('.section-dismiss').click(); await sleep(50);
   assert(document.querySelector('.section-page').textContent.includes('DJ transition feedback') && document.querySelector('.section-controls .meta').textContent === '1 / 1', 'dismiss removes only the selected draft');
   window.nfn.receive(window.fixture.snapshot()); await sleep(30);

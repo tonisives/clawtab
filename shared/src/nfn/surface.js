@@ -1255,7 +1255,14 @@
           renderedId = null; render();
         } catch (error) { showError(error, record.id); dismiss.disabled = false; }
       }, "section-dismiss");
-      controls.append(previous, count, next, dismiss);
+      const handled = iconButton("Mark draft handled", "m5 12 4 4L19 6", async () => {
+        handled.disabled = true;
+        try {
+          const updated = await call({ op: "handle_card", id: record.id, card_id: section.cards[index].id });
+          records.set(record.id, updated); renderedId = null; render();
+        } catch (error) { showError(error, record.id); handled.disabled = false; }
+      }, "section-handled");
+      controls.append(previous, count, next);
       const deck = el("div", "section-deck");
       for (let i = Math.min(2, section.cards.length - 1); i > 0; i--) {
         const layer = el("div", `section-underlay layer-${i}`); layer.setAttribute("aria-hidden", "true"); deck.append(layer);
@@ -1267,7 +1274,12 @@
         const item = section.cards[index]; sectionSelections.set(key, item.id);
         node._activeSectionCard = item;
         count.textContent = `${index + 1} / ${section.cards.length}`;
-        page.replaceChildren(); page.setAttribute("aria-label", `${section.title || "Cards"}: ${index + 1} of ${section.cards.length}`);
+        const cardControls = el("div", "section-card-controls"); handled.disabled = Boolean(item.handled_at);
+        handled.setAttribute("aria-pressed", String(Boolean(item.handled_at)));
+        handled.setAttribute("aria-label", item.handled_at ? "Draft handled" : "Mark draft handled");
+        handled.title = item.handled_at ? "Draft handled" : "Mark draft handled";
+        cardControls.append(handled, dismiss);
+        page.replaceChildren(cardControls); page.setAttribute("aria-label", `${section.title || "Cards"}: ${index + 1} of ${section.cards.length}`);
         if (item.title && !item.data?.outreach) page.append(el("h3", "section-card-title", item.title));
         const virtual = { ...record, request: { ...record.request, ...item } };
         if (item.body) page.append(messageBody(virtual));

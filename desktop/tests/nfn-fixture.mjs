@@ -40,6 +40,9 @@ window.webkit = { messageHandlers: { nfn: { postMessage(value) {
     response = { settings: fixture.settings };
   }
   if (command.op === "context") { fixture.contextCalls++; response = { source: record?.request.source, log: fixture.log || "Review ready\nWaiting for input", models: ["gpt-5.6-sol"], plugins: [] }; }
+  if (command.op === "handle_card") {
+    record.request.data.sections.flatMap(section => section.cards).find(card => card.id === command.card_id).handled_at = Date.now();
+  }
   if (command.op === "dismiss_card") {
     const cards = record.request.data.sections.flatMap(section => section.cards);
     cards.find(card => card.id === command.card_id).dismissed_at = Date.now();

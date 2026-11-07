@@ -50,6 +50,7 @@ fn allowed(command: &NfnCommand) -> bool {
             | NfnCommand::Read { .. }
             | NfnCommand::Dismiss { .. }
             | NfnCommand::DismissCard { .. }
+            | NfnCommand::HandleCard { .. }
             | NfnCommand::KillSession { .. }
             | NfnCommand::Ignore { .. }
             | NfnCommand::Unignore { .. }

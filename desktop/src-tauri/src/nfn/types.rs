@@ -624,6 +624,10 @@ pub enum NfnCommand {
     Dismiss {
         id: String,
     },
+    HandleCard {
+        id: String,
+        card_id: String,
+    },
     DismissCard {
         id: String,
         card_id: String,

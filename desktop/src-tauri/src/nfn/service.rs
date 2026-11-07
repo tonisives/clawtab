@@ -962,6 +962,7 @@ impl Service {
             NfnCommand::Ignore { .. } => "ignore",
             _ => "cancel",
         };
+        let handling_card = matches!(&command, NfnCommand::HandleCard { .. });
         let _guard = self.mutation.lock().await;
         let result = match command {
             NfnCommand::IgnoreJobSuccess { job_id, ignored } => {
@@ -980,7 +981,7 @@ impl Service {
                 self.store.supersede_previous(&record)?;
                 serde_json::to_value(&records[0]).map_err(|error| error.to_string())?
             }
-            NfnCommand::DismissCard { id, card_id } => {
+            NfnCommand::DismissCard { id, card_id } | NfnCommand::HandleCard { id, card_id } => {
                 let mut record = self.store.get(&id)?;
                 let sections = record.request.data["sections"]
                     .as_array_mut()
@@ -991,7 +992,11 @@ impl Service {
                     if let Some(cards) = section["cards"].as_array_mut() {
                         for card in cards {
                             if card["id"].as_str() == Some(&card_id) {
-                                card["dismissed_at"] = json!(now());
+                                card[if handling_card {
+                                    "handled_at"
+                                } else {
+                                    "dismissed_at"
+                                }] = json!(now());
                                 found = true;
                             }
                             remaining |= card["dismissed_at"].is_null();
@@ -1001,7 +1006,7 @@ impl Service {
                 if !found {
                     return Err("Draft not found".into());
                 }
-                if !remaining {
+                if !remaining && !handling_card {
                     record.dismissed_at = Some(now());
                     record.read_at = Some(now());
                 }

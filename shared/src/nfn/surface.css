@@ -409,3 +409,6 @@ button.session-locations{font-size:14px;line-height:20px;padding:4px 8px}
 .open-menu .menu-link svg { width: 16px; height: 16px; flex: none; }
 .segmented-control .open-session { display: flex; align-items: center; justify-content: center; gap: 8px; }
 .open-session .open-chevron { display: block; width: 16px; height: 16px; flex: none; }
+
+.section-card-controls { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 8px; }
+.section-card-controls .section-handled[aria-pressed="true"] { color: #7dc99b; opacity: 1; }
