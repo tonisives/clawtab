@@ -1467,16 +1467,21 @@
   assert(document.querySelector('.outreach-review .social-post') && !document.querySelector('.outreach-links'), "CRM draft links move to Open");
   document.querySelector('.open-session').click(); await sleep(30);
   assert([...document.querySelectorAll('.menu-link')].map(node => node.textContent).join(',') === 'Original post,Profile,CRM,Agent', 'Open lists each draft destination');
-  for (const link of document.querySelectorAll('.menu-panel a')) {
+  assert(document.querySelector('.open-session .open-chevron'), 'Open choices use an SVG chevron');
+  assert(document.querySelector('.outreach-original-header img[alt=Reddit]'), 'Reddit drafts use the platform icon');
+  for (let index = 0; index < 3; index++) {
+    if (index) { document.querySelector('.open-session').click(); await sleep(30); }
+    const link = document.querySelectorAll('.menu-panel a')[index];
+    assert(getComputedStyle(link).display === 'flex' && getComputedStyle(link).gap === '8px', 'destination icons share row spacing');
     assert(getComputedStyle(link).cursor === 'pointer', link.textContent + " has an explicit pointing hand for passive native hover");
     const before = window.fixture.nativeEvents.length;
     const event = new MouseEvent('click', { bubbles: true, cancelable: true });
     link.dispatchEvent(event);
     const opened = window.fixture.nativeEvents.slice(before).filter(value => value.native === 'external_link');
     assert(event.defaultPrevented && opened.length === 1 && opened[0].text === link.href, link.textContent + " opens its exact URL through the native bridge");
+    assert(!document.querySelector('.open-menu'), 'choosing a link closes Open');
   }
   assert(document.querySelector('.open-session') && !document.querySelector('.social-decisions'), "CRM cards can resume Codex and keep approval in CRM");
-  document.querySelector('.menu-heading .close').click(); await sleep(30);
   const originalId = outreach.id, originalCreated = outreach.created_at;
   outreach.request.data.outreach.body = "Revised preview copy kept on the same card.";
   window.nfn.receive(window.fixture.snapshot()); await sleep(30);
@@ -1496,7 +1501,7 @@
   document.querySelector('.open-session').click(); await sleep(30);
   document.querySelector('.menu-panel a').click();
   assert(window.fixture.nativeEvents.at(-1)?.native === 'external_link' && window.fixture.nativeEvents.at(-1).text === 'https://example.com/contact', "published email links use the native bridge");
-  document.querySelector('.menu-heading .close').click(); await sleep(30);
+  assert(!document.querySelector('.open-menu'), 'published email selection closes Open');
   window.nfn.collapse();
   outreach.request.data = {sections:[{id:'posts',title:'Posts',cards:[
     {id:'first',title:'DJ transition feedback',body:'Specific feedback',data:{outreach:{platform:'Reddit',recipient:'DJ builder',source_excerpt:'DJ transition feedback: how should recommendations match a real set?',body:'Compare liked transitions with ones chosen for a set.'}},source:{provider:'codex',session_id:'first-session'},open_options:[{label:'Original post',url:'https://reddit.com/first'},{label:'Agent',kind:'agent'}]},

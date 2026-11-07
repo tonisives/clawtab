@@ -56,6 +56,14 @@
       "source": "https://brand.youtube/youtube-icon/",
       "guidelines": "https://brand.youtube/youtube-icon/",
       "variant": "youtube-icon.zip / YouTube_Icon/Digital/01 Red/yt_icon_red_digital.png"
+    },
+    "reddit": {
+      "url": "https://cdn.clawtab.cc/assets/social/reddit-2245d08bef7b.png",
+      "sha256": "2245d08bef7b95a7b40d24fe83c65d0be87458ada7add648a1e355e94ecaf609",
+      "bytes": 58908,
+      "source": "https://redditinc.com/brand",
+      "guidelines": "https://redditinc.com/brand",
+      "variant": "Reddit_Logo.png, official full color icon"
     }
   },
   "text_labels": {

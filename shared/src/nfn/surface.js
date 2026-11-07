@@ -297,10 +297,18 @@
   function iconButton(label, path, action, className = "") {
     const control = button("", action, `utility icon-button ${className}`);
     control.setAttribute("aria-label", label); control.title = label;
+    control.append(strokeIcon(path));
+    return control;
+  }
+  function strokeIcon(path) {
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("fill", "none"); svg.setAttribute("stroke", "currentColor"); svg.setAttribute("stroke-width", "2"); svg.setAttribute("stroke-linecap", "round"); svg.setAttribute("stroke-linejoin", "round"); svg.setAttribute("aria-hidden", "true");
-    const shape = document.createElementNS(svg.namespaceURI, "path"); shape.setAttribute("d", path); svg.append(shape); control.append(svg);
-    return control;
+    const shape = document.createElementNS(svg.namespaceURI, "path"); shape.setAttribute("d", path); svg.append(shape);
+    return svg;
+  }
+  function openMenuIndicator(control) {
+    control.querySelector(".open-chevron")?.remove();
+    const icon = strokeIcon("m6 9 6 6 6-6"); icon.classList.add("open-chevron"); control.append(icon);
   }
   function pending(record) { return record.status === "pending" || record.status === "delivering"; }
   function pinIndicator() {
@@ -916,7 +924,7 @@
       if (count > 1 && node._openSession) {
         node._openSession.textContent = `Open (${count})`;
         node._openSession.title = `This conversation is open in ${count} panes. Choose where to open it.`;
-        node._openSession.setAttribute("aria-haspopup", "dialog");
+        node._openSession.setAttribute("aria-haspopup", "dialog"); openMenuIndicator(node._openSession);
         const hint = button(`Session open in ${count} panes`, () => focusSession(record.id, { op: "focus", id: record.id }), "utility session-locations");
         node._notice.after(hint);
       }
@@ -1090,11 +1098,12 @@
     return media;
   }
   const socialPlatforms = {
-    x: "X", instagram: "Instagram", tiktok: "TikTok", youtube: "YouTube",
+    reddit: "Reddit", x: "X", instagram: "Instagram", tiktok: "TikTok", youtube: "YouTube",
     threads: "Threads", linkedin: "LinkedIn", bluesky: "Bluesky", mastodon: "Mastodon"
   };
   // Official assets and their source downloads are recorded in social-brand-assets.json.
   const socialBrandAssets = {
+    reddit: "https://cdn.clawtab.cc/assets/social/reddit-2245d08bef7b.png",
     x: "https://cdn.clawtab.cc/assets/social/x-dd46f96b6f47.svg",
     instagram: "https://cdn.clawtab.cc/assets/social/instagram-3347813e9e8f.svg",
     youtube: "https://cdn.clawtab.cc/assets/social/youtube-1027b1b05177.png",
@@ -1566,7 +1575,7 @@
     if (sections || openOptions(record).length) {
       utilities.querySelector(".open-session")?.remove();
       const open = button("Open", () => showOpenMenu(record, node._activeSectionCard || null), "primary open-session");
-      open.setAttribute("aria-haspopup", "dialog"); open.setAttribute("aria-label", "Open destinations");
+      open.setAttribute("aria-haspopup", "dialog"); open.setAttribute("aria-label", "Open destinations"); openMenuIndicator(open);
       node._openAvailable = () => openOptions(record, node._activeSectionCard || null).length > 0;
       node._openSession = open; utilities.append(open);
     }
@@ -2143,7 +2152,7 @@
       overlay.classList.add("open-overlay"); panel.classList.add("open-menu");
       for (const option of openContext.options) {
         const action = option.kind === "agent" ? button(option.label, () => {
-          const context = openContext; menu = null;
+          const context = openContext; menu = null; render();
           focusSession(context.record.id, { op: "focus", id: context.record.id, ...(context.item ? { card_id: context.item.id } : {}) });
         }, "utility menu-link") : externalLink(option.label, option.url, "menu-link");
         const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -2155,6 +2164,7 @@
           ? "M12 3v3m-7 4H3v6h2m14-6h2v6h-2M5 6h14v14H5ZM9 11h.01M15 11h.01M9 16h6"
           : "M10 13a5 5 0 0 0 7 .2l3-3a5 5 0 0 0-7-7l-2 2m3 6a5 5 0 0 0-7-.2l-3 3a5 5 0 0 0 7 7l2-2");
         svg.append(path); action.prepend(svg);
+        if (option.kind !== "agent") action.addEventListener("click", () => { menu = null; render(); startContext(); });
         panel.append(action);
       }
     } else if (menu === "sessions") {

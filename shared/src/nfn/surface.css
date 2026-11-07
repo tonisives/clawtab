@@ -404,7 +404,8 @@ button.session-locations{font-size:14px;line-height:20px;padding:4px 8px}
 
 .settings-heading .nav-step { font-size: 13px; border-radius: 6px; }
 
-.open-menu .menu-link { justify-content: flex-start; gap: 8px; }
+.open-menu .menu-link, .open-menu a.menu-link { display: flex; align-items: center; justify-content: flex-start; gap: 8px; padding: 8px 12px; }
 .open-menu .menu-link::after { content: none; }
 .open-menu .menu-link svg { width: 16px; height: 16px; flex: none; }
-.open-session[aria-haspopup="dialog"]::after { content: "⌄"; margin-left: 8px; }
+.segmented-control .open-session { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.open-session .open-chevron { display: block; width: 16px; height: 16px; flex: none; }
