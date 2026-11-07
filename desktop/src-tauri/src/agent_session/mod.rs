@@ -4,9 +4,12 @@ mod codex;
 mod common;
 pub(crate) mod hermes;
 mod identities;
+mod latest_message;
 pub(crate) mod lifecycle;
 mod opencode;
 mod output;
+
+pub(crate) use latest_message::latest_agent_message;
 
 pub(crate) use output::{session_announcement, session_from_output};
 

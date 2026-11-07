@@ -455,6 +455,10 @@ fn cached_codex_thread_id_by_pid(pid: &str, process_start_epoch: Option<i64>) ->
     thread_id
 }
 
+pub(super) fn rollout_path(thread_id: &str) -> Option<PathBuf> {
+    read_codex_thread(thread_id)?.rollout_path.map(PathBuf::from)
+}
+
 fn read_codex_thread(thread_id: &str) -> Option<CodexThreadInfo> {
     let db_path = latest_codex_sqlite("state_")?;
     let conn = Connection::open_with_flags(

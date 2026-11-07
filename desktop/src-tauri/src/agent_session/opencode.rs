@@ -93,7 +93,7 @@ pub(super) fn resolve_session_info(
     info
 }
 
-fn opencode_db_path() -> PathBuf {
+pub(super) fn opencode_db_path() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_default()
         .join(".local/share/opencode/opencode.db")

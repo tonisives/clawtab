@@ -548,7 +548,7 @@ fn read_session(identity: &Identity) -> SessionInfo {
     info
 }
 
-fn message_text(content: &str) -> Option<String> {
+pub(super) fn message_text(content: &str) -> Option<String> {
     if let Ok(serde_json::Value::Array(parts)) = serde_json::from_str(content) {
         let text = parts
             .iter()

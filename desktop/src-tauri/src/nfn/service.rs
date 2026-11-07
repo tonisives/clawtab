@@ -426,7 +426,11 @@ impl Service {
             return;
         }
         source.group = source.group.or_else(|| expected.group.clone());
-        match self.store.send(request_for_completion(source), None) {
+        let mut request = request_for_completion(source);
+        if let Some(message) = crate::agent_session::latest_agent_message(&request.source) {
+            request.data["latest_agent_message"] = Value::String(message);
+        }
+        match self.store.send(request, None) {
             Ok((record, true)) => {
                 self.announce(&record);
             }

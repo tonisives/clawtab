@@ -9,6 +9,37 @@
     br: () => "<br>\n",
     image: token => escape(token.text),
   } });
+  const messageLinksCache = new Map();
+  window.nfnMessageLinks = text => {
+    text = String(text || "");
+    if (messageLinksCache.has(text)) return messageLinksCache.get(text);
+    const links = new Map();
+    const add = (href, label) => {
+      try {
+        const url = new URL(href);
+        if (!["https:", "http:"].includes(url.protocol) || links.has(url.href)) return;
+        links.set(url.href, { label: label || url.href, url: url.href });
+      } catch {}
+    };
+    const scan = text => {
+      for (const match of text.matchAll(/https?:\/\/[^\s<>"'`]+/gi)) {
+        let href = match[0].replace(/[.,;:!?]+$/, "");
+        for (const [open, close] of [["(", ")"], ["[", "]"], ["{", "}"]]) {
+          while (href.endsWith(close) && href.split(close).length > href.split(open).length) href = href.slice(0, -1);
+        }
+        add(href);
+      }
+    };
+    marked.walkTokens(parser.lexer(text), token => {
+      if (token.type === "link") add(token.href, token.text);
+      // Agents often wrap deliverable URLs in backticks.
+      if (token.type === "code" || token.type === "codespan") scan(token.text);
+    });
+    const result = [...links.values()];
+    if (messageLinksCache.size >= 32) messageLinksCache.delete(messageLinksCache.keys().next().value);
+    messageLinksCache.set(text, result);
+    return result;
+  };
   window.nfnMarkdown = (parent, text, openLink) => {
     parent.classList.add("markdown");
     parent.innerHTML = DOMPurify.sanitize(parser.parse(text).trim(), {

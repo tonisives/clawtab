@@ -1223,13 +1223,23 @@
       { label: "CRM", url: draft.review_url }, { label: "Published email", url: draft.email_source },
       { label: "Agent", kind: "agent" }
     ] : [];
-    return options.filter(option => {
+    const discovered = window.nfnMessageLinks(data.latest_agent_message || request.body);
+    const combined = [...options, ...discovered];
+    const source = item?.source || record.request.source;
+    if (discovered.length && !combined.some(option => option?.kind === "agent")
+      && (source?.pane_id || source?.session_id || source?.agent)) combined.push({ label: "Agent", kind: "agent" });
+    const seen = new Set();
+    return combined.filter(option => {
       if (!option || typeof option.label !== "string") return false;
       if (option.kind === "agent") {
         const source = item?.source || record.request.source;
         return Boolean(source?.pane_id || source?.session_id || source?.agent);
       }
-      try { return new URL(option.url).protocol === "https:"; } catch { return false; }
+      try {
+        const url = new URL(option.url);
+        if (!(discovered.includes(option) ? ["https:", "http:"].includes(url.protocol) : url.protocol === "https:") || seen.has(url.href)) return false;
+        seen.add(url.href); return true;
+      } catch { return false; }
     });
   }
   function showOpenMenu(record, item = null) {

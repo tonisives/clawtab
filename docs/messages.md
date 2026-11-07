@@ -45,6 +45,13 @@ Press **Ctrl+Option+W** to expand the bar and give it keyboard focus. Press the 
 
 Questions and permissions show their available choices. Choose an answer or open **Reply** to type one. **Command+Enter** sends the reply. **Open** returns to the originating conversation; **Details** adds the full message, attachments, and recent terminal output in a scrollable area.
 
+When a message includes web links, **Open** lists those destinations alongside
+**Agent**. Completion cards discover links in the latest assistant reply for
+Codex, Claude Code, OpenCode, and Hermes. Markdown labels become menu labels;
+bare HTTP and HTTPS URLs work too. Duplicate destinations appear once. Links
+stay with that completion when the agent starts another turn. The same Open
+menu is available on desktop, web, iOS, and Android.
+
 Use the previous and next arrows to browse cards. Each card keeps its reply draft, and new requests queue behind the card you are reading. Messages from the same conversation share a card with the latest actions. A failed answer returns with its draft and error intact.
 
 The list icon opens **Pending** and **History**. Dismissing a message moves it out of Pending without answering the agent. Collapsing the bar leaves the message pending. **Ignore agent** hides that session's messages and stops its notifications; restore it from **Ignored agents**.
