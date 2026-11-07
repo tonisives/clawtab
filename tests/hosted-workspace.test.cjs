@@ -135,7 +135,7 @@ test('provisioning shows stages from enrollment rather than a permanent promise'
 
 const text = (node) => !node ? '' : Array.isArray(node) ? node.map(text).join(' ') : typeof node === 'object' ? text(node.props?.children) : String(node);
 
-test('machine management shows setup before enrollment and the included offer when online', async () => {
+test('machine management shows setup until the machine is online, then avoids a duplicate header', async () => {
   let view = harness({ workspace: null });
   assert.match(text(view.render({ autoStart: true, overview: true, details: false })), /Connecting your Relay workspace/);
   await flush();
@@ -146,9 +146,7 @@ test('machine management shows setup before enrollment and the included offer wh
   assert.match(text(provisioning.render({ autoStart: true, overview: true, details: false })), /Creating workspace/);
   let ready = harness(); ready.render({ autoStart: true, overview: true, details: false }); await flush();
   let content = text(ready.render({ autoStart: true, overview: true, details: false }));
-  assert.match(content, /ClawTab machine/);
-  assert.match(content, /2 agents at once/);
-  assert.match(content, /Online · Ready to use/);
+  assert.equal(content, '');
 });
 
 test('machine management does not promise a machine without a paid entitlement', async () => {
@@ -156,4 +154,17 @@ test('machine management does not promise a machine without a paid entitlement',
   view.render({ autoStart: true, overview: true, details: false }); await flush();
   assert.equal(view.render({ autoStart: true, overview: true, details: false }), null);
   assert.equal(view.starts(), 0);
+});
+
+test('sign-in and machine settings expose only their own controls', async () => {
+  let view = harness(); view.render(); await flush();
+  let signin = view.render({ section: 'signin' });
+  assert.ok(find(signin, 'Sign in to Codex'));
+  assert.equal(find(signin, 'Start agent'), undefined);
+  assert.equal(find(signin, 'Open shell'), undefined);
+  assert.doesNotMatch(text(signin), /Online|MiB|sessions ·/);
+  let settings = view.render({ section: 'settings' });
+  assert.ok(find(settings, 'Open shell'));
+  assert.equal(find(settings, 'Sign in to Codex'), undefined);
+  assert.match(text(settings), /2 agents at once/);
 });

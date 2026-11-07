@@ -418,3 +418,54 @@ test('pane loading follows its host rather than another selected online machine'
   state.connected = false;
   assert.equal(exports.useMachineStatus(b + '::%1').connected, false);
 });
+
+test('included machines get one persistent Home group regardless of roster and preferences arrival order', async (t) => {
+  for (let rosterFirst of [true, false]) {
+    let { client, sockets } = load();
+    let preferences = { job_groups: {} }, writes = [];
+    let resolveFetch;
+    let first = true;
+    let api = async (method, path, body) => {
+      if (method === 'POST') {
+        writes.push(body.job_group);
+        preferences = { job_groups: { ...preferences.job_groups, [body.job_group.id]: body.job_group } };
+      } else if (first && rosterFirst) {
+        first = false;
+        await new Promise(resolve => { resolveFetch = resolve; });
+      }
+      return preferences;
+    };
+    let stop = client.connectMachines(async () => 'ws://localhost/ws?token=fixture', api);
+    t.after(stop);
+    await new Promise(setImmediate); let ws = sockets[0]; ws.onopen();
+    if (!rosterFirst) await new Promise(setImmediate);
+    let roster = { type: 'machines', machines: [{ id: a, online: false, owned: true, hosted: { state: 'ready' } }, { id: b, owned: true, online: false }] };
+    ws.receive(roster);
+    resolveFetch?.();
+    await new Promise(setImmediate);
+    assert.equal(writes.length, 1);
+    assert.equal(writes[0].id, a);
+    assert.equal(writes[0].name, 'Home');
+    assert.equal(writes[0].work_dir, '/home/clawtab/workspace');
+    ws.receive(roster); await new Promise(setImmediate);
+    assert.equal(writes.length, 1);
+    assert.equal(client.machineState().jobGroups[a].name, 'Home');
+    stop();
+  }
+});
+
+test('Home initialization preserves an existing group for the included folder', async (t) => {
+  let { client, sockets } = load();
+  let group = { id: b, name: 'My workspace', machine_id: a, work_dir: '/home/clawtab/workspace/' };
+  let writes = 0;
+  let stop = client.connectMachines(async () => 'ws://localhost/ws?token=fixture', async (method) => {
+    if (method === 'POST') writes++;
+    return { job_groups: { [b]: group } };
+  });
+  t.after(stop);
+  await new Promise(setImmediate); let ws = sockets[0]; ws.onopen();
+  ws.receive({ type: 'machines', machines: [{ id: a, owned: true, online: false, hosted: {} }] });
+  await new Promise(setImmediate);
+  assert.equal(writes, 0);
+  assert.equal(client.machineState().jobGroups[b].name, 'My workspace');
+});

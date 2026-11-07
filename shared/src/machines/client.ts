@@ -314,7 +314,17 @@ export let connectMachines = (getUrl: () => Promise<string>, preferencesApi?: Pr
     let revision = preferencesRevision
     try {
       let result = await preferencesApi("GET", "/account/preferences")
-      if (!stopped && revision === preferencesRevision) applyAccountPreferences(result)
+      if (!stopped && revision === preferencesRevision) {
+        applyAccountPreferences(result)
+        for (let machine of state.machines.filter((machine) => machine.hosted && machine.owned)) {
+          if (stopped) return
+          // Stable identity makes simultaneous clients initialize the same group.
+          if (Object.values(state.jobGroups).some((group) => group.machine_id === machine.id && (group.id === machine.id || group.work_dir.replace(/\/+$/, "") === "/home/clawtab/workspace"))) continue
+          await saveAccountPreferences(preferencesApi, { job_group: {
+            id: machine.id, name: "Home", machine_id: machine.id, work_dir: "/home/clawtab/workspace",
+          } })
+        }
+      }
     } catch { /* Preserve the last confirmed account settings during reconnection. */ }
     finally { preferencesLoading = false }
   }
@@ -375,6 +385,7 @@ export let connectMachines = (getUrl: () => Promise<string>, preferencesApi?: Pr
               Object.entries(state.snapshots).filter(([id]) => machines.some((m) => m.id === id)),
             ),
           })
+          void refreshPreferences()
           for (let machine of machines.filter(
             (m) => m.online && (!known.has(m.id) || known.get(m.id) !== m.connection_id),
           )) {

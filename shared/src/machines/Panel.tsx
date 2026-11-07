@@ -1,10 +1,12 @@
 import { HostedWorkspacePanel } from "./HostedWorkspace"
 import { MachineSettingsPageButton } from "./Onboarding"
+import { AgentSelector } from "../components/AgentSelector"
+import type { AgentEffort, ProcessProvider } from "../types/process"
 import { ModelManager } from "./Models"
 import { hostModelCatalog, resolveEnabledModels } from "../util/agentModels"
 import { ConnectMachine } from "./Connect"
 import { colors } from "../theme/colors"
-import { useState, useRef, type ReactNode } from "react"
+import { useEffect, useState, useRef, type ReactNode } from "react"
 import { SegmentedControl } from "../components/SegmentedControl"
 import { MachineIcon, machineAppearance, MachineAppearanceButton } from "./Appearance"
 import { View, Text, Pressable, TextInput, ScrollView, StyleSheet, Platform } from "react-native"
@@ -48,6 +50,8 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, hostedApi, onOp
   let [prompt, setPrompt] = useState("")
   let [provider, setProvider] = useState("codex")
   let [model, setModel] = useState("")
+  let [effort, setEffort] = useState<AgentEffort | null>(null)
+  let [advanced, setAdvanced] = useState(false)
   let [cron, setCron] = useState("")
   let [jobName, setJobName] = useState("")
   let [output, setOutput] = useState<MachineMessage | null>(null)
@@ -70,12 +74,25 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, hostedApi, onOp
     (!machineType || (machineType === "rented" ? !!machine.rental : !machine.rental)),
   )
   let machine = visibleMachines.find((m) => m.id === state.selected)
+  useEffect(() => {
+    if (!machine && visibleMachines.length === 1) selectMachine(visibleMachines[0].id)
+  }, [machine?.id, visibleMachines.map((machine) => machine.id).join(",")])
   let hostSettings = machine ? state.snapshots[machine.id]?.settings_response : undefined
   let preferences = state.agentModels ?? hostSettings
   let models = resolveEnabledModels(preferences?.enabled_models ?? {}, hostModelCatalog(hostSettings), preferences?.disabled_models)
+  useEffect(() => {
+    setPath(machine?.hosted ? "/home/clawtab/workspace" : "~")
+    setAdvanced(false)
+  }, [machine?.id])
+  useEffect(() => {
+    if (provider === "shell" || model && models[provider]?.includes(model)) return
+    let available = models[provider] ?? []
+    let preferred = preferences?.default_model
+    setModel(preferred && available.includes(preferred) ? preferred : available[0] ?? "")
+  }, [machine?.id, provider, model, JSON.stringify(models), preferences?.default_model])
   let choose = (id: string) => {
     selectMachine(id)
-    setPath("~")
+    setPath(state.machines.find((machine) => machine.id === id)?.hosted ? "/home/clawtab/workspace" : "~")
     setModel("")
     setOutput(null)
     setTransfer(null)
@@ -146,6 +163,7 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, hostedApi, onOp
         work_dir: folder.path,
         provider,
         model: model || undefined,
+        effort: effort || undefined,
         operation_id: operationId,
       })
       setOutput(result)
@@ -260,11 +278,6 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, hostedApi, onOp
   }
   let pickMachine = (id: string) => () => choose(id)
   let pickFilter = (id: string) => () => filterMachine(id)
-  let pickProvider = (value: string) => () => {
-    setProvider(value)
-    setModel("")
-  }
-  let pickModel = (value: string) => () => setModel(value)
   let pickPath = (value: string) => () => setPath(value)
   let sendPreview = () => preview("send")
   let retrievePreview = () => preview("retrieve")
@@ -296,7 +309,7 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, hostedApi, onOp
           <View style={styles.statusRow}>
             <View style={[styles.statusDot, m.online ? styles.onlineDot : styles.offlineDot]} />
             <Text style={styles.detail}>
-              {m.online ? "Online" : "Offline"} · {m.platform === "macos" ? "macOS" : m.platform}
+              {m.online ? "Online" : "Offline"}
               {m.id !== localMachineId && machines.filter((other) => other.name === m.name).length > 1
                 ? " · " + m.id.slice(0, 8) : ""}
             </Text>
@@ -332,9 +345,9 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, hostedApi, onOp
           </Pressable>
         ))}
       </View>}
-      {showConnectionStatus && presentation === "panel" && state.connected && <View style={styles.statusRow}>
+      {showConnectionStatus && presentation === "panel" && state.connected && machines.length === 0 && <View style={styles.statusRow}>
         <View style={[styles.statusDot, styles.onlineDot]} />
-        <Text style={styles.detail}>Machine list connected · {machines.filter((m) => m.online).length} of {machines.length} online</Text>
+        <Text style={styles.detail}>No machines connected yet</Text>
       </View>}
       {(error || ((showConnectionStatus || state.connected) && state.error)) && <Text style={styles.error}>{error ?? state.error}</Text>}
       {showConnectionStatus && !state.connected && (
@@ -356,25 +369,24 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, hostedApi, onOp
       {(expanded || presentation === "panel") && (
         <ScrollView style={presentation === "panel" ? styles.panelBody : styles.body}>
           {presentation === "panel" && tab !== "pair" && machineChoices}
-          {presentation === "panel" && !managementSection && machine?.hosted && hostedApi && <HostedWorkspacePanel key={machine.id} api={hostedApi} details />}
           {presentation === "panel" && machine?.owned && !machine.hosted && api && <MachineAppearanceButton key={machine.id} machine={machine} api={api} />}
           {Platform.OS !== "web" && presentation === "panel" && !managementSection ? <View style={machine ? styles.settingsPages : styles.settingsHint}>
-            {machine && ["agents", "jobs", "repositories", ...(localRequest ? ["transfers"] : []), "models", "access"].map((section) => <MachineSettingsPageButton key={section} title={section[0].toUpperCase() + section.slice(1)}>
-              <MachinesPanel managementSection={section} presentation="panel" approvePairing={approvePairing} localRequest={localRequest} api={api} localMachineId={localMachineId} machineType={machineType} showConnectionStatus={false} />
+            {machine && ["agents", ...(machine?.hosted ? ["signin"] : []), "jobs", "repositories", ...(localRequest ? ["transfers"] : []), "models", "access", ...(machine?.hosted ? ["settings"] : [])].map((section) => <MachineSettingsPageButton key={section} title={section === "signin" ? "AI accounts" : section[0].toUpperCase() + section.slice(1)}>
+              <MachinesPanel managementSection={section} presentation="panel" approvePairing={approvePairing} localRequest={localRequest} api={api} hostedApi={hostedApi} localMachineId={localMachineId} machineType={machineType} showConnectionStatus={false} />
             </MachineSettingsPageButton>)}
             {!machine && <Text style={styles.detail}>Select a machine above to manage its agents, models, and access.</Text>}
           </View> : null}
           {(Platform.OS === "web" || presentation === "compact") && <>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabsScroll}>
           <SegmentedControl label="Machine controls" value={tab} onChange={openTab} options={[
-            "agents", "jobs", "repositories", ...(localRequest ? ["transfers"] : []), "models", "access",
+            "agents", ...(machine?.hosted ? ["signin"] : []), "jobs", "repositories", ...(localRequest ? ["transfers"] : []), "models", "access", ...(machine?.hosted ? ["settings"] : []),
             ...(presentation === "compact" && machineType !== "rented" ? ["pair"] : []),
-          ].map((value) => ({ value, label: value === "pair" ? "Add machine" : value[0].toUpperCase() + value.slice(1) }))} />
+          ].map((value) => ({ value, label: value === "pair" ? "Add machine" : value === "signin" ? "Sign-in" : value[0].toUpperCase() + value.slice(1) }))} />
           </ScrollView>
           </>}
           {(Platform.OS === "web" || presentation === "compact" || managementSection) && <>
           {tab === "pair" && <ConnectMachine approvePairing={approvePairing} initiallyExpanded />}
-          {tab !== "pair" && <Text style={styles.title}>{tab[0].toUpperCase() + tab.slice(1)}</Text>}
+          {tab !== "pair" && <Text style={styles.title}>{tab === "signin" ? "AI accounts" : tab[0].toUpperCase() + tab.slice(1)}</Text>}
           {!machine && tab !== "pair" && (
             <>
               <Text style={styles.text}>
@@ -392,11 +404,20 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, hostedApi, onOp
           {presentation === "compact" && tab !== "pair" && machineChoices}
           {machine && tab !== "pair" && (
             <>
-              <Text style={styles.text}>
+              {(!machine.online || tab === "settings") && <Text style={styles.text}>
                 {!machine.online ? "This machine is offline. Start ClawTab on that host to use its controls." : ""}
                 {machine.online && (machine.version ? "ClawTab " + machine.version : "Update host for full management")}
-              </Text>
-              {["agents", "jobs", "repositories", "transfers"].includes(tab) && (
+                {tab === "settings" && ` · ${machine.platform === "macos" ? "macOS" : machine.platform}`}
+              </Text>}
+              {machine.hosted && hostedApi && (tab === "signin" || tab === "settings") && <HostedWorkspacePanel key={machine.id + tab} api={hostedApi} details section={tab} />}
+              {tab === "agents" && <>
+                {machine.hosted && <Text style={styles.detail}>Start an agent in Home. Connect your AI account in Sign-in first.</Text>}
+                <AgentSelector provider={provider as ProcessProvider} model={model || null} effort={effort} includeShell
+                  modelOptions={Object.entries(models).flatMap(([provider, values]) => values.map((modelId) => ({ provider: provider as ProcessProvider, modelId, label: modelId })))}
+                  onChange={(selection) => { setProvider(selection.provider); setModel(selection.modelId ?? ""); setEffort(selection.effort ?? null) }} />
+                <Pressable accessibilityRole="button" accessibilityState={{ expanded: advanced }} onPress={() => setAdvanced(!advanced)} style={styles.button}><Text style={styles.detail}>{advanced ? "Hide folder options" : "Change folder"}</Text></Pressable>
+              </>}
+              {(["jobs", "repositories", "transfers"].includes(tab) || tab === "agents" && advanced) && (
                 <>
                   <TextInput
                     accessibilityLabel="Remote folder"
@@ -426,41 +447,6 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, hostedApi, onOp
                   </View>
                 </>
               )}
-              {tab === "agents" && (
-                <>
-                  <View style={styles.row}>
-                    {[...new Set([...Object.keys(models), ...(machine.rental ? ["codex", "claude", "opencode"] : []), "shell"])].map((value) => (
-                      <Pressable
-                        accessibilityRole="button"
-                        key={value}
-                        onPress={pickProvider(value)}
-                        style={styles.button}
-                      >
-                        <Text style={styles.text}>
-                          {value}
-                          {provider === value ? " · selected" : ""}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                  <View style={styles.row}>
-                    {provider !== "shell" && models[provider] === undefined && <Text style={styles.text}>Uses the provider’s default model.</Text>}
-                    {(models[provider] ?? []).map((value) => (
-                      <Pressable
-                        accessibilityRole="button"
-                        key={value}
-                        onPress={pickModel(value)}
-                        style={styles.button}
-                      >
-                        <Text style={styles.text}>
-                          {value}
-                          {model === value ? " · selected" : ""}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                </>
-              )}
               {tab === "models" && machine.owned && <ModelManager key={machine.id} machineId={machine.id} api={api} />}
               {(tab === "agents" || tab === "jobs") && (
                 <TextInput
@@ -469,7 +455,7 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, hostedApi, onOp
                   style={styles.input}
                   value={prompt}
                   onChangeText={setPrompt}
-                  placeholder="Agent prompt"
+                  placeholder="What should the agent do?"
                   placeholderTextColor="#989ca6"
                 />
               )}
@@ -478,9 +464,9 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, hostedApi, onOp
                   accessibilityRole="button"
                   disabled={busy || !machine.online}
                   onPress={start}
-                  style={styles.button}
+                  style={[styles.button, styles.primaryButton]}
                 >
-                  <Text style={styles.text}>Start on {machine.name}</Text>
+                  <Text style={styles.text}>{busy ? "Starting…" : "Start agent"}</Text>
                 </Pressable>
               )}
               {tab === "jobs" && (
@@ -776,6 +762,7 @@ let createStyles = (desktop: boolean) => StyleSheet.create({
     alignSelf: "flex-start",
     marginVertical: 3,
   },
+  primaryButton: { backgroundColor: colors.accentBg, borderWidth: 1, borderColor: colors.accent, paddingVertical: 8, paddingHorizontal: 12, minHeight: 44, justifyContent: "center" },
   machineButton: { borderWidth: 1, borderColor: desktop ? colors.borderLight : "transparent", borderRadius: Platform.OS === "ios" ? 24 : 16, borderCurve: "continuous", paddingVertical: 12, minWidth: desktop ? 160 : undefined },
   selectedMachine: { borderColor: desktop ? colors.accent : "#9fa8da", backgroundColor: desktop ? colors.accentBg : "#353942" },
   input: {
