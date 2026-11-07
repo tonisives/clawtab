@@ -189,7 +189,7 @@ Plain messages, jobs, browser messages, and standalone reminders remain supporte
 
 An update can keep an overview in `body` and include named card sections in
 `data.sections`. Section IDs are unique within the message and card IDs are unique
-across its sections. Desktop arrows and keyboard navigation, and mobile swipes,
+across its sections. Top chevrons and keyboard navigation, and mobile swipes,
 change cards within a section while preserving the overview and message identity.
 This layout works for research results, reviews and other collections.
 
@@ -207,7 +207,7 @@ This layout works for research results, reviews and other collections.
         "id": "draft-1",
         "title": "Feedback on a DJ app",
         "body": "The author is testing transition recommendations.",
-        "data": {"outreach": {"platform": "Reddit", "recipient": "builder", "body": "Suggested reply text"}},
+        "data": {"outreach": {"platform": "Reddit", "recipient": "builder", "source_excerpt": "Original post excerpt", "body": "Suggested reply text"}},
         "source": {"provider": "codex", "session_id": "saved-session", "cwd": "/workspace/crm"},
         "open_options": [
           {"label": "Original post", "url": "https://reddit.com/r/example/comments/post"},
@@ -234,3 +234,5 @@ links appear in Open instead of below the draft.
 
 Use at most 16 sections and 100 cards per section, within the existing payload
 size limit. Sections remain independent of ordinary agent update threads.
+
+Card stacks use a stable reading area with chevrons above it. The existing bottom Open button uses the selected card’s destinations. Outreach cards show the author once, an original-post excerpt and a reply arrow; project labels and repeated draft headings are omitted.

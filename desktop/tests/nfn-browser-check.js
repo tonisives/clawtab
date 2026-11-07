@@ -1450,7 +1450,7 @@
   outreach.request.source = {job_id:"crm/outreach-discovery",run_id:"run",provider:"codex",session_id:"saved-session",cwd:"/workspace/crm"};
   outreach.request.actions = [{id:"focus",kind:"focus",label:"Open session"},{id:"acknowledge",kind:"choice",label:"Got it"}];
   outreach.request.body = "Specific request for validation advice.";
-  outreach.request.data = {outreach:{channel:"social",platform:"Reddit",recipient:"founder",body:"I built Trend Seeker. Here is a specific way to test demand.\n\n" + "Ask a customer about their last attempt. ".repeat(12),source_url:"https://reddit.com/r/test/comments/abc",profile_url:"https://reddit.com/user/founder",review_url:"https://crm.tonis.dev/leads/lead?a=1&b=2"}};
+  outreach.request.data = {outreach:{channel:"social",platform:"Reddit",recipient:"founder",source_excerpt:"I am testing a startup idea and would like feedback.",body:"I built Trend Seeker. Here is a specific way to test demand.\n\n" + "Ask a customer about their last attempt. ".repeat(12),source_url:"https://reddit.com/r/test/comments/abc",profile_url:"https://reddit.com/user/founder",review_url:"https://crm.tonis.dev/leads/lead?a=1&b=2"}};
   window.fixture.records.set(outreach.id,outreach);window.nfn.receive(window.fixture.snapshot(outreach.id));
   window.nfn.setPlacement({placement:"right",max_width:1000,max_height:1600,list_max_height:1600,reduce_motion:true});
   await sleep(50);
@@ -1488,16 +1488,24 @@
   assert(window.fixture.nativeEvents.at(-1)?.native === 'external_link' && window.fixture.nativeEvents.at(-1).text === 'https://example.com/contact', "published email links use the native bridge");
   document.querySelector('.menu-heading .close').click(); await sleep(30);
   outreach.request.data = {sections:[{id:'posts',title:'Posts',cards:[
-    {id:'first',title:'DJ transition feedback',body:'Specific feedback',data:{outreach:{platform:'Reddit',recipient:'DJ builder',body:'Compare liked transitions with ones chosen for a set.'}},source:{provider:'codex',session_id:'first-session'},open_options:[{label:'Original post',url:'https://reddit.com/first'},{label:'Agent',kind:'agent'}]},
+    {id:'first',title:'DJ transition feedback',body:'Specific feedback',data:{outreach:{platform:'Reddit',recipient:'DJ builder',source_excerpt:'DJ transition feedback: how should recommendations match a real set?',body:'Compare liked transitions with ones chosen for a set.'}},source:{provider:'codex',session_id:'first-session'},open_options:[{label:'Original post',url:'https://reddit.com/first'},{label:'Agent',kind:'agent'}]},
     {id:'second',title:'Receipt reminder feedback',body:'Account access',open_options:[{label:'CRM',url:'https://crm.tonis.dev/second'},{label:'Invalid',url:'javascript:alert(1)'}]}
   ]}]};
   outreach.request.body = 'Overview of two drafts';
   window.nfn.receive(window.fixture.snapshot()); await sleep(30);
   assert(document.querySelector('.message').textContent.includes('Overview of two drafts') && document.querySelector('.section-heading').textContent.includes('Posts1 / 2'), 'stack shows overview and named section');
   assert(document.querySelector('.section-page').textContent.includes('DJ transition feedback') && document.querySelector('.section-previous').disabled, 'stack starts with first post and bounded navigation');
+  assert(document.querySelectorAll('.open-session').length === 1 && !document.querySelector('.section-open'), 'stack uses only the existing bottom Open button');
+  assert(document.querySelector('.outreach-source-excerpt')?.textContent.includes('DJ transition feedback') && document.querySelector('.outreach-reply svg[aria-label="Reply"]'), 'original post excerpt connects to the proposed reply with an arrow');
+  assert(!document.querySelector('.block-label') && !document.querySelector('.source-attribution') && !document.querySelector('.section-overview-title'), 'stack omits repeated source titles and draft labels');
+  assert(document.querySelectorAll('.section-underlay').length === 1, 'the section is drawn as a layered card stack');
+  const navBefore = document.querySelector('.section-next').getBoundingClientRect();
+  assert(navBefore.top < document.querySelector('.section-deck').getBoundingClientRect().top, 'chevrons sit above the stack');
   document.querySelector('.section-next').click(); await sleep(30);
+  const navAfter = document.querySelector('.section-next').getBoundingClientRect();
+  assert(Math.abs(navAfter.x-navBefore.x)<1 && Math.abs(navAfter.y-navBefore.y)<1, 'chevrons keep the same mouse target across different card lengths');
   assert(document.querySelector('.section-page').textContent.includes('Receipt reminder feedback') && document.querySelector('.section-next').disabled, 'post navigation stays within the message');
-  document.querySelector('.section-open').click(); await sleep(30);
+  document.querySelector('.open-session').click(); await sleep(30);
   assert(document.querySelectorAll('.menu-panel a').length === 1 && document.querySelector('.menu-panel a').href === 'https://crm.tonis.dev/second', 'each post has its own configurable safe destinations');
   document.querySelector('.menu-heading .close').click();
   outreach.request.body = 'Updated overview'; window.nfn.receive(window.fixture.snapshot()); await sleep(30);

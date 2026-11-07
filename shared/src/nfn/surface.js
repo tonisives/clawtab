@@ -1161,17 +1161,28 @@
     const section = el("section", "outreach-review");
     section.setAttribute("aria-label", "Outreach draft");
     const email = draft.channel === "email";
-    const post = email ? el("article", "social-post email-post") : socialPost(record, {
-      platform: draft.platform || "Message", account: draft.recipient || "Recipient",
-      display_name: draft.recipient || "Recipient", body: draft.body, outreach: true
-    });
+    const post = el("article", email ? "social-post email-post" : "social-post outreach-thread");
     if (email) {
       post.setAttribute("aria-label", "Email draft preview");
       post.append(el("div", "email-recipient", `To: ${draft.recipient || "Recipient"}`));
       if (draft.subject) post.append(el("strong", "social-title", draft.subject));
       post.append(el("div", "social-body", draft.body));
+    } else {
+      post.setAttribute("aria-label", "Reply preview");
+      const source = el("div", "outreach-original");
+      const header = el("div", "outreach-original-header");
+      header.append(el("strong", "social-name", draft.recipient || "Recipient"), socialBrand((draft.platform || "Message").toLowerCase()));
+      source.append(header);
+      if (draft.source_excerpt) source.append(el("blockquote", "outreach-source-excerpt", draft.source_excerpt));
+      const reply = el("div", "outreach-reply");
+      const arrow = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      arrow.setAttribute("viewBox", "0 0 24 24"); arrow.setAttribute("role", "img"); arrow.setAttribute("aria-label", "Reply");
+      const shape = document.createElementNS(arrow.namespaceURI, "path");
+      shape.setAttribute("d", "M5 4v8a4 4 0 0 0 4 4h11m-5-5 5 5-5 5"); arrow.append(shape);
+      reply.append(arrow, el("div", "social-body", draft.body));
+      post.append(source, reply);
     }
-    section.append(el("div", "block-label", email ? "Email draft" : "Message draft"), post);
+    section.append(post);
     return section;
   }
   function openOptions(record, item = null) {
@@ -1210,24 +1221,28 @@
       let index = Math.max(0, section.cards.findIndex(item => item.id === selected));
       const count = el("span", "meta"), page = el("div", "section-page");
       page.tabIndex = 0; page.setAttribute("aria-roledescription", "carousel");
-      const previous = button("Previous", () => select(index - 1), "utility section-previous");
-      const next = button("Next", () => select(index + 1), "utility section-next");
-      const open = button("Open", () => showOpenMenu(record, section.cards[index]), "primary section-open");
-      open.setAttribute("aria-haspopup", "dialog");
-      const controls = el("div", "section-controls"); controls.append(previous, open, next);
-      header.append(title, count); region.append(header, page, controls); container.append(region);
+      const previous = iconButton("Previous post", "m14 6-6 6 6 6", () => select(index - 1), "section-previous");
+      const next = iconButton("Next post", "m10 6 6 6-6 6", () => select(index + 1), "section-next");
+      const controls = el("div", "section-controls"); controls.append(previous, count, next);
+      const deck = el("div", "section-deck");
+      for (let i = Math.min(2, section.cards.length - 1); i > 0; i--) {
+        const layer = el("div", `section-underlay layer-${i}`); layer.setAttribute("aria-hidden", "true"); deck.append(layer);
+      }
+      deck.append(page);
+      header.append(title, controls); region.append(header, deck); container.append(region);
       function select(value) {
         index = Math.max(0, Math.min(value, section.cards.length - 1));
         const item = section.cards[index]; sectionSelections.set(key, item.id);
         node._activeSectionCard = item;
         count.textContent = `${index + 1} / ${section.cards.length}`;
         page.replaceChildren(); page.setAttribute("aria-label", `${section.title || "Cards"}: ${index + 1} of ${section.cards.length}`);
-        if (item.title) page.append(el("h3", "section-card-title", item.title));
+        if (item.title && !item.data?.outreach) page.append(el("h3", "section-card-title", item.title));
         const virtual = { ...record, request: { ...record.request, ...item } };
         if (item.body) page.append(messageBody(virtual));
         const outreach = outreachCard(virtual); if (outreach) page.append(outreach);
         else if (item.media?.length) page.append(mediaView(virtual, item.media.map((_, i) => i)));
-        open.disabled = !openOptions(record, item).length;
+        page.scrollTop = 0;
+        if (node._openSession) node._openSession.disabled = !openOptions(record, item).length;
         previous.disabled = index === 0; next.disabled = index === section.cards.length - 1;
         if (!reducedMotion.matches) page.animate([{ opacity: .3, transform: "translateX(8px)" }, { opacity: 1, transform: "translateX(0)" }], { duration: 500, easing: "cubic-bezier(0.22,1,0.36,1)" });
       }
@@ -1405,10 +1420,11 @@
     const node = el("article", "card");
     node._wasPending = pending(record) && !record.dismissed_at;
     node._signature = cardSignature(record);
+    const stacked = Array.isArray(record.request.data?.sections);
     const heading = el("div", "heading"), agent = hasAgent(record), identity = sourceHeading(record);
     const job = record.request.source?.job_id;
-    const title = el("h1", "", agent ? identity.title : record.request.title); title.title = job || title.textContent;
-    if (agent) { heading.classList.add("agent-heading"); const group = el("span", "source-group", identity.group); group.title = identity.group; heading.append(group); }
+    const title = el("h1", "", agent && !stacked ? identity.title : record.request.title); title.title = job || title.textContent;
+    if (agent && !stacked) { heading.classList.add("agent-heading"); const group = el("span", "source-group", identity.group); group.title = identity.group; heading.append(group); }
     if (job) {
       const jobHeading = el("div", "job-heading");
       const ignored = ignoredJobs.includes(job);
@@ -1428,15 +1444,14 @@
     node.append(heading);
     const body = el("div", "message-content"); node._body = body; node.append(body);
     if (record.request.data?.reminder) body.append(el("div", "notification-title source-attribution", `Scheduled by ${record.request.data.reminder.creator_label}`));
-    if (!agent) {
+    if (!agent && !stacked) {
       const source = record.request.source || {};
       const definition = snapshot.settings?.agent_definitions?.[source.agent?.type];
       const identifier = source.agent?.data?.[definition?.identifier_field] || source.agent?.id;
       const label = [source.group, source.agent_title || source.task || identifier, source.browser_pane_id ? `BMUX pane ${source.browser_pane_id}` : source.pane_id ? `Pane ${source.pane_id}` : ""].filter(Boolean).join(" · ");
       if (label) body.append(el("div", "notification-title source-attribution", label));
     }
-    if (agent && !record.question_id && record.request.title !== identity.group && record.request.title !== identity.title) body.append(el("div", "notification-title", record.request.title));
-    if (Array.isArray(record.request.data?.sections) && record.request.body) body.append(el("h2", "section-overview-title", "Overview"));
+    if (agent && !stacked && !record.question_id && record.request.title !== identity.group && record.request.title !== identity.title) body.append(el("div", "notification-title", record.request.title));
     const messages = cardMessages(record);
     node._messages = [];
     if (messages.length > 1) {

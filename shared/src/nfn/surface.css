@@ -381,13 +381,22 @@ button.session-locations{font-size:14px;line-height:20px;padding:4px 8px}
 .section-heading, .section-controls { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .section-heading { margin-bottom: 12px; }
 .section-heading h2 { margin: 0; font-size: 16px; line-height: 24px; font-weight: 600; }
+.section-controls { flex: none; }
+.section-controls .meta { min-width: 48px; text-align: center; font-variant-numeric: tabular-nums; }
+.section-controls button { width: 32px; height: 32px; }
 .section-card-title { margin: 0 0 8px; font-size: 14px; line-height: 20px; font-weight: 600; }
-.section-page { min-width: 0; touch-action: pan-y; }
+.section-deck { position: relative; isolation: isolate; height: clamp(240px, 45vh, 480px); margin-bottom: 16px; }
+.section-underlay { position: absolute; inset: 0; border: 1px solid #313131; border-radius: 12px; background: #1f1f1f; pointer-events: none; }
+.section-underlay.layer-1 { transform: translateY(8px) scaleX(.98); }
+.section-underlay.layer-2 { transform: translateY(16px) scaleX(.96); }
+.section-page { position: relative; height: 100%; padding: 16px; border: 1px solid #313131; border-radius: 12px; background: #181818; min-width: 0; touch-action: pan-y; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 .section-page:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.section-controls { margin-top: 12px; }
-.section-controls button { font-size: 14px; line-height: 20px; }
+.section-page .outreach-review { margin-top: 0; }
+.section-page .outreach-review > .social-post { padding: 0; border: 0; border-radius: 0; background: transparent; }
+.outreach-original-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.outreach-source-excerpt { margin: 0; color: var(--muted); font-size: 14px; line-height: 20px; white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 5; overflow: hidden; }
+.outreach-reply { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 8px; margin-top: 16px; }
+.outreach-reply > svg { width: 24px; height: 24px; fill: none; stroke: var(--muted); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .menu-panel a.menu-link { display: block; padding: 8px 12px; color: inherit; text-decoration: none; border-radius: 6px; }
 .menu-panel a.menu-link:hover { background: #272727; }
 .menu-panel a.menu-link:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-
-.section-overview-title { margin: 16px 0 8px; font-size: 16px; line-height: 24px; font-weight: 600; }
