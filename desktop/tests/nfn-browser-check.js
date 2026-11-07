@@ -1514,10 +1514,10 @@
   const copyEvent = window.fixture.nativeEvents.findLast(event => event.native === 'copy_text');
   assert(copyEvent?.text === outreach.request.data.sections[0].cards[0].data.outreach.body, 'Copy reply copies only the exact reply text');
   window.nfn.receive({type:'copy_result',token:copyEvent.token});
-  assert(copy.textContent === 'Copied' && !copy.disabled, 'copy confirmation follows native clipboard success');
+  assert(copy.textContent === '' && copy.querySelector('svg') && copy.getAttribute('aria-label') === 'Reply copied to clipboard' && !copy.disabled, 'copy confirmation follows native clipboard success');
   copy.click();
   window.nfn.receive({type:'copy_result',token:window.fixture.nativeEvents.findLast(event=>event.native==='copy_text').token,error:'Clipboard unavailable'});
-  assert(copy.textContent.includes('Retry') && !copy.disabled, 'clipboard failure offers a retry');
+  assert(copy.textContent === '' && copy.querySelector('svg') && copy.getAttribute('aria-label').includes('Retry') && !copy.disabled, 'clipboard failure offers a retry');
   const firstDeckHeight = document.querySelector('.section-deck').getBoundingClientRect().height;
   const navBefore = document.querySelector('.section-next').getBoundingClientRect();
   assert(navBefore.top < document.querySelector('.section-deck').getBoundingClientRect().top, 'chevrons sit above the stack');

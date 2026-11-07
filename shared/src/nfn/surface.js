@@ -1162,7 +1162,7 @@
   }
   function copyReply(text, control) {
     const token = `reply-copy-${++copySequence}`;
-    control.disabled = true; control.textContent = "Copying…";
+    control.disabled = true; control.setAttribute("aria-label", "Copying reply"); control.title = "Copying reply";
     pendingCopies.set(token, control);
     native({ native: "copy_text", text, token });
   }
@@ -1193,7 +1193,7 @@
       reply.append(arrow, el("div", "social-body", draft.body));
       post.append(source, reply);
     }
-    const copy = button("Copy reply", () => copyReply(draft.body, copy), "utility copy-reply");
+    const copy = iconButton("Copy reply", "M9 9h11v11H9zM5 15H4V4h11v1", () => copyReply(draft.body, copy), "copy-reply");
     const footer = el("div", "outreach-footer"); footer.append(copy);
     section.append(post, footer);
     return section;
@@ -2558,9 +2558,15 @@
     if (value.type === "copy_result") {
       const control = pendingCopies.get(value.token); pendingCopies.delete(value.token);
       if (control) {
-        control.disabled = false; control.textContent = value.error ? "Copy failed. Retry" : "Copied";
-        control.title = value.error || "Reply copied to clipboard";
-        setTimeout(() => { if (control.isConnected) control.textContent = "Copy reply"; }, 2000);
+        control.disabled = false;
+        const label = value.error ? "Copy failed. Retry" : "Reply copied to clipboard";
+        control.setAttribute("aria-label", label); control.title = value.error || label;
+        control.querySelector("path").setAttribute("d", value.error ? "M12 8v5m0 3h.01M12 3 2 21h20Z" : "m5 12 4 4L19 6");
+        setTimeout(() => {
+          if (!control.isConnected) return;
+          control.setAttribute("aria-label", "Copy reply"); control.title = "Copy reply";
+          control.querySelector("path").setAttribute("d", "M9 9h11v11H9zM5 15H4V4h11v1");
+        }, 2000);
       }
       return;
     }
