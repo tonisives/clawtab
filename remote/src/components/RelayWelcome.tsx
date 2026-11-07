@@ -10,7 +10,7 @@ export let RelayWelcome = ({ onContinue, connected = false, children }: { onCont
     <Text accessibilityRole="header" style={styles.title}>Relay</Text>
     {Platform.OS === "web" && !connected && <Text style={styles.price}>US$6.99 / month</Text>}
     <View style={styles.features}>
-      <Feature label="About agents on our servers" detail="Relay creates and connects your workspace automatically. Claude Code, Codex, OpenCode, and Hermes are installed. Includes 2 saved scheduled jobs, sharing 0.5 CPU, 500 MiB memory, and 500 MiB storage.">
+      <Feature label="About agents on our servers" detail="Relay creates and connects your workspace automatically. Claude Code, Codex, OpenCode, and Hermes are installed. Includes 2 saved scheduled jobs, sharing 0.5 CPU, 2 GiB memory, and 500 MiB storage.">
         Run <Text style={styles.emphasis}>2 agents at once</Text> on our servers.
       </Feature>
       <Feature label="About agents on your own machines" detail="Install ClawTab and connect your desktop or server from Advanced setup. Relay connects up to 100 agents across your own machines. Keep those machines online to reach their agents.">

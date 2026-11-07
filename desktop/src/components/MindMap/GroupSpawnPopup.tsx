@@ -1,3 +1,4 @@
+import { useModelCatalog } from "@clawtab/shared";
 import { invoke } from "@tauri-apps/api/core";
 import type { AppSettings } from "../../types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -15,6 +16,7 @@ interface Props {
 }
 
 export function GroupSpawnPopup({ group, folderPath, anchor, transport, onSpawn, onClose }: Props) {
+  const modelCatalog = useModelCatalog();
   let [enabledModels, setEnabledModels] = useState<Record<string, string[]>>({});
   useEffect(() => { let active = true; invoke<AppSettings>("get_settings").then((settings) => { if (active) setEnabledModels(settings.enabled_models ?? {}); }).catch(() => {}); return () => { active = false; }; }, []);
   const [providers, setProviders] = useState<ProcessProvider[]>([]);
@@ -49,7 +51,7 @@ export function GroupSpawnPopup({ group, folderPath, anchor, transport, onSpawn,
     };
   }, [onClose]);
 
-  const modelOptions = useMemo(() => buildModelOptions(providers, enabledModels), [providers, enabledModels]);
+  const modelOptions = useMemo(() => buildModelOptions(providers, enabledModels), [providers, enabledModels, modelCatalog]);
 
   const handlePick = useCallback(async (provider: ProcessProvider, modelId: string | null, effort: AgentEffort | null) => {
     if (sending) return;

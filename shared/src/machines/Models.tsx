@@ -5,6 +5,8 @@ import { spacing } from "../theme/spacing"
 import { CURRENT_AGENT_MODEL_OPTIONS, isSyntheticAgentModel, type ProcessProvider } from "../types/process"
 import { labelForProvider, modelPickerLabel } from "../util/agent"
 import { geminiBaseModel, groupAgentModelOptions, hostModelCatalog, resolveEnabledModels } from "../util/agentModels"
+import { useModelCatalog } from "../hooks/useModelCatalog"
+import { publishedModelOptions, refreshModelCatalog } from "../util/modelCatalog"
 import {
   machineErrorMessage,
   machineRequest,
@@ -49,6 +51,7 @@ let ModelRow = ({ id, name, enabled, isDefault, busy, compact, onToggle, onDefau
 
 export let ModelManager = ({ machineId, api, compact = false }: { machineId?: string; api?: PreferencesApi; compact?: boolean }) => {
   let state = useMachines()
+  useModelCatalog()
   let target = machineId ?? state.selected ?? state.machines.find((machine) => machine.owned && machine.online)?.id
   let machine = state.machines.find((item) => item.id === target && item.owned)
   let settings = machine ? state.snapshots[machine.id]?.settings_response : undefined
@@ -68,6 +71,9 @@ export let ModelManager = ({ machineId, api, compact = false }: { machineId?: st
   let saving = useRef(false)
   let enabledIds = new Set(enabledModels[provider] ?? CURRENT_AGENT_MODEL_OPTIONS.filter((option) => option.provider === provider).flatMap((option) => option.modelId ? [option.modelId] : []))
   let known = new Map<string, string>(detected[provider] ?? CURRENT_AGENT_MODEL_OPTIONS.filter((option) => option.provider === provider).flatMap((option) => option.modelId ? [[option.modelId, option.label] as [string, string]] : []))
+  for (let option of publishedModelOptions()) {
+    if (option.provider === provider && option.modelId && !known.has(option.modelId)) known.set(option.modelId, option.label)
+  }
   for (let id of [...enabledIds, ...(preferences.disabled_models?.[provider] ?? [])]) {
     if (!known.has(id)) known.set(id, id)
   }
@@ -126,9 +132,16 @@ export let ModelManager = ({ machineId, api, compact = false }: { machineId?: st
   })
   let setDefault = (id: string) => void action(() => save({ ...preferences, default_provider: provider, default_model: id }))
   let clearDefault = () => void action(() => save({ ...preferences, default_model: null }))
+  let useRecommended = () => void action(() => {
+    let enabled_models = { ...preferences.enabled_models }
+    let disabled_models = { ...preferences.disabled_models }
+    delete enabled_models[provider]
+    delete disabled_models[provider]
+    return save({ ...preferences, enabled_models, disabled_models, default_model: preferences.default_provider === provider ? null : preferences.default_model })
+  })
   let refresh = () => void action(async () => {
-    if (!machine?.online) throw new Error("Connect an owned machine to detect models")
-    await machineRequest(machine.id, { type: "get_settings", refresh_models: true })
+    await refreshModelCatalog(true)
+    if (machine?.online) await machineRequest(machine.id, { type: "get_settings", refresh_models: true })
   })
   let chooseProvider = (next: ProcessProvider) => () => {
     setProvider(next)
@@ -139,16 +152,17 @@ export let ModelManager = ({ machineId, api, compact = false }: { machineId?: st
   let detectionError = settings?.model_detection_errors?.[provider]
   return (
     <View style={[styles.content, compact && styles.compactContent]}>
-      {!compact && <Text style={styles.hint}>Models detected on your machine appear automatically. Add or remove models to customize your agent menus across your machines and apps.</Text>}
-      <Pressable accessibilityRole="button" disabled={busy || !machine?.online} onPress={refresh} style={styles.button}>
+      {!compact && <Text style={styles.hint}>Three recommended models appear in agent menus. The catalog updates daily. Add or remove models to customize your selection.</Text>}
+      <Pressable accessibilityRole="button" disabled={busy} onPress={refresh} style={styles.button}>
         <Text style={styles.text}>{busy ? "Updating models..." : compact ? "Refresh models" : "Refresh detected models"}</Text>
       </Pressable>
-      {!machine?.online && <Text style={styles.hint}>Connect an owned machine to detect its available models. You can still manage saved models.</Text>}
+      {!machine?.online && <Text style={styles.hint}>Connect a machine to include models detected from its AI accounts.</Text>}
       <View style={styles.providers}>
         {PROVIDERS.map((value) => <Pressable key={value} accessibilityRole="tab" accessibilityState={{ selected: provider === value }} disabled={busy} onPress={chooseProvider(value)} style={[styles.button, provider === value && styles.enabledButton]}>
           <Text style={provider === value ? styles.selectedText : styles.text}>{labelForProvider(value)}</Text>
         </Pressable>)}
       </View>
+      <Pressable accessibilityRole="button" disabled={busy} onPress={useRecommended} style={styles.button}><Text style={styles.text}>Use recommended models</Text></Pressable>
       {detectionError && <Text style={styles.hint}>{labelForProvider(provider)} detection: {detectionError}. Saved models remain available.</Text>}
       <TextInput accessibilityLabel="Search models" value={search} onChangeText={setSearch} placeholder="Search models" placeholderTextColor={colors.textSecondary} autoCapitalize="none" autoCorrect={false} style={styles.input} />
       {models.slice(0, 100).map((option) => <ModelRow key={option.modelId} id={option.modelId!} name={option.label} enabled={modelIds(option.modelId!).some((id) => enabledIds.has(id))} busy={busy} compact={compact} isDefault={preferences.default_provider === provider && modelIds(option.modelId!).includes(preferences.default_model ?? "")} onToggle={toggleModel} onDefault={setDefault} />)}

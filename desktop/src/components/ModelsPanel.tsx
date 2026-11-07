@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useModelCatalog, hostModelCatalog, resolveEnabledModels, refreshModelCatalog } from "@clawtab/shared"
+import { useCallback, useEffect, useState } from "react"
 import { invoke } from "@tauri-apps/api/core"
 import { AGENT_EFFORT_OPTIONS, isSyntheticAgentModel } from "@clawtab/shared"
 import type { ProcessProvider } from "@clawtab/shared"
@@ -323,6 +324,7 @@ let LocalExecutablePlugins = () => {
 }
 
 export let ModelsPanel = () => {
+  useModelCatalog()
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [customModelInput, setCustomModelInput] = useState<Record<string, string>>({})
   const [claudeApiModels, setClaudeApiModels] = useState<[string, string][]>([])
@@ -334,10 +336,6 @@ export let ModelsPanel = () => {
   const [opencodeError, setOpencodeError] = useState<string | null>(null)
   const [expandedNamespaces, setExpandedNamespaces] = useState<Set<string>>(new Set())
   const [refreshKey, setRefreshKey] = useState(0)
-  const enableDetectedCodexOnRefreshRef = useRef(false)
-  const disabledCodexOnRefreshRef = useRef<Set<string>>(new Set())
-  const enableDetectedAntigravityOnRefreshRef = useRef(false)
-  const disabledAntigravityOnRefreshRef = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     invoke<AppSettings>("get_settings")
@@ -368,71 +366,6 @@ export let ModelsPanel = () => {
       .catch((e) => console.error("Failed to detect Hermes model:", e))
   }, [refreshKey])
 
-  // First-launch seeding: when a provider has no enabled models yet but detection
-  // returned a list, enable them all once.
-  useEffect(() => {
-    if (!settings) return
-    const enabled = settings.enabled_models ?? {}
-    const updates: Record<string, string[]> = {}
-    if (enabled.hermes === undefined && hermesModels.length > 0) {
-      updates.hermes = hermesModels.map(([id]) => id).filter((id) => !settings.disabled_models?.hermes?.includes(id))
-    }
-    if (enabled.claude === undefined && claudeApiModels.length > 0) {
-      updates.claude = claudeApiModels.map(([id]) => id).filter((id) => !settings.disabled_models?.claude?.includes(id))
-    }
-    if (enabled.codex === undefined && codexApiModels.length > 0) {
-      updates.codex = codexApiModels.map(([id]) => id).filter((id) => !settings.disabled_models?.codex?.includes(id))
-    }
-    if (enabled.antigravity === undefined && antigravityApiModels.length > 0) {
-      updates.antigravity = antigravityApiModels.map(([id]) => id).filter((id) => !settings.disabled_models?.antigravity?.includes(id))
-    }
-    if (Object.keys(updates).length === 0) return
-    const next = { ...enabled, ...updates }
-    invoke("set_settings", { newSettings: { ...settings, enabled_models: next } })
-      .then(() => setSettings({ ...settings, enabled_models: next }))
-      .catch((e) => console.error("Failed to seed enabled_models:", e))
-  }, [settings, claudeApiModels, codexApiModels, antigravityApiModels, hermesModels])
-
-  useEffect(() => {
-    if (!settings || !enableDetectedCodexOnRefreshRef.current || codexApiModels.length === 0) return
-    const enabled = settings.enabled_models ?? {}
-    const current = enabled.codex ?? []
-    const detected = codexApiModels.map(([id]) => id)
-    const disabledBeforeRefresh = disabledCodexOnRefreshRef.current
-    const missing = detected.filter((id) => !current.includes(id) && !disabledBeforeRefresh.has(id) && !settings.disabled_models?.codex?.includes(id))
-    if (missing.length === 0) {
-      enableDetectedCodexOnRefreshRef.current = false
-      disabledCodexOnRefreshRef.current = new Set()
-      return
-    }
-    enableDetectedCodexOnRefreshRef.current = false
-    disabledCodexOnRefreshRef.current = new Set()
-    const next = { ...enabled, codex: [...current, ...missing] }
-    invoke("set_settings", { newSettings: { ...settings, enabled_models: next } })
-      .then(() => setSettings({ ...settings, enabled_models: next }))
-      .catch((e) => console.error("Failed to enable refreshed Codex models:", e))
-  }, [settings, codexApiModels])
-
-  useEffect(() => {
-    if (!settings || !enableDetectedAntigravityOnRefreshRef.current || antigravityApiModels.length === 0) return
-    const enabled = settings.enabled_models ?? {}
-    const current = enabled.antigravity ?? []
-    const detected = antigravityApiModels.map(([id]) => id)
-    const disabledBeforeRefresh = disabledAntigravityOnRefreshRef.current
-    const missing = detected.filter((id) => !current.includes(id) && !disabledBeforeRefresh.has(id) && !settings.disabled_models?.antigravity?.includes(id))
-    if (missing.length === 0) {
-      enableDetectedAntigravityOnRefreshRef.current = false
-      disabledAntigravityOnRefreshRef.current = new Set()
-      return
-    }
-    enableDetectedAntigravityOnRefreshRef.current = false
-    disabledAntigravityOnRefreshRef.current = new Set()
-    const next = { ...enabled, antigravity: [...current, ...missing] }
-    invoke("set_settings", { newSettings: { ...settings, enabled_models: next } })
-      .then(() => setSettings({ ...settings, enabled_models: next }))
-      .catch((e) => console.error("Failed to enable refreshed Antigravity models:", e))
-  }, [settings, antigravityApiModels])
-
   // Detect OpenCode models on mount and refresh
   useEffect(() => {
     setOpencodeLoading(true)
@@ -449,18 +382,7 @@ export let ModelsPanel = () => {
   }, [refreshKey])
 
   const refresh = () => {
-    const enabledCodex = new Set(settings?.enabled_models?.codex ?? [])
-    disabledCodexOnRefreshRef.current = new Set(
-      codexApiModels.map(([id]) => id).filter((id) => !enabledCodex.has(id)),
-    )
-    enableDetectedCodexOnRefreshRef.current = true
-
-    const enabledAntigravity = new Set(settings?.enabled_models?.antigravity ?? [])
-    disabledAntigravityOnRefreshRef.current = new Set(
-      antigravityApiModels.map(([id]) => id).filter((id) => !enabledAntigravity.has(id)),
-    )
-    enableDetectedAntigravityOnRefreshRef.current = true
-
+    void refreshModelCatalog(true)
     setRefreshKey((k) => k + 1)
   }
 
@@ -479,15 +401,13 @@ export let ModelsPanel = () => {
     return <div className="loading">Loading settings...</div>
   }
 
-  const enabledModels = settings.enabled_models ?? {}
-  const allModels = buildAllModels(enabledModels, {
-    claude: claudeApiModels,
-    codex: codexApiModels,
-    antigravity: antigravityApiModels,
-    hermes: hermesModels,
-    opencode: [],
-    shell: [],
-  })
+  const detected = hostModelCatalog({ detected_models: {
+    claude: claudeApiModels, codex: codexApiModels,
+    antigravity: antigravityApiModels, hermes: hermesModels,
+    opencode: opencodeModels.map((id) => [id, id] as [string, string]),
+  } })
+  const enabledModels = resolveEnabledModels(settings.enabled_models ?? {}, detected, settings.disabled_models)
+  const allModels = buildAllModels(enabledModels, detected as Record<ProcessProvider, [string, string][]>)
   const defaultProvider = settings.default_provider
   const defaultModel = settings.default_model ?? null
   const titleSummary = settings.title_summary ?? { provider: null, model: null, effort: null }
@@ -570,7 +490,7 @@ export let ModelsPanel = () => {
   }
 
   const opencodeEnabledSet = new Set(enabledModels["opencode"] ?? [])
-  const opencodeGroups = groupOpencodeModels(opencodeModels, opencodeEnabledSet)
+  const opencodeGroups = groupOpencodeModels((detected.opencode ?? []).map(([id]) => id), opencodeEnabledSet)
   const opencodeEnabledCount = opencodeEnabledSet.size
 
   return (
@@ -580,10 +500,13 @@ export let ModelsPanel = () => {
         <button className="btn btn-sm" onClick={refresh} title="Refresh models">
           Refresh
         </button>
+        <button className="btn btn-sm" onClick={() => update({ enabled_models: {}, disabled_models: {}, default_model: null })}>
+          Use recommended models
+        </button>
       </div>
       <p className="section-description" style={{ marginTop: 0, marginBottom: 16 }}>
-        Toggle which models appear in the agent dropdown. Set a default model
-        or add custom model IDs.
+        Three recommended models appear in agent menus. The catalog updates daily.
+        Toggle models to customize your selection, or add custom model IDs.
       </p>
 
       {/* Default model display */}

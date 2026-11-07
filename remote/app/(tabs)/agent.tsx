@@ -1,3 +1,4 @@
+import { useModelCatalog } from "@clawtab/shared";
 import { useState, useRef, useCallback, useEffect } from "react";
 import {
   View,
@@ -55,6 +56,7 @@ function storeSelection(selection: AgentSelection) {
 }
 
 export default function AgentScreen() {
+  useModelCatalog();
   const router = useRouter();
   let machines = useMachines();
   let connectedMachines = machines.connected ? machines.machines.filter((machine) => machine.online) : [];

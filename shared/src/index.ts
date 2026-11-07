@@ -151,6 +151,8 @@ export * from "./machines/Rentals";
 export * from "./machines/HostedWorkspace";
 
 export { buildModelOptions, hostModelCatalog, resolveEnabledModels, BARE_PROVIDER_OPTIONS, labelForProviderModel } from "./util/agentModels";
+export { useModelCatalog } from "./hooks/useModelCatalog";
+export { publishedModelOptions, recommendedModelIds, refreshModelCatalog } from "./util/modelCatalog";
 export { useHiddenGroups } from "./hooks/useHiddenGroups";
 
 export { matchesSavedGroup, savedGroupKey } from "./util/jobGroups";

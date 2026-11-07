@@ -1,3 +1,4 @@
+import { useModelCatalog } from "@clawtab/shared";
 import { DesktopMachinesPanel } from "../../DesktopMachinesPanel";
 import { localMachineId, localHostRequest, desktopMachineApi } from "../../../machines/connection";
 import { useCallback, useMemo, type ReactNode, type RefObject } from "react";
@@ -112,6 +113,7 @@ export function JobsSidebar({
   transport,
   viewing,
 }: JobsSidebarProps) {
+  const modelCatalog = useModelCatalog();
   const mgr = useWorkspaceManager();
   const { defaultProvider, defaultModel, enabledModels, groupOrder, hiddenGroups, jobOrder, processOrder, sortMode } = settings;
   const renameShortcutHint = useMemo(
@@ -121,7 +123,7 @@ export function JobsSidebar({
 
   const agentModelOptions = useMemo(
     () => buildModelOptions(["claude", "codex", "opencode", "antigravity", "hermes", "shell"] as ProcessProvider[], enabledModels),
-    [enabledModels],
+    [enabledModels, modelCatalog],
   );
 
   const cwdToGroup = useMemo(() => {

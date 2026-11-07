@@ -1,3 +1,4 @@
+import { useModelCatalog } from "@clawtab/shared";
 import type { ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { PaneContent } from "@clawtab/shared";
@@ -22,6 +23,7 @@ interface Props {
 }
 
 export function JobPane({ content, ctx }: Props) {
+  useModelCatalog();
   const {
     core, split, viewing, lifecycle, actions,
     questions, transport, autoYesShortcut,

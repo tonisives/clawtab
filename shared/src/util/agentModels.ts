@@ -1,5 +1,6 @@
-import { CURRENT_AGENT_MODEL_OPTIONS, isSyntheticAgentModel } from "../types/process";
+import { isSyntheticAgentModel } from "../types/process";
 import type { ProcessProvider, AgentModelOption, AgentEffort } from "../types/process";
+import { publishedModelOptions, recommendedModelIds } from "./modelCatalog";
 
 export let geminiModelEffort = (id: string | null | undefined): AgentEffort | null => {
   if (!id || !/^gemini[-\s]/i.test(id)) return null;
@@ -14,7 +15,7 @@ let modelOrder = (left: AgentModelOption, right: AgentModelOption): number => {
   let providers = ["codex", "claude", "opencode", "antigravity", "hermes", "shell"];
   let providerRank = providers.indexOf(left.provider) - providers.indexOf(right.provider);
   if (providerRank) return providerRank;
-  let rank = (option: AgentModelOption) => CURRENT_AGENT_MODEL_OPTIONS.findIndex((known) => known.provider === option.provider && known.modelId === option.modelId);
+  let rank = (option: AgentModelOption) => recommendedModelIds(option.provider).indexOf(option.modelId ?? "");
   let leftRank = rank(left), rightRank = rank(right);
   if (leftRank >= 0 || rightRank >= 0) return (leftRank < 0 ? Infinity : leftRank) - (rightRank < 0 ? Infinity : rightRank);
   return geminiBaseModel(right.modelId ?? "").localeCompare(geminiBaseModel(left.modelId ?? ""), undefined, { numeric: true });
@@ -67,13 +68,13 @@ export const BARE_PROVIDER_OPTIONS: AgentModelOption[] = [
 export type DetectedAgentModels = Record<string, [string, string][]>;
 
 export let hostModelCatalog = (settings?: { detected_models?: DetectedAgentModels } | null): DetectedAgentModels => {
-  if (!settings) return {};
-  if (settings.detected_models !== undefined) return settings.detected_models;
-  // Older hosts only send saved choices. Use the bundled catalog until they
-  // can report live detection, so newly supported models still appear.
   let catalog: DetectedAgentModels = {};
-  for (let option of CURRENT_AGENT_MODEL_OPTIONS) {
+  for (let option of publishedModelOptions()) {
+    if (option.provider === "hermes") continue;
     if (option.modelId) (catalog[option.provider] ??= []).push([option.modelId, option.label]);
+  }
+  for (let [provider, models] of Object.entries(settings?.detected_models ?? {})) {
+    catalog[provider] = [...new Map([...(catalog[provider] ?? []), ...models]).entries()];
   }
   return catalog;
 };
@@ -84,18 +85,18 @@ export let resolveEnabledModels = (
   disabledModels: Record<string, string[]> = {},
 ): Record<string, string[]> => {
   let result = { ...enabledModels };
-  for (let provider of new Set([...Object.keys(detectedModels), ...Object.keys(disabledModels)])) {
+  for (let provider of new Set([...Object.keys(enabledModels), ...Object.keys(detectedModels), ...Object.keys(disabledModels), ...publishedModelOptions().map((model) => model.provider)])) {
     let enabled = enabledModels[provider];
     // An explicit empty provider remains disabled, including future detections.
     if (enabled?.length === 0) continue;
-    // OpenCode catalogs span many providers; keep their opt-in selection.
-    if (provider === "opencode" && enabled === undefined) continue;
-    let detected = provider === "opencode" ? [] : (detectedModels[provider] ?? []).map(([id]) => id);
-    let fallback = CURRENT_AGENT_MODEL_OPTIONS
-      .filter((option) => option.provider === provider)
-      .flatMap((option) => option.modelId ? [option.modelId] : []);
+    let defaults = recommendedModelIds(provider);
+    // Hermes follows its configured inference provider. Other CLI discoveries
+    // remain selectable in settings without flooding the launch menu.
+    if (!defaults.length && provider !== "hermes") defaults = (detectedModels[provider] ?? []).map(([id]) => id).slice(0, 3);
+    if (provider === "hermes") defaults = (detectedModels.hermes ?? []).map(([id]) => id).slice(0, 1);
     let excluded = new Set(disabledModels[provider] ?? []);
-    result[provider] = [...new Set([...(enabled ?? (detected.length ? [] : fallback)), ...(provider === "claude" ? fallback : []), ...detected])]
+    if (enabled === undefined && defaults.length === 0) continue;
+    result[provider] = [...new Set(enabled ?? defaults)]
       .filter((id) => !excluded.has(id) && !(provider === "antigravity" && excluded.has(geminiBaseModel(id))) && !isSyntheticAgentModel(id));
   }
   return result;
@@ -112,7 +113,7 @@ export let buildModelOptions = (
   let catalog: AgentModelOption[] = [
     ...(["codex", "claude", "opencode", "antigravity", "hermes"] as ProcessProvider[]).flatMap((provider) =>
       (detectedModels[provider] ?? []).map(([modelId, label]) => ({ provider, modelId, label }))),
-    ...CURRENT_AGENT_MODEL_OPTIONS,
+    ...publishedModelOptions(),
   ];
   for (let provider of availableProviders) {
     // Older hosts cannot launch Hermes. Show it once the host detects it or
@@ -120,7 +121,7 @@ export let buildModelOptions = (
     if (provider === "hermes" && enabledModels.hermes === undefined && detectedModels.hermes === undefined) continue;
     let current = catalog.filter((option) => option.provider === provider);
     let selected = enabled[provider] === undefined
-      ? (provider === "opencode" ? [] : current).flatMap((option) => option.modelId ? [option.modelId] : [])
+      ? recommendedModelIds(provider)
       : enabled[provider];
     let modelIds = [...new Set(selected.filter((id) => !isSyntheticAgentModel(id)))];
     const detectedHermesDefault = provider === "hermes" && enabledModels.hermes === undefined && detectedModels.hermes !== undefined;

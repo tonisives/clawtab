@@ -298,7 +298,7 @@ pub fn info() -> Value {
     }
     let sessions = session_count();
     let storage = storage_usage();
-    json!({"limits":{"sessions":2,"jobs":2,"cpu_millis":500,"memory_bytes":524_288_000_u64,"storage_bytes":524_288_000_u64},"usage":{"sessions":sessions,"jobs":crate::config::jobs::JobsConfig::load().jobs.len(),"storage_bytes":storage},"pending_jobs":pending_jobs().unwrap_or_default()})
+    json!({"limits":{"sessions":2,"jobs":2,"cpu_millis":500,"memory_bytes":2_147_483_648_u64,"storage_bytes":524_288_000_u64},"usage":{"sessions":sessions,"jobs":crate::config::jobs::JobsConfig::load().jobs.len(),"storage_bytes":storage},"pending_jobs":pending_jobs().unwrap_or_default()})
 }
 
 pub fn session_count() -> Option<usize> {

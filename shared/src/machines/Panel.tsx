@@ -4,6 +4,7 @@ import { AgentSelector } from "../components/AgentSelector"
 import type { AgentEffort, ProcessProvider } from "../types/process"
 import { ModelManager } from "./Models"
 import { hostModelCatalog, resolveEnabledModels } from "../util/agentModels"
+import { useModelCatalog } from "../hooks/useModelCatalog"
 import { ConnectMachine } from "./Connect"
 import { colors } from "../theme/colors"
 import { useEffect, useState, useRef, type ReactNode } from "react"
@@ -39,6 +40,7 @@ type Props = {
 export let MachinesPanel = ({ approvePairing, localRequest, api, hostedApi, onOpenAccount, localMachineId, presentation = "compact", showConnectionStatus = true, machineType, managementSection, machineListAction }: Props) => {
   let styles = presentation === "panel" ? desktopStyles : compactStyles
   let state = useMachines()
+  useModelCatalog()
   let [tab, setTab] = useState(managementSection ?? "agents")
   let [expanded, setExpanded] = useState(false)
   let cancelled = useRef(false)

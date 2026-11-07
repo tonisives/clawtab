@@ -1,3 +1,4 @@
+import { useModelCatalog } from "@clawtab/shared";
 import { clearMessageShellCache, deleteMessageShell } from "../lib/cacheMessageShell";
 import { trackFunnel } from "../lib/funnel"
 import { createAnswerTracker } from "../lib/activation"
@@ -135,8 +136,10 @@ let synchronize = () => {
   )
 }
 export let useWebSocket = () => {
+  let modelCatalog = useModelCatalog()
   let authenticated = useAuthStore((s) => s.isAuthenticated)
   let userId = useAuthStore((s) => s.userId)
+  useEffect(() => { if (authenticated) synchronize() }, [modelCatalog, authenticated])
   useEffect(() => {
     if (!authenticated) {
       resetAccountState()

@@ -1,3 +1,4 @@
+import { useModelCatalog } from "@clawtab/shared";
 import type { AgentEffort, ProcessProvider } from "@clawtab/shared";
 import { AgentSelector, agentSelectionLabel, defaultAgentEffort } from "@clawtab/shared";
 import type { Job } from "../../../types";
@@ -18,6 +19,7 @@ export function ProviderField({
   form, isNew, startedAsShellJob, availableProviders,
   defaultProvider, defaultModel, enabledModels, handleProviderChange,
 }: ProviderFieldProps) {
+  useModelCatalog();
   if (form.job_type !== "claude" && form.job_type !== "job") return null;
 
   const allOptions = buildModelOptions(availableProviders, enabledModels);

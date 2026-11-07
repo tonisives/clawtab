@@ -38,11 +38,11 @@ let harness = (entry, extras = {}) => {
       if (name in modules) return modules[name];
       let next = path.resolve(path.dirname(file), name);
       return load(fs.existsSync(next + '.tsx') ? next + '.tsx' : next + '.ts');
-    }, setTimeout, clearTimeout, setInterval, clearInterval, console, Error });
+    }, setTimeout, clearTimeout, setInterval, clearInterval, console, Error, AbortController, fetch: async () => { throw new Error("Offline fixture"); } });
     return exports;
   };
   let exports = load(path.resolve(__dirname, entry));
-  return { exports, render: (fn, props) => { cursor = 0; return fn(props); } };
+  return { exports, load, render: (fn, props) => { cursor = 0; return fn(props); } };
 };
 let find = (node, predicate) => {
   if (!node) return undefined;
@@ -262,27 +262,27 @@ test('invalid remote folders do not save a group and leave the error visible', a
 });
 
 
-test('detected new models join saved choices, use detected labels, and respect removals', () => {
+test('detected models remain configurable without changing an explicit selection', () => {
   let { exports: models } = harness('../shared/src/util/agentModels.ts');
   let catalog = { codex: [['gpt-6.1-sol', 'GPT-6.1 Sol'], ['gpt-6-astra', 'GPT-6 Astra'], ['codex-high', 'Old display label']] };
   let enabled = { codex: ['gpt-6-astra', 'custom-model'], claude: [] };
   let options = models.buildModelOptions(['codex', 'claude'], enabled, catalog);
-  assert.deepEqual(Array.from(options, (option) => option.modelId), ['gpt-6-astra', 'gpt-6.1-sol', 'custom-model']);
-  assert.equal(options.find((option) => option.modelId === 'gpt-6.1-sol').label, 'GPT-6.1 Sol');
+  assert.deepEqual(Array.from(options, (option) => option.modelId), ['gpt-6-astra', 'custom-model']);
+  assert.equal(models.hostModelCatalog({ detected_models: catalog }).codex.find(([id]) => id === 'gpt-6.1-sol')[1], 'GPT-6.1 Sol');
   options = models.buildModelOptions(['codex', 'claude'], enabled, catalog, { codex: ['gpt-6.1-sol'] });
   assert.deepEqual(Array.from(options, (option) => option.modelId), ['gpt-6-astra', 'custom-model']);
   assert.equal(models.buildModelOptions(['codex'], { codex: [] }, catalog).length, 0);
 });
 
-test('OpenCode catalogs stay opt-in while their models remain available to manage', () => {
+test('OpenCode defaults are limited while explicit selections are preserved', () => {
   let { exports: models } = harness('../shared/src/util/agentModels.ts');
   let catalog = { opencode: [['provider/new', 'New'], ['provider/selected', 'Selected']] };
-  assert.equal(models.buildModelOptions(['opencode'], {}, catalog)[0].modelId, null);
+  assert.equal(models.buildModelOptions(['opencode'], {}, catalog).length, 2);
   assert.deepEqual(Array.from(models.buildModelOptions(['opencode'], { opencode: ['provider/selected'] }, catalog), (option) => option.modelId), ['provider/selected']);
 });
 
 test('remote plus menus refresh their target catalog and carry an inline editor', async () => {
-  let state = { selected: 'a', machines: [{ id: 'a', online: true, owned: true }], snapshots: { a: { settings_response: { enabled_models: { codex: ['gpt-old'], claude: [], opencode: [], antigravity: [] }, detected_models: { codex: [['gpt-6.1-sol', 'GPT-6.1 Sol']] } } } } };
+  let state = { selected: 'a', machines: [{ id: 'a', online: true, owned: true }], snapshots: { a: { settings_response: { enabled_models: { claude: [], opencode: [], antigravity: [] }, detected_models: { codex: [['gpt-6.1-sol', 'GPT-6.1 Sol']] } } } } };
   let requests = [], launched = false;
   let mock = machineMock(state);
   mock['../machines/client'].machineRequest = async (target, message) => requests.push({ target, message });
@@ -322,29 +322,25 @@ test('Edit models stays in the plus popup and returns to model choices without l
   assert.equal(popup.props.headerAction.props.accessibilityLabel, 'Edit models');
 });
 
-test('older host model choices include sol 6.1 and still respect explicit removals', () => {
+test('older hosts get three current defaults while explicit old choices remain pinned', () => {
   let { exports: models } = harness('../shared/src/util/agentModels.ts');
-  let enabled = { codex: ['gpt-5.6-sol'] };
-  let catalog = models.hostModelCatalog({ enabled_models: enabled });
-  assert.ok(models.buildModelOptions(['codex'], enabled, catalog).some((option) => option.modelId === 'gpt-6.1-sol'));
-  assert.equal(models.buildModelOptions(['codex'], enabled, catalog, { codex: ['gpt-6.1-sol'] }).some((option) => option.modelId === 'gpt-6.1-sol'), false);
+  let catalog = models.hostModelCatalog({ detected_models: {} });
+  assert.deepEqual(Array.from(models.buildModelOptions(['codex'], {}, catalog), (option) => option.modelId), ['gpt-6.1-sol', 'gpt-6.1-terra', 'gpt-6-luna']);
+  assert.deepEqual(Array.from(models.buildModelOptions(['codex'], { codex: ['gpt-5.6-sol'] }, catalog), (option) => option.modelId), ['gpt-5.6-sol']);
+  assert.equal(models.buildModelOptions(['codex'], {}, catalog, { codex: ['gpt-6.1-sol'] }).some((option) => option.modelId === 'gpt-6.1-sol'), false);
   assert.equal(models.buildModelOptions(['codex'], { codex: [] }).length, 0);
-  let live = models.hostModelCatalog({ detected_models: { codex: [['future-release', 'Future']] } });
-  assert.deepEqual(Array.from(models.buildModelOptions(['codex'], enabled, live), (option) => option.modelId), ['gpt-5.6-sol', 'future-release']);
-  assert.equal(Object.keys(models.hostModelCatalog()).length, 0);
-  assert.equal(Object.keys(models.hostModelCatalog({ detected_models: {} })).length, 0);
 });
 
-test('a remote plus menu includes sol 6.1 when its older host has not loaded detection yet', () => {
-  let state = { selected: 'a', machines: [{ id: 'a', online: true, owned: true }], snapshots: { a: { settings_response: { enabled_models: { codex: ['gpt-5.6-sol'], claude: [], opencode: [], antigravity: [] } } } } };
+test('a remote plus menu includes current defaults before host detection loads', () => {
+  let state = { selected: 'a', machines: [{ id: 'a', online: true, owned: true }], snapshots: { a: { settings_response: { enabled_models: { claude: [], opencode: [], antigravity: [] } } } } };
   let view = harness('../shared/src/components/GroupAgentRow.tsx', machineMock(state));
   let picker = selector(view.render(view.exports.GroupAgentRow, { onRunAgent: () => {} }));
-  assert.ok(picker.props.modelOptions.some((option) => option.modelId === 'gpt-6.1-sol'));
+  assert.deepEqual(Array.from(picker.props.modelOptions, (option) => option.modelId), ['gpt-6.1-sol', 'gpt-6.1-terra', 'gpt-6-luna']);
 });
 
 let managerFixture = () => {
   let state = { selected: 'a', machines: [{ id: 'a', online: true, owned: true }],
-    agentModels: { enabled_models: { codex: ['gpt-old'], claude: ['claude-custom'] }, default_provider: 'codex', default_model: 'gpt-6.1-sol' },
+    agentModels: { enabled_models: { codex: ['gpt-old', 'gpt-6.1-sol'], claude: ['claude-custom'] }, default_provider: 'codex', default_model: 'gpt-6.1-sol' },
     snapshots: { a: { settings_response: { detected_models: { codex: [['gpt-6.1-sol', 'GPT-6.1 Sol'], ['gpt-old', 'Old']] } } } } };
   let saves = [], refreshes = [], fail = false;
   let view = harness('../shared/src/machines/Models.tsx', { './client': {
@@ -593,11 +589,45 @@ test('a full hosted machine blocks the picker and launch and shows a dismissible
 test('current Claude releases join a stale detected catalog and respect removals', () => {
   let { exports: models } = harness('../shared/src/util/agentModels.ts');
   let detected = { claude: [['claude-opus-5', 'Claude Opus 5']] };
-  let options = models.buildModelOptions(['claude'], { claude: ['claude-opus-5'] }, detected);
-  for (let id of ['claude-fable-5-1', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5']) {
+  let options = models.buildModelOptions(['claude'], {}, detected);
+  for (let id of ['claude-fable-5-1', 'claude-opus-5-5', 'claude-sonnet-5-5']) {
     assert.ok(options.some(option => option.modelId === id), id);
   }
   options = models.buildModelOptions(['claude'], { claude: ['claude-opus-5'] }, detected, { claude: ['claude-opus-5-5'] });
   assert.equal(options.some(option => option.modelId === 'claude-opus-5-5'), false);
   assert.equal(models.buildModelOptions(['claude'], { claude: [] }, detected).length, 0);
+});
+
+
+test('daily recommendations change unconfigured menus while retaining every configurable model', () => {
+  let view = harness('../shared/src/util/agentModels.ts');
+  let store = view.load(path.resolve(__dirname, '../shared/src/util/modelCatalog.ts'));
+  let providers = {};
+  for (let provider of ['codex', 'claude', 'opencode', 'antigravity', 'hermes']) {
+    let ids = provider === 'codex' ? ['gpt-7-sol', 'gpt-7-terra', 'gpt-7-luna', 'gpt-6-astra'] : [provider + '-model'];
+    providers[provider] = { models: ids.map((id) => [id, id]), recommended: provider === 'hermes' ? [] : ids.slice(0, 3), updated_at: '2026-11-08T00:00:00Z' };
+  }
+  let catalog = { version: 1, updated_at: '2026-11-08T00:00:00Z', providers };
+  assert.equal(store.installModelCatalog(catalog), true);
+  let detected = view.exports.hostModelCatalog();
+  assert.equal(detected.codex.length, 4);
+  assert.deepEqual(Array.from(view.exports.buildModelOptions(['codex'], {}, detected), (option) => option.modelId), ['gpt-7-sol', 'gpt-7-terra', 'gpt-7-luna']);
+  assert.deepEqual(Array.from(view.exports.buildModelOptions(['codex'], { codex: ['custom', 'gpt-6-astra'] }, detected), (option) => option.modelId).sort(), ['custom', 'gpt-6-astra']);
+  assert.equal(view.exports.buildModelOptions(['codex'], { codex: [] }, detected).length, 0);
+  assert.equal(view.exports.buildModelOptions(['codex'], {}, detected, { codex: ['gpt-7-sol'] }).some((option) => option.modelId === 'gpt-7-sol'), false);
+  assert.equal(store.installModelCatalog({ ...catalog, updated_at: '2026-11-01T00:00:00Z' }), false);
+  assert.equal(store.installModelCatalog({ ...catalog, providers: { ...providers, codex: { ...providers.codex, recommended: ['unknown-id'] } } }), false);
+  assert.equal(store.getModelCatalog(), catalog);
+});
+
+test('returning to daily recommendations clears only that provider selection and its pinned default', async () => {
+  let manager = managerFixture();
+  find(manager.render(), (node) => node.type === 'Pressable' && node.props?.children?.props?.children === 'Use recommended models').props.onPress();
+  await new Promise(setImmediate);
+  assert.equal(manager.state.agentModels.enabled_models.codex, undefined);
+  assert.equal(manager.state.agentModels.default_model, null);
+  assert.deepEqual(Array.from(manager.state.agentModels.enabled_models.claude), ['claude-custom']);
+  assert.equal(manager.row('gpt-6.1-sol').props.enabled, true);
+  assert.equal(manager.row('gpt-6.1-terra').props.enabled, true);
+  assert.equal(manager.row('gpt-6-luna').props.enabled, true);
 });

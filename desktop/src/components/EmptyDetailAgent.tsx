@@ -1,3 +1,4 @@
+import { useModelCatalog } from "@clawtab/shared";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { AgentSelector, colors, PopupMenu } from "@clawtab/shared";
@@ -20,6 +21,7 @@ interface EmptyDetailAgentProps {
 }
 
 export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvider, defaultModel, enabledModels = {}, folderGroups = [], activeWorkspaceId }: EmptyDetailAgentProps) {
+  const modelCatalog = useModelCatalog();
   const [providers, setProviders] = useState<ProcessProvider[]>([defaultProvider]);
   const [workDir, setWorkDirState] = useState<string | null>(() => {
     if (typeof localStorage === "undefined") return null;
@@ -43,7 +45,7 @@ export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvide
 
   const modelOptions = useMemo(
     () => buildModelOptions(providers, enabledModels),
-    [providers, enabledModels],
+    [providers, enabledModels, modelCatalog],
   );
 
   const folderOptions = useMemo(() => {

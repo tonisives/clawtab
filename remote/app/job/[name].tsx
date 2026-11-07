@@ -1,3 +1,4 @@
+import { useModelCatalog } from "@clawtab/shared";
 import { ShellSurface } from "../../src/components/ShellSurface";
 import { toggleAutoYes } from "../../src/lib/autoYes"
 import { useAgentActions } from "../../src/hooks/useAgentActions";
@@ -48,6 +49,7 @@ function agentJobFromSlug(slug: string): RemoteJob {
 }
 
 export default function JobDetailScreen() {
+  useModelCatalog();
   const { name, run_id, fromSplit, landscapeHandoff } = useLocalSearchParams<{ name: string; run_id?: string; source?: string; fromSplit?: string; landscapeHandoff?: string }>();
   const insets = useSafeAreaInsets();
   const { isWide } = useResponsive();

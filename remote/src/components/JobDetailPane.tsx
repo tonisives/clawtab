@@ -1,3 +1,4 @@
+import { useModelCatalog } from "@clawtab/shared";
 import { ShellSurface } from "./ShellSurface";
 import { toggleAutoYes } from "../lib/autoYes"
 import { useCallback, useEffect, useState } from "react"
@@ -45,6 +46,7 @@ interface JobDetailPaneProps {
 }
 
 export function JobDetailPane({ jobName, onClose, embedded = false }: JobDetailPaneProps) {
+  useModelCatalog();
   const router = useRouter()
   const insets = useSafeAreaInsets()
   const storeJob = useJob(jobName)

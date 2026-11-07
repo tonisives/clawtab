@@ -148,7 +148,7 @@ export let HostedWorkspacePanel = ({ api, autoStart = false, initialStatus = nul
       <Text style={styles.detail}>2 agents at once · 2 saved jobs</Text>
       {usage && <Text style={styles.detail}>{usage.usage?.sessions ?? "–"}/2 agent slots in use · {usage.usage?.jobs ?? "–"}/2 saved jobs</Text>}
       <Text style={styles.detail}>Storage: {usage?.usage?.storage_bytes == null ? "–" : Math.ceil(usage.usage.storage_bytes / 1_048_576)} / 500 MiB</Text>
-      <Text style={styles.detail}>0.5 CPU · 500 MiB memory. Scheduled jobs continue when you disconnect.</Text>
+      <Text style={styles.detail}>0.5 CPU · 2 GiB memory. Scheduled jobs continue when you disconnect.</Text>
       <Button label="Open shell" onPress={shell} disabled={busy || !online} />
     </>}
     {terminal && <MachineTerminalScreen machineId={terminal.machine} paneId={terminal.pane_id} tmuxSession={terminal.tmux_session} title={terminal.login ? "AI account sign-in" : "Included workspace"} signIn={terminal.login} onClose={() => setTerminal(null)} />}

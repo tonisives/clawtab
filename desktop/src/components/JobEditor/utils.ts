@@ -1,4 +1,3 @@
-import { CURRENT_AGENT_MODEL_OPTIONS, isSyntheticAgentModel } from "@clawtab/shared";
 import type { CalendarSchedule, ProcessProvider } from "@clawtab/shared";
 import { DAYS, CRON_DAY_MAP, DAY_CRON_MAP, JOB_NAME_MAX_LENGTH } from "./types";
 
@@ -65,40 +64,8 @@ export function decodeProviderModel(value: string): { provider: ProcessProvider;
   return { provider, model };
 }
 
-/** Build the list of model options for a dropdown, respecting the enabled model selection.
- * Providers without any known model get a bare fallback entry (no specific model). */
-export function buildModelOptions(
-  availableProviders: ProcessProvider[],
-  enabledModels: Record<string, string[]>,
-): ModelOption[] {
-  const options: ModelOption[] = [];
-  for (const provider of availableProviders) {
-    const enabled = (enabledModels[provider] ?? []).filter((modelId) => !isSyntheticAgentModel(modelId));
-    const current = CURRENT_AGENT_MODEL_OPTIONS.filter((option) => option.provider === provider);
-    // An explicit empty selection must stay empty. Only unconfigured providers use defaults.
-    let selected = enabledModels[provider] === undefined
-      ? current.flatMap((option) => option.modelId ? [option.modelId] : [])
-      : enabled;
-    let modelIds = Array.from(new Set(selected));
-    if (modelIds.length === 0 && enabledModels[provider] !== undefined && provider !== "shell") continue;
-    if (modelIds.length === 0) {
-      const bare = BARE_PROVIDER_OPTIONS.find((b) => b.provider === provider);
-      options.push(bare ?? { provider, modelId: null, label: labelForProvider(provider) });
-      continue;
-    }
-    for (const modelId of modelIds) {
-      const known = current.find((option) => option.modelId === modelId);
-      options.push({ provider, modelId, label: known?.label ?? labelForProviderModel(provider, modelId) });
-    }
-  }
-  // Catalog ordering applies across providers, so Astra leads the top-level picker.
-  return options.sort((left, right) => {
-    let leftRank = CURRENT_AGENT_MODEL_OPTIONS.findIndex((option) => option.provider === left.provider && option.modelId === left.modelId);
-    let rightRank = CURRENT_AGENT_MODEL_OPTIONS.findIndex((option) => option.provider === right.provider && option.modelId === right.modelId);
-    if (leftRank >= 0 || rightRank >= 0) return (leftRank < 0 ? Infinity : leftRank) - (rightRank < 0 ? Infinity : rightRank);
-    return (right.modelId ?? "").localeCompare(left.modelId ?? "", undefined, { numeric: true });
-  });
-}
+export { buildModelOptions } from "@clawtab/shared";
+
 
 function parseSingleCronToWeekly(cron: string): { days: string[]; time: string } | null {
   const parts = cron.trim().split(/\s+/);

@@ -6,6 +6,7 @@ import type { AgentEffort, AgentModelOption, ProcessProvider } from "../types/pr
 import { useMachines, selectMachine, machineHostRequest, machineRequest, checkAgentCapacity, AGENT_CAPACITY_MESSAGE, AGENT_CAPACITY_DOCS, type MachineMessage } from "../machines/client";
 import { defaultAgentFolder, resolveAgentFolder } from "../util/agentFolder";
 import { buildModelOptions, hostModelCatalog } from "../util/agentModels";
+import { useModelCatalog } from "../hooks/useModelCatalog";
 import { MachineTargetPicker } from "../machines/TargetPicker";
 import { colors } from "../theme/colors";
 import { AgentSelector } from "./AgentSelector";
@@ -38,6 +39,7 @@ export function GroupAgentRow({
   mode?: "plus" | "start";
 }) {
   const sendingRef = useRef(false);
+  useModelCatalog();
   let machines = useMachines();
   let [busy, setBusy] = useState(false);
   let [checking, setChecking] = useState(false);

@@ -273,6 +273,7 @@ test('mobile subscription replay records the connection before synchronous error
     react: { useEffect: (effect) => { cleanup = effect(); }, useCallback: (callback) => callback },
     'react-native': { AppState: { addEventListener: () => ({ remove: noop }) }, Platform: { OS: 'ios' } },
     '@clawtab/shared': {
+      useModelCatalog: () => null,
       machineState: () => state, machineProcesses: () => [],
       resolveEnabledModels: (enabled) => enabled,
       hostModelCatalog: (settings) => settings?.detected_models ?? {},
@@ -324,6 +325,7 @@ for (let platform of ['web', 'ios']) {
       react: { useEffect: (effect) => { cleanup = effect(); }, useCallback: (callback) => callback },
       'react-native': { AppState: { currentState: 'active', addEventListener: (_, callback) => { onStateChange = callback; return { remove: noop }; } }, Platform: { OS: platform } },
       '@clawtab/shared': {
+      useModelCatalog: () => null,
         machineState: () => state, subscribeMachines: () => noop, onMachineEvent: () => noop,
         connectMachines: () => noop, reconnectMachines: () => { reconnects++; },
       },
@@ -371,6 +373,7 @@ test('settings reports the named machine status when another host is online', ()
     react: { useEffect: (effect) => { cleanup = effect(); }, useCallback: (callback) => callback },
     'react-native': { AppState: { addEventListener: () => ({ remove: noop }) }, Platform: { OS: 'ios' } },
     '@clawtab/shared': {
+      useModelCatalog: () => null,
       machineState: () => state, machineProcesses: () => [],
       resolveEnabledModels: (enabled) => enabled,
       hostModelCatalog: (settings) => settings?.detected_models ?? {},

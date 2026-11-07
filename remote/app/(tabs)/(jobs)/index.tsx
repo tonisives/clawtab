@@ -1,3 +1,4 @@
+import { useModelCatalog } from "@clawtab/shared";
 import { useOpenRelay } from "../../../src/hooks/useOpenRelay"
 import type { ComponentRef } from "react";
 import { DemoAgentPane, type DemoSelection } from "../../../src/components/DemoAgentPane"
@@ -260,6 +261,7 @@ export default function JobsScreen() {
 }
 
 function JobsWorkspace({ bounds }: { bounds: { x: number; y: number; width: number; height: number } }) {
+  useModelCatalog();
   const realJobs = useJobsStore((s) => s.jobs)
   const realStatuses = useJobsStore((s) => s.statuses)
   const detectedProcesses = useJobsStore((s) => s.detectedProcesses)
