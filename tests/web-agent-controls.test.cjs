@@ -35,13 +35,13 @@ test('web agent cards stack status, time and a menu with the actual model inside
   const menu = nodes(tree).find(node => node.props?.accessibilityLabel === 'Agent menu');
   menu.props.onPress({ stopPropagation() {}, currentTarget: { getBoundingClientRect: () => ({ bottom: 80, right: 400 }) } });
   const popup = nodes(render()).find(node => node.type === 'PopupMenu');
-  assert.equal(popup.props.items[0].label, 'gpt-6.1-medium');
+  assert.equal(popup.props.items[0].label, 'gpt-6.1 · medium');
   assert.equal(popup.props.items[0].disabled, true);
   assert.equal(nodes(tree)[0].props.style[0].borderRadius, 28);
 });
 
 test('roster arrival waits for host snapshots before clearing saved agents or enabling navigation', () => {
-  const state = { connected: true, machines: [{ id: 'host', online: true }], snapshots: {} };
+  const state = { connected: true, connectionId: null, machines: [{ id: 'host', online: true }], snapshots: {} };
   const jobState = { loaded: true, processesLoaded: true, detectedProcesses: [{ pane_id: 'host::%1' }], setJobs() { this.loaded = true; }, setDetectedProcesses(value) { this.detectedProcesses = value; this.processesLoaded = true; } };
   const noop = () => {};
   const jobs = { getState: () => new Proxy(jobState, { get: (target, key) => key in target ? target[key] : noop }), setState: patch => Object.assign(jobState, patch) };
@@ -53,6 +53,7 @@ test('roster arrival waits for host snapshots before clearing saved agents or en
   assert.equal(jobState.loaded, false);
   assert.equal(jobState.processesLoaded, false);
   assert.equal(jobState.detectedProcesses[0].pane_id, 'host::%1');
+  state.connectionId = 'client';
   state.snapshots.host = { jobs_changed: { jobs: [], statuses: {} } };
   exports.synchronize();
   assert.equal(jobState.loaded, true);

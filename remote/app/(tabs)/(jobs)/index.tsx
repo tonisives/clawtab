@@ -1415,6 +1415,18 @@ function JobsWorkspace({ bounds }: { bounds: { x: number; y: number; width: numb
             groupTabView={groupTabView}
             onGroupTabViewChange={handleGroupTabViewChange}
             onSetAllGroupTabView={handleSetAllGroupTabView}
+            afterToolbarContent={runAgentHandler ? (
+              <View style={Platform.OS === "web" ? styles.webStartAgentRow : styles.startAgentRow}>
+                <GroupAgentRow
+                  mode="start"
+                  workDir="~"
+                  modelOptions={agentModelOptions}
+                  onRunAgent={(prompt, provider, model, effort, workDir, requestedFolder) =>
+                    handleStartAgent(prompt, provider, model, effort, workDir, requestedFolder)
+                  }
+                />
+              </View>
+            ) : null}
             headerContent={
               <>
                 {isIosPhone ? sidebarHeader : null}

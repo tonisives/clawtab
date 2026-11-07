@@ -1,7 +1,7 @@
 import type { ComponentRef } from "react";
 import { useMobileListAppearance, mobileListStyles } from "./ListAppearance";
 import { agentAlertTitle, sessionSizeAlertLabel } from "../util/alert";
-import { compactAgentSelectionLabel, agentSelectionLabel } from "../util/agent";
+import { compactAgentSelectionLabel } from "../util/agent";
 import { resourceLabel, splitResource } from "../machines/client";
 import { MachineMark } from "../machines/Badge";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -25,7 +25,7 @@ function AgentTimestamp({ timestamp, compact = false }: { timestamp: number; com
     const timer = setInterval(() => refresh(value => value + 1), 30_000);
     return () => clearInterval(timer);
   }, []);
-  if (!Number.isFinite(timestamp) || timestamp <= 0) return null;
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return compact ? <Text style={styles.timestamp} accessibilityLabel="Activity time unavailable">—</Text> : null;
   const age = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
   const label = age < 60 ? "jn" : age < 3600 ? `${Math.floor(age / 60)}m`
     : age < 86400 ? `${Math.floor(age / 3600)}h` : `${Math.floor(age / 86400)}d`;
@@ -337,7 +337,7 @@ export function ProcessCard({
           nativePlacement="above"
           onClose={() => setMenuOpen(false)}
           items={[
-            ...(isWeb && process.model_id ? [{ type: "item" as const, label: agentSelectionLabel(process.provider, process.model_id, process.agent_effort), disabled: true, onPress: () => {} }, { type: "separator" as const }] : []),
+            ...(isWeb && process.model_id ? [{ type: "item" as const, label: [process.model_id, process.agent_effort].filter(Boolean).join(" · "), disabled: true, onPress: () => {} }, { type: "separator" as const }] : []),
             ...(onTogglePin ? [{ type: "item" as const, label: pinned ? "Unpin" : "Pin", onPress: () => { onTogglePin(); setMenuOpen(false); } }] : []),
             ...(onTogglePin && (canRename || canMoveToWorkspace || onStop) ? [{ type: "separator" as const }] : []),
             ...(canRename ? [{ type: "item" as const, label: "Rename", hint: renameShortcutHint, onPress: () => { startEditing(); } }] : []),

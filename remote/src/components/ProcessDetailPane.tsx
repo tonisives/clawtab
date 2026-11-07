@@ -254,7 +254,7 @@ export function ProcessDetailPane({ paneId, onClose, embedded = false }: Process
   }
 
   const syntheticStatus: JobStatus = isAlive
-    ? { state: "running", run_id: "", started_at: new Date().toISOString(), pane_id: paneId }
+    ? { state: "running", run_id: "", started_at: activeProcess.session_started_at ?? "", pane_id: paneId }
     : { state: "idle" }
   return (
     <View style={styles.container}>
@@ -282,6 +282,7 @@ export function ProcessDetailPane({ paneId, onClose, embedded = false }: Process
         onBack={onClose}
         showBackButton={false}
         showHeaderAgent={!!activeProcess.model_id}
+        headerAgentLabel={[activeProcess.model_id, activeProcess.agent_effort].filter(Boolean).join(" · ")}
         hideRuns
         hidePath
         mobileDetails={Platform.OS === "web"}

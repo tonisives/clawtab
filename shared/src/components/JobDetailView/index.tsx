@@ -166,6 +166,7 @@ export interface JobDetailViewProps {
   onUpdateJob?: (patch: JobUpdate) => void | Promise<void>;
   editHeaderFields?: boolean;
   showHeaderAgent?: boolean;
+  headerAgentLabel?: string;
   extraMenuItems?: {
     label: string;
     onPress: () => void;
@@ -243,6 +244,7 @@ export function JobDetailView({
   onUpdateJob,
   editHeaderFields = true,
   showHeaderAgent = true,
+  headerAgentLabel,
   extraMenuItems,
 }: JobDetailViewProps) {
   const state = status.state;
@@ -453,7 +455,7 @@ export function JobDetailView({
   const agentProvider = job.agent_provider ?? scheduledProviderKindForJob(job, defaultAgentProvider);
   const agentModel = job.agent_provider ? job.agent_model : defaultAgentModel;
   const agentEffort = job.agent_effort ?? defaultAgentEffort(agentProvider, agentModel);
-  const agentLabel = agentProvider ? agentSelectionLabel(agentProvider, agentModel, agentEffort) : null;
+  const agentLabel = headerAgentLabel ?? (agentProvider ? agentSelectionLabel(agentProvider, agentModel, agentEffort) : null);
   const detailModelOptions = useMemo(() => {
     const options = [...(agentModelOptions ?? [])];
     if (agentProvider && !isSyntheticAgentModel(agentModel) && !options.some((option) => option.provider === agentProvider && (option.modelId ?? null) === (agentModel ?? null))) {
