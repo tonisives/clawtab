@@ -139,7 +139,7 @@ export let useWebSocket = () => {
   let modelCatalog = useModelCatalog()
   let authenticated = useAuthStore((s) => s.isAuthenticated)
   let userId = useAuthStore((s) => s.userId)
-  useEffect(() => { if (authenticated) synchronize() }, [modelCatalog, authenticated])
+  useEffect(() => { if (authenticated && modelCatalog) synchronize() }, [modelCatalog, authenticated])
   useEffect(() => {
     if (!authenticated) {
       resetAccountState()
