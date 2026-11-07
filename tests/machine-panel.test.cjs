@@ -43,7 +43,7 @@ test('one machine is selected automatically and Agents starts in Home with a com
   assert.doesNotMatch(text(tree), /ClawTab machine|MiB|Machine list connected|Git status|model-a|model-b/);
   let start = nodes(tree).find(node => node.type === 'Pressable' && text(node) === 'Start agent');
   start.props.onPress(); await new Promise(setImmediate);
-  assert.equal(view.requests[0].request.path, '/home/clawtab/workspace');
+  assert.equal(view.requests[0].request.path, '/home/clawtab');
   assert.equal(view.requests[1].request.model, 'model-a');
 });
 

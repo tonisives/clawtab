@@ -81,7 +81,7 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, hostedApi, onOp
   let preferences = state.agentModels ?? hostSettings
   let models = resolveEnabledModels(preferences?.enabled_models ?? {}, hostModelCatalog(hostSettings), preferences?.disabled_models)
   useEffect(() => {
-    setPath(machine?.hosted ? "/home/clawtab/workspace" : "~")
+    setPath(machine?.hosted ? "/home/clawtab" : "~")
     setAdvanced(false)
   }, [machine?.id])
   useEffect(() => {
@@ -92,7 +92,7 @@ export let MachinesPanel = ({ approvePairing, localRequest, api, hostedApi, onOp
   }, [machine?.id, provider, model, JSON.stringify(models), preferences?.default_model])
   let choose = (id: string) => {
     selectMachine(id)
-    setPath(state.machines.find((machine) => machine.id === id)?.hosted ? "/home/clawtab/workspace" : "~")
+    setPath(state.machines.find((machine) => machine.id === id)?.hosted ? "/home/clawtab" : "~")
     setModel("")
     setOutput(null)
     setTransfer(null)

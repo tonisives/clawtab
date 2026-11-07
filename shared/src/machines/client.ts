@@ -319,9 +319,9 @@ export let connectMachines = (getUrl: () => Promise<string>, preferencesApi?: Pr
         for (let machine of state.machines.filter((machine) => machine.hosted && machine.owned)) {
           if (stopped) return
           // Stable identity makes simultaneous clients initialize the same group.
-          if (Object.values(state.jobGroups).some((group) => group.machine_id === machine.id && (group.id === machine.id || group.work_dir.replace(/\/+$/, "") === "/home/clawtab/workspace"))) continue
+          if (Object.values(state.jobGroups).some((group) => group.machine_id === machine.id && (group.id === machine.id || group.work_dir.replace(/\/+$/, "") === "/home/clawtab"))) continue
           await saveAccountPreferences(preferencesApi, { job_group: {
-            id: machine.id, name: "Home", machine_id: machine.id, work_dir: "/home/clawtab/workspace",
+            id: machine.id, name: "Home", machine_id: machine.id, work_dir: "/home/clawtab",
           } })
         }
       }

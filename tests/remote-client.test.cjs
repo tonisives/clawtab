@@ -446,7 +446,7 @@ test('included machines get one persistent Home group regardless of roster and p
     assert.equal(writes.length, 1);
     assert.equal(writes[0].id, a);
     assert.equal(writes[0].name, 'Home');
-    assert.equal(writes[0].work_dir, '/home/clawtab/workspace');
+    assert.equal(writes[0].work_dir, '/home/clawtab');
     ws.receive(roster); await new Promise(setImmediate);
     assert.equal(writes.length, 1);
     assert.equal(client.machineState().jobGroups[a].name, 'Home');
@@ -456,7 +456,7 @@ test('included machines get one persistent Home group regardless of roster and p
 
 test('Home initialization preserves an existing group for the included folder', async (t) => {
   let { client, sockets } = load();
-  let group = { id: b, name: 'My workspace', machine_id: a, work_dir: '/home/clawtab/workspace/' };
+  let group = { id: b, name: 'My workspace', machine_id: a, work_dir: '/home/clawtab/' };
   let writes = 0;
   let stop = client.connectMachines(async () => 'ws://localhost/ws?token=fixture', async (method) => {
     if (method === 'POST') writes++;
