@@ -16,11 +16,13 @@ export function capturedShellCommand(paneId: string) {
         return { log: value.logs, source: { pane_id: paneId } };
       }
       if (command.op === "shell_input") {
+        // Acquire/renew the relay lease only for user input, without attaching a PTY.
+        await machineRequest(resource.machine, { type: "take_control", pane_id: resource.id });
         // Older hosts expose named tmux keys. Send single characters so text such
         // as "Enter" cannot be interpreted as a named key.
         const keys: Record<string, string> = { "\r": "Enter", "\n": "Enter", "\x7f": "BSpace", "\b": "BSpace", "\t": "Tab", "\x1b[A": "Up", "\x1b[B": "Down", "\x1b[C": "Right", "\x1b[D": "Left", "\x1b": "Escape" };
         for (const key of String(command.text ?? "").match(/\x1b\[[ABCD]|[\s\S]/gu) ?? []) {
-          await machineRequest(resource.machine, { type: "tmux_pane_key", pane_id: resource.id, key: keys[key] ?? key });
+          await machineRequest(resource.machine, { type: "tmux_pane_key", pane_id: resource.id, key: keys[key] ?? (key.charCodeAt(0) < 32 ? `C-${String.fromCharCode(key.charCodeAt(0) + 64).toLowerCase()}` : key) });
         }
         return { sent: true };
       }

@@ -451,7 +451,7 @@ for (const variant of ["MessageSurface.web.tsx", "MessageSurface.tsx"]) {
     let cursor = 0, lastRoot, keyboardOverlap = 0, focused = true;
     const react = {
       useRef: value => refs[cursor++] ??= { current: value },
-      useState: value => { const state = refs[cursor++] ??= { value }; return [state.value, next => { state.value=next; }]; },
+      useState: value => { const state = refs[cursor++] ??= { value: typeof value === "function" ? value() : value }; return [state.value, next => { state.value=next; }]; },
       useCallback: callback => callback,
       useEffect: (effect, dependencies) => {
         const index = cursor++;
@@ -469,7 +469,7 @@ for (const variant of ["MessageSurface.web.tsx", "MessageSurface.tsx"]) {
       "react-native-webview": { default: "WebView" },
       "react-native": { View: "View", Platform: { OS: "ios" }, Keyboard: { dismiss() {} } },
       "react-native-safe-area-context": { useSafeAreaInsets: () => ({ bottom: 34 }) },
-      "../hooks/useMessageKeyboard": { useMessageKeyboard: () => ({ host: { current: null }, overlap: keyboardOverlap, horizontalInsets: { left: 0, right: 0 }, onLayout() {} }) },
+      "../hooks/useMessageKeyboard": { useMessageKeyboard: () => ({ host: { current: null }, overlap: keyboardOverlap, safeAreaInsets: { bottom: 34 }, horizontalInsets: { left: 0, right: 0 }, onLayout() {} }) },
       "../lib/messageSurfaceDocument.generated": { default: "<html><body></body></html>" },
       "../lib/messageSurfaceBootstrap": load("messageSurfaceBootstrap"),
       "./NotificationChrome": { initialNotificationChrome: { screen: "list", reply: false }, NotificationChrome: "NotificationChrome" },
@@ -477,6 +477,7 @@ for (const variant of ["MessageSurface.web.tsx", "MessageSurface.tsx"]) {
       "./TerminalWriteDialog": { TerminalWriteDialog: "TerminalWriteDialog" },
       "./MessageTextSelection": { MessageTextSelection: "MessageTextSelection" },
       "./ShellKeyboardInput": { ShellKeyboardInput: "ShellKeyboardInput" },
+      "../hooks/useResponsive": { useResponsive: () => ({ isIosPhoneLandscape: false }) },
       "expo-router/react-navigation": { useIsFocused: () => focused },
       "../lib/messageSelection": load("messageSelection"),
     };
@@ -484,7 +485,7 @@ for (const variant of ["MessageSurface.web.tsx", "MessageSurface.tsx"]) {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
     }).outputText;
     const exports = {};
-    vm.runInNewContext(source, { exports, require: name => dependencies[name], setTimeout: () => 1, clearTimeout() {}, window: { addEventListener() {}, removeEventListener() {} } });
+    vm.runInNewContext(source, { exports, require: name => dependencies[name], setTimeout: () => 1, clearTimeout() {}, window: { matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }), addEventListener() {}, removeEventListener() {} } });
     const render = (selection, active = true, pendingCount = 0) => {
       cursor = 0; effects.length = 0;
       const root = exports.MessageSurface({ snapshot: { type: "snapshot", pending_count: pendingCount }, selection, active, onCommand: async () => ({}) });

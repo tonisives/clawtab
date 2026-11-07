@@ -460,9 +460,12 @@
           previous = value;
         });
         input.addEventListener("keydown", event => {
-          const keys = { Enter: "\r", ArrowUp: "\x1b[A", ArrowDown: "\x1b[B", ArrowRight: "\x1b[C", ArrowLeft: "\x1b[D", Escape: "\x1b", Tab: "\t" };
-          if (keys[event.key]) { event.preventDefault(); sendShellInput(keys[event.key]); }
-          else if (event.key === "Backspace" && !input.value) { event.preventDefault(); sendShellInput("\x7f"); }
+          if (event.isComposing || event.metaKey) return;
+          const control = event.ctrlKey && /^[a-z@\[\]\\^_]$/i.test(event.key)
+            ? String.fromCharCode(event.key.toUpperCase().charCodeAt(0) & 31) : null;
+          const keys = { Backspace: "\x7f", Enter: "\r", ArrowUp: "\x1b[A", ArrowDown: "\x1b[B", ArrowRight: "\x1b[C", ArrowLeft: "\x1b[D", Escape: "\x1b", Tab: "\t" };
+          const text = control ?? keys[event.key];
+          if (text) { event.preventDefault(); event.stopPropagation(); sendShellInput(text); }
         });
         card.append(input); card._shellInput = input;
       }

@@ -6,6 +6,14 @@ import { messageSurfaceDefaultView, messageSurfaceInitialDocument } from "../lib
 import type { MessageSurfaceProps, SurfaceMessage } from "./messageSurfaceTypes";
 
 export function MessageSurface(props: MessageSurfaceProps) {
+  const [desktopKeyboard, setDesktopKeyboard] = useState(() => typeof window !== "undefined" && window.matchMedia("(hover: hover) and (pointer: fine)").matches);
+  useEffect(() => {
+    const media = window.matchMedia("(hover: hover) and (pointer: fine)");
+    const change = () => setDesktopKeyboard(media.matches);
+    change();
+    media.addEventListener("change", change);
+    return () => media.removeEventListener("change", change);
+  }, []);
   const source = useRef<string | null>(null);
   if (source.current === null) {
     source.current = messageSurfaceInitialDocument(document, props);
@@ -62,11 +70,12 @@ export function MessageSurface(props: MessageSurfaceProps) {
     if (selection && selected.current !== selection) {
       send({ type: "open_record", id: selection, popup: latest.current.popup });
       selected.current = selection;
+      if (desktopKeyboard && latest.current.snapshot.shell_only) send({ type: "mobile_action", action: "reply" });
     } else if (!selection && selected.current !== defaultView) {
       send({ type: defaultView });
       selected.current = defaultView;
     }
-  }, [send]);
+  }, [send, desktopKeyboard]);
 
   useEffect(() => {
     const receive = async (event: MessageEvent) => {
@@ -96,7 +105,7 @@ export function MessageSurface(props: MessageSurfaceProps) {
   const input = (text: string) => send({ type: "mobile_action", action: "shell_input", text });
   return <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
     {iframe}
-    {reply ? <TerminalKeyboardToolbar bottom={0} inline dismissIcon="close"
+    {reply && !desktopKeyboard ? <TerminalKeyboardToolbar bottom={0} inline dismissIcon="close"
       onDismiss={() => send({ type: "mobile_action", action: "reply_close" })} onSend={input}
       onWrite={() => { setMenuOpen(false); setWriteOpen(true); }} menuOpen={menuOpen} onMenuOpenChange={setMenuOpen} /> : null}
     <TerminalWriteDialog visible={writeOpen} draft={draft} onDraftChange={setDraft} onClose={() => setWriteOpen(false)} onDone={() => {

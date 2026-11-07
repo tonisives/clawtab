@@ -66,7 +66,23 @@ test("older included machines capture their existing pane without the unsupporte
 test("older machines preserve literal text and navigation keys without submitting every keystroke", async () => {
   const requests = [];
   const { capturedShellCommand } = load(() => assert.fail("unsupported message API"), true, async (machine, request) => { requests.push({ machine, ...request }); return {}; });
-  await capturedShellCommand("machine-a::%12")({ op: "shell_input", text: "Enter\r\x1b[A\x7f" });
-  assert.deepEqual(requests.map(request => request.key), ["E", "n", "t", "e", "r", "Enter", "Up", "BSpace"]);
-  assert.ok(requests.every(request => request.type === "tmux_pane_key" && request.pane_id === "%12"));
+  const command = capturedShellCommand("machine-a::%12");
+  await command({ op: "shell_input", text: "Enter\r\x1b[A\x7f\x03" });
+  assert.equal(requests[0].type, "take_control");
+  assert.deepEqual(requests.slice(1).map(request => request.key), ["E", "n", "t", "e", "r", "Enter", "Up", "BSpace", "C-c"]);
+  assert.ok(requests.every(request => request.pane_id === "%12"));
+  assert.ok(requests.slice(1).every(request => request.type === "tmux_pane_key"));
+  await command({ op: "shell_input", text: "\x1b[B" });
+  assert.equal(requests.at(-2).type, "take_control", "a later batch renews the expired relay lease");
+  assert.equal(requests.at(-1).key, "Down");
+});
+
+test("older shells report control failures before forwarding any input", async () => {
+  const requests = [];
+  const { capturedShellCommand } = load(() => assert.fail("unsupported message API"), true, async (machine, request) => {
+    requests.push(request);
+    throw new Error("Machine is offline");
+  });
+  await assert.rejects(capturedShellCommand("machine-a::%12")({ op: "shell_input", text: "\x03" }), /Machine is offline/);
+  assert.deepEqual(requests.map(request => request.type), ["take_control"]);
 });
