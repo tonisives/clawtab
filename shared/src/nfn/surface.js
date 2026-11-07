@@ -2172,6 +2172,12 @@
     const trigger = card?._openSession;
     if (!panel || !trigger) return;
     const anchor = trigger.getBoundingClientRect(), bounds = overlay.getBoundingClientRect();
+    if (mobileHost() && snapshot.native_chrome) {
+      panel.style.left = `${Math.max(8, (bounds.width - panel.offsetWidth) / 2)}px`;
+      panel.style.bottom = "8px";
+      panel.style.maxHeight = `${Math.max(80, bounds.height - 16)}px`;
+      return;
+    }
     panel.style.left = `${Math.max(8, Math.min(anchor.left - bounds.left, bounds.width - panel.offsetWidth - 8))}px`;
     panel.style.bottom = `${Math.max(8, bounds.bottom - anchor.top + 8)}px`;
     panel.style.maxHeight = `${Math.max(80, anchor.top - bounds.top - 16)}px`;
