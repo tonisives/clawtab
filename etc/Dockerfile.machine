@@ -3,6 +3,7 @@ FROM rust:1.93-bookworm AS build
 WORKDIR /src
 COPY protocol protocol
 COPY desktop/src-tauri desktop/src-tauri
+COPY shared/src/nfn shared/src/nfn
 RUN --mount=type=cache,id=clawtab-machine-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=clawtab-machine-target,target=/src/desktop/src-tauri/target \
     cd desktop/src-tauri && cargo build -j4 --release --no-default-features --bin clawtab-daemon --bin cwt --bin clawtab-hook \

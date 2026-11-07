@@ -42,7 +42,7 @@ fn agent_panes(output: &str) -> Vec<AgentPane> {
 }
 
 pub fn agent_identities() -> Result<Vec<AgentIdentity>, String> {
-    use super::{self as agent_session, ProcessProvider, ProcessSnapshot};
+    use crate::agent_session::{self, ProcessProvider, ProcessSnapshot};
 
     let output = Command::new("tmux")
         .args([

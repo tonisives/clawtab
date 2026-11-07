@@ -9,6 +9,7 @@ ENV PKG_CONFIG_ALLOW_CROSS=1 OPENSSL_DIR=/usr OPENSSL_INCLUDE_DIR=/usr/include/o
 WORKDIR /src
 COPY protocol protocol
 COPY desktop/src-tauri desktop/src-tauri
+COPY shared/src/nfn shared/src/nfn
 RUN --mount=type=cache,id=clawtab-machine-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=clawtab-machine-target,target=/src/desktop/src-tauri/target \
     cd desktop/src-tauri && cargo build -j4 --locked --release --target x86_64-unknown-linux-gnu --no-default-features --bin clawtab-daemon --bin cwt --bin clawtab-hook \
