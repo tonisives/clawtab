@@ -17,7 +17,7 @@ export type AgentSelectorProps = {
   model?: string | null;
   effort?: AgentEffort | null;
   modelEditor?: ReactNode;
-  onOpen?: () => void;
+  onOpen?: () => boolean | void | Promise<boolean | void>;
   onChange: (selection: AgentSelection) => void | Promise<void>;
   includeDefault?: boolean;
   onSelectDefault?: () => void | Promise<void>;
@@ -54,6 +54,7 @@ export function AgentSelector({
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
   const [pending, setPending] = useState<{ provider: ProcessProvider; modelId: string | null; defaultEffort: AgentEffort | null; effortModels?: AgentModelOption["effortModels"] } | null>(null);
   const buttonRef = useRef<any>(null);
+  const openingRef = useRef(false);
 
   const resetMenu = useCallback(() => {
     setMenuOpen(false);
@@ -61,13 +62,21 @@ export function AgentSelector({
     setPending(null);
   }, []);
 
-  const openMenu = useCallback((event: any) => {
-    if (disabled) return;
+  const openMenu = useCallback(async (event: any) => {
+    if (disabled || openingRef.current) return;
     if (menuOpen) {
       resetMenu();
       return;
     }
-    onOpen?.();
+    openingRef.current = true;
+    try {
+      const opening = onOpen?.();
+      if (opening && typeof opening === "object" && "then" in opening) {
+        if (await opening === false) return;
+      } else if (opening === false) return;
+    } finally {
+      openingRef.current = false;
+    }
     if (mode === "plus" || mode === "start") {
       setMenuOpen(true);
       return;

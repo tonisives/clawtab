@@ -53,6 +53,7 @@ let find = (node, predicate) => {
 let selector = (tree) => find(tree, (node) => node.props?.machinePicker);
 let machineMock = (state) => ({ '../machines/client': {
   useMachines: () => state, selectMachine: (id) => { state.selected = id; },
+  checkAgentCapacity: async () => {},
   machineHostRequest: async (_machine, request) => ({ path: request.path === '~' ? '/home/user' : request.path }),
 } });
 let targetPicker = (picker) => find(picker.props.machinePicker, (node) => typeof node.props?.onSelect === 'function');
@@ -80,7 +81,7 @@ test('target changes refresh models and launch errors are visible', async () => 
   picker = selector(view.render(view.exports.GroupAgentRow, props));
   assert.ok(picker.props.modelOptions.some((model) => model.modelId === 'gpt-test'));
   await picker.props.onChange({ provider: 'codex', modelId: 'gpt-test', effort: 'high' });
-  assert.ok(find(view.render(view.exports.GroupAgentRow, props), (node) => node.props?.children === 'Working directory missing'));
+  assert.ok(find(view.render(view.exports.GroupAgentRow, props), (node) => node.props?.message === 'Working directory missing'));
 });
 
 test('desktop defaults locally without a relay connection', async () => {
@@ -158,7 +159,7 @@ test('saved groups launch on their own machine even when another target is selec
   picker = selector(view.render(view.exports.GroupAgentRow, props));
   await picker.props.onChange({ provider: 'shell', modelId: null, effort: null });
   assert.equal(launched, null);
-  assert.ok(find(view.render(view.exports.GroupAgentRow, props), (node) => node.props?.children === 'Choose an online machine.'));
+  assert.ok(find(view.render(view.exports.GroupAgentRow, props), (node) => node.props?.message === 'Choose an online machine.'));
 });
 
 let groupA = { id: 'group-a', name: 'Project', machine_id: 'remote', work_dir: '/home/user/project' };
@@ -280,7 +281,7 @@ test('OpenCode catalogs stay opt-in while their models remain available to manag
   assert.deepEqual(Array.from(models.buildModelOptions(['opencode'], { opencode: ['provider/selected'] }, catalog), (option) => option.modelId), ['provider/selected']);
 });
 
-test('remote plus menus refresh their target catalog and carry an inline editor', () => {
+test('remote plus menus refresh their target catalog and carry an inline editor', async () => {
   let state = { selected: 'a', machines: [{ id: 'a', online: true, owned: true }], snapshots: { a: { settings_response: { enabled_models: { codex: ['gpt-old'], claude: [], opencode: [], antigravity: [] }, detected_models: { codex: [['gpt-6.1-sol', 'GPT-6.1 Sol']] } } } } };
   let requests = [], launched = false;
   let mock = machineMock(state);
@@ -289,7 +290,7 @@ test('remote plus menus refresh their target catalog and carry an inline editor'
   let props = { modelOptions: [{ provider: 'codex', modelId: 'gpt-old', label: 'Old' }], onRunAgent: () => { launched = true; } };
   let picker = selector(view.render(view.exports.GroupAgentRow, props));
   assert.ok(picker.props.modelOptions.some((model) => model.modelId === 'gpt-6.1-sol'));
-  picker.props.onOpen();
+  await picker.props.onOpen();
   assert.equal(requests[0].target, 'a');
   assert.equal(requests[0].message.type, 'get_settings');
   assert.equal(picker.props.modelEditor.props.machineId, 'a');
@@ -566,4 +567,37 @@ test('Hermes quick approval excludes clarification and permanent permission', ()
   assert.equal(jobs.findYesOption({ ...q, options: [q.options[2]] }), null);
   assert.equal(jobs.findYesOption({ ...q, options: [{ number: 'hermes-option:1', label: 'Blue' }, { number: 'hermes-option:3', label: 'Type something' }] }), null);
   assert.equal(jobs.questionOptionLabel({ number: '/approve request-1 once', label: 'Allow once' }), 'Allow once');
+});
+
+
+test('a full hosted machine blocks the picker and launch and shows a dismissible alert', async () => {
+  let state = { selected: 'hosted', machines: [{ id: 'hosted', online: true, owned: true, hosted: {} }], snapshots: {} };
+  let mock = machineMock(state), requests = 0, launches = 0;
+  mock['../machines/client'].checkAgentCapacity = async () => { throw new Error('Both agent slots are in use. Stop an agent to add another.'); };
+  mock['../machines/client'].machineRequest = async () => { requests++; };
+  let view = harness('../shared/src/components/GroupAgentRow.tsx', mock);
+  let props = { onRunAgent: () => { launches++; } };
+  let render = () => view.render(view.exports.GroupAgentRow, props);
+  let picker = selector(render());
+  assert.equal(await picker.props.onOpen(), false);
+  assert.equal(requests, 0);
+  let alert = find(render(), node => node.props?.message?.startsWith('Both agent slots'));
+  assert.ok(alert);
+  alert.props.onClose();
+  assert.equal(find(render(), node => node.props?.message), undefined);
+  await picker.props.onChange({ provider: 'codex', modelId: 'gpt-6.1-sol', effort: 'medium' });
+  assert.equal(launches, 0);
+  assert.ok(find(render(), node => node.props?.message?.startsWith('Both agent slots')));
+});
+
+test('current Claude releases join a stale detected catalog and respect removals', () => {
+  let { exports: models } = harness('../shared/src/util/agentModels.ts');
+  let detected = { claude: [['claude-opus-5', 'Claude Opus 5']] };
+  let options = models.buildModelOptions(['claude'], { claude: ['claude-opus-5'] }, detected);
+  for (let id of ['claude-fable-5-1', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5']) {
+    assert.ok(options.some(option => option.modelId === id), id);
+  }
+  options = models.buildModelOptions(['claude'], { claude: ['claude-opus-5'] }, detected, { claude: ['claude-opus-5-5'] });
+  assert.equal(options.some(option => option.modelId === 'claude-opus-5-5'), false);
+  assert.equal(models.buildModelOptions(['claude'], { claude: [] }, detected).length, 0);
 });

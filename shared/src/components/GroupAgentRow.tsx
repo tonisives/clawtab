@@ -3,12 +3,13 @@ import { useCallback, useRef, useState } from "react";
 import { ActivityIndicator, Platform, StyleSheet, Text, View } from "react-native";
 import { spacing } from "../theme/spacing";
 import type { AgentEffort, AgentModelOption, ProcessProvider } from "../types/process";
-import { useMachines, selectMachine, machineHostRequest, machineRequest, type MachineMessage } from "../machines/client";
+import { useMachines, selectMachine, machineHostRequest, machineRequest, checkAgentCapacity, AGENT_CAPACITY_MESSAGE, AGENT_CAPACITY_DOCS, type MachineMessage } from "../machines/client";
 import { defaultAgentFolder, resolveAgentFolder } from "../util/agentFolder";
 import { buildModelOptions, hostModelCatalog } from "../util/agentModels";
 import { MachineTargetPicker } from "../machines/TargetPicker";
 import { colors } from "../theme/colors";
 import { AgentSelector } from "./AgentSelector";
+import { AgentLaunchAlert } from "./AgentLaunchAlert";
 import { ModelManager } from "../machines/Models";
 
 export function GroupAgentRow({
@@ -39,6 +40,7 @@ export function GroupAgentRow({
   const sendingRef = useRef(false);
   let machines = useMachines();
   let [busy, setBusy] = useState(false);
+  let [checking, setChecking] = useState(false);
   let [error, setError] = useState<string | null>(null);
   let hasLocal = localMachineId !== undefined;
   let target = targetMachineId ?? machines.selected ?? localMachineId ?? (hasLocal ? null : machines.machines.find((machine) => machine.online && machine.owned)?.id);
@@ -53,7 +55,16 @@ export function GroupAgentRow({
   let options = machines.agentModels
     ? buildModelOptions(["claude", "codex", "opencode", "antigravity", "hermes"], machines.agentModels.enabled_models, detected, machines.agentModels.disabled_models)
     : !hasLocal && settings ? settingsOptions : modelOptions.length ? modelOptions : settingsOptions;
-  let refreshModels = () => {
+  let refreshModels = async () => {
+    setChecking(true);
+    try {
+      if (!isLocal && target) await checkAgentCapacity(target);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Could not check agent capacity");
+      return false;
+    } finally {
+      setChecking(false);
+    }
     if (!hasLocal && target && machine?.owned && machine.online) {
       void machineRequest(target, { type: "get_settings" }).catch(() => {});
     }
@@ -76,6 +87,7 @@ export function GroupAgentRow({
     try {
       let request = isLocal ? localHostRequest : target ? (request: MachineMessage) => machineHostRequest(target, request) : undefined;
       if (!request) throw new Error("Could not check the folder on this machine.");
+      if (!isLocal && target) await checkAgentCapacity(target);
       let resolvedFolder = await resolveAgentFolder(folder, request);
       selectMachine(target ?? null);
       await onRunAgent("", nextProvider, modelId, nextEffort, resolvedFolder, folder);
@@ -96,7 +108,7 @@ export function GroupAgentRow({
         mode={mode}
         label={mode === "start" ? "+ Add agent" : undefined}
         fullWidth={mode === "start"}
-        disabled={busy}
+        disabled={busy || checking}
         provider={provider}
         model={model}
         effort={effort}
@@ -112,18 +124,17 @@ export function GroupAgentRow({
         onChange={(selection) => launch(selection.provider, selection.modelId, selection.effort)}
         nativeBottomInset={88}
       />
-      {busy && <View style={styles.launchStatus} accessibilityLiveRegion="polite">
+      {(busy || checking) && <View style={styles.launchStatus} accessibilityLiveRegion="polite">
         <ActivityIndicator size="small" color={colors.accent} />
-        <Text style={styles.loadingText}>Starting agent…</Text>
+        <Text style={styles.loadingText}>{checking ? "Checking availability…" : "Starting agent…"}</Text>
       </View>}
-      {error && <Text style={styles.error}>{error}</Text>}
+      {error && <AgentLaunchAlert message={error} docsUrl={error === AGENT_CAPACITY_MESSAGE ? AGENT_CAPACITY_DOCS : undefined} onClose={() => setError(null)} />}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   status: { color: colors.textSecondary, marginLeft: spacing.sm },
-  error: { color: colors.danger, flexShrink: 1, marginLeft: spacing.sm },
   row: {
     flexDirection: "row",
     paddingHorizontal: Platform.OS === "web" ? spacing.xs : spacing.md,

@@ -1,0 +1,2 @@
+# Provider updates are shipped in the managed workspace image.
+check_for_update_on_startup = false

@@ -21,6 +21,14 @@ pub async fn detect_catalog(refresh: bool) -> ModelCatalog {
             }
         }
     }
+    // Provider discovery starts extra CLI processes. Keep the last catalog while
+    // included workspace slots are occupied; clients also carry a current catalog.
+    if crate::hosted::enabled() && crate::hosted::session_count().is_none_or(|count| count > 0) {
+        return cache
+            .as_ref()
+            .map(|(_, catalog)| catalog.clone())
+            .unwrap_or_default();
+    }
     let (codex, claude, opencode, antigravity, hermes) = tokio::join!(
         detect_installed("codex"),
         detect_installed("claude"),

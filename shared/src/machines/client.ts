@@ -190,9 +190,20 @@ export let machineRequest = async (
     )
   })
 }
+export const AGENT_CAPACITY_MESSAGE = "Both agent slots are in use. Stop an agent to add another."
+export const AGENT_CAPACITY_DOCS = "https://clawtab.cc/articles/relay-workspace-launch"
 export let launchErrorMessage = (message: string) => message.includes("Both included workspace sessions are in use")
-  ? "Your Relay subscription includes two agents at once on ClawTab. Both slots are in use. Stop a session, or add a local machine or server to run more agents. ClawTab includes 0.5 CPU, 500 MiB memory, 500 MiB storage, and two saved jobs."
+  ? AGENT_CAPACITY_MESSAGE
   : message
+
+export let checkAgentCapacity = async (machine: string) => {
+  if (!state.machines.some((item) => item.id === machine && item.hosted)) return
+  // Ask admission directly: pending launches and sign-in terminals also use slots.
+  let info = await machineHostRequest(machine, { action: "info" })
+  let capacity = info.hosted
+  if (typeof capacity?.usage?.sessions === "number" && typeof capacity?.limits?.sessions === "number"
+    && capacity.usage.sessions >= capacity.limits.sessions) throw new Error(AGENT_CAPACITY_MESSAGE)
+}
 
 // Recover the acknowledgement from the journal without launching a second agent.
 export let recoverMachineOperation = async (machine: string, operationId: string): Promise<MachineMessage> => {

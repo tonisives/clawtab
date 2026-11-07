@@ -7,7 +7,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub const CAPACITY_ERROR: &str = "Both included workspace sessions are in use. Stop a session, connect a machine, or rent a machine.";
+pub const CAPACITY_ERROR: &str = "Both agent slots are in use. Stop an agent to add another.";
 const POLICY: &str = "/etc/clawtab-hosted/policy.json";
 
 #[derive(Clone, Deserialize)]
@@ -42,6 +42,8 @@ struct Entry {
     #[serde(default)]
     owner_start: Option<String>,
     pane: Option<String>,
+    #[serde(default)]
+    host_generation: Option<String>,
 }
 
 struct LockedState {
@@ -75,15 +77,28 @@ impl LockedState {
         })
     }
     fn reap(&mut self) {
-        self.entries.retain(|entry| match entry.pane.as_deref() {
-            Some(pane) => match crate::terminal_backend::pane_process_state(pane) {
-                Ok(
-                    crate::terminal_backend::PaneProcessState::Exited(_)
-                    | crate::terminal_backend::PaneProcessState::Missing,
-                ) => false,
-                _ => true,
-            },
-            None => process_alive(entry.owner) && entry.owner_start == process_start(entry.owner),
+        self.reap_in_generation(host_generation());
+    }
+    fn reap_in_generation(&mut self, generation: Option<String>) {
+        self.entries.retain(|entry| {
+            if entry.host_generation.is_some()
+                && generation.is_some()
+                && entry.host_generation != generation
+            {
+                return false;
+            }
+            match entry.pane.as_deref() {
+                Some(pane) => match crate::terminal_backend::pane_process_state(pane) {
+                    Ok(
+                        crate::terminal_backend::PaneProcessState::Exited(_)
+                        | crate::terminal_backend::PaneProcessState::Missing,
+                    ) => false,
+                    _ => true,
+                },
+                None => {
+                    process_alive(entry.owner) && entry.owner_start == process_start(entry.owner)
+                }
+            }
         });
     }
     fn save(&self) -> Result<(), String> {
@@ -94,6 +109,18 @@ impl LockedState {
             .and_then(|_| std::fs::rename(temporary, &self.path))
             .map_err(|_| "Could not save workspace admission".into())
     }
+}
+
+// PID 1 changes when an included workspace container restarts. Tmux pane IDs
+// can be reused after that restart, so they cannot identify surviving sessions.
+#[cfg(target_os = "linux")]
+fn host_generation() -> Option<String> {
+    let boot = std::fs::read_to_string("/proc/sys/kernel/random/boot_id").ok()?;
+    Some(format!("{}:{}", boot.trim(), process_start(1)?))
+}
+#[cfg(not(target_os = "linux"))]
+fn host_generation() -> Option<String> {
+    None
 }
 
 #[cfg(target_os = "linux")]
@@ -143,6 +170,7 @@ impl SessionLease {
             owner: std::process::id(),
             owner_start: process_start(std::process::id()),
             pane: None,
+            host_generation: host_generation(),
         });
         state.save()?;
         Ok(Self {
@@ -268,16 +296,18 @@ pub fn info() -> Value {
     if !enabled() {
         return Value::Null;
     }
-    let sessions = crate::config::config_dir()
-        .and_then(|root| LockedState::open(&root).ok())
-        .map(|mut state| {
-            state.reap();
-            let count = state.entries.len();
-            let _ = state.save();
-            count
-        });
+    let sessions = session_count();
     let storage = storage_usage();
     json!({"limits":{"sessions":2,"jobs":2,"cpu_millis":500,"memory_bytes":524_288_000_u64,"storage_bytes":524_288_000_u64},"usage":{"sessions":sessions,"jobs":crate::config::jobs::JobsConfig::load().jobs.len(),"storage_bytes":storage},"pending_jobs":pending_jobs().unwrap_or_default()})
+}
+
+pub fn session_count() -> Option<usize> {
+    let root = crate::config::config_dir()?;
+    let mut state = LockedState::open(&root).ok()?;
+    state.reap();
+    let count = state.entries.len();
+    state.save().ok()?;
+    Some(count)
 }
 
 #[cfg(unix)]
@@ -327,6 +357,24 @@ mod tests {
         assert!(SessionLease::acquire(root, 2).is_ok());
     }
     #[test]
+    fn restart_releases_bound_slots_even_if_tmux_reuses_the_pane_id() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut state = LockedState::open(directory.path()).unwrap();
+        state.entries.push(Entry {
+            id: "old-session".into(),
+            owner: 1,
+            owner_start: Some("old-process".into()),
+            pane: Some("%1".into()),
+            host_generation: Some("previous-container".into()),
+        });
+        state.reap_in_generation(Some("current-container".into()));
+        assert!(state.entries.is_empty());
+        state.save().unwrap();
+        drop(state);
+        assert!(SessionLease::acquire(directory.path().into(), 1).is_ok());
+    }
+
+    #[test]
     fn abandoned_reservations_are_recovered() {
         let directory = tempfile::tempdir().unwrap();
         let root = directory.path();
@@ -336,6 +384,7 @@ mod tests {
             owner: 2_000_000_000,
             owner_start: None,
             pane: None,
+            host_generation: host_generation(),
         });
         state.save().unwrap();
         drop(state);

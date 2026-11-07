@@ -33,9 +33,22 @@ pub fn pane_process_state(pane_id: &str) -> Result<PaneProcessState, String> {
     )
     .map_err(|_| "Guarded pane inventory unavailable".to_string())?;
     if !output.status.success() {
+        if server_absent(&String::from_utf8_lossy(&output.stderr)) {
+            return Ok(PaneProcessState::Missing);
+        }
         return Err("Guarded pane inventory unavailable".into());
     }
     parse_state(&String::from_utf8_lossy(&output.stdout), pane_id)
+}
+
+// tmux explicitly reports an absent server after a container restart. Other
+// failures, including permission and connection errors, still leave state unknown.
+fn server_absent(stderr: &str) -> bool {
+    stderr.lines().any(|line| {
+        line.starts_with("no server running on ")
+            || (line.starts_with("error connecting to ")
+                && line.ends_with(" (No such file or directory)"))
+    })
 }
 
 fn parse_state(inventory: &str, pane_id: &str) -> Result<PaneProcessState, String> {
@@ -68,6 +81,20 @@ fn parse_state(inventory: &str, pane_id: &str) -> Result<PaneProcessState, Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stopped_server_means_sessions_are_gone() {
+        assert!(server_absent(
+            "no server running on /tmp/tmux-1000/default\n"
+        ));
+        assert!(server_absent(
+            "error connecting to /tmp/tmux-1000/default (No such file or directory)\n"
+        ));
+        assert!(!server_absent(
+            "error connecting to /tmp/tmux-1000/default (Permission denied)"
+        ));
+        assert!(!server_absent("server exited unexpectedly"));
+    }
 
     #[test]
     fn startup_shell_and_idle_agent_are_alive() {

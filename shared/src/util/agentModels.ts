@@ -95,7 +95,7 @@ export let resolveEnabledModels = (
       .filter((option) => option.provider === provider)
       .flatMap((option) => option.modelId ? [option.modelId] : []);
     let excluded = new Set(disabledModels[provider] ?? []);
-    result[provider] = [...new Set([...(enabled ?? (detected.length ? [] : fallback)), ...detected])]
+    result[provider] = [...new Set([...(enabled ?? (detected.length ? [] : fallback)), ...(provider === "claude" ? fallback : []), ...detected])]
       .filter((id) => !excluded.has(id) && !(provider === "antigravity" && excluded.has(geminiBaseModel(id))) && !isSyntheticAgentModel(id));
   }
   return result;

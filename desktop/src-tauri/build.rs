@@ -35,7 +35,14 @@ fn ensure_engine_bundle_placeholders() -> std::io::Result<()> {
     use std::fs;
     use std::path::PathBuf;
 
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    // A cached build script can run from another worktree on the shared worker.
+    // Cargo supplies the current crate path when it executes the script.
+    let manifest_dir = PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "Cargo manifest directory unavailable",
+        )
+    })?);
     let bundle_path = manifest_dir.join("..").join("target").join("engine-bundle");
     let app_path = bundle_path.join("ClawTab Daemon.app");
 
