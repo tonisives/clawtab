@@ -60,7 +60,9 @@ jobs:
           & $shim daemon ping
           if ($LASTEXITCODE -ne 0) { throw 'First host did not answer IPC' }
           $originalHostPid = (Get-Process clawtab-daemon).Id
-          & $shim session start --detached --keep-running -- powershell.exe -NoProfile -Command 'Write-Output INSTALL_READY; Start-Sleep -Seconds 120'
+          # Keep the installer fixture native; PowerShell launch coverage lives
+          # in managed_sessions, independently of this release-build smoke test.
+          & $shim session start --detached --keep-running -- cmd.exe /D /Q /C 'echo INSTALL_READY & set /p input='
           if ($LASTEXITCODE -ne 0) { throw 'Installed CLI could not launch a session' }
           $session = @((& $shim session list --json | ConvertFrom-Json))[0].id
           $outputReady = $false
