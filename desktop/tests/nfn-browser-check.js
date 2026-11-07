@@ -1454,8 +1454,10 @@
   window.fixture.records.set(outreach.id,outreach);window.nfn.receive(window.fixture.snapshot(outreach.id));
   window.nfn.setPlacement({placement:"right",max_width:1000,max_height:1600,list_max_height:1600,reduce_motion:true});
   await sleep(50);
-  assert(document.querySelector('.outreach-review .social-post') && document.querySelector('.outreach-crm'), "CRM message drafts use a rich source-linked card");
-  for (const link of document.querySelectorAll('.outreach-links a')) {
+  assert(document.querySelector('.outreach-review .social-post') && !document.querySelector('.outreach-links'), "CRM draft links move to Open");
+  document.querySelector('.open-session').click(); await sleep(30);
+  assert([...document.querySelectorAll('.menu-link')].map(node => node.textContent).join(',') === 'Original post,Profile,CRM,Agent', 'Open lists each draft destination');
+  for (const link of document.querySelectorAll('.menu-panel a')) {
     assert(getComputedStyle(link).cursor === 'pointer', link.textContent + " has an explicit pointing hand for passive native hover");
     const before = window.fixture.nativeEvents.length;
     const event = new MouseEvent('click', { bubbles: true, cancelable: true });
@@ -1464,14 +1466,15 @@
     assert(event.defaultPrevented && opened.length === 1 && opened[0].text === link.href, link.textContent + " opens its exact URL through the native bridge");
   }
   assert(document.querySelector('.open-session') && !document.querySelector('.social-decisions'), "CRM cards can resume Codex and keep approval in CRM");
+  document.querySelector('.menu-heading .close').click(); await sleep(30);
   const originalId = outreach.id, originalCreated = outreach.created_at;
   outreach.request.data.outreach.body = "Revised preview copy kept on the same card.";
   window.nfn.receive(window.fixture.snapshot()); await sleep(30);
   assert(document.querySelector('.outreach-review').textContent.includes('Revised preview copy kept on the same card.'), "agent content updates refresh the visible preview");
-  assert(window.fixture.records.get(originalId).created_at === originalCreated && document.querySelector('.outreach-links a').href === 'https://reddit.com/r/test/comments/abc', "preview updates keep their card identity, queue position and source links");
-  const stableLink = document.querySelector('.outreach-links a');
+  assert(window.fixture.records.get(originalId).created_at === originalCreated && !document.querySelector('.outreach-links'), "preview updates keep their card identity, queue position and source links");
+  const stableLink = document.querySelector('.open-session');
   window.nfn.receive(window.fixture.snapshot()); await sleep(30);
-  assert(document.querySelector('.outreach-links a') === stableLink, "unchanged snapshots preserve the hovered link node");
+  assert(document.querySelector('.open-session') === stableLink, "unchanged snapshots preserve the hovered link node");
   resizeDrag("s",0,1000);await sleep(30);
   const outreachBody=document.querySelector('.message-content'),outreachPost=document.querySelector('.social-post');
   assert(outreachBody.clientHeight > 800 && outreachBody.scrollHeight <= outreachBody.clientHeight + 1, "tall resized cards use available height without a short inner scroller");
@@ -1480,7 +1483,35 @@
   window.nfn.receive(window.fixture.snapshot());await sleep(30);
   assert(document.querySelector('.email-recipient').textContent === 'To: creator@example.com' && document.querySelector('.email-post .social-title').textContent === 'A resource for your validation episode', "email cards keep recipient, subject and exact draft copy visible");
   assert(!document.querySelector('a[href^="javascript:"]'), "outreach links accept HTTPS destinations only");
-  document.querySelector('.outreach-links a').click();
+  document.querySelector('.open-session').click(); await sleep(30);
+  document.querySelector('.menu-panel a').click();
   assert(window.fixture.nativeEvents.at(-1)?.native === 'external_link' && window.fixture.nativeEvents.at(-1).text === 'https://example.com/contact', "published email links use the native bridge");
+  document.querySelector('.menu-heading .close').click(); await sleep(30);
+  outreach.request.data = {sections:[{id:'posts',title:'Posts',cards:[
+    {id:'first',title:'DJ transition feedback',body:'Specific feedback',data:{outreach:{platform:'Reddit',recipient:'DJ builder',body:'Compare liked transitions with ones chosen for a set.'}},source:{provider:'codex',session_id:'first-session'},open_options:[{label:'Original post',url:'https://reddit.com/first'},{label:'Agent',kind:'agent'}]},
+    {id:'second',title:'Receipt reminder feedback',body:'Account access',open_options:[{label:'CRM',url:'https://crm.tonis.dev/second'},{label:'Invalid',url:'javascript:alert(1)'}]}
+  ]}]};
+  outreach.request.body = 'Overview of two drafts';
+  window.nfn.receive(window.fixture.snapshot()); await sleep(30);
+  assert(document.querySelector('.message').textContent.includes('Overview of two drafts') && document.querySelector('.section-heading').textContent.includes('Posts1 / 2'), 'stack shows overview and named section');
+  assert(document.querySelector('.section-page').textContent.includes('DJ transition feedback') && document.querySelector('.section-previous').disabled, 'stack starts with first post and bounded navigation');
+  document.querySelector('.section-next').click(); await sleep(30);
+  assert(document.querySelector('.section-page').textContent.includes('Receipt reminder feedback') && document.querySelector('.section-next').disabled, 'post navigation stays within the message');
+  document.querySelector('.section-open').click(); await sleep(30);
+  assert(document.querySelectorAll('.menu-panel a').length === 1 && document.querySelector('.menu-panel a').href === 'https://crm.tonis.dev/second', 'each post has its own configurable safe destinations');
+  document.querySelector('.menu-heading .close').click();
+  outreach.request.body = 'Updated overview'; window.nfn.receive(window.fixture.snapshot()); await sleep(30);
+  assert(document.querySelector('.section-page').textContent.includes('Receipt reminder feedback'), 'snapshot updates preserve the selected post');
+  const page = document.querySelector('.section-page');
+  page.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true})); await sleep(30);
+  assert(document.querySelector('.section-page').textContent.includes('DJ transition feedback'), 'keyboard arrows navigate cards');
+  function cardTouch(type, x) {
+    const event = new Event(type,{bubbles:true,cancelable:true});
+    Object.defineProperty(event,'touches',{value:type==='touchend'?[]:[{identifier:1,clientX:x,clientY:100}]});
+    Object.defineProperty(event,'changedTouches',{value:[{identifier:1,clientX:x,clientY:100}]});
+    page.dispatchEvent(event);
+  }
+  cardTouch('touchstart',250);cardTouch('touchmove',150);cardTouch('touchend',100);await sleep(30);
+  assert(document.querySelector('.section-page').textContent.includes('Receipt reminder feedback'), 'horizontal swipe changes the post');
   return { passed: checks.length, checks };
 })()

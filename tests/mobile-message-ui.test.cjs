@@ -634,3 +634,18 @@ test("Open reuses the session targets already loaded by the notification", async
   assert.equal(h.calls.length, 1, "opening a verified pane has no second network wait");
   assert.equal(h.opened[0].request.source.pane_id, "mac-b::%12");
 });
+
+
+test("a card opens its own saved conversation without focusing the desktop", async () => {
+  const h = harness([record("mac-a")]);
+  h.options.host = async (machine, command) => {
+    h.calls.push({ machine, ...command });
+    if (command.op === "get") return record(machine, command.id);
+    if (command.op === "resume") return { source: { pane_id: "%77", session_id: "card-session" } };
+    throw Error(command.op);
+  };
+  await h.controller.execute({ op: "focus", id: "mac-a::same-id", card_id: "post-two" });
+  assert.deepEqual(h.calls.at(-1), { machine:"mac-a", op:"resume", id:"same-id", card_id:"post-two" });
+  assert.equal(h.opened.at(-1).request.source.pane_id,"mac-a::%77");
+  assert.equal(h.opened.at(-1).request.source.session_id,"card-session");
+});

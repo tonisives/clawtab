@@ -118,5 +118,15 @@
   assert(title() === "page-50" && surface.dataset.paging === "settling", "paging continues into unloaded notifications and animates when the page arrives");
   window.nfn.receive({ type: "hide" });
   assert(!document.querySelector(".gallery-page") && !surface.dataset.paging, "hiding the view cancels transitions and removes detached previews");
+  const stack = fixture.records.get('page-50');
+  stack.request.data = {sections:[{id:'posts',title:'Posts',cards:[{id:'one',title:'First post',body:'First reply'},{id:'two',title:'Second post',body:'Second reply'}]}]};
+  window.nfn.receive({ ...fixture.snapshot(), records:[stack,...fixture.snapshot().records], remote:true });
+  window.nfn.receive({type:'open_record',id:'page-50'});
+  const page = document.querySelector('.section-page');
+  swipe(-120,0,page);
+  assert(title() === 'page-50' && document.querySelector('.section-page').textContent.includes('Second post'), 'swiping Posts changes its card without paging the message');
+  swipe(120,0,document.querySelector('.section-page'));
+  assert(title() === 'page-50' && document.querySelector('.section-page').textContent.includes('First post'), 'reverse swipe returns within the section');
+  assert(!swipe(0,120,document.querySelector('.section-page')).defaultPrevented, 'post content keeps vertical scrolling');
   return { passed: checks.length, checks, viewport: { width: innerWidth, height: innerHeight } };
 })()

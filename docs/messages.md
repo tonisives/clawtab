@@ -184,3 +184,53 @@ agent_definitions:
 Focus commands receive `CWT_AGENT_ID`, `CWT_AGENT_TYPE`, `CWT_AGENT_DATA`, and
 `CWT_AGENT_ORIGIN` as environment variables. They have a ten second timeout.
 Plain messages, jobs, browser messages, and standalone reminders remain supported.
+
+### Overviews and swipeable sections
+
+An update can keep an overview in `body` and include named card sections in
+`data.sections`. Section IDs are unique within the message and card IDs are unique
+across its sections. Desktop arrows and keyboard navigation, and mobile swipes,
+change cards within a section while preserving the overview and message identity.
+This layout works for research results, reviews and other collections.
+
+```json
+{
+  "kind": "update",
+  "template": "update",
+  "title": "Outreach review",
+  "body": "Seven drafts ready for review.",
+  "data": {
+    "sections": [{
+      "id": "posts",
+      "title": "Posts",
+      "cards": [{
+        "id": "draft-1",
+        "title": "Feedback on a DJ app",
+        "body": "The author is testing transition recommendations.",
+        "data": {"outreach": {"platform": "Reddit", "recipient": "builder", "body": "Suggested reply text"}},
+        "source": {"provider": "codex", "session_id": "saved-session", "cwd": "/workspace/crm"},
+        "open_options": [
+          {"label": "Original post", "url": "https://reddit.com/r/example/comments/post"},
+          {"label": "Profile", "url": "https://reddit.com/user/builder"},
+          {"label": "CRM", "url": "https://crm.tonis.dev/leads/lead"},
+          {"label": "Agent", "kind": "agent"}
+        ]
+      }]
+    }]
+  }
+}
+```
+
+Cards support Markdown `body`, optional `media`, an outreach preview in
+`data.outreach`, and a recorded agent `source`. Agent opens resume that card's
+conversation; each card remembers its opened pane separately. Without a card
+source, Agent uses the message source.
+
+Set `open_options` on a card or `data.open_options` on a message to configure
+its Open menu. URL destinations use HTTPS and `kind: "agent"` opens the recorded
+agent. An empty array hides the destinations. Outreach previews default to
+Original post, Profile, CRM and Agent, plus Published email when available. Their
+links appear in Open instead of below the draft.
+
+Use at most 16 sections and 100 cards per section, within the existing payload
+size limit. Sections remain independent of ordinary agent update threads.

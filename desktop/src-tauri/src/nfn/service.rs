@@ -770,9 +770,51 @@ impl Service {
                 let record = self.store.get(&id)?;
                 return Ok(json!({"targets": session_targets(&record.request.source)?}));
             }
-            NfnCommand::Resume { id } => {
+            NfnCommand::Resume { id, card_id } => {
                 let _guard = self.mutation.lock().await;
                 let record = self.store.get(&id)?;
+                if let Some(card_id) = card_id {
+                    let item = record.request.data["sections"]
+                        .as_array()
+                        .and_then(|sections| {
+                            sections
+                                .iter()
+                                .filter_map(|section| section["cards"].as_array())
+                                .flatten()
+                                .find(|card| card["id"].as_str() == Some(&card_id))
+                        })
+                        .ok_or("Message card not found")?;
+                    let mut target = record.clone();
+                    if let Some(source) = item.get("source") {
+                        target.request.source =
+                            serde_json::from_value(source.clone()).map_err(|e| e.to_string())?;
+                    }
+                    target.request.data["opened_session_pane"] =
+                        item["opened_session_pane"].clone();
+                    let targets = session_targets(&target.request.source)?;
+                    if let Some(pane) = targets
+                        .first()
+                        .and_then(|target| target["pane_id"].as_str())
+                    {
+                        target.request.source.pane_id = Some(pane.into());
+                    } else {
+                        self.open_saved_session(&target, false, Some(&card_id))
+                            .await?;
+                        let saved = self.store.get(&id)?;
+                        target.request.source.pane_id = saved.request.data["sections"]
+                            .as_array()
+                            .and_then(|sections| {
+                                sections
+                                    .iter()
+                                    .filter_map(|section| section["cards"].as_array())
+                                    .flatten()
+                                    .find(|card| card["id"].as_str() == Some(&card_id))
+                            })
+                            .and_then(|card| card["opened_session_pane"].as_str())
+                            .map(str::to_owned);
+                    }
+                    return Ok(json!({"source":target.request.source}));
+                }
                 if record.request.deliver_at.is_none() || record.request.source.session_id.is_none()
                 {
                     return Err("Only a linked reminder can resume a saved session".into());
@@ -781,7 +823,7 @@ impl Service {
                 if !targets.is_empty() {
                     return Ok(json!({"targets":targets}));
                 }
-                self.open_saved_session(&record, false).await?;
+                self.open_saved_session(&record, false, None).await?;
                 let mut record = self.store.get(&id)?;
                 record.request.source.pane_id = record.request.data["opened_session_pane"]
                     .as_str()
@@ -790,8 +832,39 @@ impl Service {
                     json!({"record":surface_record(record, &self.ctx.settings.lock().pinned_items)}),
                 );
             }
-            NfnCommand::Focus { id, pane_id } => {
+            NfnCommand::Focus {
+                id,
+                pane_id,
+                card_id,
+            } => {
                 let record = self.store.get(&id)?;
+                if let Some(card_id) = card_id {
+                    let item = record.request.data["sections"]
+                        .as_array()
+                        .and_then(|sections| {
+                            sections
+                                .iter()
+                                .filter_map(|section| section["cards"].as_array())
+                                .flatten()
+                                .find(|card| card["id"].as_str() == Some(&card_id))
+                        })
+                        .ok_or("Message card not found")?;
+                    let mut target = record.clone();
+                    if let Some(source) = item.get("source") {
+                        target.request.source =
+                            serde_json::from_value(source.clone()).map_err(|e| e.to_string())?;
+                    }
+                    target.request.data["opened_session_pane"] =
+                        item["opened_session_pane"].clone();
+                    if saved_conversation(&target) {
+                        self.open_saved_session(&target, true, Some(&card_id))
+                            .await?;
+                    } else {
+                        validate_source(&target.request.source)?;
+                        focus_source(&target.request.source).await?;
+                    }
+                    return Ok(json!({"focused":true,"record":self.store.get(&id)?}));
+                }
                 if let Some(pane) = pane_id {
                     if record.request.source.pane_id.as_deref() != Some(&pane) {
                         return Err("Open the recorded agent pane".into());
@@ -1025,7 +1098,7 @@ impl Service {
 
     async fn focus_notification(&self, record: &NfnRecord) -> Result<Value, String> {
         if job_notice(record) || record.request.deliver_at.is_some() {
-            self.open_saved_session(record, true).await?;
+            self.open_saved_session(record, true, None).await?;
             return Ok(json!({"focused":true,"record":self.store.get(&record.id)?}));
         }
         if let Some(agent) = &record.request.source.agent {
@@ -1086,7 +1159,7 @@ impl Service {
             return Ok(json!({"focused":true}));
         }
         if resumable_notice(record) {
-            self.open_saved_session(record, true).await?;
+            self.open_saved_session(record, true, None).await?;
         } else {
             validate_source(&record.request.source)?;
             focus_source(&record.request.source).await?;
@@ -1094,7 +1167,37 @@ impl Service {
         Ok(json!({"focused":true, "record":self.store.get(&record.id)?}))
     }
 
-    async fn open_saved_session(&self, record: &NfnRecord, focus: bool) -> Result<(), String> {
+    fn save_opened_session(
+        &self,
+        record: &NfnRecord,
+        card_id: Option<&str>,
+        pane: &str,
+    ) -> Result<(), String> {
+        let mut updated = self.store.get(&record.id)?;
+        if let Some(id) = card_id {
+            let item = updated.request.data["sections"]
+                .as_array_mut()
+                .and_then(|sections| {
+                    sections
+                        .iter_mut()
+                        .filter_map(|section| section["cards"].as_array_mut())
+                        .flatten()
+                        .find(|card| card["id"].as_str() == Some(id))
+                })
+                .ok_or("Message card not found")?;
+            item["opened_session_pane"] = json!(pane);
+        } else {
+            updated.request.data["opened_session_pane"] = json!(pane);
+        }
+        self.store.save(&mut updated)
+    }
+
+    async fn open_saved_session(
+        &self,
+        record: &NfnRecord,
+        focus: bool,
+        card_id: Option<&str>,
+    ) -> Result<(), String> {
         let mut source = record.request.source.clone();
         if let Some(pane) = record.request.data["opened_session_pane"]
             .as_str()
@@ -1189,9 +1292,7 @@ impl Service {
                 },
                 &[],
             )?;
-            let mut updated = record.clone();
-            updated.request.data["opened_session_pane"] = json!(info.id);
-            self.store.save(&mut updated)?;
+            self.save_opened_session(record, card_id, &info.id)?;
             source.pane_id = Some(info.id);
             return if focus {
                 focus_source(&source).await
@@ -1217,9 +1318,7 @@ impl Service {
             let _ = crate::tmux::kill_pane(&pane);
             return Err(error);
         }
-        let mut updated = record.clone();
-        updated.request.data["opened_session_pane"] = json!(pane);
-        self.store.save(&mut updated)?;
+        self.save_opened_session(record, card_id, &pane)?;
         source.pane_id = Some(pane);
         if focus {
             focus_source(&source).await
@@ -1242,7 +1341,7 @@ impl Service {
                 .ok_or("Session target has no pane")?
                 .to_owned()
         } else {
-            self.open_saved_session(record, false).await?;
+            self.open_saved_session(record, false, None).await?;
             self.store.get(&record.id)?.request.data["opened_session_pane"]
                 .as_str()
                 .ok_or("Could not open the saved session")?

@@ -7,6 +7,8 @@
   const historyReplySent = new Set();
   let historyRecordId = null;
   const socialDrafts = new Map();
+  const sectionSelections = new Map();
+  let openContext = null;
   // Submitted cards stay out of this pass until the daemon confirms their state.
   const actionsInProgress = new Map(), actionErrors = new Map(), retryIds = new Set();
   const contextErrors = new Map(), shellInputErrors = new Set();
@@ -320,7 +322,7 @@
   }
   function threadKey(record) {
     if (record.request.deliver_at) return JSON.stringify([record.machine_id, "reminder", record.id]);
-    if (record.request.template === "social-review" || record.request.data?.outreach) return JSON.stringify([record.machine_id, "review", record.id]);
+    if (record.request.template === "social-review" || (record.request.data?.outreach || record.request.data?.sections)) return JSON.stringify([record.machine_id, "review", record.id]);
     const job = record.request.source?.job_id;
     return job ? JSON.stringify([record.machine_id, "job", job]) : agentKey(record);
   }
@@ -1170,16 +1172,98 @@
       post.append(el("div", "social-body", draft.body));
     }
     section.append(el("div", "block-label", email ? "Email draft" : "Message draft"), post);
-    const links = el("div", "outreach-links");
-    for (const [field, label] of [["source_url", "Original post"], ["profile_url", "Recipient profile"], ["email_source", "Published email"], ["review_url", "Review in CRM"]]) {
-      try {
-        const url = new URL(draft[field]);
-        if (url.protocol !== "https:") continue;
-        links.append(externalLink(label, url.href, field === "review_url" ? "outreach-crm" : ""));
-      } catch {}
-    }
-    section.append(links);
     return section;
+  }
+  function openOptions(record, item = null) {
+    const request = item || record.request, data = request.data || {}, draft = data.outreach;
+    const configured = request.open_options ?? data.open_options;
+    const options = Array.isArray(configured) ? configured : draft ? [
+      { label: "Original post", url: draft.source_url }, { label: "Profile", url: draft.profile_url },
+      { label: "CRM", url: draft.review_url }, { label: "Published email", url: draft.email_source },
+      { label: "Agent", kind: "agent" }
+    ] : [];
+    return options.filter(option => {
+      if (!option || typeof option.label !== "string") return false;
+      if (option.kind === "agent") {
+        const source = item?.source || record.request.source;
+        return Boolean(source?.pane_id || source?.session_id || source?.agent);
+      }
+      try { return new URL(option.url).protocol === "https:"; } catch { return false; }
+    });
+  }
+  function showOpenMenu(record, item = null) {
+    openContext = { record, item, options: openOptions(record, item) };
+    host.querySelector('.menu-overlay[data-menu="open"]')?.remove();
+    if (menu === "open") menu = null;
+    toggleMenu("open");
+  }
+  function messageSections(record, node) {
+    const sections = record.request.data?.sections;
+    if (!Array.isArray(sections)) return null;
+    const container = el("div", "message-sections");
+    for (const section of sections) {
+      if (!Array.isArray(section.cards) || !section.cards.length) continue;
+      const region = el("section", "message-section"); region.setAttribute("aria-label", section.title || "Cards");
+      const header = el("div", "section-heading"), title = el("h2", "", section.title || "Cards");
+      const key = JSON.stringify([record.id, section.id]);
+      let selected = sectionSelections.get(key);
+      let index = Math.max(0, section.cards.findIndex(item => item.id === selected));
+      const count = el("span", "meta"), page = el("div", "section-page");
+      page.tabIndex = 0; page.setAttribute("aria-roledescription", "carousel");
+      const previous = button("Previous", () => select(index - 1), "utility section-previous");
+      const next = button("Next", () => select(index + 1), "utility section-next");
+      const open = button("Open", () => showOpenMenu(record, section.cards[index]), "primary section-open");
+      open.setAttribute("aria-haspopup", "dialog");
+      const controls = el("div", "section-controls"); controls.append(previous, open, next);
+      header.append(title, count); region.append(header, page, controls); container.append(region);
+      function select(value) {
+        index = Math.max(0, Math.min(value, section.cards.length - 1));
+        const item = section.cards[index]; sectionSelections.set(key, item.id);
+        node._activeSectionCard = item;
+        count.textContent = `${index + 1} / ${section.cards.length}`;
+        page.replaceChildren(); page.setAttribute("aria-label", `${section.title || "Cards"}: ${index + 1} of ${section.cards.length}`);
+        if (item.title) page.append(el("h3", "section-card-title", item.title));
+        const virtual = { ...record, request: { ...record.request, ...item } };
+        if (item.body) page.append(messageBody(virtual));
+        const outreach = outreachCard(virtual); if (outreach) page.append(outreach);
+        else if (item.media?.length) page.append(mediaView(virtual, item.media.map((_, i) => i)));
+        open.disabled = !openOptions(record, item).length;
+        previous.disabled = index === 0; next.disabled = index === section.cards.length - 1;
+        if (!reducedMotion.matches) page.animate([{ opacity: .3, transform: "translateX(8px)" }, { opacity: 1, transform: "translateX(0)" }], { duration: 500, easing: "cubic-bezier(0.22,1,0.36,1)" });
+      }
+      let start = null;
+      page.addEventListener("touchstart", event => {
+        if (event.touches.length !== 1 || event.target.closest("a,button,input,textarea,video,audio")) { start = null; return; }
+        const touch = event.touches[0]; start = { x: touch.clientX, y: touch.clientY, at: performance.now() };
+      }, { passive: true });
+      page.addEventListener("touchmove", event => {
+        if (!start || event.touches.length !== 1) return;
+        const touch = event.touches[0], dx = touch.clientX - start.x, dy = touch.clientY - start.y;
+        if (Math.abs(dy) > 12 && Math.abs(dy) >= Math.abs(dx)) start = null;
+        else if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.5) event.preventDefault();
+      }, { passive: false });
+      page.addEventListener("touchend", event => {
+        const point = start; start = null;
+        if (!point || performance.now() - point.at > 350 || event.touches.length || window.getSelection()?.isCollapsed === false) return;
+        const touch = event.changedTouches[0]; if (!touch) return;
+        const dx = touch.clientX - point.x, dy = touch.clientY - point.y;
+        if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy) * 1.5) select(index + (dx < 0 ? 1 : -1));
+      }, { passive: true });
+      page.addEventListener("touchcancel", () => { start = null; });
+      let lastWheel = 0;
+      page.addEventListener("wheel", event => {
+        if (Math.abs(event.deltaX) < 20 || Math.abs(event.deltaX) <= Math.abs(event.deltaY) * 1.5) return;
+        event.preventDefault();
+        if (performance.now() - lastWheel < 500) return;
+        lastWheel = performance.now(); select(index + (event.deltaX > 0 ? 1 : -1));
+      }, { passive: false });
+      page.addEventListener("keydown", event => {
+        if (event.target !== page || !["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+        event.preventDefault(); event.stopPropagation(); select(index + (event.key === "ArrowLeft" ? -1 : 1));
+      });
+      select(index);
+    }
+    return container;
   }
   function socialReview(record, node) {
     const targets = record.request.data?.targets;
@@ -1352,6 +1436,7 @@
       if (label) body.append(el("div", "notification-title source-attribution", label));
     }
     if (agent && !record.question_id && record.request.title !== identity.group && record.request.title !== identity.title) body.append(el("div", "notification-title", record.request.title));
+    if (Array.isArray(record.request.data?.sections) && record.request.body) body.append(el("h2", "section-overview-title", "Overview"));
     const messages = cardMessages(record);
     node._messages = [];
     if (messages.length > 1) {
@@ -1377,6 +1462,8 @@
       if (snapshot.shell_only && content.scrollTop !== previousScroll) native({ native: "shell_scroll", direction: content.scrollTop < previousScroll ? "up" : "down" });
       previousScroll = content.scrollTop;
     });
+    const sections = messageSections(record, node);
+    if (sections) body.append(sections);
     const outreach = outreachCard(record);
     if (outreach) body.append(outreach);
     const bundle = socialReview(record, node);
@@ -1453,6 +1540,13 @@
       const focus = choices.find(action => action.kind === "focus");
       const openSession = button("Open", () => focus ? act(record.id, focus.id, "") : focusSession(record.id, { op: "focus", id: record.id }), "primary open-session");
       openSession.setAttribute("aria-label", "Open session"); openSession.title = "Open the originating session"; node._openSession = openSession; utilities.append(openSession);
+    }
+    if (sections || openOptions(record).length) {
+      utilities.querySelector(".open-session")?.remove();
+      const open = button("Open", () => showOpenMenu(record, node._activeSectionCard || null), "primary open-session");
+      open.setAttribute("aria-haspopup", "dialog"); open.setAttribute("aria-label", "Open destinations");
+      node._openAvailable = () => openOptions(record, node._activeSectionCard || null).length > 0;
+      node._openSession = open; utilities.append(open);
     }
     let openJob = null;
     if (record.request.source?.job_id && record.details_available !== false) {
@@ -1574,13 +1668,13 @@
     const busy = actionsInProgress.has(current);
     card._status.classList.toggle("alert", alert && isPending);
     card._status.textContent = record.ignored ? "Ignored" : record.status === "delivering" || busy ? "Sending..." : isPending ? (alert ? "! Alert" : "") : record.status === "resolved" ? (alert ? "Recovered" : update ? "Seen" : "Sent") : record.status;
-    card.querySelector("[aria-haspopup=menu]")?.setAttribute("aria-expanded", String(menu === "acknowledge"));
+    card.querySelector(".acknowledge[aria-haspopup=menu], [data-action-id=acknowledge][aria-haspopup=menu]")?.setAttribute("aria-expanded", String(menu === "acknowledge"));
     card._options?.setAttribute("aria-expanded", String(menu === "options" || menu === "agent"));
     const feedback = Boolean(drafts.get(record.id)?.trim());
     for (const control of card._actions.querySelectorAll("button")) control.disabled = control.dataset.actionId === "acknowledge"
       ? busy || Boolean(record.dismissed_at || record.ignored)
       : !isPending || busy || Boolean(record.question_id && feedback) || Boolean(revisionChoice(record) && control.dataset.actionId === "post" && feedback);
-    if (card._openSession) card._openSession.disabled = busy;
+    if (card._openSession) card._openSession.disabled = busy || Boolean(card._openAvailable && !card._openAvailable());
     if (card._acknowledge) card._acknowledge.disabled = busy || Boolean(record.dismissed_at || record.ignored);
     if (historyCard(record)) card.querySelectorAll('.acknowledge, [data-action-id="acknowledge"]').forEach(control => control.remove());
     if (card._send) card._send.disabled = !canReply || busy || !card._reply.value.trim();
@@ -2009,12 +2103,20 @@
     existing?.remove();
     const record = records.get(current), overlay = el("div", "menu-overlay");
     overlay.dataset.menu = menu; overlay.dataset.id = current || "";
-    const panel = el("div", "menu-panel"); panel.setAttribute("role", "dialog"); panel.setAttribute("aria-label", menu === "sessions" ? "Choose a pane" : menu === "agent" ? "Agent controls" : "Notification options");
+    const panel = el("div", "menu-panel"); panel.setAttribute("role", "dialog"); panel.setAttribute("aria-label", menu === "sessions" ? "Choose a pane" : menu === "agent" ? "Agent controls" : menu === "open" ? "Open" : "Notification options");
     const heading = el("div", "menu-heading");
     if (menu === "agent") { const back = button("‹", () => toggleMenu("options"), "utility nav-step"); back.setAttribute("aria-label", "Back to options"); heading.append(back); }
-    heading.append(el("span", "", menu === "sessions" ? "Choose a pane" : menu === "agent" ? "Agent controls" : "Options"));
+    heading.append(el("span", "", menu === "sessions" ? "Choose a pane" : menu === "agent" ? "Agent controls" : menu === "open" ? "Open" : "Options"));
     const close = button("×", () => toggleMenu(menu), "utility close"); close.setAttribute("aria-label", "Close menu"); heading.append(close); panel.append(heading);
-    if (menu === "sessions") {
+    if (menu === "open" && openContext) {
+      for (const option of openContext.options) {
+        const action = option.kind === "agent" ? button(option.label, () => {
+          const context = openContext; menu = null;
+          focusSession(context.record.id, { op: "focus", id: context.record.id, ...(context.item ? { card_id: context.item.id } : {}) });
+        }, "utility menu-link") : externalLink(option.label, option.url, "menu-link");
+        panel.append(action);
+      }
+    } else if (menu === "sessions") {
       const targets = sessionTargets.get(record.id) || [];
       panel.append(el("p", "session-locations-summary", `This conversation is open in ${targets.length} panes.`));
       for (const target of targets) {

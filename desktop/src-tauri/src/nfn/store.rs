@@ -648,6 +648,22 @@ mod tests {
     }
 
     #[test]
+    fn section_stacks_are_independent_and_require_unique_card_ids() {
+        let store = Store::from_connection(Connection::open_in_memory().unwrap()).unwrap();
+        let mut request = outreach_request();
+        request.data =
+            serde_json::json!({"sections":[{"id":"posts","cards":[{"id":"one","body":"First"}]}]});
+        let (stack, _) = store.send(request.clone(), None).unwrap();
+        let mut summary = request.clone();
+        summary.data = serde_json::json!({});
+        let (summary, _) = store.send(summary, None).unwrap();
+        assert!(store.supersede_previous(&summary).unwrap().is_empty());
+        assert_eq!(store.get(&stack.id).unwrap().status, "pending");
+        request.data["sections"][0]["cards"] = serde_json::json!([{"id":"one"},{"id":"one"}]);
+        assert!(request.validate().unwrap_err().contains("unique"));
+    }
+
+    #[test]
     fn outreach_drafts_are_independent_of_summaries_and_each_other() {
         let store = Store::from_connection(Connection::open_in_memory().unwrap()).unwrap();
         let (first, _) = store.send(outreach_request(), None).unwrap();

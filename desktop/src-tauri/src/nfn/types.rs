@@ -298,7 +298,9 @@ impl NfnRequest {
     }
 
     pub fn independent_review(&self) -> bool {
-        self.template == "social-review" || self.data["outreach"].is_object()
+        self.template == "social-review"
+            || self.data["outreach"].is_object()
+            || self.data["sections"].is_array()
     }
 
     pub fn needs_response(&self) -> bool {
@@ -366,6 +368,40 @@ impl NfnRequest {
                 > 256 * 1024
         {
             return Err("Notification payload is too large".into());
+        }
+        if let Some(sections) = self.data.get("sections") {
+            let sections = sections.as_array().ok_or("sections must be an array")?;
+            if sections.len() > 16 {
+                return Err("Use at most 16 message sections".into());
+            }
+            let mut ids = std::collections::HashSet::new();
+            let mut section_ids = std::collections::HashSet::new();
+            for section in sections {
+                let id = section["id"]
+                    .as_str()
+                    .filter(|id| !id.is_empty())
+                    .ok_or("Sections need IDs")?;
+                if !section_ids.insert(id) {
+                    return Err("Section IDs must be unique".into());
+                }
+                let cards = section["cards"].as_array().ok_or("Sections need cards")?;
+                if cards.len() > 100 {
+                    return Err("Use at most 100 cards per section".into());
+                }
+                for card in cards {
+                    let id = card["id"]
+                        .as_str()
+                        .filter(|id| !id.is_empty())
+                        .ok_or("Cards need IDs")?;
+                    if !ids.insert(id) {
+                        return Err("Card IDs must be unique across sections".into());
+                    }
+                    if let Some(source) = card.get("source") {
+                        serde_json::from_value::<NfnSource>(source.clone())
+                            .map_err(|e| e.to_string())?;
+                    }
+                }
+            }
         }
         for media in &self.media {
             if !["image", "video"].contains(&media.kind.as_str())
@@ -616,6 +652,8 @@ pub enum NfnCommand {
     Focus {
         id: String,
         #[serde(default)]
+        card_id: Option<String>,
+        #[serde(default)]
         pane_id: Option<String>,
     },
     SessionTargets {
@@ -623,6 +661,8 @@ pub enum NfnCommand {
     },
     Resume {
         id: String,
+        #[serde(default)]
+        card_id: Option<String>,
     },
     Reveal {
         id: String,

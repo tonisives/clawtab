@@ -127,6 +127,15 @@ export function messageSurfaceController(options: Options) {
       if (op === "session_targets") return sessionTargets(machine, id);
       const focusAction = op === "respond" && record.request.actions.find(action => action.id === command.action_id)?.kind === "focus";
       if (op === "focus" || focusAction) {
+        if (typeof command.card_id === "string") {
+          const value = await options.host(machine, { op: "resume", id, card_id: command.card_id });
+          if (!value.source?.pane_id) throw new Error("This card has no available agent session");
+          const target = { ...record, request: { ...record.request, source: { ...value.source,
+            pane_id: resourceKey(machine, value.source.pane_id),
+          } } };
+          options.navigate(target);
+          return { focused: true };
+        }
         let target = record;
         if (record.request.source.session_id) {
           const key = `${machine}::${id}`, verified = verifiedTargets.get(key);

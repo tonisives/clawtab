@@ -375,6 +375,19 @@ button.session-locations{font-size:14px;line-height:20px;padding:4px 8px}
 .outreach-review > .block-label { margin-bottom: 8px; }
 .email-recipient { margin-bottom: 12px; color: var(--muted); overflow-wrap: anywhere; }
 .email-post .social-title { padding-bottom: 12px; border-bottom: 1px solid var(--line); }
-.outreach-links { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
-.outreach-links a { color: #aeb8ed; font-size: 12px; }
-.outreach-crm { font-weight: 600; }
+
+.message-sections { margin-top: 16px; }
+.message-section + .message-section { margin-top: 24px; }
+.section-heading, .section-controls { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.section-heading { margin-bottom: 12px; }
+.section-heading h2 { margin: 0; font-size: 16px; line-height: 24px; font-weight: 600; }
+.section-card-title { margin: 0 0 8px; font-size: 14px; line-height: 20px; font-weight: 600; }
+.section-page { min-width: 0; touch-action: pan-y; }
+.section-page:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.section-controls { margin-top: 12px; }
+.section-controls button { font-size: 14px; line-height: 20px; }
+.menu-panel a.menu-link { display: block; padding: 8px 12px; color: inherit; text-decoration: none; border-radius: 6px; }
+.menu-panel a.menu-link:hover { background: #272727; }
+.menu-panel a.menu-link:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.section-overview-title { margin: 16px 0 8px; font-size: 16px; line-height: 24px; font-weight: 600; }

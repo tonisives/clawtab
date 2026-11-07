@@ -97,7 +97,7 @@
     if (event.touches.length !== 1 || selecting()) return;
     // Standalone shell details use the native back gesture, not message paging.
     const card = event.target.closest("#surface:not(.menu-open):not(.shell-only) > .card");
-    if (!card || event.target.closest(swipeControl)) return;
+    if (!card || event.target.closest(swipeControl) || event.target.closest(".message-section")) return;
     for (let node = event.target; node && node !== card; node = node.parentElement) {
       if (node.scrollWidth > node.clientWidth + 1 && /auto|scroll/.test(getComputedStyle(node).overflowX)) return;
     }
