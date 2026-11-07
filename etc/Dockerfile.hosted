@@ -39,6 +39,8 @@ COPY etc/machine-tmux.conf /etc/tmux.conf
 ENV HOME=/home/clawtab HERMES_HOME=/home/clawtab/.hermes HERMES_WRITE_SAFE_ROOT=/home/clawtab
 ENV PATH="/home/clawtab/.local/bin:/usr/local/bin:/opt/hermes/.venv/bin:/usr/bin:/bin"
 ENV NPM_CONFIG_PREFIX=/home/clawtab/.local PYTHONDONTWRITEBYTECODE=1
+# Provider updates ship in this image instead of filling the subscriber's home.
+ENV DISABLE_AUTOUPDATER=1 OPENCODE_DISABLE_AUTOUPDATE=true
 ENV LANG=C.UTF-8 LC_ALL=C.UTF-8 COLORTERM=truecolor
 ENV NODE_OPTIONS=--max-old-space-size=128
 USER clawtab
