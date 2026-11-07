@@ -94,6 +94,11 @@ export let resolveEnabledModels = (
     // remain selectable in settings without flooding the launch menu.
     if (!defaults.length && provider !== "hermes") defaults = (detectedModels[provider] ?? []).map(([id]) => id).slice(0, 3);
     if (provider === "hermes") defaults = (detectedModels.hermes ?? []).map(([id]) => id).slice(0, 1);
+    if (provider === "antigravity" && enabled === undefined) {
+      let bases = new Set(defaults.map(geminiBaseModel));
+      let variants = [...(detectedModels.antigravity ?? []).map(([id]) => id), ...publishedModelOptions().filter((model) => model.provider === provider).flatMap((model) => model.modelId ? [model.modelId] : [])];
+      defaults = [...defaults, ...variants.filter((id) => geminiModelEffort(id) && bases.has(geminiBaseModel(id)))];
+    }
     let excluded = new Set(disabledModels[provider] ?? []);
     if (enabled === undefined && defaults.length === 0) continue;
     result[provider] = [...new Set(enabled ?? defaults)]
