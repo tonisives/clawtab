@@ -738,6 +738,16 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
         if (self.surfaceWidth < 1 || self.surfaceHeight < 1) { [self.panel orderOut:nil]; [self releaseTextFocus]; return; }
         [self positionWidth:self.surfaceWidth height:self.surfaceHeight];
         if (!self.panel.visible && (self.settingsVisible || self.notificationsVisible || [self.snapshot[@"visible"] boolValue]) && [self allowsOverlay]) [self.panel orderFrontRegardless];
+    } else if ([operation isEqual:@"copy_text"]) {
+        NSString *text = value[@"text"];
+        BOOL copied = NO;
+        if ([text isKindOfClass:NSString.class]) {
+            [NSPasteboard.generalPasteboard clearContents];
+            copied = [NSPasteboard.generalPasteboard setString:text forType:NSPasteboardTypeString];
+        }
+        NSMutableDictionary *result = [@{@"type":@"copy_result", @"token":value[@"token"] ?: @""} mutableCopy];
+        if (!copied) result[@"error"] = @"Could not copy reply";
+        [self push:result];
     } else if ([operation isEqual:@"external_link"]) {
         NSString *text = value[@"text"];
         if ([text isKindOfClass:NSString.class]) {

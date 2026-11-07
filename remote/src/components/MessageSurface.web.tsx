@@ -74,6 +74,10 @@ export function MessageSurface(props: MessageSurfaceProps) {
       const value = event.data.nfn as SurfaceMessage;
       if (value.native === "chrome") setReply(Boolean((value as SurfaceMessage & { reply?: boolean }).reply));
       if (value.native === "external_link" && typeof value.text === "string" && /^(https?:\/\/|mailto:)/i.test(value.text)) window.open(value.text, "_blank", "noopener,noreferrer");
+      if (value.native === "copy_text" && typeof value.text === "string") {
+        try { await navigator.clipboard.writeText(value.text); send({ type: "copy_result", token: value.token }); }
+        catch { send({ type: "copy_result", token: value.token, error: "Could not copy reply" }); }
+      }
       if (value.preview_ready) { ready.current = true; selected.current = null; synchronize(); }
       if (value.native) latest.current.onNative?.(value);
       if (!value.command || !value.token) return;

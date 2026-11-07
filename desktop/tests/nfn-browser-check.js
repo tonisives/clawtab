@@ -492,7 +492,7 @@
   window.fixture.records.clear();
   const job = window.fixture.record("job", 1); job.request.template = "update"; job.request.source = { job_id: "project/fault-updates" }; job.request.title = "Job failed";
   window.fixture.records.set(job.id, job); window.nfn.receive(window.fixture.snapshot(job.id));
-  assert(!document.querySelector(".options-toggle, .reply") && !document.querySelector(".status").textContent && buttons().some(button => button.textContent === "Go to job"), "job cards offer Go to job without agent options or the inert Update label");
+  assert(document.querySelector(".options-toggle") && !document.querySelector(".reply") && !document.querySelector(".status").textContent && buttons().some(button => button.textContent === "Go to job"), "job cards offer Go to job and notification options without the inert Update label");
   assert(!document.querySelector(".open-session") && document.querySelector(".footer-actions .open-job"), "jobs without conversations replace disabled Open with Go to job in the footer");
   click("Go to job"); await sleep(30);
   assert(window.fixture.calls.some(command => command.op === "open_job" && command.id === job.id), "Go to job requests the originating job folder");
@@ -1062,6 +1062,14 @@
   flowRecord("keep-visible", 3);
   window.nfn.receive(window.fixture.snapshot("ignore-latest"));
   document.querySelector('[aria-label="Notification options"]').click(); click("Ignore agent"); await sleep(20);
+  assert(!ignoreFirst.ignored && !ignoreLatest.ignored && document.querySelector('.confirm-ignore'), "Ignore agent opens confirmation without hiding messages");
+  document.querySelector('[aria-label="Back to options"]').click(); click("Ignore agent"); click("Cancel");
+  assert(!ignoreFirst.ignored && document.querySelector('.menu-panel'), "cancel returns to options without ignoring the agent");
+  [...document.querySelectorAll(".menu-panel button")].find(button => button.textContent === "Notification settings").click(); await sleep(20);
+  assert(document.querySelector('.notification-settings [aria-label="Back to options"]'), "settings opened from options has a back button");
+  document.querySelector('.notification-settings [aria-label="Back to options"]').click();
+  assert(document.querySelector('.menu-panel [aria-haspopup="dialog"]') && title() === "ignore-latest", "settings back restores options on the same agent");
+  click("Ignore agent"); click("Confirm ignore agent"); await sleep(20);
   assert(title() === "keep-visible" && ignoreFirst.status === "pending" && ignoreLatest.status === "pending" && ignoreFirst.ignored && ignoreLatest.ignored, "ignoring an agent hides its entire card without deciding or dismissing its messages");
   document.querySelector('[aria-label="Notification list"]').click(); click("Ignored agents"); await sleep(20);
   assert(document.querySelectorAll(".ignored-agent").length === 1 && document.querySelector('[role="tab"][aria-selected="true"]').textContent === "Ignored agents", "ignored agents remain available in a dedicated list");
@@ -1438,13 +1446,15 @@
   jobSuccessFailure.request.source = { job_id: "project/repair", run_id: "run-b" };
   window.fixture.records.set(jobSuccessCompletion.id, jobSuccessCompletion); window.fixture.records.set(jobSuccessFailure.id, jobSuccessFailure);
   window.nfn.receive(window.fixture.snapshot(jobSuccessFailure.id)); await sleep(50);
-  const successBell = document.querySelector('.job-success-bell');
-  assert(successBell?.getAttribute('aria-label') === 'Ignore successful runs for project/repair', "job bell identifies the static job independently of its title");
-  successBell.click(); await sleep(100);
+  assert(!document.querySelector('.job-success-bell') && document.querySelector('.options-toggle'), "job messages use the same three-dot options button");
+  document.querySelector('.options-toggle').click();
+  assert(document.querySelector('.job-notification-toggle')?.title.includes('Failures still notify'), "job notification preference explains its scope");
+  click("Ignore successful runs"); await sleep(100);
   assert(window.fixture.records.get(jobSuccessCompletion.id).ignored && !window.fixture.records.get(jobSuccessFailure.id).ignored, "ignoring job successes keeps failures visible");
-  assert(document.querySelector('.job-success-bell')?.getAttribute('aria-pressed') === 'true', "bell reflects the job preference on a failure card");
-  document.querySelector('.job-success-bell').click(); await sleep(100);
-  assert(!window.fixture.records.get(jobSuccessCompletion.id).ignored, "the job bell restores successful completions");
+  assert(document.querySelector('.job-notification-toggle')?.getAttribute('aria-pressed') === 'true', "job preference refreshes in the open menu");
+  click("Notify on successful runs"); await sleep(100);
+  assert(!window.fixture.records.get(jobSuccessCompletion.id).ignored, "job preference can be toggled back without leaving the message");
+  document.querySelector('.menu-heading .close').click();
   resetFlow();
   const outreach = flowRecord("CRM draft", 0, true);
   outreach.request.source = {job_id:"crm/outreach-discovery",run_id:"run",provider:"codex",session_id:"saved-session",cwd:"/workspace/crm"};
@@ -1487,25 +1497,43 @@
   document.querySelector('.menu-panel a').click();
   assert(window.fixture.nativeEvents.at(-1)?.native === 'external_link' && window.fixture.nativeEvents.at(-1).text === 'https://example.com/contact', "published email links use the native bridge");
   document.querySelector('.menu-heading .close').click(); await sleep(30);
+  window.nfn.collapse();
   outreach.request.data = {sections:[{id:'posts',title:'Posts',cards:[
     {id:'first',title:'DJ transition feedback',body:'Specific feedback',data:{outreach:{platform:'Reddit',recipient:'DJ builder',source_excerpt:'DJ transition feedback: how should recommendations match a real set?',body:'Compare liked transitions with ones chosen for a set.'}},source:{provider:'codex',session_id:'first-session'},open_options:[{label:'Original post',url:'https://reddit.com/first'},{label:'Agent',kind:'agent'}]},
     {id:'second',title:'Receipt reminder feedback',body:'Account access',open_options:[{label:'CRM',url:'https://crm.tonis.dev/second'},{label:'Invalid',url:'javascript:alert(1)'}]}
   ]}]};
   outreach.request.body = 'Overview of two drafts';
-  window.nfn.receive(window.fixture.snapshot()); await sleep(30);
+  window.nfn.receive(window.fixture.snapshot(outreach.id)); await sleep(30);
   assert(document.querySelector('.message').textContent.includes('Overview of two drafts') && document.querySelector('.section-heading').textContent.includes('Posts1 / 2'), 'stack shows overview and named section');
-  assert(document.querySelector('.section-page').textContent.includes('DJ transition feedback') && document.querySelector('.section-previous').disabled, 'stack starts with first post and bounded navigation');
+  assert(document.querySelector('.section-page').textContent.includes('DJ transition feedback') && !document.querySelector('.section-previous').disabled, 'stack starts with first post and circular navigation');
   assert(document.querySelectorAll('.open-session').length === 1 && !document.querySelector('.section-open'), 'stack uses only the existing bottom Open button');
   assert(document.querySelector('.outreach-source-excerpt')?.textContent.includes('DJ transition feedback') && document.querySelector('.outreach-reply svg[aria-label="Reply"]'), 'original post excerpt connects to the proposed reply with an arrow');
   assert(!document.querySelector('.block-label') && !document.querySelector('.source-attribution') && !document.querySelector('.section-overview-title'), 'stack omits repeated source titles and draft labels');
   assert(document.querySelectorAll('.section-underlay').length === 1, 'the section is drawn as a layered card stack');
+  const copy = document.querySelector('.copy-reply'); copy.click(); await sleep(10);
+  const copyEvent = window.fixture.nativeEvents.findLast(event => event.native === 'copy_text');
+  assert(copyEvent?.text === outreach.request.data.sections[0].cards[0].data.outreach.body, 'Copy reply copies only the exact reply text');
+  window.nfn.receive({type:'copy_result',token:copyEvent.token});
+  assert(copy.textContent === 'Copied' && !copy.disabled, 'copy confirmation follows native clipboard success');
+  copy.click();
+  window.nfn.receive({type:'copy_result',token:window.fixture.nativeEvents.findLast(event=>event.native==='copy_text').token,error:'Clipboard unavailable'});
+  assert(copy.textContent.includes('Retry') && !copy.disabled, 'clipboard failure offers a retry');
+  const firstDeckHeight = document.querySelector('.section-deck').getBoundingClientRect().height;
   const navBefore = document.querySelector('.section-next').getBoundingClientRect();
   assert(navBefore.top < document.querySelector('.section-deck').getBoundingClientRect().top, 'chevrons sit above the stack');
   document.querySelector('.section-next').click(); await sleep(30);
   const navAfter = document.querySelector('.section-next').getBoundingClientRect();
   assert(Math.abs(navAfter.x-navBefore.x)<1 && Math.abs(navAfter.y-navBefore.y)<1, 'chevrons keep the same mouse target across different card lengths');
-  assert(document.querySelector('.section-page').textContent.includes('Receipt reminder feedback') && document.querySelector('.section-next').disabled, 'post navigation stays within the message');
+  assert(document.querySelector('.section-page').textContent.includes('Receipt reminder feedback') && !document.querySelector('.section-next').disabled, 'post navigation stays within the message');
+  assert(document.querySelector('.section-deck').getBoundingClientRect().height < firstDeckHeight, 'stack sizes to a shorter card immediately');
+  assert(document.querySelector('.section-page').scrollWidth <= document.querySelector('.section-page').clientWidth + 1 && getComputedStyle(document.querySelector('.section-page')).scrollbarWidth === 'none', 'card navigation has no horizontal overflow or visible scrollbar');
+  document.querySelector('.section-next').click();
+  assert(document.querySelector('.section-page').textContent.includes('DJ transition feedback'), 'next at the end wraps to the beginning');
+  document.querySelector('.section-previous').click();
+  assert(document.querySelector('.section-page').textContent.includes('Receipt reminder feedback'), 'previous at the beginning wraps to the end');
   document.querySelector('.open-session').click(); await sleep(30);
+  const openAnchor = document.querySelector('.open-session').getBoundingClientRect(), openMenu = document.querySelector('.open-menu').getBoundingClientRect();
+  assert(openMenu.bottom <= openAnchor.top && openAnchor.top - openMenu.bottom <= 10 && Math.abs(openMenu.left-openAnchor.left)<10, 'Open popup is adjacent to its bottom button');
   assert(document.querySelectorAll('.menu-panel a').length === 1 && document.querySelector('.menu-panel a').href === 'https://crm.tonis.dev/second', 'each post has its own configurable safe destinations');
   document.querySelector('.menu-heading .close').click();
   outreach.request.body = 'Updated overview'; window.nfn.receive(window.fixture.snapshot()); await sleep(30);
@@ -1521,5 +1549,14 @@
   }
   cardTouch('touchstart',250);cardTouch('touchmove',150);cardTouch('touchend',100);await sleep(30);
   assert(document.querySelector('.section-page').textContent.includes('Receipt reminder feedback'), 'horizontal swipe changes the post');
+  document.querySelector('.section-previous').click();
+  const stackShortHeight = document.querySelector('#surface').getBoundingClientRect().height;
+  outreach.request.data.sections[0].cards[1].body = 'Long reply line.\n'.repeat(100);
+  window.nfn.receive(window.fixture.snapshot()); await sleep(30);
+  document.querySelector('.section-next').click();
+  const stackTallHeight = document.querySelector('#surface').getBoundingClientRect().height;
+  const tallPage = document.querySelector('.section-page');
+  assert(stackTallHeight > stackShortHeight && tallPage.scrollHeight > tallPage.clientHeight && tallPage.clientHeight <= innerHeight * .6 + 2, 'longer cards grow the whole bar immediately and clip at the reading limit');
+  assert(document.querySelector('.controls').getBoundingClientRect().bottom <= document.querySelector('#surface').getBoundingClientRect().bottom, 'tall replies preserve the bottom controls');
   return { passed: checks.length, checks };
 })()

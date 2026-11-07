@@ -20,7 +20,9 @@
   let completionTimer = null, navigating = false, unseenPending = 0;
   let menu = null;
   let queueReturnId = null;
-  let settingsOpen = false, settingsBusy = false, settingsReturnExpanded = false;
+  let settingsOpen = false, settingsBusy = false, settingsReturnExpanded = false, settingsReturnMenu = null;
+  const pendingCopies = new Map();
+  let copySequence = 0;
   let explicitOpen = false, presented = false, hiddenByUser = false;
   let geometry = {}, layoutAnimation = null, contentAnimations = [], lastSize = "", renderedLayout = "";
   let resizedSize = null, resizing = null, resizeRightOffset = 0;
@@ -651,20 +653,20 @@
     size();
   }
   function fitReviewHeight() {
-    if (!card?.classList.contains("social-card") || snapshot.remote || resizedSize || layoutAnimation || details || menu || queue || settingsOpen || todosOpen) return;
+    if (!card?.matches(".social-card, .stack-card") || snapshot.remote || resizedSize || layoutAnimation || details || menu || queue || settingsOpen || todosOpen) return;
     const body = card._body;
     host.style.height = "";
     const needed = Math.ceil(host.getBoundingClientRect().height + body.scrollHeight - body.clientHeight + card.scrollHeight - card.clientHeight);
     const height = Math.min(geometry.max_height || 860, Math.max(280, needed));
     host.style.height = `${height}px`;
   }
-  new ResizeObserver(() => { fitReviewHeight(); positionAcknowledgementMenu(); size(); syncNativePointerHover(); }).observe(host);
+  new ResizeObserver(() => { fitReviewHeight(); positionAcknowledgementMenu(); positionOpenMenu(); size(); syncNativePointerHover(); }).observe(host);
   const cardSizeObserver = new ResizeObserver(() => { fitReviewHeight(); size(); });
   let observedCard = null;
   function observeCardSize() {
     if (observedCard === card) return;
     cardSizeObserver.disconnect(); observedCard = card;
-    if (card?.classList.contains("social-card")) {
+    if (card?.matches(".social-card, .stack-card")) {
       for (const node of [...card.children, ...card._body.children]) cardSizeObserver.observe(node);
     }
   }
@@ -1155,6 +1157,12 @@
     }
     return post;
   }
+  function copyReply(text, control) {
+    const token = `reply-copy-${++copySequence}`;
+    control.disabled = true; control.textContent = "Copying…";
+    pendingCopies.set(token, control);
+    native({ native: "copy_text", text, token });
+  }
   function outreachCard(record) {
     const draft = record.request.data?.outreach;
     if (!draft || typeof draft.body !== "string") return null;
@@ -1182,7 +1190,9 @@
       reply.append(arrow, el("div", "social-body", draft.body));
       post.append(source, reply);
     }
-    section.append(post);
+    const copy = button("Copy reply", () => copyReply(draft.body, copy), "utility copy-reply");
+    const footer = el("div", "outreach-footer"); footer.append(copy);
+    section.append(post, footer);
     return section;
   }
   function openOptions(record, item = null) {
@@ -1231,7 +1241,7 @@
       deck.append(page);
       header.append(title, controls); region.append(header, deck); container.append(region);
       function select(value) {
-        index = Math.max(0, Math.min(value, section.cards.length - 1));
+        index = ((value % section.cards.length) + section.cards.length) % section.cards.length;
         const item = section.cards[index]; sectionSelections.set(key, item.id);
         node._activeSectionCard = item;
         count.textContent = `${index + 1} / ${section.cards.length}`;
@@ -1243,8 +1253,9 @@
         else if (item.media?.length) page.append(mediaView(virtual, item.media.map((_, i) => i)));
         page.scrollTop = 0;
         if (node._openSession) node._openSession.disabled = !openOptions(record, item).length;
-        previous.disabled = index === 0; next.disabled = index === section.cards.length - 1;
-        if (!reducedMotion.matches) page.animate([{ opacity: .3, transform: "translateX(8px)" }, { opacity: 1, transform: "translateX(0)" }], { duration: 500, easing: "cubic-bezier(0.22,1,0.36,1)" });
+        previous.disabled = next.disabled = section.cards.length === 1;
+        // Content settles in one layout pass; movement can overflow the native panel.
+        if (node.isConnected) { stopAnimation(); fitReviewHeight(); size(); }
       }
       let start = null;
       page.addEventListener("touchstart", event => {
@@ -1425,21 +1436,14 @@
     const job = record.request.source?.job_id;
     const title = el("h1", "", agent && !stacked ? identity.title : record.request.title); title.title = job || title.textContent;
     if (agent && !stacked) { heading.classList.add("agent-heading"); const group = el("span", "source-group", identity.group); group.title = identity.group; heading.append(group); }
-    if (job) {
-      const jobHeading = el("div", "job-heading");
-      const ignored = ignoredJobs.includes(job);
-      const label = `${ignored ? "Notify on" : "Ignore"} successful runs for ${job}`;
-      const bell = iconButton(label, ignored ? "M3 3l18 18M9 5a6 6 0 0 1 9 5c0 7 3 7 3 7H7M6 6a6 6 0 0 0 0 4c0 7-3 7-3 7m7 4h4" : "M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4", () => setJobSuccessIgnored(job, !ignored, record), "job-success-bell");
-      bell.title = label; bell.setAttribute("aria-pressed", String(ignored)); bell.disabled = ignoredBusy;
-      jobHeading.append(title, bell); heading.append(jobHeading);
-    } else heading.append(title);
+    heading.append(title);
     const tools = el("div", "heading-tools"); heading.append(tools);
     if (record.pinned) tools.append(pinIndicator());
     tools.append(relativeTimestamp(record));
     const status = el("span", "status"); tools.append(status); node._status = status;
-    if (hasAgent(record)) {
+    if (hasAgent(record) || job) {
       const options = iconButton("Notification options", "M5 12h.01M12 12h.01M19 12h.01", () => toggleMenu("options"), "options-toggle");
-      options.title = "Agent options"; options.setAttribute("aria-label", "Notification options"); options.setAttribute("aria-haspopup", "dialog"); node._options = options; tools.append(options);
+      options.title = "Notification options"; options.setAttribute("aria-label", "Notification options"); options.setAttribute("aria-haspopup", "dialog"); node._options = options; tools.append(options);
     }
     node.append(heading);
     const body = el("div", "message-content"); node._body = body; node.append(body);
@@ -1478,7 +1482,7 @@
       previousScroll = content.scrollTop;
     });
     const sections = messageSections(record, node);
-    if (sections) body.append(sections);
+    if (sections) { node.classList.add("stack-card"); body.append(sections); }
     const outreach = outreachCard(record);
     if (outreach) body.append(outreach);
     const bundle = socialReview(record, node);
@@ -1684,7 +1688,7 @@
     card._status.classList.toggle("alert", alert && isPending);
     card._status.textContent = record.ignored ? "Ignored" : record.status === "delivering" || busy ? "Sending..." : isPending ? (alert ? "! Alert" : "") : record.status === "resolved" ? (alert ? "Recovered" : update ? "Seen" : "Sent") : record.status;
     card.querySelector(".acknowledge[aria-haspopup=menu], [data-action-id=acknowledge][aria-haspopup=menu]")?.setAttribute("aria-expanded", String(menu === "acknowledge"));
-    card._options?.setAttribute("aria-expanded", String(menu === "options" || menu === "agent"));
+    card._options?.setAttribute("aria-expanded", String(menu === "options" || menu === "agent" || menu === "ignore"));
     const feedback = Boolean(drafts.get(record.id)?.trim());
     for (const control of card._actions.querySelectorAll("button")) control.disabled = control.dataset.actionId === "acknowledge"
       ? busy || Boolean(record.dismissed_at || record.ignored)
@@ -1901,7 +1905,7 @@
   }
   async function setJobSuccessIgnored(job, ignored, record) {
     if (ignoredBusy) return;
-    ignoredBusy = true;
+    ignoredBusy = true; render();
     try {
       const result = await call({ op: "ignore_job_success", job_id: job, ignored });
       for (const item of result.records || []) records.set(item.id, item);
@@ -1914,7 +1918,7 @@
   }
   async function setAgentIgnored(record, ignored) {
     if (ignoredBusy) return;
-    ignoredBusy = true;
+    ignoredBusy = true; render();
     try {
       const result = await call({ op: ignored ? "ignore" : "unignore", id: record.id });
       for (const item of result.records || []) records.set(item.id, item);
@@ -2111,19 +2115,29 @@
     panel.style.left = `${left}px`;
     panel.style.bottom = `${nativeFooter ? 8 : Math.max(0, bounds.bottom - anchor.top + 8)}px`;
   }
+  function positionOpenMenu() {
+    const overlay = host.querySelector(".open-overlay"), panel = overlay?.querySelector(".open-menu");
+    const trigger = card?._openSession;
+    if (!panel || !trigger) return;
+    const anchor = trigger.getBoundingClientRect(), bounds = overlay.getBoundingClientRect();
+    panel.style.left = `${Math.max(8, Math.min(anchor.left - bounds.left, bounds.width - panel.offsetWidth - 8))}px`;
+    panel.style.bottom = `${Math.max(8, bounds.bottom - anchor.top + 8)}px`;
+    panel.style.maxHeight = `${Math.max(80, anchor.top - bounds.top - 16)}px`;
+  }
   function renderMenu() {
     const existing = host.querySelector(".menu-overlay");
     if (!menu || !current || settingsOpen) { existing?.remove(); return; }
-    if (existing?.dataset.menu === menu && existing.dataset.id === (current || "")) return;
+    if (existing?.dataset.menu === menu && existing.dataset.id === (current || "") && existing.dataset.state === JSON.stringify([ignoredJobs, ignoredAgents, ignoredBusy])) return;
     existing?.remove();
     const record = records.get(current), overlay = el("div", "menu-overlay");
-    overlay.dataset.menu = menu; overlay.dataset.id = current || "";
-    const panel = el("div", "menu-panel"); panel.setAttribute("role", "dialog"); panel.setAttribute("aria-label", menu === "sessions" ? "Choose a pane" : menu === "agent" ? "Agent controls" : menu === "open" ? "Open" : "Notification options");
+    overlay.dataset.menu = menu; overlay.dataset.id = current || ""; overlay.dataset.state = JSON.stringify([ignoredJobs, ignoredAgents, ignoredBusy]);
+    const panel = el("div", "menu-panel"); panel.setAttribute("role", "dialog"); panel.setAttribute("aria-label", menu === "sessions" ? "Choose a pane" : menu === "agent" ? "Agent controls" : menu === "ignore" ? "Ignore agent" : menu === "open" ? "Open" : "Notification options");
     const heading = el("div", "menu-heading");
-    if (menu === "agent") { const back = button("‹", () => toggleMenu("options"), "utility nav-step"); back.setAttribute("aria-label", "Back to options"); heading.append(back); }
-    heading.append(el("span", "", menu === "sessions" ? "Choose a pane" : menu === "agent" ? "Agent controls" : menu === "open" ? "Open" : "Options"));
+    if (menu === "agent" || menu === "ignore") { const back = button("‹", () => toggleMenu("options"), "utility nav-step"); back.setAttribute("aria-label", "Back to options"); heading.append(back); }
+    heading.append(el("span", "", menu === "sessions" ? "Choose a pane" : menu === "agent" ? "Agent controls" : menu === "ignore" ? "Ignore agent" : menu === "open" ? "Open" : "Options"));
     const close = button("×", () => toggleMenu(menu), "utility close"); close.setAttribute("aria-label", "Close menu"); heading.append(close); panel.append(heading);
     if (menu === "open" && openContext) {
+      overlay.classList.add("open-overlay"); panel.classList.add("open-menu");
       for (const option of openContext.options) {
         const action = option.kind === "agent" ? button(option.label, () => {
           const context = openContext; menu = null;
@@ -2161,16 +2175,29 @@
       }
       if (agentKey(record)) {
         const agentIgnored = ignoredAgents.some(agent => agentKey({ machine_id: agent.machine_id, request: { source: agent.source } }) === agentKey(record));
-        const ignore = button(agentIgnored ? "Stop ignoring agent" : "Ignore agent", () => setAgentIgnored(record, !agentIgnored), "utility menu-link");
-        ignore.disabled = ignoredBusy; panel.append(ignore);
+        const ignore = button(agentIgnored ? "Stop ignoring agent" : "Ignore agent", () => agentIgnored ? setAgentIgnored(record, false) : toggleMenu("ignore"), "utility menu-link");
+        ignore.disabled = ignoredBusy; if (!agentIgnored) ignore.setAttribute("aria-haspopup", "dialog"); panel.append(ignore);
       }
-      panel.append(button("Notification settings", openSettings, "utility menu-link"));
+      const job = record.request.source?.job_id;
+      if (job) {
+        const ignored = ignoredJobs.includes(job);
+        const toggle = button(ignored ? "Notify on successful runs" : "Ignore successful runs", () => setJobSuccessIgnored(job, !ignored, record), "utility job-notification-toggle");
+        toggle.title = `Successful runs for ${job}. Failures still notify.`;
+        toggle.setAttribute("aria-pressed", String(ignored)); toggle.disabled = ignoredBusy; panel.append(toggle);
+      }
+      panel.append(button("Notification settings", () => openSettings("options"), "utility menu-link"));
       const dismiss = button("Dismiss notification", () => performAction(record.id, { op: "dismiss", id: record.id }), "utility dismiss"); dismiss.title = "Remove this card from Pending"; panel.append(dismiss);
+    } else if (menu === "ignore") {
+      panel.append(el("p", "ignore-description", "Hide notifications from this agent until you stop ignoring it in the Ignored agents list."));
+      const confirm = button("Confirm ignore agent", () => setAgentIgnored(record, true), "utility confirm-ignore");
+      confirm.disabled = ignoredBusy; panel.append(confirm);
+      panel.append(button("Cancel", () => toggleMenu("options"), "utility"));
     } else if (menu === "agent") panel.append(el("div", "agent-controls", "Loading..."));
     const notice = el("div", "notice menu-notice"); notice.setAttribute("role", "status"); panel.append(notice);
     overlay.append(panel); overlay.addEventListener("click", event => { if (event.target === overlay) toggleMenu(menu); }); host.append(overlay);
     if (menu === "acknowledge") { positionAcknowledgementMenu(); panel.querySelector("[role=menuitem]").focus({ preventScroll: true }); }
     if (menu === "sessions") panel.querySelector(".session-target")?.focus({ preventScroll: true });
+    positionOpenMenu();
     updateAutoYes();
   }
   function leaveSettings() {
@@ -2181,14 +2208,14 @@
     native({ native: "settings", active: false });
   }
   function closeSettings() {
-    leaveSettings(); expanded = settingsReturnExpanded; render(); startContext(); resumeTimer();
+    leaveSettings(); expanded = settingsReturnExpanded; menu = settingsReturnMenu; settingsReturnMenu = null; render(); startContext(); if (!menu) resumeTimer();
   }
-  function openSettings() {
+  function openSettings(returnMenu = null) {
     if (snapshot.remote) return;
     todosOpen = false;
     if (settingsOpen) return;
     hiddenByUser = false;
-    settingsReturnExpanded = expanded;
+    settingsReturnExpanded = expanded; settingsReturnMenu = typeof returnMenu === "string" ? returnMenu : null;
     clearTimeout(completionTimer); pauseTimer(); stopContext(); menu = null; settingsOpen = true; expanded = true;
     native({ native: "settings", active: true }); render();
   }
@@ -2207,6 +2234,9 @@
     if (!view) {
       view = el("section", "notification-settings"); view.setAttribute("aria-label", "Notification settings");
       const heading = el("div", "settings-heading");
+      if (settingsReturnMenu) {
+        const back = button("‹", closeSettings, "utility nav-step"); back.setAttribute("aria-label", "Back to options"); heading.append(back);
+      }
       heading.append(el("h1", "", "Notifications"), button("Close bar", hideBar, "utility close-bar")); view.append(heading);
       const tabs = el("div", "segments settings-tabs segmented-control"); tabs.setAttribute("role", "tablist"); tabs.setAttribute("aria-label", "Settings sections");
       const panels = new Map(); view.append(tabs);
@@ -2513,7 +2543,7 @@
       }
       updateCard(); syncCardDetails(records.get(current));
     } else { host.querySelector(".card")?.remove(); host.querySelector(".queue")?.remove(); renderedId = null; card = null; }
-    renderMenu(); positionAcknowledgementMenu(); cleanupRemoteMedia(); observeCardSize(); fitReviewHeight(); if (resizing || !animate) size(); else if (!continuingAnimation) animateLayout(before, !queue && !menu && !settingsOpen);
+    renderMenu(); positionAcknowledgementMenu(); positionOpenMenu(); cleanupRemoteMedia(); observeCardSize(); fitReviewHeight(); if (resizing || !animate) size(); else if (!continuingAnimation) animateLayout(before, !queue && !menu && !settingsOpen);
     host.classList.toggle("shell-answers", Boolean(snapshot.shell_answers));
     host.classList.toggle("demo-surface", Boolean(snapshot.demo));
     host.classList.toggle("native-mobile", mobileHost() || Boolean(snapshot.shell_only)); host.classList.toggle("native-chrome", Boolean(mobileHost() && snapshot.native_chrome)); host.classList.toggle("shell-only", Boolean(snapshot.shell_only)); host.classList.toggle("shell-reply", shellReply); syncMobileChrome(); preloadMobileShells();
@@ -2522,6 +2552,15 @@
     syncNativePointerHover();
   }
   function receive(value) {
+    if (value.type === "copy_result") {
+      const control = pendingCopies.get(value.token); pendingCopies.delete(value.token);
+      if (control) {
+        control.disabled = false; control.textContent = value.error ? "Copy failed. Retry" : "Copied";
+        control.title = value.error || "Reply copied to clipboard";
+        setTimeout(() => { if (control.isConnected) control.textContent = "Copy reply"; }, 2000);
+      }
+      return;
+    }
     if (value.type === "mobile_visibility" && mobileHost()) {
       snapshot.visible = Boolean(value.active);
       window.nfnMobile?.setActive(snapshot.visible);

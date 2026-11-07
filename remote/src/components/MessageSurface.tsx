@@ -1,3 +1,4 @@
+import * as Clipboard from "expo-clipboard";
 import { useIsFocused } from "expo-router/react-navigation";
 import { MessageTextSelection } from "./MessageTextSelection";
 import { messageSelectionScript } from "../lib/messageSelection";
@@ -109,6 +110,10 @@ export function MessageSurface(props: MessageSurfaceProps) {
     try { value = JSON.parse(raw).nfn; } catch { return; }
     if (!value) return;
     if (!latest.current.snapshot.demo && value.native === "external_link" && typeof value.text === "string" && /^(https?:\/\/|mailto:)/i.test(value.text)) void Linking.openURL(value.text);
+    if (value.native === "copy_text" && typeof value.text === "string") {
+      try { await Clipboard.setStringAsync(value.text); send({ type: "copy_result", token: value.token }); }
+      catch { send({ type: "copy_result", token: value.token, error: "Could not copy reply" }); }
+    }
     if (value.preview_ready) { ready.current = true; selected.current = null; send({ type: "mobile_visibility", active: focusedRef.current }); synchronize(); applyInsets(); }
     if (value.native === "selection_gesture" && (focusedRef.current || !value.active)) {
       selectionGesture.current = Boolean(value.active);

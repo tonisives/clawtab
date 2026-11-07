@@ -77,11 +77,6 @@ button.icon-button { display: flex; align-items: center; justify-content: center
 .queue-title { display: flex; align-items: center; gap: 8px; }
 .agent-heading { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2.5fr) minmax(0, 1fr); }
 .agent-heading h1 { text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.job-heading { display: flex; align-items: center; justify-content: center; gap: 4px; min-width: 0; }
-.heading:not(.agent-heading) .job-heading { flex: 1; justify-content: flex-start; }
-.job-heading h1 { min-width: 0; }
-.job-success-bell { flex: none; }
-.job-success-bell[aria-pressed="true"] { color: var(--accent); }
 .source-group { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .notification-title { margin-top: 10px; font-weight: 600; }
 .notification-title + .message:not(:empty) { margin-top: 8px; }
@@ -385,11 +380,13 @@ button.session-locations{font-size:14px;line-height:20px;padding:4px 8px}
 .section-controls .meta { min-width: 48px; text-align: center; font-variant-numeric: tabular-nums; }
 .section-controls button { width: 32px; height: 32px; }
 .section-card-title { margin: 0 0 8px; font-size: 14px; line-height: 20px; font-weight: 600; }
-.section-deck { position: relative; isolation: isolate; height: clamp(240px, 45vh, 480px); margin-bottom: 16px; }
+.section-deck { position: relative; isolation: isolate; margin-bottom: 16px; }
 .section-underlay { position: absolute; inset: 0; border: 1px solid #313131; border-radius: 12px; background: #1f1f1f; pointer-events: none; }
 .section-underlay.layer-1 { transform: translateY(8px) scaleX(.98); }
 .section-underlay.layer-2 { transform: translateY(16px) scaleX(.96); }
-.section-page { position: relative; height: 100%; padding: 16px; border: 1px solid #313131; border-radius: 12px; background: #181818; min-width: 0; touch-action: pan-y; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.section-page { position: relative; max-height: min(60vh, 640px); padding: 16px; border: 1px solid #313131; border-radius: 12px; background: #181818; min-width: 0; touch-action: pan-y; overflow-y: auto; overscroll-behavior: contain; overflow-x: hidden; scrollbar-width: none; }
+.section-page::-webkit-scrollbar, .stack-card::-webkit-scrollbar, .stack-card > .message-content::-webkit-scrollbar { display: none; }
+.stack-card, .stack-card > .message-content { overflow-x: hidden; scrollbar-width: none; }
 .section-page:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .section-page .outreach-review { margin-top: 0; }
 .section-page .outreach-review > .social-post { padding: 0; border: 0; border-radius: 0; background: transparent; }
@@ -400,3 +397,11 @@ button.session-locations{font-size:14px;line-height:20px;padding:4px 8px}
 .menu-panel a.menu-link { display: block; padding: 8px 12px; color: inherit; text-decoration: none; border-radius: 6px; }
 .menu-panel a.menu-link:hover { background: #272727; }
 .menu-panel a.menu-link:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.outreach-footer { display: flex; justify-content: flex-end; margin-top: 12px; }
+.open-overlay { position: absolute; inset: 0; margin: 0; padding: 0; display: block; }
+.open-menu { position: absolute; width: 200px; max-width: calc(100% - 16px); padding: 8px; }
+.ignore-description { padding: 0 12px; line-height: 20px; }
+.job-notification-toggle, .confirm-ignore { width: 100%; text-align: left; }
+
+.settings-heading .nav-step { font-size: 13px; border-radius: 6px; }
