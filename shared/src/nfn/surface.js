@@ -820,6 +820,9 @@
         if (snapshot.remote && next.id !== current) window.nfnPaging?.willNavigate(step);
         openRecord(next.id);
         if (snapshot.remote) window.nfnPaging?.didNavigate();
+        if (!snapshot.remote && current !== id && current === next.id) {
+          card?.querySelector('.open-session[aria-label="Open session"]:not(:disabled)')?.click();
+        }
       }
     } catch (error) { if (snapshot.remote) window.nfnPaging?.cancel(); showError(error); }
     finally { navigating = false; }

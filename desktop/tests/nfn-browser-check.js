@@ -54,9 +54,13 @@
   const second = window.fixture.record("second"); second.request.title = "Second request";
   window.fixture.records.set("second", second); window.nfn.receive(window.fixture.snapshot("second"));
   assert(document.querySelector("h1").textContent === "Review the launch post" && document.querySelector("textarea") === restoredInput, "new arrivals preserve the current card and input");
+  assert(!window.fixture.calls.some(command => command.op === "focus"), "message arrivals do not focus an agent");
   nav("Next"); await sleep(30);
+  assert(window.fixture.calls.some(command => command.op === "focus" && command.id === "second"), "next message opens its originating agent");
+  assert(!second.response && !second.dismissed_at, "automatic agent focus keeps the selected message unanswered and open");
   assert(document.querySelector("h1").textContent === "Second request", "next notification is one click away");
   draft("Second draft"); nav("Previous"); await sleep(30);
+  assert(window.fixture.calls.some(command => command.op === "focus" && command.id === "first"), "previous message opens its originating agent");
   assert(document.querySelector("textarea").value === "Keep this draft", "switching cards preserves separate reply drafts");
   assert(!document.querySelector(".details-content") && document.querySelector(".count").textContent === "1 / 2", "navigation opens a simple card with a position count");
   document.querySelector("textarea").focus();
@@ -849,13 +853,14 @@
   release("focus-a"); await sleep(10);
   window.nfn.receive(window.fixture.snapshot());
   assert(title() === "focus-a", "Open session keeps the current card after completion and refresh");
-  nav("Next");
+  nav("Next"); release("focus-b"); await sleep(10);
   document.querySelector('[aria-label="Notification options"]').click(); click("Dismiss notification");
   assert(title() === "focus-c" && !document.querySelector(".menu-overlay"), "menu dismissal closes the menu and opens the next notification");
   window.nfn.collapse(); release("focus-b", "Dismiss failed"); await sleep(10);
   assert(!title(), "a late failure respects an explicit collapse");
   window.nfn.receive({ type: "latest" }); nav("Next");
-  assert(title() === "focus-b" && document.querySelector(".notice").textContent === "Dismiss failed", "a failed action remains available when notifications are reopened manually");
+  assert(title() === "focus-b" && !window.fixture.records.get("focus-b").dismissed_at && window.fixture.deferred.some(item => item.command.op === "focus" && item.command.id === "focus-b"), "a failed action remains available and focuses its agent when navigated to again");
+  release("focus-b"); await sleep(10);
 
   resetFlow();
   window.fixture.serverOrder = true;
