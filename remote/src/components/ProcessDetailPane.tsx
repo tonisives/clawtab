@@ -244,6 +244,8 @@ export function ProcessDetailPane({ paneId, onClose, embedded = false }: Process
     name: displayName,
     job_type: activeProcess.provider,
     agent_provider: activeProcess.provider,
+    agent_model: activeProcess.model_id,
+    agent_effort: activeProcess.agent_effort,
     enabled: true,
     cron: "",
     group: "detected",
@@ -279,6 +281,7 @@ export function ProcessDetailPane({ paneId, onClose, embedded = false }: Process
         runsLoading={false}
         onBack={onClose}
         showBackButton={false}
+        showHeaderAgent={!!activeProcess.model_id}
         hideRuns
         hidePath
         mobileDetails={Platform.OS === "web"}

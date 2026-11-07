@@ -75,8 +75,14 @@ let synchronize = () => {
   })
   let jobs = useJobsStore.getState()
   let snapshot = machineJobs()
-  jobs.setJobs(snapshot.jobs, snapshot.statuses)
-  jobs.setDetectedProcesses(machineProcesses())
+  const onlineMachines = state.machines.filter(machine => machine.online && (!state.filter || machine.id === state.filter));
+  const jobsReady = state.connected && onlineMachines.every(machine => state.snapshots[machine.id]?.jobs_changed);
+  const processesReady = state.connected && onlineMachines.every(machine => state.snapshots[machine.id]?.detected_processes);
+  // Roster and preferences arrive before the host snapshots. Keep the saved
+  // selection until its machine has actually reported its jobs and agents.
+  if (jobsReady) jobs.setJobs(snapshot.jobs, snapshot.statuses)
+  if (processesReady) jobs.setDetectedProcesses(machineProcesses())
+  useJobsStore.setState({ loaded: jobsReady, processesLoaded: processesReady })
   let messages = Object.entries(state.snapshots).filter(
     ([id]) => !state.filter || state.filter === id,
   )

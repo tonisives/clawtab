@@ -4,12 +4,12 @@ const fs = require("node:fs");
 const vm = require("node:vm");
 const ts = require("../desktop/node_modules/typescript");
 const source = fs.readFileSync(require("node:path").join(__dirname, "../remote/src/lib/capturedShell.ts"), "utf8");
-const load = host => {
+const load = (host, legacy = false, machineRequest = () => assert.fail("Unexpected legacy request")) => {
   const shellCache = {};
   vm.runInNewContext(ts.transpileModule(fs.readFileSync(require("node:path").join(__dirname, "../remote/src/lib/cacheMessageShell.ts"), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports: shellCache });
   const exports = {};
   vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, {
-    exports, require: name => name === "./cacheMessageShell" ? shellCache : ({ machineHostRequest: host, splitResource: key => {
+    exports, require: name => name === "./cacheMessageShell" ? shellCache : ({ machineHostRequest: host, machineRequest, machineState: () => ({ machines: [{ id: "machine-a", capabilities: legacy ? [] : ["messages_v1"] }, { id: "machine-b", capabilities: legacy ? [] : ["messages_v1"] }], snapshots: { "machine-a": { detected_processes: { processes: [{ pane_id: "%12", tmux_session: "session-a" }] } } } }), splitResource: key => {
       const [machine, id] = key.split("::"); return id ? { machine, id } : null;
     } }),
   });
@@ -49,4 +49,24 @@ test("details includes the latest notification capture in its first local docume
   assert.equal(capturedShellSnapshot("machine-b::%12", true).shell_cache["machine-a::%12"], undefined);
   cacheMessageShell({ source: { pane_id: "machine-a::%12" }, log: "" });
   assert.equal(capturedShellSnapshot("machine-a::%12", true).shell_cache["machine-a::%12"], "");
+});
+
+
+test("older included machines capture their existing pane without the unsupported message API", async () => {
+  const requests = [];
+  const { capturedShellCommand, capturedShellSnapshot } = load(() => assert.fail("unsupported message API"), true, async (machine, request) => {
+    requests.push({ machine, ...request }); return { logs: "Sign in with ChatGPT" };
+  });
+  const value = await capturedShellCommand("machine-a::%12")({ op: "context" });
+  assert.equal(value.log, "Sign in with ChatGPT");
+  assert.equal(capturedShellSnapshot("machine-a::%12", true).shell_cache["machine-a::%12"], value.log);
+  assert.deepEqual(JSON.parse(JSON.stringify(requests)), [{ machine: "machine-a", type: "get_detected_process_logs", pane_id: "%12", tmux_session: "session-a", lines: 200 }]);
+});
+
+test("older machines preserve literal text and navigation keys without submitting every keystroke", async () => {
+  const requests = [];
+  const { capturedShellCommand } = load(() => assert.fail("unsupported message API"), true, async (machine, request) => { requests.push({ machine, ...request }); return {}; });
+  await capturedShellCommand("machine-a::%12")({ op: "shell_input", text: "Enter\r\x1b[A\x7f" });
+  assert.deepEqual(requests.map(request => request.key), ["E", "n", "t", "e", "r", "Enter", "Up", "BSpace"]);
+  assert.ok(requests.every(request => request.type === "tmux_pane_key" && request.pane_id === "%12"));
 });

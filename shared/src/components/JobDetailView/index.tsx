@@ -1,3 +1,4 @@
+import { resourceLabel } from "../../machines/client";
 import type { ComponentRef } from "react";
 import { agentAlertTitle } from "../../util/alert";
 import type { ReactNode } from "react";
@@ -675,7 +676,7 @@ export function JobDetailView({
             <Text style={styles.runtimeText}>{formatTime(status.started_at)}</Text>
           ) : null}
           {isRunning && status.pane_id ? (
-            <Text style={styles.runtimeDim}>{status.pane_id}</Text>
+            <Text style={styles.runtimeDim}>{resourceLabel(status.pane_id)}</Text>
           ) : null}
           {isRunning && onToggleAutoYes && !mobileDetails ? (
             <TouchableOpacity

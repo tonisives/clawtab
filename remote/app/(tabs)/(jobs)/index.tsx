@@ -671,6 +671,8 @@ function JobsWorkspace({ bounds }: { bounds: { x: number; y: number; width: numb
           last_query: existingProcess?.last_query ?? null,
           session_started_at: existingProcess?.session_started_at ?? new Date().toISOString(),
           token_count: existingProcess?.token_count ?? null,
+          model_id: model ?? existingProcess?.model_id,
+          agent_effort: effort ?? existingProcess?.agent_effort,
           _transient_state: "starting",
         }
         useJobsStore.getState().upsertDetectedProcess(pendingProcess)
@@ -857,7 +859,7 @@ function JobsWorkspace({ bounds }: { bounds: { x: number; y: number; width: numb
       ? ["notifications", notificationDetail]
       : ["jobs", demoMode ? demoSelection : activeContent])
   const navigationHistory = useWebBackStack({
-    enabled: webSplit && screenFocused,
+    enabled: webSplit && screenFocused && !viewState.loading && (demoMode || (loaded && processesLoaded)),
     navigationKey,
     value: navigationEntry,
     onRestore: (entry) => {
@@ -931,6 +933,18 @@ function JobsWorkspace({ bounds }: { bounds: { x: number; y: number; width: numb
         onGroupTabViewChange={handleGroupTabViewChange}
         onSetAllGroupTabView={handleSetAllGroupTabView}
         headerContent={bannerContent}
+        afterToolbarContent={runAgentHandler ? (
+          <View style={styles.webStartAgentRow}>
+            <GroupAgentRow
+              mode="start"
+              workDir="~"
+              modelOptions={agentModelOptions}
+              onRunAgent={(prompt, provider, model, effort, workDir, requestedFolder) =>
+                handleStartAgent(prompt, provider, model, effort, workDir, requestedFolder)
+              }
+            />
+          </View>
+        ) : null}
         showEmpty={loaded}
         emptyMessage={"Add a group or machine below to start your first agent."}
         searchQuery={searchQuery}
@@ -1537,6 +1551,7 @@ const styles = StyleSheet.create({
     paddingTop: 0,
     paddingBottom: spacing.lg,
   },
+  webStartAgentRow: { marginHorizontal: spacing.xs, marginTop: spacing.lg, marginBottom: spacing.sm },
   startAgentRow: {
     marginHorizontal: spacing.xxl,
     marginTop: spacing.xl,

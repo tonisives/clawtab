@@ -280,6 +280,7 @@ test('mobile subscription replay records the connection before synchronous error
       subscribeMachines: (callback) => { notify = callback; return noop; },
       onMachineEvent: () => noop, connectMachines: () => noop,
     },
+    '../store/jobs': { useJobsStore: { ...store, setState: noop } },
     '../lib/notifications': { getPushToken: async () => null },
     '../lib/terminalCache': { terminalCache: { clear: noop, delete: noop } },
     './usePty': { replayActivePtySubscriptions: () => {
@@ -377,6 +378,7 @@ test('settings reports the named machine status when another host is online', ()
       subscribeMachines: (callback) => { notify = callback; return noop; },
       onMachineEvent: () => noop, connectMachines: () => noop,
     },
+    '../store/jobs': { useJobsStore: { ...store, setState: noop } },
     '../lib/notifications': { getPushToken: async () => null },
     '../lib/terminalCache': { terminalCache: { clear: noop, delete: noop } },
     './usePty': { replayActivePtySubscriptions: () => {

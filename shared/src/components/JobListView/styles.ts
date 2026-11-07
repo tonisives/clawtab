@@ -21,7 +21,7 @@ export const styles = StyleSheet.create({
   webGroupedRows: {
     marginHorizontal: spacing.xs,
     marginVertical: spacing.md,
-    borderRadius: 8,
+    borderRadius: 28,
     overflow: "hidden",
     backgroundColor: colors.groupedSurface,
   },

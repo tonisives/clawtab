@@ -65,6 +65,7 @@ function harness() {
     '../store/ws': { useWsStore: ws },
     '../store/messages': messages,
     '../lib/messageActions': actions,
+    '../lib/cacheMessageShell': { clearMessageShellCache() {}, deleteMessageShell() {} },
     '../lib/terminalCache': { terminalCache: { clear: () => { clearedTerminal = true; } } },
     '../lib/wsRuntime': { setWsSend: send => { wsSend = send; } },
     '../store/terminalSettings': { useTerminalSettings: { getState: () => ({ hydrate: async () => {} }) } },
@@ -174,22 +175,25 @@ test('demo headers cannot expose or open a stale personal notification badge', (
     '../store/jobs': { useJobsStore: app.jobs },
     '../store/messages': app.messages,
     '../hooks/usePendingMessageCount': load('remote/src/hooks/usePendingMessageCount.ts', {
+      './useDemoMode': { useDemoMode: () => !app.auth.getState().isAuthenticated || machines.error === 'Relay subscription required' || /^\/demo(?:-|\/|$)/.test(pathname) },
+      '../demo/messages': { useDemoMessages: selector => selector({ records: [] }) },
       '@clawtab/shared': app.shared,
       '../store/jobs': { useJobsStore: app.jobs },
       '../store/messages': app.messages,
       '../store/notifications': { useNotificationStore: app.notifications },
     }),
+    '../hooks/useDemoMode': { useDemoMode: () => !app.auth.getState().isAuthenticated || machines.error === 'Relay subscription required' || /^\/demo(?:-|\/|$)/.test(pathname) },
     '../hooks/useResponsive': { useResponsive: () => ({ isSplitView: false }) },
   });
   const machines = { connected: false, error: null };
   app.auth.setState({ isAuthenticated: false });
-  assert.equal(NotificationsMenuButton({}), null);
+  assert.equal(NotificationsMenuButton({}).props.children[0].props.accessibilityLabel, 'Notifications');
   app.auth.setState({ isAuthenticated: true });
   machines.error = 'Relay subscription required';
-  assert.equal(NotificationsMenuButton({}), null);
+  assert.equal(NotificationsMenuButton({}).props.children[0].props.accessibilityLabel, 'Notifications');
   machines.error = null;
   for (pathname of ['/demo', '/demo/claude', '/demo-agent', '/demo-agent-details', '/demo-overview']) {
-    assert.equal(NotificationsMenuButton({}), null);
+    assert.equal(NotificationsMenuButton({}).props.children[0].props.accessibilityLabel, 'Notifications');
   }
   pathname = '/';
   const button = NotificationsMenuButton({}).props.children[0];

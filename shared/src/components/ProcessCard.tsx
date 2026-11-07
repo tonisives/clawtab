@@ -1,7 +1,7 @@
 import type { ComponentRef } from "react";
 import { useMobileListAppearance, mobileListStyles } from "./ListAppearance";
 import { agentAlertTitle, sessionSizeAlertLabel } from "../util/alert";
-import { compactAgentSelectionLabel } from "../util/agent";
+import { compactAgentSelectionLabel, agentSelectionLabel } from "../util/agent";
 import { resourceLabel, splitResource } from "../machines/client";
 import { MachineMark } from "../machines/Badge";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -85,6 +85,7 @@ export function ProcessCard({
   groupedPosition?: GroupedRowPosition;
 }) {
   let mobileAppearance = useMobileListAppearance();
+  const stackedAppearance = mobileAppearance || isWeb;
   const { width, height } = useWindowDimensions();
   const compactPhoneLandscape = Platform.OS === "ios" && !Platform.isPad && width > height;
   let modelLabel = agentLabel ?? (process.model_id ? compactAgentSelectionLabel(null, process.model_id, process.agent_effort) : null);
@@ -249,8 +250,8 @@ export function ProcessCard({
   );
   const titleControls = (
     <View style={styles.titleControls}>
-      {!editing && !mobileAppearance ? <AgentTimestamp timestamp={timestamp} /> : null}
-      {showMenu && !editing ? (
+      {!editing && !stackedAppearance ? <AgentTimestamp timestamp={timestamp} /> : null}
+      {showMenu && !editing && !stackedAppearance ? (
         <TouchableOpacity
           ref={menuBtnRef}
           onPress={(e: any) => {
@@ -305,22 +306,26 @@ export function ProcessCard({
                   {displayName}
                 </Text>
               )}
-              {!mobileAppearance ? titleControls : null}
+              {!stackedAppearance ? titleControls : null}
             </View>
             {!editing ? (
               <View style={styles.processMeta}>
                 <Text style={[styles.queryPreview, transient ? styles.transientPreview : null]} numberOfLines={1}>
                   {listItemSubtitle}
                 </Text>
-                {modelLabel && !mobileAppearance ? <Text style={styles.agentText} numberOfLines={1}>{modelLabel}</Text> : null}
+                {modelLabel && !stackedAppearance ? <Text style={styles.agentText} numberOfLines={1}>{modelLabel}</Text> : null}
               </View>
             ) : null}
           </View>
-          {mobileAppearance ? (
+          {stackedAppearance ? (
             <View style={styles.metadataStack}>
               {titleControls}
               {!editing ? <AgentTimestamp timestamp={timestamp} compact /> : null}
-              {!editing && modelLabel ? <Text style={styles.agentText} numberOfLines={1}>{modelLabel}</Text> : null}
+              {!editing && isWeb && showMenu ? (
+                <TouchableOpacity ref={menuBtnRef} onPress={(e: any) => { e.stopPropagation(); openMenu(e); }} style={styles.moreBtn} accessibilityRole="button" accessibilityLabel="Agent menu">
+                  <Text style={styles.moreBtnText}>{"\u2026"}</Text>
+                </TouchableOpacity>
+              ) : !editing && modelLabel ? <Text style={styles.agentText} numberOfLines={1}>{modelLabel}</Text> : null}
             </View>
           ) : null}
         </View>
@@ -332,6 +337,7 @@ export function ProcessCard({
           nativePlacement="above"
           onClose={() => setMenuOpen(false)}
           items={[
+            ...(isWeb && process.model_id ? [{ type: "item" as const, label: agentSelectionLabel(process.provider, process.model_id, process.agent_effort), disabled: true, onPress: () => {} }, { type: "separator" as const }] : []),
             ...(onTogglePin ? [{ type: "item" as const, label: pinned ? "Unpin" : "Pin", onPress: () => { onTogglePin(); setMenuOpen(false); } }] : []),
             ...(onTogglePin && (canRename || canMoveToWorkspace || onStop) ? [{ type: "separator" as const }] : []),
             ...(canRename ? [{ type: "item" as const, label: "Rename", hint: renameShortcutHint, onPress: () => { startEditing(); } }] : []),
@@ -348,7 +354,7 @@ export function ProcessCard({
 const styles = StyleSheet.create({
   processCard: {
     backgroundColor: colors.surface,
-    borderRadius: radius.md,
+    borderRadius: isWeb ? 28 : radius.md,
     padding: spacing.md,
     borderWidth: 1,
     borderColor: colors.border,
@@ -380,7 +386,7 @@ const styles = StyleSheet.create({
   compactTopRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", minWidth: 0 },
   processInfo: { flex: 1, gap: 2, minWidth: 0 },
   contentRow: { flex: 1, flexDirection: "row", alignItems: "center", minWidth: 0 },
-  metadataStack: { alignItems: "flex-end", flexShrink: 0, gap: 2, marginLeft: spacing.sm, maxWidth: 130 },
+  metadataStack: { alignItems: "flex-end", flexShrink: 0, gap: 4, marginLeft: spacing.sm, maxWidth: 130 },
   processName: { color: colors.text, fontSize: 16, fontWeight: "500", flex: 1 },
   titleRow: {
     flexDirection: "row",
@@ -458,7 +464,7 @@ const styles = StyleSheet.create({
     fontStyle: "normal",
   },
   transientPreview: {
-    fontStyle: "italic",
+    fontStyle: "normal",
   },
   statusDot: {
     width: 8,
@@ -510,8 +516,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.warning,
   },
   moreBtn: {
-    width: 20,
-    height: 8,
+    width: 24,
+    height: 24,
     justifyContent: "center",
     alignItems: "center",
   },

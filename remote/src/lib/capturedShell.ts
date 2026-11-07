@@ -1,4 +1,4 @@
-import { machineHostRequest, splitResource } from "@clawtab/shared";
+import { machineHostRequest, machineRequest, machineState, splitResource } from "@clawtab/shared";
 import { cacheMessageShell, getMessageShell } from "./cacheMessageShell";
 
 // The same capture and literal input operations used by notification shells.
@@ -8,6 +8,23 @@ export function capturedShellCommand(paneId: string) {
     if (command.op === "read") return {};
     const resource = splitResource(paneId);
     if (!resource) throw new Error("This shell's machine is missing");
+    if (!machineState().machines.find(machine => machine.id === resource.machine)?.capabilities.includes("messages_v1")) {
+      if (command.op === "context") {
+        const process = machineState().snapshots[resource.machine]?.detected_processes?.processes?.find((process: { pane_id: string }) => process.pane_id === resource.id);
+        const value = await machineRequest(resource.machine, { type: "get_detected_process_logs", pane_id: resource.id, tmux_session: process?.tmux_session ?? "", lines: 200 });
+        cacheMessageShell({ log: value.logs, source: { pane_id: paneId } });
+        return { log: value.logs, source: { pane_id: paneId } };
+      }
+      if (command.op === "shell_input") {
+        // Older hosts expose named tmux keys. Send single characters so text such
+        // as "Enter" cannot be interpreted as a named key.
+        const keys: Record<string, string> = { "\r": "Enter", "\n": "Enter", "\x7f": "BSpace", "\b": "BSpace", "\t": "Tab", "\x1b[A": "Up", "\x1b[B": "Down", "\x1b[C": "Right", "\x1b[D": "Left", "\x1b": "Escape" };
+        for (const key of String(command.text ?? "").match(/\x1b\[[ABCD]|[\s\S]/gu) ?? []) {
+          await machineRequest(resource.machine, { type: "tmux_pane_key", pane_id: resource.id, key: keys[key] ?? key });
+        }
+        return { sent: true };
+      }
+    }
     if (command.op === "context" || command.op === "shell_input") {
       const value = await machineHostRequest(resource.machine, { action: "message", command: {
         op: command.op === "context" ? "pane_context" : "pane_input",
