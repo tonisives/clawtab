@@ -49,6 +49,7 @@ fn allowed(command: &NfnCommand) -> bool {
             | NfnCommand::Respond { .. }
             | NfnCommand::Read { .. }
             | NfnCommand::Dismiss { .. }
+            | NfnCommand::DismissCard { .. }
             | NfnCommand::KillSession { .. }
             | NfnCommand::Ignore { .. }
             | NfnCommand::Unignore { .. }

@@ -1563,5 +1563,11 @@
   const tallPage = document.querySelector('.section-page');
   assert(stackTallHeight > stackShortHeight && tallPage.scrollHeight > tallPage.clientHeight && tallPage.clientHeight <= innerHeight * .6 + 2, 'longer cards grow the whole bar immediately and clip at the reading limit');
   assert(document.querySelector('.controls').getBoundingClientRect().bottom <= document.querySelector('#surface').getBoundingClientRect().bottom, 'tall replies preserve the bottom controls');
+  document.querySelector('.section-dismiss').click(); await sleep(50);
+  assert(document.querySelector('.section-page').textContent.includes('DJ transition feedback') && document.querySelector('.section-controls .meta').textContent === '1 / 1', 'dismiss removes only the selected draft');
+  window.nfn.receive(window.fixture.snapshot()); await sleep(30);
+  assert(!document.querySelector('.section-page').textContent.includes('Receipt reminder feedback'), 'dismissed drafts stay hidden after refresh');
+  document.querySelector('.section-dismiss').click(); await sleep(50);
+  assert(window.fixture.records.get(outreach.id).dismissed_at, 'dismissing the final draft dismisses its message');
   return { passed: checks.length, checks };
 })()

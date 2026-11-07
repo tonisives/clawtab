@@ -1234,7 +1234,8 @@
     const sections = record.request.data?.sections;
     if (!Array.isArray(sections)) return null;
     const container = el("div", "message-sections");
-    for (const section of sections) {
+    for (const original of sections) {
+      const section = { ...original, cards: original.cards?.filter(item => !item.dismissed_at) };
       if (!Array.isArray(section.cards) || !section.cards.length) continue;
       const region = el("section", "message-section"); region.setAttribute("aria-label", section.title || "Cards");
       const header = el("div", "section-heading"), title = el("h2", "", section.title || "Cards");
@@ -1245,7 +1246,16 @@
       page.tabIndex = 0; page.setAttribute("aria-roledescription", "carousel");
       const previous = iconButton("Previous post", "m14 6-6 6 6 6", () => select(index - 1), "section-previous");
       const next = iconButton("Next post", "m10 6 6 6-6 6", () => select(index + 1), "section-next");
-      const controls = el("div", "section-controls"); controls.append(previous, count, next);
+      const controls = el("div", "section-controls"); const dismiss = iconButton("Dismiss draft", "M6 6l12 12M18 6 6 18", async () => {
+        dismiss.disabled = true;
+        try {
+          const updated = await call({ op: "dismiss_card", id: record.id, card_id: section.cards[index].id });
+          records.set(record.id, updated);
+          if (updated.dismissed_at) advanceAfter(updated);
+          renderedId = null; render();
+        } catch (error) { showError(error, record.id); dismiss.disabled = false; }
+      }, "section-dismiss");
+      controls.append(previous, count, next, dismiss);
       const deck = el("div", "section-deck");
       for (let i = Math.min(2, section.cards.length - 1); i > 0; i--) {
         const layer = el("div", `section-underlay layer-${i}`); layer.setAttribute("aria-hidden", "true"); deck.append(layer);

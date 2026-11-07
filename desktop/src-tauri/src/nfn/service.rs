@@ -980,6 +980,34 @@ impl Service {
                 self.store.supersede_previous(&record)?;
                 serde_json::to_value(&records[0]).map_err(|error| error.to_string())?
             }
+            NfnCommand::DismissCard { id, card_id } => {
+                let mut record = self.store.get(&id)?;
+                let sections = record.request.data["sections"]
+                    .as_array_mut()
+                    .ok_or("No draft sections")?;
+                let mut found = false;
+                let mut remaining = false;
+                for section in sections {
+                    if let Some(cards) = section["cards"].as_array_mut() {
+                        for card in cards {
+                            if card["id"].as_str() == Some(&card_id) {
+                                card["dismissed_at"] = json!(now());
+                                found = true;
+                            }
+                            remaining |= card["dismissed_at"].is_null();
+                        }
+                    }
+                }
+                if !found {
+                    return Err("Draft not found".into());
+                }
+                if !remaining {
+                    record.dismissed_at = Some(now());
+                    record.read_at = Some(now());
+                }
+                self.store.save(&mut record)?;
+                serde_json::to_value(record).map_err(|e| e.to_string())?
+            }
             NfnCommand::DismissMany { ids } => {
                 if ids.len() > 10000 {
                     return Err("Select up to 10000 notifications at a time".into());
