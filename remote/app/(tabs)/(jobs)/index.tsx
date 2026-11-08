@@ -1,3 +1,4 @@
+import { WorkspaceBreadcrumbs } from "../../../src/components/WorkspaceBreadcrumbs";
 import { useModelCatalog } from "@clawtab/shared";
 import { useOpenRelay } from "../../../src/hooks/useOpenRelay"
 import type { ComponentRef } from "react";
@@ -1478,13 +1479,13 @@ function JobsWorkspace({ bounds }: { bounds: { x: number; y: number; width: numb
             </Pressable>
           </View>
         ) : null}
-        {webSplit && navigationHistory.canGoBack && (
-          <View style={styles.navigationToolbar}>
-            <Pressable onPress={navigationHistory.goBack} style={styles.navigationBack} accessibilityRole="button" accessibilityLabel="Go back">
-              <Ionicons name="chevron-back" size={20} color={colors.text} />
-              <Text style={styles.navigationBackText}>Back</Text>
-            </Pressable>
-          </View>
+        {webSplit && (
+          <WorkspaceBreadcrumbs
+            title={sidebarSection === "settings" ? "Settings" : sidebarSection === "notifications" ? notificationDetail ? "Agent details" : "Notifications" : activeContent || demoSelection ? "Agent details" : "Overview"}
+            notifications={sidebarSection === "notifications" && !!notificationDetail}
+            onMain={handleOpenSidebarJobs}
+            onNotifications={() => setNotificationDetail(null)}
+          />
         )}
         {webSplit && settingsMounted && (
           <View style={[styles.sectionPane, sidebarSection !== "settings" && styles.hiddenSection]}>

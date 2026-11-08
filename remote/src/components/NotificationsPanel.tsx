@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { colors } from "@clawtab/shared";
 import { JobDetailPane } from "./JobDetailPane";
@@ -46,7 +46,7 @@ export function NotificationsPanel({
   if (detailTarget) {
     return (
       <View style={styles.detailRoot}>
-        {mode === "screen" && (
+        {mode === "screen" && Platform.OS !== "web" && (
           <View style={styles.detailToolbar}>
             <Pressable
               onPress={closeDetail}

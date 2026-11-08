@@ -1,3 +1,4 @@
+import { WorkspaceBreadcrumbs } from "../../src/components/WorkspaceBreadcrumbs";
 import { ShellSurface } from "../../src/components/ShellSurface";
 import { toggleAutoYes } from "../../src/lib/autoYes"
 import { useAgentActions } from "../../src/hooks/useAgentActions";
@@ -200,7 +201,7 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, fromSplit, landscapeHan
   const waitingHeaderOptions = useMemo(() => ({
     animation: landscapeHandoff ? "none" as const : "slide_from_right" as const,
     orientation: Platform.OS === "ios" && !Platform.isPad ? "default" as const : undefined,
-    headerShown: !isWide && landscapeHeader.headerShown,
+    headerShown: Platform.OS !== "web" && !isWide && landscapeHeader.headerShown,
     title: pane_id,
     headerStyle: { backgroundColor: colors.bg },
     headerTintColor: colors.text,
@@ -211,7 +212,7 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, fromSplit, landscapeHan
   const terminalHeaderOptions = useMemo(() => ({
     animation: landscapeHandoff ? "none" as const : "slide_from_right" as const,
     orientation: Platform.OS === "ios" && !Platform.isPad ? "default" as const : undefined,
-    headerShown: !isWide && landscapeHeader.headerShown,
+    headerShown: Platform.OS !== "web" && !isWide && landscapeHeader.headerShown,
     headerStyle: { backgroundColor: colors.bg },
     headerTintColor: colors.text,
     headerTitleStyle: { fontWeight: "600" as const },
@@ -247,6 +248,7 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, fromSplit, landscapeHan
     return (
       <View style={containerStyle}>
         <Stack.Screen options={waitingHeaderOptions} />
+        {Platform.OS === "web" && <WorkspaceBreadcrumbs title={pane_id} />}
         <View style={styles.center}>
           <LoadingBar label={loading.label} progress={loading.progress} />
         </View>
@@ -257,6 +259,7 @@ let ProcessDetailContent = ({ pane_id, preserveTerminal, fromSplit, landscapeHan
   return (
     <View style={containerStyle}>
       <Stack.Screen options={terminalHeaderOptions} />
+      {Platform.OS === "web" && <WorkspaceBreadcrumbs title={headerTitle} actions={terminalHeaderOptions.headerRight()} />}
       <ShellSurface paneId={pane_id} onScrollGesture={landscapeHeader.onScrollGesture} />
       {landscapeHeader.overlayShown ? (
         <LandscapeTerminalBar

@@ -1,3 +1,4 @@
+import { WorkspaceBreadcrumbs } from "../../src/components/WorkspaceBreadcrumbs";
 import { useModelCatalog } from "@clawtab/shared";
 import { ShellSurface } from "../../src/components/ShellSurface";
 import { toggleAutoYes } from "../../src/lib/autoYes"
@@ -124,7 +125,7 @@ export default function JobDetailScreen() {
   const renderTerminal = useCallback(() => <ShellSurface paneId={statusPaneId} onScrollGesture={landscapeHeader.onScrollGesture} />, [statusPaneId, landscapeHeader.onScrollGesture]);
   const loadingHeaderOptions = useMemo(() => ({
     animation: landscapeHandoff === "1" ? "none" as const : "slide_from_right" as const,
-    headerShown: !isWide && landscapeHeader.headerShown,
+    headerShown: Platform.OS !== "web" && !isWide && landscapeHeader.headerShown,
     title: name,
     headerStyle: { backgroundColor: colors.bg },
     headerTintColor: colors.text,
@@ -138,7 +139,7 @@ export default function JobDetailScreen() {
     orientation: Platform.OS === "ios" && !Platform.isPad
       ? isRunningWithShell ? "default" as const : "portrait_up" as const
       : undefined,
-    headerShown: !isWide && landscapeHeader.headerShown,
+    headerShown: Platform.OS !== "web" && !isWide && landscapeHeader.headerShown,
     headerStyle: { backgroundColor: colors.bg },
     headerTintColor: colors.text,
     headerTitleStyle: { fontWeight: "600" as const },
@@ -167,6 +168,7 @@ export default function JobDetailScreen() {
     return (
       <View style={containerStyle}>
         <Stack.Screen options={loadingHeaderOptions} />
+        {Platform.OS === "web" && <WorkspaceBreadcrumbs title={name} />}
         <View style={styles.center}>
           {waiting ? (
             <>
@@ -186,6 +188,7 @@ export default function JobDetailScreen() {
   return (
     <View style={containerStyle}>
       <Stack.Screen options={jobHeaderOptions} />
+      {Platform.OS === "web" && <WorkspaceBreadcrumbs title={jobHeaderName} actions={jobHeaderOptions.headerRight()} />}
 
       <ContentContainer wide fill>
         <JobDetailView
