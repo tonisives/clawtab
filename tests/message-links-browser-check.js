@@ -27,6 +27,31 @@
   document.querySelector('.open-session').click();
   links = [...document.querySelectorAll('.open-menu a')];
   assert(links.length === 1 && links[0].textContent === 'Report', 'ordinary message bodies also supply Open destinations');
+  if (!mobile) {
+    const settle = () => new Promise(resolve => setTimeout(resolve, 450));
+    document.querySelector('.open-menu .close').click();
+    await settle();
+    record.request.body = Array.from({ length: 6 }, (_, index) => `[Deliverable documentation ${index + 1}](https://example.com/report/${index})`).join('\n');
+    window.nfn.receive(snapshot());
+    await settle();
+    const surface = document.querySelector('#surface');
+    const closedHeight = surface.getBoundingClientRect().height;
+    document.querySelector('.open-session').click();
+    await settle();
+    const panel = document.querySelector('.open-menu');
+    assert(surface.getBoundingClientRect().height > closedHeight, 'desktop bar grows to fit all Open destinations');
+    assert(panel.scrollHeight <= panel.clientHeight + 1, 'Open destinations fit without a menu scrollbar');
+    assert(panel.getBoundingClientRect().top >= document.querySelector('.top').getBoundingClientRect().bottom, 'expanded Open menu stays below the bar header');
+    document.querySelector('.open-menu .close').click();
+    await settle();
+    assert(Math.abs(surface.getBoundingClientRect().height - closedHeight) <= 1, 'closing Open restores the previous bar height');
+    record.request.body = Array.from({ length: 40 }, (_, index) => `[Report ${index}](https://example.com/report/${index})`).join('\n');
+    window.nfn.receive(snapshot());
+    document.querySelector('.open-session').click();
+    await settle();
+    assert(surface.getBoundingClientRect().height <= 860, 'long Open menus respect the desktop height limit');
+    assert(document.querySelector('.open-menu').scrollHeight > document.querySelector('.open-menu').clientHeight, 'menus beyond the desktop height limit remain scrollable');
+  }
   if (mobile) {
     document.querySelector('.open-menu .close').click();
     window.ReactNativeWebView = { postMessage() {} };

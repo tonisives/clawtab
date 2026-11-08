@@ -679,7 +679,7 @@
     const height = Math.min(geometry.max_height || 860, Math.max(280, needed));
     host.style.height = `${height}px`;
   }
-  new ResizeObserver(() => { fitReviewHeight(); positionAcknowledgementMenu(); positionOpenMenu(); size(); syncNativePointerHover(); }).observe(host);
+  new ResizeObserver(() => { fitReviewHeight(); fitOpenMenuHeight(); positionAcknowledgementMenu(); positionOpenMenu(); size(); syncNativePointerHover(); }).observe(host);
   const cardSizeObserver = new ResizeObserver(() => { fitReviewHeight(); size(); });
   let observedCard = null;
   function observeCardSize() {
@@ -2170,6 +2170,17 @@
     panel.style.left = `${left}px`;
     panel.style.bottom = `${nativeFooter ? 8 : Math.max(0, bounds.bottom - anchor.top + 8)}px`;
   }
+  function fitOpenMenuHeight() {
+    if (snapshot.remote || layoutAnimation) return;
+    const overlay = host.querySelector(".open-overlay"), panel = overlay?.querySelector(".open-menu");
+    const trigger = card?._openSession;
+    if (!panel || !trigger) return;
+    const available = trigger.getBoundingClientRect().top - overlay.getBoundingClientRect().top - 16;
+    const needed = panel.scrollHeight + panel.offsetHeight - panel.clientHeight;
+    if (needed <= available) return;
+    const height = Math.min(geometry.max_height || 860, Math.ceil(host.getBoundingClientRect().height + needed - available));
+    host.style.minHeight = `${height}px`;
+  }
   function positionOpenMenu() {
     const overlay = host.querySelector(".open-overlay"), panel = overlay?.querySelector(".open-menu");
     const trigger = card?._openSession;
@@ -2424,6 +2435,7 @@
   function applyResizedSize() {
     const active = canResize() && resizedSize;
     host.classList.toggle("user-sized", Boolean(active));
+    host.style.minHeight = "";
     host.style.width = active ? `${resizedSize.width}px` : "";
     host.style.height = active ? `${resizedSize.height}px` : "";
   }
@@ -2614,7 +2626,7 @@
       }
       updateCard(); syncCardDetails(records.get(current));
     } else { host.querySelector(".card")?.remove(); host.querySelector(".queue")?.remove(); renderedId = null; card = null; }
-    renderMenu(); positionAcknowledgementMenu(); positionOpenMenu(); cleanupRemoteMedia(); observeCardSize(); fitReviewHeight(); if (resizing || !animate) size(); else if (!continuingAnimation) animateLayout(before, !queue && !menu && !settingsOpen);
+    renderMenu(); fitOpenMenuHeight(); positionAcknowledgementMenu(); positionOpenMenu(); cleanupRemoteMedia(); observeCardSize(); fitReviewHeight(); if (resizing || !animate) size(); else if (!continuingAnimation) animateLayout(before, !queue && !menu && !settingsOpen);
     host.classList.toggle("shell-answers", Boolean(snapshot.shell_answers));
     host.classList.toggle("demo-surface", Boolean(snapshot.demo));
     host.classList.toggle("native-mobile", mobileHost() || Boolean(snapshot.shell_only)); host.classList.toggle("native-chrome", Boolean(mobileHost() && snapshot.native_chrome)); host.classList.toggle("shell-only", Boolean(snapshot.shell_only)); host.classList.toggle("shell-reply", shellReply); syncMobileChrome(); preloadMobileShells();
