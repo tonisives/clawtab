@@ -45,7 +45,7 @@ button.auto-yes-button{width:100%;min-height:44px;padding:8px 16px;border-radius
 .controls.session-controls{grid-template-columns:minmax(0,1fr);gap:0;margin-left:0;margin-right:0}
 .controls .details-toggle{display:none}
 .session-controls .footer-actions{grid-column:1;justify-self:stretch;width:100%}
-.footer-actions.segmented-control{display:flex;padding:0;border:1px solid #7986cb80;border-radius:8px;background:#7986cb80;gap:1px;overflow:hidden}
+.footer-actions.segmented-control{display:flex;padding:0;border:1px solid #7986cb80;border-radius:999px;background:#7986cb80;gap:1px;overflow:hidden}
 .controls .footer-actions.segmented-control button{flex:1 1 auto;min-width:0;max-width:none;margin:0;border:0;border-radius:0;padding:8px;font-family:inherit;font-size:14px;line-height:20px;font-weight:600;color:#aeb8ed;background:#272727;white-space:nowrap;overflow:visible;text-overflow:clip}
 .controls .footer-actions.segmented-control button:is(:hover,:active,[aria-expanded="true"]){background:#313131;color:#aeb8ed}
 
@@ -56,10 +56,14 @@ button.auto-yes-button{width:100%;min-height:44px;padding:8px 16px;border-radius
 .native-mobile .logs{box-sizing:border-box;width:100%;min-width:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;line-height:16px;border:0;border-radius:0;background:#000000;padding:8px;margin:0}
 .phone-landscape .native-mobile.shell-only .logs{font-size:8px;line-height:12px}
 .native-mobile.details-open>.card{flex:1;min-height:0}
-.native-chrome.details-open:not(.shell-reply)>.card{padding:12px 0 calc(12px + var(--message-safe-bottom,env(safe-area-inset-bottom,0px)))}
-.native-chrome.details-open:not(.shell-reply)>.card>.heading,.native-chrome.details-open:not(.shell-reply) .message-content>:not(.details-content),.native-chrome.details-open:not(.shell-reply)>.card>.answer-auto-yes,.native-chrome.details-open:not(.shell-reply)>.card>.answer-row,.native-chrome.details-open:not(.shell-reply)>.card>.reply,.native-chrome.details-open:not(.shell-reply)>.card>.notice{margin-left:12px;margin-right:12px}
+.details-open:not(.shell-reply)>.card{padding:12px 0 calc(12px + var(--message-safe-bottom,env(safe-area-inset-bottom,0px)))}
+.details-open:not(.shell-reply)>.card>.heading,.details-open:not(.shell-reply) .message-content>:not(.details-content),.details-open:not(.shell-reply)>.card>.answer-auto-yes,.details-open:not(.shell-reply)>.card>.answer-row,.details-open:not(.shell-reply)>.card>.reply,.details-open:not(.shell-reply)>.card>.notice{margin-left:12px;margin-right:12px}
 .native-chrome.details-open>.card>.controls{display:none}
-.native-chrome.details-open .details-content{background:#000000}
+.details-open .details-content{background:#000000;scrollbar-width:none}
+.details-content::-webkit-scrollbar{display:none}
+.details-open>.card>.message-content{padding-inline-end:0;scrollbar-gutter:auto}
+.details-open:not(.shell-reply)>.card>.controls{margin-left:12px;margin-right:12px}
+.details-content .logs{width:100%;border:0;border-radius:0;margin:0;padding:8px}
 .native-mobile.shell-reply>.card{padding:0;display:flex;flex:1;min-height:0;overflow:hidden}
 .native-mobile.shell-reply .card>:not(.heading):not(.message-content):not(.shell-keyboard):not(.notice){display:none}
 .native-mobile.shell-reply .notice{flex:none;padding:0 12px}

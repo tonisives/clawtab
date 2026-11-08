@@ -386,16 +386,19 @@
     pendingOffset = result.next_offset || pendingOffset + 50;
     if ((result.records?.length || 0) < 50) unseenPending = 0;
   }
-  const mobileShellCache = new Map();
+  const mobileShellCache = new Map(), mobileShellContexts = new Map();
   const mobileContextRequests = new Map(), mobileShellCapturedAt = new Map(), mobilePreloadAttempts = new Map();
   let mobilePreloads = 0;
   let shellReply = false, shellSending = false, shellInputTimer = null, lastMobileChrome = "", mobileArrival = 0, receivedMobileSnapshot = false;
   const shellInputQueue = [];
   const mobileHost = () => Boolean(window.ReactNativeWebView);
-  function captureMobileShell(id) {
+  function captureMobileShell(id, useCache = false) {
+    if (useCache && mobileShellContexts.has(id) && Date.now() - mobileShellCapturedAt.get(id) < 15000) {
+      return Promise.resolve(mobileShellContexts.get(id));
+    }
     if (mobileContextRequests.has(id)) return mobileContextRequests.get(id);
     const request = call({ op: "context", id }).then(value => {
-      mobileShellCache.set(id, value.log); mobileShellCapturedAt.set(id, Date.now());
+      mobileShellCache.set(id, value.log); mobileShellContexts.set(id, value); mobileShellCapturedAt.set(id, Date.now());
       return value;
     }).finally(() => mobileContextRequests.delete(id));
     mobileContextRequests.set(id, request);
@@ -407,7 +410,7 @@
     for (const record of pendingCards().reverse()) {
       if (mobilePreloads >= 2) break;
       const id = record.id;
-      if (id === current || !record.request.source?.pane_id || record.details_available === false || mobileContextRequests.has(id)
+      if (id === current || !hasBlock(template(record).layout, "logs") || record.details_available === false || mobileContextRequests.has(id)
         || now - (mobileShellCapturedAt.get(id) || 0) < 15000 || now - (mobilePreloadAttempts.get(id) || 0) < 15000) continue;
       mobilePreloadAttempts.set(id, now); mobilePreloads++;
       captureMobileShell(id).catch(() => {}).finally(() => { mobilePreloads--; preloadMobileShells(); });
@@ -834,7 +837,7 @@
   }
   function startContext() {
     if (!details || !current || queue || settingsOpen || document.hidden) return;
-    refreshContext();
+    refreshContext(true);
     if (!logTimer) logTimer = setInterval(refreshContext, 1000);
   }
   function toggleDetails() {
@@ -1854,13 +1857,13 @@
       && (logs.contains(selection.anchorNode) || logs.contains(selection.focusNode))));
   }
   document.addEventListener("selectionchange", () => card?._logs?._selectionChanged?.());
-  async function refreshContext() {
+  async function refreshContext(useCache = false) {
     if ((!details && menu !== "agent") || queue || settingsOpen || !current || !card || contextRequest?.card === card) return;
     const id = current, request = { card }; contextRequest = request;
     const ownsContext = () => contextRequest === request && id === current && card === request.card
       && (details || menu === "agent") && !queue && !settingsOpen;
     try {
-      const value = await (snapshot.remote ? captureMobileShell(id) : call({ op: "context", id }));
+      const value = await (snapshot.remote ? captureMobileShell(id, useCache && menu !== "agent") : call({ op: "context", id }));
       if (!ownsContext()) return;
       contextErrors.delete(id);
       if (actionErrors.get(id) === "Machine is offline") actionErrors.delete(id);
