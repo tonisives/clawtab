@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { TerminalKeyboardToolbar } from "./TerminalKeyboardToolbar";
 import { TerminalWriteDialog } from "./TerminalWriteDialog";
+import { observeMessageKeyboard } from "../lib/messageKeyboardViewport";
 import document from "../lib/messageSurfaceDocument.generated";
 import { messageSurfaceDefaultView, messageSurfaceInitialDocument } from "../lib/messageSurfaceBootstrap";
 import type { MessageSurfaceProps, SurfaceMessage } from "./messageSurfaceTypes";
@@ -25,38 +26,27 @@ export function MessageSurface(props: MessageSurfaceProps) {
   const [writeOpen, setWriteOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const frame = useRef<HTMLIFrameElement>(null);
+  const host = useRef<HTMLDivElement>(null);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const writeOpenRef = useRef(writeOpen);
+  writeOpenRef.current = writeOpen;
   const latest = useRef(props);
   latest.current = props;
   const ready = useRef(false);
   const selected = useRef<string | null>(null);
-  useEffect(() => {
-    const viewport = window.visualViewport;
-    if (!viewport) return;
-    let pending = 0;
-    const resize = () => {
-      cancelAnimationFrame(pending);
-      pending = requestAnimationFrame(() => {
-        const element = frame.current;
-        if (!element) return;
-        // Route transitions move the frame without a viewport resize. Keep
-        // natural flex sizing until the keyboard reduces the visible viewport.
-        const bottom = viewport.offsetTop + viewport.height;
-        element.style.maxHeight = window.innerHeight - viewport.height > 100
-          ? `${Math.max(0, bottom - element.getBoundingClientRect().top)}px` : "";
-      });
-    };
-    resize();
-    viewport.addEventListener("resize", resize);
-    viewport.addEventListener("scroll", resize);
-    window.addEventListener("resize", resize);
-    return () => {
-      cancelAnimationFrame(pending);
-      viewport.removeEventListener("resize", resize);
-      viewport.removeEventListener("scroll", resize);
-      window.removeEventListener("resize", resize);
-    };
-  }, []);
   const send = useCallback((value: unknown) => frame.current?.contentWindow?.postMessage(value, "*"), []);
+  useEffect(() => observeMessageKeyboard(window,
+    () => latest.current.snapshot.shell_only ? host.current : frame.current,
+    (visible, dismissed) => {
+      setKeyboardVisible(visible);
+      if (dismissed) {
+        setMenuOpen(false);
+        if (latest.current.snapshot.shell_only && !writeOpenRef.current && !desktopKeyboard) {
+          setReply(false);
+          send({ type: "mobile_action", action: "reply_close" });
+        }
+      }
+    }), [desktopKeyboard, send]);
   const synchronize = useCallback(() => {
     if (!ready.current) return;
     if (latest.current.active === false) {
@@ -103,10 +93,10 @@ export function MessageSurface(props: MessageSurfaceProps) {
     onLoad={() => { ready.current = true; selected.current = null; synchronize(); }} />;
   if (!props.snapshot.shell_only) return iframe;
   const input = (text: string) => send({ type: "mobile_action", action: "shell_input", text });
-  return <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+  return <div ref={host} style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
     {iframe}
-    {reply && !desktopKeyboard ? <TerminalKeyboardToolbar bottom={0} inline dismissIcon="close"
-      onDismiss={() => send({ type: "mobile_action", action: "reply_close" })} onSend={input}
+    {reply && keyboardVisible && !desktopKeyboard && !writeOpen && props.active !== false ? <TerminalKeyboardToolbar bottom={0} inline dismissIcon="close"
+      onDismiss={() => { setReply(false); setMenuOpen(false); send({ type: "mobile_action", action: "reply_close" }); }} onSend={input}
       onWrite={() => { setMenuOpen(false); setWriteOpen(true); }} menuOpen={menuOpen} onMenuOpenChange={setMenuOpen} /> : null}
     <TerminalWriteDialog visible={writeOpen} draft={draft} onDraftChange={setDraft} onClose={() => setWriteOpen(false)} onDone={() => {
       const text = draft.replace(/\r\n|\n/g, "\r"); input(text.endsWith("\r") ? text : text + "\r");
