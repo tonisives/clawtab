@@ -388,7 +388,13 @@ button.session-locations{font-size:14px;line-height:20px;padding:4px 8px}
 .section-page:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .section-page .outreach-review { margin-top: 0; }
 .section-page .outreach-review > .social-post { padding: 0; border: 0; border-radius: 0; background: transparent; }
-.outreach-original-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.outreach-original-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; margin-bottom: 8px; }
+.outreach-post-meta { display: flex; align-items: center; justify-content: flex-end; gap: 8px; white-space: nowrap; }
+.outreach-post-meta .social-platform-mark { padding: 0; }
+.outreach-questions { margin-top: 16px; font-size: 14px; line-height: 20px; overflow-wrap: anywhere; }
+.outreach-questions p { margin: 0 0 12px; }
+.outreach-questions ul { margin: 8px 0 0; padding-left: 24px; }
+.outreach-questions li + li { margin-top: 8px; }
 .outreach-source-excerpt { margin: 0; color: var(--muted); font-size: 14px; line-height: 20px; white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 5; overflow: hidden; }
 .outreach-reply { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 8px; margin-top: 16px; }
 .outreach-reply > svg { width: 24px; height: 24px; fill: none; stroke: var(--muted); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }

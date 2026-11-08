@@ -1487,6 +1487,20 @@
     assert(!document.querySelector('.open-menu'), 'choosing a link closes Open');
   }
   assert(document.querySelector('.open-session') && !document.querySelector('.social-decisions'), "CRM cards can resume Codex and keep approval in CRM");
+  const replyDraft = { ...outreach.request.data.outreach, published_at: "2026-11-08T12:00:00Z" };
+  outreach.request.data.outreach = { ...replyDraft, platform: "x", recipient: "James Malsawm", body: "",
+    missing_context: "The original post does not describe the idea.", questions: ["Which idea do you want to validate?"] };
+  window.nfn.receive(window.fixture.snapshot(outreach.id)); await sleep(30);
+  const originalPost = document.querySelector('.outreach-original'), privateQuestions = document.querySelector('.outreach-questions');
+  assert(originalPost && privateQuestions && (originalPost.compareDocumentPosition(privateQuestions) & Node.DOCUMENT_POSITION_FOLLOWING), 'question cards always put the original post above private questions');
+  assert(!document.querySelector('.copy-reply, .outreach-reply') && privateQuestions.textContent.includes('No original reply drafted.'), 'private questions are distinct from public reply drafts');
+  const authorRect = document.querySelector('.outreach-original-header .social-name').getBoundingClientRect();
+  const dateNode = document.querySelector('.outreach-post-date'), dateRect = dateNode.getBoundingClientRect();
+  const brandRect = document.querySelector('.outreach-post-meta .social-platform-mark').getBoundingClientRect();
+  assert(dateNode.dateTime === '2026-11-08T12:00:00.000Z' && authorRect.right <= dateRect.left && dateRect.right <= brandRect.left, 'post headers keep author on the left and publication date then platform on the right');
+  assert(Math.abs(authorRect.top + authorRect.height / 2 - brandRect.top - brandRect.height / 2) < 1, 'platform icon stays vertically aligned with the author');
+  outreach.request.data.outreach = replyDraft;
+  window.nfn.receive(window.fixture.snapshot(outreach.id)); await sleep(30);
   const originalId = outreach.id, originalCreated = outreach.created_at;
   outreach.request.data.outreach.body = "Revised preview copy kept on the same card.";
   window.nfn.receive(window.fixture.snapshot()); await sleep(30);

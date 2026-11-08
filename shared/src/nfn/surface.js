@@ -1189,8 +1189,9 @@
   function outreachCard(record) {
     const draft = record.request.data?.outreach;
     if (!draft || typeof draft.body !== "string") return null;
+    const questions = Array.isArray(draft.questions) ? draft.questions.filter(text => typeof text === "string" && text.trim()) : [];
     const section = el("section", "outreach-review");
-    section.setAttribute("aria-label", "Outreach draft");
+    section.setAttribute("aria-label", questions.length ? "Post needing your input" : "Outreach draft");
     const email = draft.channel === "email";
     const post = el("article", email ? "social-post email-post" : "social-post outreach-thread");
     if (email) {
@@ -1199,20 +1200,42 @@
       if (draft.subject) post.append(el("strong", "social-title", draft.subject));
       post.append(el("div", "social-body", draft.body));
     } else {
-      post.setAttribute("aria-label", "Reply preview");
+      post.setAttribute("aria-label", questions.length ? "Original post and private questions" : "Reply preview");
       const source = el("div", "outreach-original");
       const header = el("div", "outreach-original-header");
-      header.append(el("strong", "social-name", draft.recipient || "Recipient"), socialBrand((draft.platform || "Message").toLowerCase()));
+      const metadata = el("div", "outreach-post-meta");
+      let published = draft.published_at;
+      if (!published) {
+        const status = /^https:\/\/(?:www\.)?(?:x|twitter)\.com\/[^/]+\/status\/(\d+)/.exec(draft.source_url || "");
+        if (status) published = Number((BigInt(status[1]) >> 22n) + 1288834974657n);
+      }
+      const date = published == null ? null : new Date(published);
+      if (date && Number.isFinite(date.getTime())) {
+        const time = el("time", "meta outreach-post-date", date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }));
+        time.dateTime = date.toISOString(); time.title = date.toLocaleString(); metadata.append(time);
+      }
+      metadata.append(socialBrand((draft.platform || "Message").toLowerCase()));
+      header.append(el("strong", "social-name", draft.recipient || "Recipient"), metadata);
       source.append(header);
       if (draft.source_excerpt) source.append(el("blockquote", "outreach-source-excerpt", draft.source_excerpt));
-      const reply = el("div", "outreach-reply");
-      const arrow = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-      arrow.setAttribute("viewBox", "0 0 24 24"); arrow.setAttribute("role", "img"); arrow.setAttribute("aria-label", "Reply");
-      const shape = document.createElementNS(arrow.namespaceURI, "path");
-      shape.setAttribute("d", "M5 4v8a4 4 0 0 0 4 4h11m-5-5 5 5-5 5"); arrow.append(shape);
-      reply.append(arrow, el("div", "social-body", draft.body));
-      post.append(source, reply);
+      if (questions.length) {
+        const input = el("div", "outreach-questions");
+        input.append(el("p", "", "No original reply drafted."));
+        if (draft.missing_context) input.append(el("p", "", draft.missing_context));
+        input.append(el("strong", "", "Questions for you"));
+        const list = el("ul"); questions.forEach(text => list.append(el("li", "", text))); input.append(list);
+        post.append(source, input);
+      } else {
+        const reply = el("div", "outreach-reply");
+        const arrow = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        arrow.setAttribute("viewBox", "0 0 24 24"); arrow.setAttribute("role", "img"); arrow.setAttribute("aria-label", "Reply");
+        const shape = document.createElementNS(arrow.namespaceURI, "path");
+        shape.setAttribute("d", "M5 4v8a4 4 0 0 0 4 4h11m-5-5 5 5-5 5"); arrow.append(shape);
+        reply.append(arrow, el("div", "social-body", draft.body));
+        post.append(source, reply);
+      }
     }
+    if (questions.length) { section.append(post); return section; }
     const copy = iconButton("Copy reply", "M9 9h11v11H9zM5 15H4V4h11v1", () => copyReply(draft.body, copy), "copy-reply");
     const footer = el("div", "outreach-footer"); footer.append(copy);
     section.append(post, footer);
