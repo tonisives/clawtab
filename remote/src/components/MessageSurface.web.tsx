@@ -21,6 +21,7 @@ export function MessageSurface(props: MessageSurfaceProps) {
     if (props.snapshot.shell_only) source.current = source.current.replace("<script>",
       '<script>window.ReactNativeWebView={postMessage:raw=>window.parent.postMessage(JSON.parse(raw),"*")};');
   }
+  const [documentReady, setDocumentReady] = useState(false);
   const [reply, setReply] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [writeOpen, setWriteOpen] = useState(false);
@@ -89,8 +90,8 @@ export function MessageSurface(props: MessageSurfaceProps) {
   useEffect(synchronize, [props.snapshot, props.selection, props.active, synchronize]);
 
   const iframe = <iframe ref={frame} title="Messages" sandbox="allow-scripts" srcDoc={source.current}
-    style={{ display: "block", width: "100%", height: "100%", flex: 1, minHeight: 0, border: 0, background: "#161616" }}
-    onLoad={() => { ready.current = true; selected.current = null; synchronize(); }} />;
+    style={{ display: "block", width: "100%", height: "100%", flex: 1, minHeight: 0, border: 0, background: "#161616", colorScheme: "dark", visibility: documentReady ? "visible" : "hidden" }}
+    onLoad={() => { ready.current = true; selected.current = null; synchronize(); setDocumentReady(true); }} />;
   if (!props.snapshot.shell_only) return iframe;
   const changeMenu = (open: boolean) => {
     menuOpenRef.current = open;

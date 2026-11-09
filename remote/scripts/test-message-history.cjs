@@ -41,3 +41,15 @@ test("history merges machines by latest close or response before slicing pages",
   const inbox = await controller.execute({ op: "list", pending_only: true });
   assert.equal(inbox.records[0].id, "new-51");
 });
+
+test("an unavailable message response is rejected before entering the surface cache", async () => {
+  dependencies['./messagePresentation'].parseSurfaceId = value => ({ machine: value.split('::')[0], id: value.split('::')[1] });
+  for (const invalid of [null, {}, { id: 'gone' }]) {
+    const controller = exportsObject.messageSurfaceController({
+      records: () => [], machines: () => [{ id: 'a', online: true }],
+      host: async () => invalid,
+      update: () => assert.fail('Invalid record entered the store'),
+    });
+    await assert.rejects(controller.execute({ op: 'get', id: 'a::gone' }), /message is no longer available/);
+  }
+});

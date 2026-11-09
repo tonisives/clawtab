@@ -48,6 +48,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
               set({ isAuthenticated: true, userId, email: emailFromToken(accessToken), loading: false })
               return
             }
+            const current = await api.getStoredTokens()
+            if (current.accessToken && current.userId && (current.accessToken !== accessToken || current.userId !== userId)) {
+              await get().init()
+              return
+            }
             await api.clearTokens()
             await clearCache(userId)
             terminalCache.clear(); clearMessageShellCache()
@@ -57,7 +62,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         }
         set({ isAuthenticated: true, userId, email: emailFromToken(accessToken), loading: false })
       } else {
-        set({ loading: false })
+        const previousUser = get().userId
+        set({ isAuthenticated: false, userId: null, email: null, loading: false })
+        await clearCache(previousUser)
+        terminalCache.clear(); clearMessageShellCache()
       }
     } catch {
       set({ loading: false })
@@ -106,13 +114,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       await api.refreshToken()
       return true
-    } catch (error) {
-      if (!api.isInvalidRefreshError(error)) return false
-      await api.clearTokens()
-      await clearCache(get().userId)
-      terminalCache.clear(); clearMessageShellCache()
-      set({ isAuthenticated: false, userId: null, email: null })
+    } catch {
+      // The API expires rejected credentials and preserves newer account sessions.
       return false
     }
   },
 }))
+
+
+api.onSessionExpired((userId) => {
+  if (useAuthStore.getState().userId !== userId) return;
+  useAuthStore.setState({ isAuthenticated: false, userId: null, email: null, loading: false });
+  void clearCache(userId);
+  terminalCache.clear(); clearMessageShellCache();
+});

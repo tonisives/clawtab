@@ -81,7 +81,7 @@ function surfaceFixture() {
   const effects = [];
   const listeners = new Map();
   const sent = [];
-  let cursor = 0, mounted = false, keyboard;
+  let cursor = 0, mounted = false, keyboard, iframe;
   const jsx = (type, props) => ({ type, props });
   const react = {
     useState: initial => { const key = cursor++; if (!(key in hooks)) hooks[key] = typeof initial === 'function' ? initial() : initial; return [hooks[key], value => { hooks[key] = value; }]; },
@@ -108,7 +108,7 @@ function surfaceFixture() {
   const render = () => {
     cursor = 0;
     const tree = component.MessageSurface(props);
-    const iframe = tree.props.children[0];
+    iframe = tree.props.children[0];
     iframe.props.ref.current = { contentWindow: { postMessage: value => sent.push(value) } };
     if (!mounted) { mounted = true; effects.forEach(fn => fn()); }
     return tree.props.children[1];
@@ -119,7 +119,7 @@ function surfaceFixture() {
     listeners.get('message')({ source: frameRef.current.contentWindow, data: { nfn: { native: 'chrome', reply: true } } });
   };
   render();
-  return { render, toolbar, reply, sent, keyboard: (...args) => keyboard(...args) };
+  return { render, toolbar, reply, sent, iframe: () => iframe, keyboard: (...args) => keyboard(...args) };
 }
 
 test('web action buttons and reply mode clear when Safari dismisses the keyboard', () => {
@@ -165,4 +165,14 @@ test('Write stays available after More opens and the keyboard closes', () => {
   app.keyboard(false, true);
   app.toolbar().props.onWrite();
   assert.equal(app.toolbar(), null);
+});
+
+
+test('the iframe stays hidden until its document loads, avoiding a blank white frame', () => {
+  const app = surfaceFixture();
+  assert.equal(app.iframe().props.style.visibility, 'hidden');
+  assert.equal(app.iframe().props.style.colorScheme, 'dark');
+  app.iframe().props.onLoad();
+  app.render();
+  assert.equal(app.iframe().props.style.visibility, 'visible');
 });

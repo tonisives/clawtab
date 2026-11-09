@@ -31,7 +31,10 @@ export function messageSurfaceController(options: Options) {
     return request;
   };
   const remember = (machine: string, raw: Result) => {
-    const source = raw.request.source;
+    if (!raw || typeof raw.id !== "string" || !raw.request || typeof raw.request !== "object") {
+      throw new Error("This message is no longer available. Open the message list to refresh it.");
+    }
+    const source = raw.request.source || {};
     const scope = (id?: string) => id && (id.startsWith(`${machine}::`) ? id : resourceKey(machine, id));
     const record = { ...raw, machine_id: machine, request: { ...raw.request, source: {
       ...source, pane_id: scope(source.pane_id), job_id: scope(source.job_id),

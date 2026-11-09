@@ -1,10 +1,11 @@
+import { observeWebSession } from "../src/lib/webSessionRecovery";
 import { completeBrowserAuth } from "../src/lib/completeBrowserAuth";
 import { useIapRecovery } from "../src/hooks/useIap";
 import { trackFunnel } from "../src/lib/funnel";
 import { initializeWebAnalytics } from "../src/lib/analytics";
 import { MachineOnboardingProvider } from "@clawtab/shared";
 import { machineOnboardingChrome, machineOnboardingContent, machineManagementContent } from "../src/components/MachineSetup";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as SplashScreen from "expo-splash-screen";
 import { preloadAppIcons } from "../src/lib/appIcons";
 import { DarkTheme, Stack, ThemeProvider, useRouter } from "expo-router";
@@ -106,7 +107,8 @@ function useWebDarkScrollbars() {
     if (Platform.OS !== "web") return;
     const style = document.createElement("style");
     style.textContent = `
-      html { color-scheme: dark; }
+      html { color-scheme: dark; background: ${colors.bg}; }
+      body, #root { background: ${colors.bg}; }
       ::-webkit-scrollbar { width: 8px; height: 8px; }
       ::-webkit-scrollbar-track { background: transparent; }
       ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 4px; }
@@ -149,6 +151,7 @@ export default function RootLayout() {
 
 function AppLayout() {
   const demo = useDemoMode();
+  const router = useRouter();
   const [iconsReady, setIconsReady] = useState(false);
   useIapRecovery();
   useWebDarkScrollbars();
@@ -174,13 +177,24 @@ function AppLayout() {
     handleColdStartAnswer();
   }, [init]);
 
+  const previousAuth = useRef(isAuthenticated);
+  useEffect(() => {
+    if (previousAuth.current && !isAuthenticated) router.replace("/login");
+    previousAuth.current = isAuthenticated;
+  }, [isAuthenticated, router]);
+
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    return observeWebSession(window, document, () => { void init(); });
+  }, [init]);
+
   const ready = !loading && iconsReady;
 
   const content = (
     <MachineOnboardingProvider chrome={machineOnboardingChrome} content={machineOnboardingContent} management={machineManagementContent}>
     <ThemeProvider value={navTheme}>
       <View style={styles.root}>
-        <Stack screenOptions={{ headerShown: false, animation: "none", orientation: "default" }}>
+        <Stack screenOptions={{ headerShown: false, animation: "none", contentStyle: { backgroundColor: colors.bg }, orientation: "default" }}>
           <Stack.Screen
             name="(tabs)"
             options={{

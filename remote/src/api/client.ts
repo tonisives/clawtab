@@ -72,25 +72,21 @@ async function request<T>(
 
   // Auto-refresh on 401 for authenticated requests
   if (resp.status === 401 && useAuth) {
-    try {
-      if (expectedUserId && await storage.getItem(KEYS.userId) !== expectedUserId) throw new Error("Account changed");
-      // Check if another request already refreshed the token
-      const currentToken = await storage.getItem(KEYS.accessToken);
-      if (currentToken && currentToken !== originalToken) {
-        // Token was already refreshed by a concurrent request, just retry
-        headers["Authorization"] = `Bearer ${currentToken}`;
-      } else {
-        await refreshToken();
-        const newToken = await storage.getItem(KEYS.accessToken);
-        if (newToken) {
-          headers["Authorization"] = `Bearer ${newToken}`;
-        }
+    if (expectedUserId && await storage.getItem(KEYS.userId) !== expectedUserId) throw new Error("Account changed");
+    // Check if another request already refreshed the token
+    const currentToken = await storage.getItem(KEYS.accessToken);
+    if (currentToken && currentToken !== originalToken) {
+      // Token was already refreshed by a concurrent request, just retry
+      headers["Authorization"] = `Bearer ${currentToken}`;
+    } else {
+      await refreshToken();
+      const newToken = await storage.getItem(KEYS.accessToken);
+      if (newToken) {
+        headers["Authorization"] = `Bearer ${newToken}`;
       }
-      if (expectedUserId && await storage.getItem(KEYS.userId) !== expectedUserId) throw new Error("Account changed");
-      resp = await fetch(`${serverUrl}${path}`, { ...options, headers });
-    } catch {
-      // refresh failed, throw the original 401
     }
+    if (expectedUserId && await storage.getItem(KEYS.userId) !== expectedUserId) throw new Error("Account changed");
+    resp = await fetch(`${serverUrl}${path}`, { ...options, headers });
   }
 
   if (!resp.ok) {
@@ -132,21 +128,17 @@ async function backendRequest<T>(
   });
 
   if (resp.status === 401) {
-    try {
-      const currentToken = await storage.getItem(KEYS.accessToken);
-      if (currentToken && currentToken !== originalToken) {
-        headers["Authorization"] = `Bearer ${currentToken}`;
-      } else {
-        await refreshToken();
-        const newToken = await storage.getItem(KEYS.accessToken);
-        if (newToken) {
-          headers["Authorization"] = `Bearer ${newToken}`;
-        }
+    const currentToken = await storage.getItem(KEYS.accessToken);
+    if (currentToken && currentToken !== originalToken) {
+      headers["Authorization"] = `Bearer ${currentToken}`;
+    } else {
+      await refreshToken();
+      const newToken = await storage.getItem(KEYS.accessToken);
+      if (newToken) {
+        headers["Authorization"] = `Bearer ${newToken}`;
       }
-      resp = await fetch(`${backendUrl}${path}`, { ...options, headers });
-    } catch {
-      // refresh failed
     }
+    resp = await fetch(`${backendUrl}${path}`, { ...options, headers });
   }
 
   if (!resp.ok) {
@@ -169,35 +161,58 @@ async function backendRequest<T>(
 // Deduplicate concurrent refresh calls to prevent refresh token reuse,
 // which triggers stolen-token detection and revokes all tokens.
 let refreshInFlight: Promise<AuthResponse> | null = null;
+const sessionExpiredListeners = new Set<(userId: string | null) => void>();
+export function onSessionExpired(listener: (userId: string | null) => void) {
+  sessionExpiredListeners.add(listener);
+  return () => { sessionExpiredListeners.delete(listener); };
+}
 
 export async function refreshToken(): Promise<AuthResponse> {
   if (refreshInFlight) return refreshInFlight;
 
   refreshInFlight = (async () => {
-    const token = await storage.getItem(KEYS.refreshToken);
-    const userId = await storage.getItem(KEYS.userId);
-    if (!token) throw Object.assign(new Error("No refresh token"), { status: 401 });
-
-    let controller = new AbortController();
-    let timeout = setTimeout(() => controller.abort(), 15_000);
-    let resp: AuthResponse;
-    try {
-      resp = await request<AuthResponse>("/auth/refresh", {
-        method: "POST",
-        body: JSON.stringify({ refresh_token: token }),
-        signal: controller.signal,
-      });
-    } finally {
-      clearTimeout(timeout);
-    }
-
-    if (await storage.getItem(KEYS.refreshToken) !== token || await storage.getItem(KEYS.userId) !== userId || (userId && resp.user_id !== userId)) {
-      throw new Error("Account changed during refresh");
-    }
-    await storage.setItem(KEYS.refreshToken, resp.refresh_token);
-    await storage.setItem(KEYS.accessToken, resp.access_token);
-
-    return resp;
+    const originalAccessToken = await storage.getItem(KEYS.accessToken);
+    const originalUserId = await storage.getItem(KEYS.userId);
+    const run = async () => {
+      const stored = await getStoredTokens();
+      if (stored.userId !== originalUserId) throw new Error("Account changed during refresh");
+      // Another tab may have rotated the credentials while this tab waited.
+      if (stored.accessToken && stored.accessToken !== originalAccessToken && stored.refreshToken && stored.userId) {
+        return { user_id: stored.userId, access_token: stored.accessToken, refresh_token: stored.refreshToken };
+      }
+      const token = stored.refreshToken;
+      const userId = stored.userId;
+      try {
+        if (!token) throw Object.assign(new Error("No refresh token"), { status: 401 });
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 15_000);
+        let resp: AuthResponse;
+        try {
+          resp = await request<AuthResponse>("/auth/refresh", {
+            method: "POST",
+            body: JSON.stringify({ refresh_token: token }),
+            signal: controller.signal,
+          });
+        } finally {
+          clearTimeout(timeout);
+        }
+        if (await storage.getItem(KEYS.refreshToken) !== token || await storage.getItem(KEYS.userId) !== userId || (userId && resp.user_id !== userId)) {
+          throw new Error("Account changed during refresh");
+        }
+        await storage.setItem(KEYS.refreshToken, resp.refresh_token);
+        await storage.setItem(KEYS.accessToken, resp.access_token);
+        return resp;
+      } catch (error) {
+        if (isInvalidRefreshError(error) && await storage.getItem(KEYS.refreshToken) === token && await storage.getItem(KEYS.userId) === userId) {
+          await clearTokens();
+          for (const listener of sessionExpiredListeners) listener(userId);
+        }
+        throw error;
+      }
+    };
+    // Serialize rotating refresh credentials across browser tabs as well as requests.
+    return typeof navigator !== "undefined" && navigator.locks
+      ? navigator.locks.request("clawtab-session-refresh", run) : run();
   })().finally(() => {
     refreshInFlight = null;
   });
@@ -433,21 +448,17 @@ async function triggersRequest<T>(
   let resp = await fetch(`${triggersUrl}${path}`, { ...options, headers });
 
   if (resp.status === 401) {
-    try {
-      const currentToken = await storage.getItem(KEYS.accessToken);
-      if (currentToken && currentToken !== originalToken) {
-        headers["Authorization"] = `Bearer ${currentToken}`;
-      } else {
-        await refreshToken();
-        const newToken = await storage.getItem(KEYS.accessToken);
-        if (newToken) {
-          headers["Authorization"] = `Bearer ${newToken}`;
-        }
+    const currentToken = await storage.getItem(KEYS.accessToken);
+    if (currentToken && currentToken !== originalToken) {
+      headers["Authorization"] = `Bearer ${currentToken}`;
+    } else {
+      await refreshToken();
+      const newToken = await storage.getItem(KEYS.accessToken);
+      if (newToken) {
+        headers["Authorization"] = `Bearer ${newToken}`;
       }
-      resp = await fetch(`${triggersUrl}${path}`, { ...options, headers });
-    } catch {
-      // refresh failed
     }
+    resp = await fetch(`${triggersUrl}${path}`, { ...options, headers });
   }
 
   if (!resp.ok) {
