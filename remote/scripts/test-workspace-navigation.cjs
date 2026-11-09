@@ -48,6 +48,9 @@ test("agent details reached directly always expose the main jobs and tabs link",
   assert.ok(nodes.some(node => node.props?.role === "navigation"));
   const links = nodes.filter(node => node.type === "Pressable");
   assert.equal(links.length, 1);
+  assert.equal(links[0].props.accessibilityLabel, "Show jobs and tabs");
+  assert.ok(nodes.some(node => node.type === "Ionicons" && node.props.name === "menu-outline"));
+  assert.equal(nodes.some(node => node.type === "Text" && node.props.children === "Jobs & tabs"), false);
   links[0].props.onPress();
   assert.deepEqual(app.destinations, ["/(tabs)"]);
 });

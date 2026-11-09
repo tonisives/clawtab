@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { usePathname, useRouter } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { colors } from "@clawtab/shared";
 
 type Props = {
@@ -20,7 +21,7 @@ export function WorkspaceBreadcrumbs({ title, actions, notifications, onMain, on
       <Pressable accessibilityRole="link" accessibilityLabel="Show jobs and tabs"
         onPress={onMain ?? (() => router.dismissTo("/(tabs)"))}
         style={({ pressed }) => [styles.link, pressed && styles.pressed]}>
-        <Text style={styles.linkText}>Jobs & tabs</Text>
+        <Ionicons name="menu-outline" size={24} color={colors.accent} />
       </Pressable>
       {fromNotifications && <>
         <Text style={styles.separator}>/</Text>

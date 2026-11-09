@@ -76,7 +76,7 @@ test('unmount cancels updates, removes listeners and restores layout', () => {
   assert.equal(app.changes.length, 1);
 });
 
-test('web action buttons and reply mode clear when Safari dismisses the keyboard', () => {
+function surfaceFixture() {
   const hooks = [];
   const effects = [];
   const listeners = new Map();
@@ -113,15 +113,56 @@ test('web action buttons and reply mode clear when Safari dismisses the keyboard
     if (!mounted) { mounted = true; effects.forEach(fn => fn()); }
     return tree.props.children[1];
   };
-  assert.equal(render(), null);
-  const frameRef = hooks.find(value => value?.current?.contentWindow);
-  listeners.get('message')({ source: frameRef.current.contentWindow, data: { nfn: { native: 'chrome', reply: true } } });
-  assert.equal(render(), null);
-  keyboard(true, false);
-  assert.equal(render().type, 'Toolbar');
-  keyboard(false, true);
-  assert.equal(render(), null);
-  assert.ok(sent.some(value => value.action === 'reply_close'));
-  keyboard(true, false);
-  assert.equal(render(), null, 'reply mode was cleared, so another input cannot resurrect the buttons');
+  const toolbar = () => render()?.props.children ?? null;
+  const reply = () => {
+    const frameRef = hooks.find(value => value?.current?.contentWindow);
+    listeners.get('message')({ source: frameRef.current.contentWindow, data: { nfn: { native: 'chrome', reply: true } } });
+  };
+  render();
+  return { render, toolbar, reply, sent, keyboard: (...args) => keyboard(...args) };
+}
+
+test('web action buttons and reply mode clear when Safari dismisses the keyboard', () => {
+  const app = surfaceFixture();
+  app.reply();
+  assert.equal(app.toolbar(), null);
+  app.keyboard(true, false);
+  assert.equal(app.toolbar().type, 'Toolbar');
+  app.keyboard(false, true);
+  assert.equal(app.toolbar(), null);
+  assert.ok(app.sent.some(value => value.action === 'reply_close'));
+  app.keyboard(true, false);
+  assert.equal(app.toolbar(), null, 'reply mode was cleared, so another input cannot resurrect the buttons');
+});
+
+test('terminal actions preserve input focus on pointer down', () => {
+  const app = surfaceFixture();
+  app.reply();
+  app.keyboard(true, false);
+  let prevented = false;
+  app.render().props.onPointerDown({ preventDefault: () => { prevented = true; } });
+  assert.equal(prevented, true);
+});
+
+test('opening More survives keyboard dismissal before the next render', () => {
+  const app = surfaceFixture();
+  app.reply();
+  app.keyboard(true, false);
+  app.toolbar().props.onMenuOpenChange(true);
+  app.keyboard(false, true);
+  assert.equal(app.toolbar().props.menuOpen, true);
+  assert.equal(app.sent.some(value => value.action === 'reply_close'), false);
+  app.toolbar().props.onMenuOpenChange(false);
+  assert.equal(app.toolbar(), null);
+  assert.ok(app.sent.some(value => value.action === 'reply_close'));
+});
+
+test('Write stays available after More opens and the keyboard closes', () => {
+  const app = surfaceFixture();
+  app.reply();
+  app.keyboard(true, false);
+  app.toolbar().props.onMenuOpenChange(true);
+  app.keyboard(false, true);
+  app.toolbar().props.onWrite();
+  assert.equal(app.toolbar(), null);
 });

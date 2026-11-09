@@ -28,6 +28,7 @@ export function MessageSurface(props: MessageSurfaceProps) {
   const frame = useRef<HTMLIFrameElement>(null);
   const host = useRef<HTMLDivElement>(null);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const menuOpenRef = useRef(false);
   const writeOpenRef = useRef(writeOpen);
   writeOpenRef.current = writeOpen;
   const latest = useRef(props);
@@ -40,8 +41,7 @@ export function MessageSurface(props: MessageSurfaceProps) {
     (visible, dismissed) => {
       setKeyboardVisible(visible);
       if (dismissed) {
-        setMenuOpen(false);
-        if (latest.current.snapshot.shell_only && !writeOpenRef.current && !desktopKeyboard) {
+        if (latest.current.snapshot.shell_only && !menuOpenRef.current && !writeOpenRef.current && !desktopKeyboard) {
           setReply(false);
           send({ type: "mobile_action", action: "reply_close" });
         }
@@ -92,12 +92,25 @@ export function MessageSurface(props: MessageSurfaceProps) {
     style={{ display: "block", width: "100%", height: "100%", flex: 1, minHeight: 0, border: 0, background: "#161616" }}
     onLoad={() => { ready.current = true; selected.current = null; synchronize(); }} />;
   if (!props.snapshot.shell_only) return iframe;
+  const changeMenu = (open: boolean) => {
+    menuOpenRef.current = open;
+    setMenuOpen(open);
+    if (!open && !keyboardVisible) {
+      setReply(false);
+      send({ type: "mobile_action", action: "reply_close" });
+    }
+  };
   const input = (text: string) => send({ type: "mobile_action", action: "shell_input", text });
   return <div ref={host} style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
     {iframe}
-    {reply && keyboardVisible && !desktopKeyboard && !writeOpen && props.active !== false ? <TerminalKeyboardToolbar bottom={0} inline dismissIcon="close"
-      onDismiss={() => { setReply(false); setMenuOpen(false); send({ type: "mobile_action", action: "reply_close" }); }} onSend={input}
-      onWrite={() => { setMenuOpen(false); setWriteOpen(true); }} menuOpen={menuOpen} onMenuOpenChange={setMenuOpen} /> : null}
+    {((reply && keyboardVisible) || menuOpen) && !desktopKeyboard && !writeOpen && props.active !== false ? <div
+      style={{ flexShrink: 0 }}
+      // Keep taps on terminal actions from moving focus out of the iframe input.
+      onPointerDown={event => event.preventDefault()}>
+      <TerminalKeyboardToolbar bottom={0} inline dismissIcon="close"
+      onDismiss={() => { setReply(false); menuOpenRef.current = false; setMenuOpen(false); send({ type: "mobile_action", action: "reply_close" }); }} onSend={input}
+      onWrite={() => { menuOpenRef.current = false; setMenuOpen(false); setWriteOpen(true); }} menuOpen={menuOpen} onMenuOpenChange={changeMenu} />
+    </div> : null}
     <TerminalWriteDialog visible={writeOpen} draft={draft} onDraftChange={setDraft} onClose={() => setWriteOpen(false)} onDone={() => {
       const text = draft.replace(/\r\n|\n/g, "\r"); input(text.endsWith("\r") ? text : text + "\r");
       setDraft(""); setWriteOpen(false);
