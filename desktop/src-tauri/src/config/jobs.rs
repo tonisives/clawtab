@@ -156,6 +156,79 @@ pub struct Job {
     pub max_history: u32,
 }
 
+/// On-disk agent selection. Shell jobs only need a provider.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct JobAgent {
+    provider: ProcessProvider,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    effort: Option<String>,
+}
+
+/// Keep the desktop/relay API compatible while grouping YAML settings.
+#[derive(Serialize, Deserialize)]
+struct JobFile {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    agent: Option<JobAgent>,
+    #[serde(flatten)]
+    job: Job,
+}
+
+impl Job {
+    pub fn from_yaml(contents: &str) -> Result<Self, String> {
+        let file: JobFile = serde_yml::from_str(contents).map_err(|e| e.to_string())?;
+        let mut job = file.job;
+        if let Some(agent) = file.agent {
+            if job.agent_provider.is_some()
+                || job.agent_model.is_some()
+                || job.agent_effort.is_some()
+            {
+                return Err(
+                    "use agent.provider, agent.model and agent.effort instead of flat agent fields"
+                        .into(),
+                );
+            }
+            job.agent_provider = Some(agent.provider);
+            job.agent_model = agent.model;
+            job.agent_effort = agent.effort;
+        } else {
+            migrate_agent_selection(&mut job);
+        }
+        job.validate_agent()?;
+        Ok(job)
+    }
+
+    pub fn validate_agent(&self) -> Result<(), String> {
+        if self.job_type == JobType::Binary || self.agent_provider == Some(ProcessProvider::Shell) {
+            return Ok(());
+        }
+        if self.agent_provider.is_none() {
+            return Err("agent.provider is required for agent jobs".into());
+        }
+        if self
+            .agent_model
+            .as_deref()
+            .is_none_or(|model| model.trim().is_empty())
+        {
+            return Err("agent.model is required for agent jobs; choose a model such as gpt-6.1-sol or gpt-6-luna".into());
+        }
+        Ok(())
+    }
+
+    pub fn to_yaml(&self) -> Result<String, String> {
+        self.validate_agent()?;
+        let mut job = self.clone();
+        let agent = job.agent_provider.take().map(|provider| JobAgent {
+            provider,
+            model: job.agent_model.take(),
+            effort: job.agent_effort.take(),
+        });
+        serde_yml::to_string(&JobFile { agent, job }).map_err(|e| e.to_string())
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RunOnceSchedule {
     pub at: chrono::DateTime<chrono::FixedOffset>,
@@ -348,7 +421,7 @@ impl JobsConfig {
 
     fn load_job_yaml(path: &std::path::Path, slug: &str) -> Option<Job> {
         match std::fs::read_to_string(path) {
-            Ok(contents) => match serde_yml::from_str::<Job>(&contents) {
+            Ok(contents) => match Job::from_yaml(&contents) {
                 Ok(mut job) => {
                     job.slug = slug.to_string();
                     let notify_target_migrated = migrate_legacy_notify_target(&mut job, &contents);
@@ -360,8 +433,11 @@ impl JobsConfig {
                         || notify_renamed
                         || notify_target_migrated
                         || agent_selection_migrated
+                        || contents.contains("agent_provider:")
+                        || (job.agent_provider.is_some()
+                            && !contents.lines().any(|line| line.starts_with("agent:")))
                     {
-                        if let Ok(canonical) = serde_yml::to_string(&job) {
+                        if let Ok(canonical) = job.to_yaml() {
                             if let Err(e) = std::fs::write(path, canonical) {
                                 log::warn!("Failed to write migrated {}: {}", path.display(), e);
                             }
@@ -383,6 +459,7 @@ impl JobsConfig {
 
     pub fn save_job(&self, job: &Job) -> Result<(), String> {
         validate_job_schedule(job)?;
+        job.validate_agent()?;
         let hosted_guard = crate::hosted::job_write_guard()?;
         let current = hosted_guard.as_ref().map(|_| Self::load());
         let jobs = current.as_ref().map_or(&self.jobs, |config| &config.jobs);
@@ -408,7 +485,8 @@ impl JobsConfig {
             job_to_save.added_at = Some(chrono::Utc::now().to_rfc3339());
         }
 
-        let contents = serde_yml::to_string(&job_to_save)
+        let contents = job_to_save
+            .to_yaml()
             .map_err(|e| format!("Failed to serialize job: {}", e))?;
         std::fs::write(job_dir.join("job.yaml"), contents)
             .map_err(|e| format!("Failed to write job.yaml: {}", e))
@@ -480,6 +558,7 @@ impl JobsConfig {
         let mut temp_jobs: Vec<Job> = Vec::new();
 
         for mut job in legacy.jobs {
+            migrate_agent_selection(&mut job);
             let slug = derive_slug(
                 &job.folder_path.as_deref().unwrap_or(&job.name),
                 job.job_id.as_deref(),
@@ -495,7 +574,7 @@ impl JobsConfig {
                 log::warn!("Failed to create job dir {}: {}", slug, e);
                 continue;
             }
-            match serde_yml::to_string(&job) {
+            match job.to_yaml() {
                 Ok(yaml) => {
                     if let Err(e) = std::fs::write(job_dir.join("job.yaml"), yaml) {
                         log::warn!("Failed to write job.yaml for {}: {}", slug, e);
@@ -601,6 +680,18 @@ fn migrate_agent_selection(job: &mut Job) -> bool {
         || job.agent_provider.is_some()
         || job.agent_model.is_some();
     let is_terminal = matches!(job.agent_provider, Some(ProcessProvider::Shell));
+    if is_agent_job
+        && !is_terminal
+        && job
+            .agent_model
+            .as_deref()
+            .is_none_or(|model| model.trim().is_empty())
+        && matches!(job.agent_provider, None | Some(ProcessProvider::Codex))
+    {
+        job.agent_provider = Some(ProcessProvider::Codex);
+        job.agent_model = Some("gpt-6.1-sol".into());
+        changed = true;
+    }
     if is_agent_job && !is_terminal && job.agent_effort.is_none() {
         job.agent_effort = Some("medium".to_string());
         changed = true;
@@ -855,7 +946,7 @@ pub fn migrate_job_md_to_central(jobs: &mut [Job]) {
                 // Save the updated job
                 let job_dir = jobs_dir.join(&job.slug);
                 let _ = std::fs::create_dir_all(&job_dir);
-                if let Ok(yaml) = serde_yml::to_string(&job) {
+                if let Ok(yaml) = job.to_yaml() {
                     let _ = std::fs::write(job_dir.join("job.yaml"), yaml);
                 }
             }
@@ -1220,7 +1311,7 @@ mod tests {
             "schedule:\n  start: '2026-08-03T09:00'\n  repeat:\n    every: 2\n    unit: week\n",
         );
 
-        let job = parse_job(&yaml);
+        let job = Job::from_yaml(&yaml).unwrap();
 
         assert!(job.cron.is_empty());
         assert_eq!(
@@ -1233,7 +1324,7 @@ mod tests {
         );
         assert!(validate_job_schedule(&job).is_ok());
 
-        let serialized = serde_yml::to_string(&job).expect("job should serialize");
+        let serialized = job.to_yaml().expect("job should serialize");
         assert!(serialized.contains("schedule:"));
         assert!(!serialized.contains("cron:"));
     }
@@ -1256,7 +1347,7 @@ mod tests {
 
     #[test]
     fn one_time_schedule_excludes_recurring_schedules() {
-        let mut job = parse_job(&base_yaml("params: []"));
+        let mut job = Job::from_yaml(&base_yaml("params: []")).unwrap();
         job.run_once = Some(RunOnceSchedule {
             at: chrono::DateTime::parse_from_rfc3339("2026-10-02T09:00:00+07:00").unwrap(),
             remove_after_start: true,
@@ -1264,7 +1355,7 @@ mod tests {
         assert!(validate_job_schedule(&job).is_err());
         job.cron.clear();
         assert!(validate_job_schedule(&job).is_ok());
-        let restored: Job = serde_yml::from_str(&serde_yml::to_string(&job).unwrap()).unwrap();
+        let restored: Job = Job::from_yaml(&job.to_yaml().unwrap()).unwrap();
         assert_eq!(restored.run_once, job.run_once);
     }
 
@@ -1335,7 +1426,85 @@ mod tests {
         job.agent_model = Some("codex-medium".to_string());
 
         assert!(migrate_agent_selection(&mut job));
-        assert_eq!(job.agent_model, None);
+        assert_eq!(job.agent_model.as_deref(), Some("gpt-6.1-sol"));
         assert_eq!(job.agent_effort.as_deref(), Some("medium"));
+    }
+
+    #[test]
+    fn agent_object_roundtrips_and_preserves_flat_api() {
+        let job = Job::from_yaml(&base_yaml(
+            "agent:\n  provider: codex\n  model: gpt-6-luna\n  effort: low",
+        ))
+        .unwrap();
+        let yaml = job.to_yaml().unwrap();
+        assert!(yaml.contains("agent:\n  provider: codex\n  model: gpt-6-luna\n  effort: low"));
+        assert!(!yaml.contains("agent_model:"));
+        assert!(!yaml.contains("agent_provider:"));
+        let restored = Job::from_yaml(&yaml).unwrap();
+        assert_eq!(restored.agent_model.as_deref(), Some("gpt-6-luna"));
+        assert_eq!(restored.agent_effort.as_deref(), Some("low"));
+        let api = serde_json::to_value(&restored).unwrap();
+        assert_eq!(api["agent_model"], "gpt-6-luna");
+    }
+
+    #[test]
+    fn agent_object_requires_model_and_rejects_mixed_fields() {
+        for model in ["", "  model: null\n", "  model: ''\n", "  model: '  '\n"] {
+            let yaml = base_yaml(&format!("agent:\n  provider: codex\n{model}"));
+            assert!(Job::from_yaml(&yaml)
+                .unwrap_err()
+                .contains("agent.model is required"));
+        }
+        let yaml =
+            base_yaml("agent:\n  provider: codex\n  model: gpt-6.1-sol\nagent_model: gpt-6-luna");
+        assert!(Job::from_yaml(&yaml)
+            .unwrap_err()
+            .contains("instead of flat"));
+        let mut job = test_job("test", "test", "test/test");
+        assert!(job
+            .to_yaml()
+            .unwrap_err()
+            .contains("agent.provider is required"));
+        job.agent_provider = Some(ProcessProvider::Codex);
+        assert!(job
+            .to_yaml()
+            .unwrap_err()
+            .contains("agent.model is required"));
+    }
+
+    #[test]
+    fn legacy_jobs_persist_an_explicit_model_on_load() {
+        for fields in [
+            "",
+            "agent_provider: codex",
+            "agent_provider: codex\nagent_model: gpt-6-luna",
+        ] {
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("job.yaml");
+            std::fs::write(&path, base_yaml(fields)).unwrap();
+            let job = JobsConfig::load_job_yaml(&path, "test/job").unwrap();
+            let expected = if fields.contains("luna") {
+                "gpt-6-luna"
+            } else {
+                "gpt-6.1-sol"
+            };
+            assert_eq!(job.agent_model.as_deref(), Some(expected));
+            let saved = std::fs::read_to_string(&path).unwrap();
+            assert!(saved.contains("agent:\n"));
+            assert!(!saved.contains("agent_provider:"));
+            JobsConfig::load_job_yaml(&path, "test/job").unwrap();
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), saved);
+        }
+    }
+
+    #[test]
+    fn shell_and_binary_jobs_do_not_require_models() {
+        let shell = Job::from_yaml(&base_yaml("agent:\n  provider: shell")).unwrap();
+        assert!(shell.agent_model.is_none());
+        assert!(shell.to_yaml().is_ok());
+        let binary =
+            Job::from_yaml(&base_yaml("").replace("job_type: job", "job_type: binary")).unwrap();
+        assert!(binary.agent_provider.is_none());
+        assert!(binary.to_yaml().is_ok());
     }
 }

@@ -49,9 +49,9 @@ export const emptyJob: Job = {
   params: [],
   kill_on_end: false,
   auto_yes: false,
-  agent_provider: null,
-  agent_model: null,
-  agent_effort: null,
+  agent_provider: "codex",
+  agent_model: "gpt-6.1-sol",
+  agent_effort: "medium",
   aerospace_workspace: null,
   max_history: 3,
 };

@@ -121,3 +121,24 @@ schedule:
 ```
 
 `start` is a local date and time in the Mac's timezone. `every: 1` runs weekly, `every: 2` runs every other week, and larger values preserve the same anchor date and time. The desktop editor uses the native macOS date/time picker and offers weekly intervals from 1 to 12 weeks.
+
+### Job agent selection
+
+Agent jobs store a provider and model together in `job.yaml`:
+
+```yaml
+agent:
+  provider: codex
+  model: gpt-6.1-sol
+  effort: medium
+```
+
+`provider` and a nonempty `model` are required for agent jobs. For lighter tasks,
+choose `gpt-6-luna`. Shell jobs use `agent: { provider: shell }`; binary jobs do
+not need an agent. The CLI requires `--provider` and `--model` when creating a
+job. The interactive creator and desktop editor start with Codex `gpt-6.1-sol`.
+
+Existing flat `agent_provider`, `agent_model`, and `agent_effort` fields migrate
+to the object when loaded. Legacy Codex jobs without a model receive
+`gpt-6.1-sol`. Existing explicit models and effort selections are preserved.
+The desktop and relay API fields remain compatible with existing clients.

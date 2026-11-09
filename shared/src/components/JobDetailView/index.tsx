@@ -582,15 +582,12 @@ export function JobDetailView({
           })() : null}
           {showHeaderAgent && agentLabel && onUpdateJob && editHeaderFields && agentProvider !== "shell" && detailModelOptions.length > 0 ? (
             <AgentSelector
-              modelOptions={detailModelOptions}
+              modelOptions={detailModelOptions.filter((option) => option.provider === "shell" || option.modelId)}
               provider={job.agent_provider}
               model={job.agent_model}
               effort={job.agent_provider ? agentEffort : null}
-              includeDefault
-              defaultLabel={`${agentLabel} (default)`}
               label={agentLabel}
               nativeBottomInset={optionBarBottomInset}
-              onSelectDefault={() => handleAgentUpdate({ agent_provider: null, agent_model: null, agent_effort: null })}
               onChange={(selection) => handleAgentUpdate({
                 agent_provider: selection.provider,
                 agent_model: selection.modelId,

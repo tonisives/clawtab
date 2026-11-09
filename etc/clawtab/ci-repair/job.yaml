@@ -30,5 +30,6 @@ params:
   value: 'false'
 kill_on_end: true
 auto_yes: false
-agent_provider: shell
 max_history: 3
+agent:
+  provider: shell

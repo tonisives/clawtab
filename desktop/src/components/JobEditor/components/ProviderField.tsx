@@ -1,6 +1,6 @@
 import { useModelCatalog } from "@clawtab/shared";
 import type { AgentEffort, ProcessProvider } from "@clawtab/shared";
-import { AgentSelector, agentSelectionLabel, defaultAgentEffort } from "@clawtab/shared";
+import { AgentSelector, defaultAgentEffort } from "@clawtab/shared";
 import type { Job } from "../../../types";
 import { buildModelOptions } from "../utils";
 
@@ -17,7 +17,7 @@ interface ProviderFieldProps {
 
 export function ProviderField({
   form, isNew, startedAsShellJob, availableProviders,
-  defaultProvider, defaultModel, enabledModels, handleProviderChange,
+  enabledModels, handleProviderChange,
 }: ProviderFieldProps) {
   useModelCatalog();
   if (form.job_type !== "claude" && form.job_type !== "job") return null;
@@ -25,9 +25,8 @@ export function ProviderField({
   const allOptions = buildModelOptions(availableProviders, enabledModels);
   const currentProvider = form.agent_provider ?? null;
   const currentModel = form.agent_model ?? null;
-  const isDefault = currentProvider === null && currentModel === null && form.agent_effort == null;
   const options = allOptions.filter((option) => {
-    if (isDefault && option.provider === defaultProvider && (option.modelId ?? null) === (defaultModel ?? null)) return false;
+    if (option.provider !== "shell" && !option.modelId) return false;
     if (!isNew && !startedAsShellJob && option.provider === "shell") return false;
     return true;
   });
@@ -40,11 +39,8 @@ export function ProviderField({
         provider={currentProvider}
         model={currentModel}
         effort={form.agent_effort ?? defaultAgentEffort(currentProvider, currentModel)}
-        includeDefault
-        defaultLabel={`${agentSelectionLabel(defaultProvider, defaultModel)} (default)`}
         includeShell={isNew || startedAsShellJob}
         fullWidth
-        onSelectDefault={() => handleProviderChange(null, null, null)}
         onChange={(selection) => handleProviderChange(selection.provider, selection.modelId, selection.effort)}
       />
       <span className="hint">

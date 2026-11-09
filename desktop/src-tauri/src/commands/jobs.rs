@@ -207,9 +207,9 @@ pub fn import_job_folder(
         params: Vec::new(),
         kill_on_end: true,
         auto_yes: false,
-        agent_provider: None,
-        agent_model: None,
-        agent_effort: None,
+        agent_provider: Some(ProcessProvider::Codex),
+        agent_model: Some("gpt-6.1-sol".into()),
+        agent_effort: Some("medium".into()),
         added_at: Some(chrono::Utc::now().to_rfc3339()),
         max_history: 3,
     };

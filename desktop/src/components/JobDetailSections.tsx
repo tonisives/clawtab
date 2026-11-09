@@ -399,19 +399,12 @@ function AgentConfigSection({
         label="Agent"
         value={onUpdateJob && agentModelOptions.length > 0 ? (
           <AgentSelector
-            modelOptions={agentModelOptions}
+            modelOptions={agentModelOptions.filter((option) => option.provider === "shell" || option.modelId)}
             provider={job.agent_provider}
             model={job.agent_model}
             effort={job.agent_effort}
-            includeDefault
-            defaultLabel={`${agentLabel} (default)`}
             label={agentLabel}
             fullWidth
-            onSelectDefault={() => onUpdateJob({
-              agent_provider: null,
-              agent_model: null,
-              agent_effort: null,
-            })}
             onChange={(selection) => onUpdateJob({
               agent_provider: selection.provider,
               agent_model: selection.modelId,

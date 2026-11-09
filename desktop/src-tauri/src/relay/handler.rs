@@ -1621,7 +1621,10 @@ fn create_job(
     let job:crate::config::jobs::Job=serde_json::from_value(serde_json::json!({
         "name":name,"job_type":job_type,"enabled":true,"path":if job_type=="binary"{input.to_string_lossy().into_owned()}else{String::new()},"cron":cron,"work_dir":folder,
         "folder_path":folder,"job_id":name,"group":if group.trim().is_empty(){"default"}else{group},"slug":slug,
-        "added_at":chrono::Utc::now().to_rfc3339(),"notify_target":"app"
+        "added_at":chrono::Utc::now().to_rfc3339(),"notify_target":"app",
+        "agent_provider":if job_type=="binary"{None}else{Some("codex")},
+        "agent_model":if job_type=="binary"{None}else{Some("gpt-6.1-sol")},
+        "agent_effort":if job_type=="binary"{None}else{Some("medium")}
     })).map_err(|e|e.to_string())?;
     config.save_job(&job)?;
     let prompt_path =

@@ -114,9 +114,9 @@ In a project directory, run `cwt jobs create` for an interactive form. Enter the
 You can also supply the fields directly:
 
 ```bash
-cwt jobs create --name daily-review --cron '0 9 * * *' --description-file review.md
-cwt jobs create --name follow-up --at '2026-10-02 09:00' --description 'Check the results'
-cat task.md | cwt jobs create --name task --at '2026-10-02T09:00:00+07:00' --description-stdin
+cwt jobs create --provider codex --model gpt-6.1-sol --name daily-review --cron '0 9 * * *' --description-file review.md
+cwt jobs create --provider codex --model gpt-6.1-sol --name follow-up --at '2026-10-02 09:00' --description 'Check the results'
+cat task.md | cwt jobs create --provider codex --model gpt-6.1-sol --name task --at '2026-10-02T09:00:00+07:00' --description-stdin
 ```
 
 `--at` takes a future local date and time or RFC 3339 timestamp. A one-time job removes its config after the agent starts by default, while the tmux pane and run history remain available. Pass `--keep-config` to retain a disabled job. See [CLI & TUI](cli-tui.md) for details.

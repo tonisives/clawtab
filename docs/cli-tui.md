@@ -148,27 +148,26 @@ This opens the job's `job.yaml` in `nvim`. Set `enabled: false` to disable futur
 
 ### Create a scheduled agent job
 
-Run `cwt jobs create` from the project directory. The interactive form accepts a name and either a cron expression or a one-time date. Press `Tab` to change fields, `Ctrl-R` to switch schedule type, and `Ctrl-K` to toggle one-time config cleanup. Press `Enter` to write the description in `nvim`; `Esc` cancels.
+Run `cwt jobs create` from the project directory. The interactive form accepts a name, schedule, provider, and model. It starts with `codex` and `gpt-6.1-sol`; edit those fields to choose another model. Press `Tab` to change fields, `Ctrl-R` to switch schedule type, and `Ctrl-K` to toggle one-time config cleanup. Press `Enter` to write the description in `nvim`; `Esc` cancels.
 
 For a command without prompts, supply a name, exactly one schedule, and exactly one description source:
 
 ```bash
-cwt jobs create --name daily-review --cron '0 9 * * *' --description-file review.md
-cwt jobs create --name follow-up --at '2026-10-02 09:00' --description 'Check the results'
-cat task.md | cwt jobs create --name task --at '2026-10-02T09:00:00+07:00' --description-stdin --keep-config
+cwt jobs create --provider codex --model gpt-6.1-sol --name daily-review --cron '0 9 * * *' --description-file review.md
+cwt jobs create --provider codex --model gpt-6.1-sol --name follow-up --at '2026-10-02 09:00' --description 'Check the results'
+cat task.md | cwt jobs create --provider codex --model gpt-6.1-sol --name task --at '2026-10-02T09:00:00+07:00' --description-stdin --keep-config
 ```
 
 `--at` accepts a local `YYYY-MM-DD HH:MM` time or RFC 3339 with an explicit offset. The date must be in the future when the job is created. `--description-file` reads a text or Markdown file. These commands create agent jobs with descriptions stored in `job.md`; use the desktop app to configure a Binary job that runs a script directly.
 
-Scheduling is part of `jobs create`; there is no separate `jobs schedule` command. Use `--provider opencode` to pin a job to OpenCode, regardless of ClawTab's default agent. The other supported providers are `claude`, `codex`, and `antigravity`. Omit the flag to inherit ClawTab's default agent when the job runs.
+Scheduling is part of `jobs create`; there is no separate `jobs schedule` command. Use `--provider opencode` to pin a job to OpenCode, regardless of ClawTab's default agent. The other supported providers are `claude`, `codex`, `antigravity`, and `hermes`. Both `--provider` and `--model` are required. Each job stores its own model selection.
 
 ```bash
 opencode models
-cwt jobs create --name daily-review --provider opencode --cron '0 9 * * *' --description-file review.md
 cwt jobs create --name daily-review-pinned --provider opencode --model 'anthropic/claude-sonnet-4-5' --cron '0 9 * * *' --description-file review.md
 ```
 
-`--model` requires `--provider`. For OpenCode, choose a `provider/model` ID from `opencode models`; the example ID must be available through your configured provider. Without `--model`, a job uses ClawTab's default model only when its provider matches the default provider; otherwise the selected CLI chooses its own model. Install and authenticate that CLI on the machine running the job. Creating a job saves its configuration without starting the agent; the running daemon executes it when due.
+`--model` requires `--provider`. For OpenCode, choose a `provider/model` ID from `opencode models`; the example ID must be available through your configured provider. Install and authenticate that CLI on the machine running the job. Creating a job saves its configuration without starting the agent; the running daemon executes it when due.
 
 The command finds the nearest configured job group whose `folder_path` contains the current directory. If none matches, it uses a group derived from the current directory name. Job files are stored under `~/.config/clawtab/jobs/<group>/<name>/`.
 

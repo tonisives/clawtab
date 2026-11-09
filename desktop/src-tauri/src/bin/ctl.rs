@@ -100,7 +100,7 @@ fn print_jobs_usage() {
         "  jobs edit <group>/<job>    Edit job YAML in nvim (enabled: false disables scheduling)"
     );
     eprintln!("  jobs create                Create a scheduled agent job (interactive)");
-    eprintln!("  jobs create --name NAME (--cron EXPR | --at DATE) (--description TEXT | --description-file PATH | --description-stdin) [--provider PROVIDER [--model MODEL]] [--keep-config]");
+    eprintln!("  jobs create --name NAME (--cron EXPR | --at DATE) (--description TEXT | --description-file PATH | --description-stdin) --provider PROVIDER --model MODEL [--keep-config]");
 }
 
 fn is_jobs_subcommand(command: &str) -> bool {

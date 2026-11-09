@@ -2078,7 +2078,7 @@ fn job_source_from_history(
     if source.cwd.is_none() {
         let job = crate::config::jobs::JobsConfig::jobs_dir_public()
             .and_then(|dir| std::fs::read_to_string(dir.join(&run.job_id).join("job.yaml")).ok())
-            .and_then(|yaml| serde_yml::from_str::<crate::config::jobs::Job>(&yaml).ok());
+            .and_then(|yaml| crate::config::jobs::Job::from_yaml(&yaml).ok());
         if let Some(job) = job {
             source.group = Some(crate::config::jobs::job_group(&job).into());
             source.cwd = job.work_dir.or(job.folder_path);

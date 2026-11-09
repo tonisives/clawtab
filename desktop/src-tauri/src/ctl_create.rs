@@ -42,8 +42,8 @@ impl Drop for TerminalGuard {
 
 pub fn create(args: &[String]) -> Result<(), String> {
     if args.len() == 1 && matches!(args[0].as_str(), "--help" | "-h") {
-        println!("Usage: cwt jobs create [--name NAME (--cron EXPR [--cron-timezone IANA_ZONE] | --at 'YYYY-MM-DD HH:MM') (--description TEXT | --description-file PATH | --description-stdin) [--provider PROVIDER [--model MODEL]] [--keep-config]]");
-        println!("Providers: claude, codex, opencode, antigravity, hermes. Omit --provider to use ClawTab's default agent. --model requires --provider; OpenCode model IDs use provider/model.");
+        println!("Usage: cwt jobs create [--name NAME (--cron EXPR [--cron-timezone IANA_ZONE] | --at 'YYYY-MM-DD HH:MM') (--description TEXT | --description-file PATH | --description-stdin) --provider PROVIDER --model MODEL [--keep-config]]");
+        println!("Providers: claude, codex, opencode, antigravity, hermes. Both --provider and --model are required; OpenCode model IDs use provider/model.");
         println!("With no options, opens the interactive job creator and nvim.");
         return Ok(());
     }
@@ -122,7 +122,12 @@ fn parse_args(args: &[String]) -> Result<CreateInput, String> {
 
 fn interactive() -> Result<Option<CreateInput>, String> {
     let mut input = CreateInput::default();
-    let mut fields = [String::new(), String::new()];
+    let mut fields = [
+        String::new(),
+        String::new(),
+        "codex".into(),
+        "gpt-6.1-sol".into(),
+    ];
     let mut focused = 0usize;
     let mut once = true;
     let mut error = String::new();
@@ -137,12 +142,14 @@ fn interactive() -> Result<Option<CreateInput>, String> {
         terminal.draw(|frame| {
             let area = frame.area();
             let text = format!(
-                "Name: {}{}\nSchedule: {}\n{}: {}{}\nRemove config after start: {}\n\n{}\nTab: next field  Ctrl-R: schedule type  Ctrl-K: toggle cleanup\nEnter: write description in nvim  Esc: cancel",
+                "Name: {}{}\nSchedule: {}\n{}: {}{}\nRemove config after start: {}\nProvider: {}{}\nModel: {}{}\n\n{}\nTab: next field  Ctrl-R: schedule type  Ctrl-K: toggle cleanup\nEnter: write description in nvim  Esc: cancel",
                 fields[0], if focused == 0 { "_" } else { "" },
                 if once { "One-time" } else { "Cron" },
                 if once { "Date/time" } else { "Cron expression" },
                 fields[1], if focused == 1 { "_" } else { "" },
                 if !once { "n/a" } else if input.keep_config { "No" } else { "Yes" },
+                fields[2], if focused == 2 { "_" } else { "" },
+                fields[3], if focused == 3 { "_" } else { "" },
                 error,
             );
             frame.render_widget(Paragraph::new(text).block(Block::default().title("Create job").borders(Borders::ALL)), area);
@@ -183,6 +190,9 @@ fn interactive() -> Result<Option<CreateInput>, String> {
             }
             KeyCode::Enter => {
                 input.name = fields[0].clone();
+                input.provider = ProcessProvider::from_name(&fields[2])
+                    .filter(|provider| provider.supports_model_flag());
+                input.model = Some(fields[3].trim().to_string());
                 if once {
                     input.at = Some(fields[1].clone());
                 } else {
@@ -336,7 +346,7 @@ fn prepare_job(input: CreateInput, config: &JobsConfig, cwd: &Path) -> Result<Jo
         auto_yes: true,
         agent_provider: input.provider,
         agent_model: input.model,
-        agent_effort: None,
+        agent_effort: Some("medium".into()),
         added_at: None,
         max_history: 3,
     })
@@ -352,6 +362,12 @@ fn validate_fields(input: &CreateInput) -> Result<(), String> {
                 "--model requires --provider so the model belongs to a specific agent".into(),
             );
         }
+    }
+    if input.provider.is_none() {
+        return Err("--provider is required".into());
+    }
+    if input.model.is_none() {
+        return Err("--model is required".into());
     }
     let name = input.name.trim();
     if name.is_empty() || name.contains('/') || name.contains('\\') {
@@ -432,7 +448,7 @@ mod tests {
                 dir.path(),
             )
             .unwrap();
-            let restored: Job = serde_yml::from_str(&serde_yml::to_string(&job).unwrap()).unwrap();
+            let restored: Job = Job::from_yaml(&job.to_yaml().unwrap()).unwrap();
             assert_eq!(restored.agent_provider, Some(ProcessProvider::Opencode));
             assert_eq!(
                 restored.agent_model.as_deref(),
@@ -449,17 +465,18 @@ mod tests {
     }
 
     #[test]
-    fn omitted_provider_keeps_existing_default_behavior() {
-        let dir = tempfile::tempdir().unwrap();
+    fn requires_provider_and_model() {
         let args = ["--name", "review", "--cron", "0 9 * * *"].map(String::from);
-        let job = prepare_job(
-            parse_args(&args).unwrap(),
-            &JobsConfig::default(),
-            dir.path(),
-        )
-        .unwrap();
-        assert!(job.agent_provider.is_none());
-        assert!(job.agent_model.is_none());
+        assert_eq!(
+            validate_fields(&parse_args(&args).unwrap()).unwrap_err(),
+            "--provider is required"
+        );
+        let mut args = args.to_vec();
+        args.extend(["--provider".into(), "codex".into()]);
+        assert_eq!(
+            validate_fields(&parse_args(&args).unwrap()).unwrap_err(),
+            "--model is required"
+        );
     }
 
     #[test]

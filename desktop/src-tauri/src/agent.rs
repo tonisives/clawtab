@@ -285,7 +285,7 @@ fn write_cli_help(out: &mut String) {
     out.push_str("`cwt` is available for managing ClawTab jobs:\n\n");
     out.push_str("```\n");
     out.push_str("cwt jobs list      # List configured jobs grouped by group\n");
-    out.push_str("cwt jobs create    # Schedule a cron or one-time agent job\n");
+    out.push_str("cwt jobs create --provider codex --model gpt-6.1-sol ...    # Schedule an agent job with an explicit model\n");
     out.push_str("cwt jobs status    # Show status of all jobs\n");
     out.push_str("cwt jobs run <group>/<name> # Run a job and attach/follow output\n");
     out.push_str("cwt jobs pause <group>/<name> # Pause a running job\n");
