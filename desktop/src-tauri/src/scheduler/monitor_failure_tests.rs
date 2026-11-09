@@ -93,7 +93,15 @@ async fn default_notifications_skip_start_and_keep_completion() {
     params.notifier = Some(notifier.clone());
     notify_start(&params, false, true).await;
     assert!(notifier.0.lock().is_empty());
-    notify_finish(&params, false, true, Some(0), true).await;
+    finish_run(
+        &params,
+        "done",
+        PaneCompletion::Exited(Some(0)),
+        false,
+        true,
+        true,
+    )
+    .await;
     assert_eq!(
         notifier.0.lock().as_slice(),
         &[("local/quiet-job".to_string(), "completed".to_string())]
@@ -152,7 +160,7 @@ async fn successful_job_never_queues_failure_alert() {
 }
 
 #[tokio::test]
-async fn manual_shell_close_records_success_and_only_notifies_completion() {
+async fn manual_shell_close_finishes_history_without_any_notification() {
     let directory = tempfile::tempdir().expect("test directory");
     let mut params = params(directory.path(), NotifyTarget::App, true);
     let recorder = Arc::new(RecordingNotifier::default());
@@ -185,11 +193,9 @@ async fn manual_shell_close_records_success_and_only_notifies_completion() {
         })
         .expect("running job");
 
-    let exit_code =
+    let completion =
         pane_completion(Ok(tmux::PaneProcessState::Missing)).expect("closed pane completes");
-    let succeeded = exit_code == Some(0);
-    persist_finish(&params, "work completed", exit_code, succeeded);
-    notify_finish(&params, false, true, exit_code, succeeded).await;
+    finish_run(&params, "work completed", completion, true, true, false).await;
 
     let history = params.history.lock();
     let run = history
@@ -197,20 +203,17 @@ async fn manual_shell_close_records_success_and_only_notifies_completion() {
         .expect("saved run")
         .expect("run exists");
     assert!(run.finished_at.is_some());
-    assert_eq!(run.exit_code, Some(0));
+    assert_eq!(run.exit_code, None);
     assert_eq!(run.stdout, "work completed");
     assert!(matches!(
         params.job_status.lock().get(&params.slug),
-        Some(JobStatus::Success { .. })
+        Some(JobStatus::Idle)
     ));
     assert!(history
         .pending_failure_notifications()
         .expect("pending")
         .is_empty());
-    assert_eq!(
-        recorder.0.lock().as_slice(),
-        &[(params.slug.clone(), "completed".into())]
-    );
+    assert!(recorder.0.lock().is_empty());
 }
 
 #[derive(Default)]

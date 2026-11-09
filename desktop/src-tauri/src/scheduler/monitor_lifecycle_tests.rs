@@ -11,19 +11,19 @@ fn monitor_waits_through_startup_idle_and_query_failure() {
     }
     assert_eq!(
         pane_completion(Ok(tmux::PaneProcessState::Exited(Some(7)))),
-        Some(Some(7))
+        Some(PaneCompletion::Exited(Some(7)))
     );
     assert_eq!(
         pane_completion(Ok(tmux::PaneProcessState::Exited(None))),
-        Some(None)
+        Some(PaneCompletion::Exited(None))
     );
 }
 
 #[test]
-fn manually_closed_pane_completes_successfully() {
+fn manually_closed_pane_is_distinct_from_process_exit() {
     assert_eq!(
         pane_completion(Ok(tmux::PaneProcessState::Missing)),
-        Some(Some(0))
+        Some(PaneCompletion::Closed)
     );
 }
 
@@ -102,7 +102,10 @@ async fn real_guarded_poller_survives_shell_startup_and_preserves_failed_exit() 
     })
     .await
     .expect("true process exit observed");
-    assert_eq!(*poller.exit_code.lock(), Some(7));
+    assert_eq!(
+        *poller.completion.lock(),
+        Some(PaneCompletion::Exited(Some(7)))
+    );
     assert_eq!(
         tmux::pane_process_state(&pane.0),
         Ok(tmux::PaneProcessState::Exited(Some(7)))

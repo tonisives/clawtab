@@ -119,7 +119,8 @@ pub async fn monitor_pane(params: MonitorParams) {
     )
     .await;
     poller.task.abort();
-    let exit_code = *poller.exit_code.lock();
+    let completion = poller.completion.lock().expect("pane monitor finished");
+    let exit_code = completion.exit_code();
 
     finalize_telegram(&params, use_telegram, working_message_id).await;
     let full_output = compute_full_output(&params, state.accumulated_log);
@@ -163,9 +164,18 @@ pub async fn monitor_pane(params: MonitorParams) {
         && trigger_result
             .as_ref()
             .is_none_or(|result| result.status == "succeeded");
-    maybe_kill_pane(&params);
-    persist_finish(&params, &full_output, exit_code, succeeded);
-    notify_finish(&params, use_telegram, use_app, exit_code, succeeded).await;
+    if completion != PaneCompletion::Closed {
+        maybe_kill_pane(&params);
+    }
+    finish_run(
+        &params,
+        &full_output,
+        completion,
+        use_telegram,
+        use_app,
+        succeeded,
+    )
+    .await;
     if let (Some(trigger_id), Some(result)) = (&params.trigger_id, trigger_result) {
         crate::relay::push_trigger_result(&params.relay, trigger_id, result);
     }
@@ -290,17 +300,31 @@ fn capture_trimmed(session: &str, pane_id: &str) -> String {
 
 struct ExitPoller {
     exited: Arc<AtomicBool>,
-    exit_code: Arc<Mutex<Option<i32>>>,
+    completion: Arc<Mutex<Option<PaneCompletion>>>,
     task: tokio::task::JoinHandle<()>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum PaneCompletion {
+    Exited(Option<i32>),
+    Closed,
+}
+
+impl PaneCompletion {
+    pub(super) fn exit_code(self) -> Option<i32> {
+        match self {
+            Self::Exited(code) => code,
+            Self::Closed => None,
+        }
+    }
 }
 
 pub(super) fn pane_completion(
     state: Result<tmux::PaneProcessState, String>,
-) -> Option<Option<i32>> {
+) -> Option<PaneCompletion> {
     match state {
-        Ok(tmux::PaneProcessState::Exited(code)) => Some(code),
-        // Job panes retain natural exits. Removing the pane completes the job.
-        Ok(tmux::PaneProcessState::Missing) => Some(Some(0)),
+        Ok(tmux::PaneProcessState::Exited(code)) => Some(PaneCompletion::Exited(code)),
+        Ok(tmux::PaneProcessState::Missing) => Some(PaneCompletion::Closed),
         Ok(tmux::PaneProcessState::Running) | Err(_) => None,
     }
 }
@@ -308,15 +332,15 @@ pub(super) fn pane_completion(
 fn spawn_exit_poller(pane_id: &str) -> ExitPoller {
     let process_exited = Arc::new(AtomicBool::new(false));
     let exit_flag = Arc::clone(&process_exited);
-    let exit_code = Arc::new(Mutex::new(None));
-    let observed_code = Arc::clone(&exit_code);
+    let completion = Arc::new(Mutex::new(None));
+    let observed_completion = Arc::clone(&completion);
     let exit_pane = pane_id.to_string();
     let task = tokio::spawn(async move {
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             let completion = pane_completion(tmux::pane_process_state(&exit_pane));
-            if let Some(code) = completion {
-                *observed_code.lock() = code;
+            if let Some(completion) = completion {
+                *observed_completion.lock() = Some(completion);
                 exit_flag.store(true, Ordering::Release);
                 break;
             }
@@ -324,7 +348,7 @@ fn spawn_exit_poller(pane_id: &str) -> ExitPoller {
     });
     ExitPoller {
         exited: process_exited,
-        exit_code,
+        completion,
         task,
     }
 }
@@ -590,13 +614,6 @@ fn persist_finish(
     succeeded: bool,
 ) {
     let finished_at = Utc::now().to_rfc3339();
-    {
-        let h = params.history.lock();
-        if let Err(e) = h.update_finished(&params.run_id, &finished_at, exit_code, full_output, "")
-        {
-            log::error!("[{}] Failed to update history: {}", params.run_id, e);
-        }
-    }
     let new_status = if succeeded {
         JobStatus::Success {
             last_run: finished_at,
@@ -607,6 +624,40 @@ fn persist_finish(
             exit_code: exit_code.unwrap_or(-1),
         }
     };
+    persist_run_status(params, full_output, exit_code, new_status);
+}
+
+async fn finish_run(
+    params: &MonitorParams,
+    full_output: &str,
+    completion: PaneCompletion,
+    use_telegram: bool,
+    use_app: bool,
+    succeeded: bool,
+) {
+    if completion == PaneCompletion::Closed {
+        persist_run_status(params, full_output, None, JobStatus::Idle);
+        return;
+    }
+    let exit_code = completion.exit_code();
+    persist_finish(params, full_output, exit_code, succeeded);
+    notify_finish(params, use_telegram, use_app, exit_code, succeeded).await;
+}
+
+fn persist_run_status(
+    params: &MonitorParams,
+    full_output: &str,
+    exit_code: Option<i32>,
+    new_status: JobStatus,
+) {
+    let finished_at = Utc::now().to_rfc3339();
+    {
+        let h = params.history.lock();
+        if let Err(e) = h.update_finished(&params.run_id, &finished_at, exit_code, full_output, "")
+        {
+            log::error!("[{}] Failed to update history: {}", params.run_id, e);
+        }
+    }
     let mut status = params.job_status.lock();
     status.insert(params.slug.clone(), new_status.clone());
     drop(status);

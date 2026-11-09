@@ -135,7 +135,8 @@ fn reattach_retired_one_shot(
             true
         }
         Ok(state) => {
-            let exit_code = super::monitor::pane_completion(Ok(state)).flatten();
+            let completion = super::monitor::pane_completion(Ok(state)).unwrap();
+            let exit_code = completion.exit_code();
             let output = tmux::capture_pane_full(pane_id).unwrap_or_default();
             let history = ctx.history.lock();
             let _ =
@@ -146,7 +147,7 @@ fn reattach_retired_one_shot(
                 let _ = history.update_log_path(&run.id, &path.to_string_lossy());
             }
             drop(history);
-            if exit_code != Some(0) {
+            if completion != super::monitor::PaneCompletion::Closed && exit_code != Some(0) {
                 let local_enabled = ctx.settings.lock().notify_job_failures_local;
                 crate::notifications::notify_job_failure(
                     ctx.notifier.as_deref(),
@@ -227,9 +228,12 @@ fn finalize_if_dead_or_idle(
     match tmux::pane_process_state(pane_id) {
         Ok(tmux::PaneProcessState::Running) => false,
         Ok(state) => {
-            let exit_code = super::monitor::pane_completion(Ok(state)).flatten();
+            let completion = super::monitor::pane_completion(Ok(state)).unwrap();
+            let exit_code = completion.exit_code();
             finalize_idle_pane(run, job, pane_id, exit_code, &ctx.history);
-            queue_orphan_failure(run, job, exit_code, ctx);
+            if completion != super::monitor::PaneCompletion::Closed {
+                queue_orphan_failure(run, job, exit_code, ctx);
+            }
             true
         }
         Err(error) => {
