@@ -1,3 +1,39 @@
+# ClawTab 0.7.0
+
+## Check job creation scripts before upgrading
+
+Noninteractive `cwt jobs create` now requires both `--provider` and `--model`. For example:
+
+```sh
+cwt jobs create --provider codex --model gpt-6.1-sol --name daily-review --cron '0 9 * * *' --description-file review.md
+```
+
+Job YAML stores provider, model and effort under `agent`. Existing flat fields migrate when loaded, preserving explicit selections. Legacy Codex jobs without a model receive `gpt-6.1-sol`. New agent objects require a nonempty model; shell and binary jobs do not. The desktop and relay API fields remain compatible with existing clients. See the [configuration guide](https://clawtab.cc/docs#configuration).
+
+## Message cards and reminders
+
+- Render Markdown, tables, code and links in messages. Keep an overview with named sections and individually navigable cards for collections of drafts or research results.
+- Open deliverable URLs from the message's Open menu alongside its originating agent. Completion links remain attached to their original result after another turn starts.
+- Update informational previews in place with `cwt message update`, preserving their identity, queue position and nested draft fields.
+- Schedule durable reminders with `cwt message schedule --in` or `--at`. Reminders can return to the creating conversation; scheduling alone does not start an agent.
+- Ignore successful runs for one job while retaining failures, questions and approvals. The preference follows the job ID across runs and applies to configured message channels.
+- Prioritize unseen pinned completions, keep the selected message stable as new messages arrive, and order History by the latest human interaction.
+- Dismiss individual draft cards, preserve reply context, and expose failed job output. Manually closed agent panes stop producing stale completion alerts.
+
+## Agent and machine controls
+
+- Configure typed message sources and optional agent-identification requirements. Open targets the recorded terminal pane directly.
+- Show pending auto-yes changes in tmux pane borders. Recover expired remote sessions and preserve wrapped terminal hyperlinks.
+- Use daily model recommendations while retaining the full configurable model catalog and supported reasoning choices.
+- Provision the included Relay machine from machine management and create its Home group from the machine's actual home directory. Hosted capacity checks and stale-session recovery improve launch reliability.
+- Stop a Linux notification template-read event loop and keep managed provider updates out of included home storage.
+
+## Remote and mobile source changes
+
+The range also updates shared message navigation, swipeable sections, terminal selection and keyboard placement, demo entry, sign-in, and subscription recovery. Web Remote is deployed separately. Native iOS and Android changes require their corresponding distributed app build; this host/desktop release does not submit a store build.
+
+[Message guide](https://clawtab.cc/docs#messages) · [CLI reference](https://clawtab.cc/docs#cli-tui) · [Full changelog](https://github.com/tonisives/clawtab/compare/v0.6.2...v0.7.0)
+
 # ClawTab 0.6.2: the message bar
 
 Agent questions, permission prompts, updates, and completion messages now come together in one macOS message bar. Reply from the card, read recent output in Details, or open the originating session. The daemon owns the bar, so the desktop app is optional.
