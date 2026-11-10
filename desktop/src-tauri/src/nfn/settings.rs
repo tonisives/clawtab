@@ -76,13 +76,40 @@ mod tests {
     use super::*;
 
     #[test]
+    fn card_handlers_require_local_absolute_commands() {
+        let defaults = NfnSettings::default();
+        let parsed = parse(
+            "card_handle_commands:\n  crm/outreach-discovery: [/usr/bin/python3, /path/handler.py]",
+            &defaults,
+        )
+        .unwrap();
+        assert_eq!(
+            parsed.card_handle_commands["crm/outreach-discovery"][0],
+            "/usr/bin/python3"
+        );
+        for yaml in [
+            "card_handle_commands: {job: []}",
+            "card_handle_commands: {job: [relative]}",
+        ] {
+            assert!(parse(yaml, &defaults).is_err());
+        }
+    }
+
+    #[test]
     fn keyboard_settings_default_and_patch() {
         let defaults = NfnSettings::default();
         assert!(!defaults.keyboard_hints);
         assert_eq!(defaults.focus_shortcut, "Ctrl+Alt+w");
-        let changed = parse("keyboard_hints: true\nfocus_shortcut: Ctrl+Alt+q", &defaults).unwrap();
+        let changed = parse(
+            "keyboard_hints: true\nfocus_shortcut: Ctrl+Alt+q",
+            &defaults,
+        )
+        .unwrap();
         assert!(changed.keyboard_hints);
-        assert_eq!(parse(&serde_yml::to_string(&changed).unwrap(), &defaults).unwrap(), changed);
+        assert_eq!(
+            parse(&serde_yml::to_string(&changed).unwrap(), &defaults).unwrap(),
+            changed
+        );
         assert!(parse("focus_shortcut: w", &defaults).is_err());
         assert!(parse("focus_shortcut: Ctrl+Alt+wat", &defaults).is_err());
         assert!(parse("focus_shortcut: ''", &defaults).is_ok());

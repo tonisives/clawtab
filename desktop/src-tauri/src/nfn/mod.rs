@@ -1,5 +1,6 @@
 //! Durable local requests and the daemon's notification surface.
 mod alerts;
+mod card_handler;
 pub mod cli;
 pub mod native;
 pub mod remote;

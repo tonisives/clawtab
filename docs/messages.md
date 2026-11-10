@@ -166,6 +166,23 @@ draft. Each draft stays separate in the queue even when several share a job or
 conversation. Include the Codex `source.session_id`, `provider`, `cwd`, job/run
 identity and a focus action to open or resume its drafting conversation.
 
+The card checkmark can run a local integration before saving `handled_at`.
+Configure `card_handle_commands` in `notifications.yaml`, keyed by the producing
+job ID. Each value is an argument array beginning with an absolute executable:
+
+```yaml
+card_handle_commands:
+  crm/outreach-discovery:
+    - /usr/bin/python3
+    - /Users/tonis/workspace/tgs/crm/scripts/outreach/handle_card.py
+```
+
+The handler receives JSON on stdin with `message_id`, the selected `card`, and
+the parent `source`. The card's `source.job_id` takes precedence over its parent.
+Exit zero after recording the action; a failure or 28-second timeout leaves the
+card available for retry. Integrations must make retries idempotent. Already
+handled cards do not invoke the handler again. The dismiss button stays separate.
+
 ## Agent identification
 
 Messages can carry `source.agent` with `id`, `type`, and a string map `data`.

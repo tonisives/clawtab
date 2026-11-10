@@ -6,6 +6,7 @@ use serde_json::Value;
 pub struct NfnSettings {
     pub require_agent_identity: bool,
     pub agent_definitions: std::collections::BTreeMap<String, AgentDefinition>,
+    pub card_handle_commands: std::collections::BTreeMap<String, Vec<String>>,
     pub delivery: String,
     pub placement: String,
     pub focus: String,
@@ -26,6 +27,7 @@ impl Default for NfnSettings {
         Self {
             require_agent_identity: true,
             agent_definitions: Default::default(),
+            card_handle_commands: Default::default(),
             delivery: "enhanced".into(),
             placement: "notch".into(),
             focus: "follow".into(),
@@ -45,6 +47,15 @@ impl Default for NfnSettings {
 
 impl NfnSettings {
     pub fn validate(&self) -> Result<(), String> {
+        for (job, command) in &self.card_handle_commands {
+            if job.trim().is_empty()
+                || command.is_empty()
+                || !std::path::Path::new(&command[0]).is_absolute()
+                || command.iter().any(|arg| arg.contains('\0'))
+            {
+                return Err("Card handlers need a job ID and an absolute executable path".into());
+            }
+        }
         for (name, definition) in &self.agent_definitions {
             if name.trim().is_empty()
                 || name.len() > 128

@@ -999,6 +999,42 @@ impl Service {
             }
             NfnCommand::DismissCard { id, card_id } | NfnCommand::HandleCard { id, card_id } => {
                 let mut record = self.store.get(&id)?;
+                if handling_card {
+                    let card = record.request.data["sections"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|section| section["cards"].as_array())
+                        .flatten()
+                        .find(|card| card["id"].as_str() == Some(&card_id))
+                        .ok_or("Draft not found")?;
+                    if !card["handled_at"].is_null() {
+                        return serde_json::to_value(record).map_err(|error| error.to_string());
+                    }
+                    let job = card["source"]["job_id"].as_str().or(record
+                        .request
+                        .source
+                        .job_id
+                        .as_deref());
+                    let command = job.and_then(|job| {
+                        self.ctx
+                            .settings
+                            .lock()
+                            .enhanced_notifications
+                            .card_handle_commands
+                            .get(job)
+                            .cloned()
+                    });
+                    if let Some(command) = command {
+                        super::card_handler::run(
+                            &command,
+                            &json!({
+                                "message_id": id, "card": card, "source": record.request.source
+                            }),
+                        )
+                        .await?;
+                    }
+                }
                 let sections = record.request.data["sections"]
                     .as_array_mut()
                     .ok_or("No draft sections")?;
