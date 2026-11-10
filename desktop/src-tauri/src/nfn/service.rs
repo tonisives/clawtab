@@ -3917,7 +3917,24 @@ fn job_directory(job: &str) -> Result<std::path::PathBuf, String> {
 }
 
 async fn bmux_command(args: &[&str]) -> Result<Value, String> {
-    let mut command = tokio::process::Command::new("bmux");
+    let executable = crate::tools::which("bmux").ok_or("BMUX is not installed")?;
+    let mut command = tokio::process::Command::new(executable);
+    // The CLI uses /usr/bin/env node; GUI launch environments may omit its directory.
+    let mut paths: Vec<_> = std::env::var_os("PATH")
+        .map(|path| std::env::split_paths(&path).collect())
+        .unwrap_or_default();
+    for binary in ["node", "bmux"] {
+        if let Some(path) = crate::tools::which(binary) {
+            if let Some(directory) = std::path::Path::new(&path).parent() {
+                if !paths.iter().any(|path| path == directory) {
+                    paths.push(directory.to_path_buf());
+                }
+            }
+        }
+    }
+    if let Ok(path) = std::env::join_paths(paths) {
+        command.env("PATH", path);
+    }
     command.args(args).kill_on_drop(true);
     let output = tokio::time::timeout(std::time::Duration::from_secs(15), command.output())
         .await
