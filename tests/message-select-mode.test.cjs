@@ -38,7 +38,7 @@ test("messages without shell output capture their text in order", () => {
 test("the static selection document escapes shell content as text", () => {
   const { terminalSelectionDocument } = load("lib/terminalSelectionDocument.ts", { "@clawtab/shared": { colors: { bg: "#000000", text: "#ffffff" } } });
   const html = terminalSelectionDocument('<script>alert("output")</script> & <b>literal</b>');
-  assert.ok(!html.includes("<script>"));
+  assert.ok(!html.includes('<script>alert("output")</script>'));
   assert.ok(html.includes("&lt;script&gt;"));
   assert.ok(html.includes("&amp;"));
   assert.ok(html.includes("user-select:text"));
@@ -47,8 +47,10 @@ test("the static selection document escapes shell content as text", () => {
 test("selection positions its outer scroller before revealing and focusing native text", async () => {
   let copied, done = false, index = 0;
   const hooks = [], frames = [], operations = [];
+  let copyTimer;
   const jsx = (type, props) => ({ type, props });
   const react = {
+    useEffect: () => {},
     useMemo: callback => callback(),
     useRef: current => { const slot = index++; return hooks[slot] ??= { current }; },
     useState: initial => { const slot = index++; if (!(slot in hooks)) hooks[slot] = initial;
@@ -61,7 +63,8 @@ test("selection positions its outer scroller before revealing and focusing nativ
     "../lib/terminalSelectionDocument": { terminalSelectionDocument: text => text },
     "../lib/messageSelectionLayout": load("lib/messageSelectionLayout.ts"),
     "expo-clipboard": { setStringAsync: async text => { copied = text; } },
-  }, { requestAnimationFrame: callback => frames.push(callback) });
+  }, { requestAnimationFrame: callback => frames.push(callback),
+    setTimeout: callback => { copyTimer = callback; return 1; }, clearTimeout: () => { copyTimer = undefined; } });
   const root = MessageTextSelection({ text: "frozen text", selection: { start: 7, end: 11 }, bottom: 34, onDone: () => done = true });
   const native = root.props.children.find(node => typeof node?.type === "function");
   const start = index;
@@ -91,6 +94,12 @@ test("selection positions its outer scroller before revealing and focusing nativ
   assert.equal(operations.at(-1), "focus", "focus only after the initial offset is applied");
   scroller.props.onContentSizeChange(300, 242);
   assert.equal(operations.length, 2, "later layout does not reposition the reader");
+  input.props.onSelectionChange({ nativeEvent: { selection: { start: 0, end: 6 } } });
+  assert.equal(copied, undefined, "wait until selection settles");
+  copyTimer(); await Promise.resolve();
+  assert.equal(copied, "frozen", "native selection copies only the chosen passage");
+  input.props.onSelectionChange({ nativeEvent: { selection: { start: 0, end: 0 } } });
+  assert.equal(copyTimer, undefined, "clearing selection cancels pending copying");
   const buttons = root.props.children.at(-1).props.children;
   buttons[0].props.onPress(); await Promise.resolve();
   assert.equal(copied, "frozen text");

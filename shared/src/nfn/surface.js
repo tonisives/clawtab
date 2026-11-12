@@ -1879,7 +1879,33 @@
     return Boolean(logs && (logs._selecting || selection && !selection.isCollapsed
       && (logs.contains(selection.anchorNode) || logs.contains(selection.focusNode))));
   }
-  document.addEventListener("selectionchange", () => card?._logs?._selectionChanged?.());
+  let selectionCopyTimer = null, selectionPointerDown = false, lastCopiedSelection = "";
+  function copyMessageSelection() {
+    clearTimeout(selectionCopyTimer);
+    const selection = window.getSelection();
+    const inMessage = node => {
+      const element = node?.nodeType === 1 ? node : node?.parentElement;
+      return element?.closest("#surface > .card")
+        && !element.closest("input,textarea,select,button,[contenteditable='true']");
+    };
+    if (!selection || selection.isCollapsed || !inMessage(selection.anchorNode) || !inMessage(selection.focusNode)) {
+      lastCopiedSelection = "";
+      return;
+    }
+    const text = selection.toString();
+    if (!text.trim() || text === lastCopiedSelection) return;
+    lastCopiedSelection = text;
+    native({ native: "copy_text", text });
+  }
+  document.addEventListener("selectionchange", () => {
+    card?._logs?._selectionChanged?.();
+    clearTimeout(selectionCopyTimer);
+    if (!selectionPointerDown) selectionCopyTimer = setTimeout(copyMessageSelection, 200);
+  });
+  document.addEventListener("pointerdown", () => { selectionPointerDown = true; clearTimeout(selectionCopyTimer); });
+  document.addEventListener("pointerup", () => { selectionPointerDown = false; copyMessageSelection(); });
+  document.addEventListener("pointercancel", () => { selectionPointerDown = false; });
+  document.addEventListener("keyup", copyMessageSelection);
   async function refreshContext(useCache = false) {
     if ((!details && menu !== "agent") || queue || settingsOpen || !current || !card || contextRequest?.card === card) return;
     const id = current, request = { card }; contextRequest = request;

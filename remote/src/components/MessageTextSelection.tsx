@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ComponentRef } from "react";
+import { useEffect, useMemo, useRef, useState, type ComponentRef } from "react";
 import { Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import WebView from "react-native-webview";
 import * as Clipboard from "expo-clipboard";
@@ -14,6 +14,8 @@ function NativeSelection({ text, selection }: { text: string; selection?: { star
   const input = useRef<ComponentRef<typeof TextInput>>(null);
   const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
   const positioned = useRef(false);
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(copyTimer.current), []);
   const [initialSelection, setInitialSelection] = useState(selection);
   const [viewport, setViewport] = useState(0);
   const [layout, setLayout] = useState<ReturnType<typeof messageSelectionLayout> | null>(null);
@@ -39,6 +41,14 @@ function NativeSelection({ text, selection }: { text: string; selection?: { star
       }}>
       <TextInput ref={input} accessibilityLabel="Message text" defaultValue={text} multiline editable={false}
         scrollEnabled={false} showSoftInputOnFocus={false}
+        onSelectionChange={event => {
+          clearTimeout(copyTimer.current);
+          const { start, end } = event.nativeEvent.selection;
+          const selected = text.slice(start, end);
+          if (selected.trim()) copyTimer.current = setTimeout(() => {
+            void Clipboard.setStringAsync(selected).catch(() => {});
+          }, 200);
+        }}
         selection={initialSelection} onLayout={() => setInitialSelection(undefined)}
         autoCorrect={false} spellCheck={false} textAlignVertical="top"
         style={{ ...selectionFont, height: Math.max(viewport, layout.height), paddingVertical: 12, paddingHorizontal: 0,
@@ -55,7 +65,10 @@ export function MessageTextSelection({ text, selection, bottom, onDone }: {
   return <View style={{ flex: 1, minHeight: 0, backgroundColor: colors.bg }}>
     {!text ? <Text style={{ color: colors.textMuted, padding: 12 }}>No text available in this message.</Text> : null}
     {Platform.OS === "ios" ? <NativeSelection text={text} selection={selection} /> : <WebView source={source} style={{ flex: 1, marginHorizontal: 12, backgroundColor: colors.bg }}
-          javaScriptEnabled={false} textInteractionEnabled scrollEnabled bounces dataDetectorTypes="none" />}
+          onMessage={event => {
+            void Clipboard.setStringAsync(event.nativeEvent.data).catch(() => {});
+          }}
+          javaScriptEnabled textInteractionEnabled scrollEnabled bounces dataDetectorTypes="none" />}
     <View style={{ flexDirection: "row", justifyContent: "space-between", padding: 12, paddingBottom: Math.max(12, bottom), gap: 12 }}>
       <Pressable accessibilityRole="button" disabled={!text} onPress={() => {
         void Clipboard.setStringAsync(text).then(() => setStatus("Text copied"), () => setStatus("Could not copy text. Try again."));

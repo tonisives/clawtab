@@ -12,7 +12,7 @@ function fixture(native = false) {
   const input = { classList: { contains: () => false }, blur: () => { blurs++; document.activeElement = null; } };
   const document = { activeElement: input, addEventListener: (name, handler) => handlers[name] = handler };
   const source = fs.readFileSync(require.resolve("../shared/src/nfn/surface.js"), "utf8");
-  const functions = source.slice(source.indexOf("  function installLogSelection("), source.indexOf("  async function refreshContext()"));
+  const functions = source.slice(source.indexOf("  function installLogSelection("), source.indexOf("  async function refreshContext("));
   const captures = [];
   const context = { document, snapshot: { native_selection: native }, card: { _shellInput: input, _logs: logs }, window: { getSelection: () => selection,
     nfnMobile: { holdSelection() {}, releaseSelection() {}, selectText: (...args) => captures.push(args) } },
@@ -89,4 +89,51 @@ test("tapping a selected passage does not enter reply", () => {
   const app = fixture(); app.selection.isCollapsed = false; app.selection.focusNode = app.text;
   app.event("pointerdown"); app.advance(100); app.event("pointerup");
   assert.equal(app.replies(), 0); assert.equal(app.selected(), true);
+});
+
+function copyFixture() {
+  const handlers = {}, timers = new Map(), copies = [];
+  let timerId = 0;
+  const message = { nodeType: 1, closest: selector => selector === '#surface > .card' ? message : null };
+  const editable = { nodeType: 1, closest: () => message };
+  const outside = { nodeType: 1, closest: () => null };
+  const selection = { isCollapsed: false, anchorNode: message, focusNode: message, toString: () => ' selected text\n' };
+  const source = fs.readFileSync(require.resolve('../shared/src/nfn/surface.js'), 'utf8');
+  vm.runInNewContext(source.slice(source.indexOf('  let selectionCopyTimer'), source.indexOf('  async function refreshContext(')), {
+    document: { addEventListener: (type, callback) => handlers[type] = callback },
+    window: { getSelection: () => selection }, card: null,
+    native: value => copies.push(value.text),
+    setTimeout: callback => { const id = ++timerId; timers.set(id, callback); return id; },
+    clearTimeout: id => timers.delete(id),
+  });
+  return { selection, editable, outside, copies, event: type => handlers[type](),
+    settle: () => { for (const [id, callback] of timers) { timers.delete(id); callback(); } } };
+}
+
+test('message selection copies on release and preserves whitespace', () => {
+  const app = copyFixture();
+  app.event('pointerdown'); app.event('selectionchange'); app.settle();
+  assert.deepEqual(app.copies, []);
+  app.event('pointerup');
+  assert.deepEqual(app.copies, [' selected text\n']);
+  app.event('selectionchange'); app.settle();
+  assert.equal(app.copies.length, 1);
+});
+
+test('keyboard selection copies while clearing selection preserves the clipboard', () => {
+  const app = copyFixture(); app.event('keyup');
+  assert.equal(app.copies.length, 1);
+  app.selection.isCollapsed = true; app.event('selectionchange'); app.settle();
+  assert.equal(app.copies.length, 1);
+  app.selection.isCollapsed = false; app.event('selectionchange'); app.settle();
+  assert.equal(app.copies.length, 2, 'the same passage can be selected again');
+});
+
+test('editable fields, selections outside messages and empty passages do not auto-copy', () => {
+  const app = copyFixture();
+  app.selection.focusNode = app.editable; app.event('keyup');
+  app.selection.focusNode = app.outside; app.event('keyup');
+  app.selection.focusNode = app.selection.anchorNode;
+  app.selection.toString = () => '  \n'; app.event('keyup');
+  assert.deepEqual(app.copies, []);
 });

@@ -14,5 +14,14 @@ export const terminalSelectionDocument = (value: string) => `<!doctype html>
 html,body{margin:0;min-height:100%;background:${colors.bg};color:${colors.text}}
 body{padding:12px 0;font:13px/18px Menlo,monospace;-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
 pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;-webkit-user-select:text;user-select:text}
-</style></head><body><pre>${escapeHtml(value)}</pre></body></html>`;
+</style></head><body><pre>${escapeHtml(value)}</pre><script>
+let copyTimer;
+document.addEventListener("selectionchange", () => {
+  clearTimeout(copyTimer);
+  copyTimer = setTimeout(() => {
+    const text = window.getSelection()?.toString() || "";
+    if (text.trim()) window.ReactNativeWebView.postMessage(text);
+  }, 200);
+});
+</script></body></html>`;
 
