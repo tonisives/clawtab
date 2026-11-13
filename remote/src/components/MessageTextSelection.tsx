@@ -10,7 +10,7 @@ const selectionFont = { color: colors.text, fontSize: 13, lineHeight: 18, fontFa
 
 // UIKit animates selection inside a scrollable UITextView. Fit the field to
 // its text and position the outer scroller before revealing or focusing it.
-function NativeSelection({ text, selection }: { text: string; selection?: { start: number; end: number } }) {
+function NativeSelection({ text, selection, onCopied }: { text: string; selection?: { start: number; end: number }; onCopied: () => void }) {
   const input = useRef<ComponentRef<typeof TextInput>>(null);
   const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
   const positioned = useRef(false);
@@ -46,7 +46,7 @@ function NativeSelection({ text, selection }: { text: string; selection?: { star
           const { start, end } = event.nativeEvent.selection;
           const selected = text.slice(start, end);
           if (selected.trim()) copyTimer.current = setTimeout(() => {
-            void Clipboard.setStringAsync(selected).catch(() => {});
+            void Clipboard.setStringAsync(selected).then(onCopied, () => {});
           }, 200);
         }}
         selection={initialSelection} onLayout={() => setInitialSelection(undefined)}
@@ -61,17 +61,28 @@ export function MessageTextSelection({ text, selection, bottom, onDone }: {
   text: string; selection?: { start: number; end: number }; bottom: number; onDone: () => void;
 }) {
   const [status, setStatus] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(copiedTimer.current), []);
+  const showCopied = () => {
+    clearTimeout(copiedTimer.current);
+    setCopied(true);
+    copiedTimer.current = setTimeout(() => setCopied(false), 1200);
+  };
   const source = useMemo(() => Platform.OS === "ios" ? undefined : { html: terminalSelectionDocument(text) }, [text]);
-  return <View style={{ flex: 1, minHeight: 0, backgroundColor: colors.bg }}>
+  return <View style={{ flex: 1, minHeight: 0, position: "relative", backgroundColor: colors.bg }}>
     {!text ? <Text style={{ color: colors.textMuted, padding: 12 }}>No text available in this message.</Text> : null}
-    {Platform.OS === "ios" ? <NativeSelection text={text} selection={selection} /> : <WebView source={source} style={{ flex: 1, marginHorizontal: 12, backgroundColor: colors.bg }}
+    {Platform.OS === "ios" ? <NativeSelection text={text} selection={selection} onCopied={showCopied} /> : <WebView source={source} style={{ flex: 1, marginHorizontal: 12, backgroundColor: colors.bg }}
           onMessage={event => {
-            void Clipboard.setStringAsync(event.nativeEvent.data).catch(() => {});
+            void Clipboard.setStringAsync(event.nativeEvent.data).then(showCopied, () => {});
           }}
           javaScriptEnabled textInteractionEnabled scrollEnabled bounces dataDetectorTypes="none" />}
+    {copied ? <View pointerEvents="none" style={{ position: "absolute", top: 12, right: 12, zIndex: 2, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: "#4b4b4b", borderRadius: 6, backgroundColor: "#252525" }}>
+      <Text accessibilityLiveRegion="polite" style={{ color: colors.text, fontSize: 12, fontWeight: "600" }}>copied</Text>
+    </View> : null}
     <View style={{ flexDirection: "row", justifyContent: "space-between", padding: 12, paddingBottom: Math.max(12, bottom), gap: 12 }}>
       <Pressable accessibilityRole="button" disabled={!text} onPress={() => {
-        void Clipboard.setStringAsync(text).then(() => setStatus("Text copied"), () => setStatus("Could not copy text. Try again."));
+        void Clipboard.setStringAsync(text).then(() => { setStatus("Text copied"); showCopied(); }, () => setStatus("Could not copy text. Try again."));
       }} style={({ pressed }) => ({ padding: 12, opacity: !text ? 0.4 : pressed ? 0.6 : 1 })}>
         <Text accessibilityLiveRegion="polite" style={{ color: colors.accent, fontSize: 16, fontWeight: "600" }}>{status ?? "Copy all"}</Text>
       </Pressable>

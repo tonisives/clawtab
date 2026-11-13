@@ -32,6 +32,8 @@ button.utility:is(:hover:where(:not([data-native-pointer] *)), [data-native-hove
 #surface[data-keyboard-active="true"] .brand .brand-icon, #surface[data-keyboard-active="true"] .todo-ring,
 #surface[data-pointer-active="true"] .brand .brand-icon, #surface[data-pointer-active="true"] .todo-ring { filter: none; opacity: 1; }
 #surface.empty { display: none; }
+.copy-notice { position: absolute; z-index: 30; top: 8px; right: 8px; padding: 5px 9px; border: 1px solid #4b4b4b; border-radius: 6px; background: #252525ee; color: #e4e4e4; font-size: 11px; line-height: 1.2; box-shadow: 0 3px 10px #0006; opacity: 0; visibility: hidden; transform: translateY(-4px); transition: opacity .14s ease, transform .14s ease, visibility 0s linear .14s; pointer-events: none; }
+.copy-notice.visible { opacity: 1; visibility: visible; transform: translateY(0); transition-delay: 0s; }
 #surface.pill { width: 224px; min-height: 0; border-color: #333; }
 #surface.notch.pill { width: var(--notch-width, 220px); border-radius: 0 0 12px 12px; }
 .top { position: relative; flex: none; display: grid; grid-template-columns: 30px 1fr 30px; align-items: center; gap: 8px; padding: 5px 8px; border-bottom: 1px solid var(--line); }

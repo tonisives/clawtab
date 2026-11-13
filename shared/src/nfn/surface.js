@@ -23,6 +23,7 @@
   let settingsOpen = false, settingsBusy = false, settingsReturnExpanded = false, settingsReturnMenu = null;
   const pendingCopies = new Map();
   let copySequence = 0;
+  let copiedNoticeTimer = null;
   let explicitOpen = false, presented = false, hiddenByUser = false;
   let geometry = {}, layoutAnimation = null, contentAnimations = [], lastSize = "", renderedLayout = "";
   let resizedSize = null, resizing = null, resizeRightOffset = 0;
@@ -1185,6 +1186,17 @@
     control.disabled = true; control.setAttribute("aria-label", "Copying reply"); control.title = "Copying reply";
     pendingCopies.set(token, control);
     native({ native: "copy_text", text, token });
+  }
+  function showCopied() {
+    const notice = host.querySelector(".copy-notice");
+    if (!notice) return;
+    clearTimeout(copiedNoticeTimer);
+    notice.classList.add("visible");
+    notice.setAttribute("aria-hidden", "false");
+    copiedNoticeTimer = setTimeout(() => {
+      notice.classList.remove("visible");
+      notice.setAttribute("aria-hidden", "true");
+    }, 1200);
   }
   function outreachCard(record) {
     const draft = record.request.data?.outreach;
@@ -2637,6 +2649,12 @@
       const list = iconButton("Notification list", "M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01", toggleQueue, "list-toggle");
       top.append(list);
     }
+    let copyNotice = host.querySelector(".copy-notice");
+    if (!copyNotice) {
+      copyNotice = el("div", "copy-notice", "copied");
+      copyNotice.setAttribute("role", "status"); copyNotice.setAttribute("aria-live", "polite"); copyNotice.setAttribute("aria-hidden", "true");
+      host.append(copyNotice);
+    }
     updateTodoRing(top);
     const items = navigationCards(), index = items.findIndex(record => record.id === current);
     const isOpen = Boolean(current || queue || expanded), toggle = top.querySelector(".bar-toggle");
@@ -2696,6 +2714,8 @@
           control.setAttribute("aria-label", "Copy reply"); control.title = "Copy reply";
           control.querySelector("path").setAttribute("d", "M9 9h11v11H9zM5 15H4V4h11v1");
         }, 2000);
+      } else if (!value.token && !value.error) {
+        showCopied();
       }
       return;
     }

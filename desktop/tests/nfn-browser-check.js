@@ -1543,6 +1543,8 @@
   const copiesBeforeRelease = selectionCopies(), selectedPassage = messageSelection.toString();
   selectedMessage.dispatchEvent(new PointerEvent('pointerup', {bubbles:true}));
   assert(selectedPassage.trim() && selectionCopies() === copiesBeforeRelease + 1 && window.fixture.nativeEvents.findLast(event => event.native === 'copy_text')?.text === selectedPassage, 'releasing selected message text copies the exact passage: ' + JSON.stringify({selectedPassage, copiesBeforeRelease, after: selectionCopies(), last: window.fixture.nativeEvents.at(-1)}));
+  window.nfn.receive({type:'copy_result',token:''});
+  assert(document.querySelector('.copy-notice')?.textContent === 'copied' && document.querySelector('.copy-notice')?.classList.contains('visible'), 'successful selection copies show a quick copied tooltip at the top right');
   document.dispatchEvent(new Event('selectionchange')); await sleep(250);
   assert(selectionCopies() === copiesBeforeRelease + 1, 'unchanged selection does not overwrite the clipboard again');
   messageSelection.removeAllRanges(); document.dispatchEvent(new Event('selectionchange')); await sleep(250);
