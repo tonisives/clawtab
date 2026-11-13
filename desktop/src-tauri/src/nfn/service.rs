@@ -999,7 +999,7 @@ impl Service {
             }
             NfnCommand::DismissCard { id, card_id } | NfnCommand::HandleCard { id, card_id } => {
                 let mut record = self.store.get(&id)?;
-                if handling_card {
+                {
                     let card = record.request.data["sections"]
                         .as_array()
                         .into_iter()
@@ -1008,7 +1008,13 @@ impl Service {
                         .flatten()
                         .find(|card| card["id"].as_str() == Some(&card_id))
                         .ok_or("Draft not found")?;
-                    if !card["handled_at"].is_null() {
+                    if !card[if handling_card {
+                        "handled_at"
+                    } else {
+                        "dismissed_at"
+                    }]
+                    .is_null()
+                    {
                         return serde_json::to_value(record).map_err(|error| error.to_string());
                     }
                     let job = card["source"]["job_id"].as_str().or(record
@@ -1025,11 +1031,14 @@ impl Service {
                             .get(job)
                             .cloned()
                     });
-                    if let Some(command) = command {
+                    if let Some(command) = command.filter(|_| {
+                        super::card_handler::should_run(card, handling_card)
+                    }) {
                         super::card_handler::run(
                             &command,
                             &json!({
-                                "message_id": id, "card": card, "source": record.request.source
+                                "message_id": id, "card": card, "source": record.request.source,
+                                "action": if handling_card { "handled" } else { "dismissed" }
                             }),
                         )
                         .await?;

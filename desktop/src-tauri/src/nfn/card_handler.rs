@@ -2,6 +2,12 @@ use serde_json::Value;
 use std::process::Stdio;
 use tokio::io::AsyncWriteExt;
 
+pub(super) fn should_run(card: &Value, handling: bool) -> bool {
+    handling
+        || (card["handled_at"].is_null()
+            && card["data"]["outreach"]["record_rejection"].as_bool() == Some(true))
+}
+
 /// Handlers are local settings, never executable code supplied by a message.
 pub(super) async fn run(command: &[String], payload: &Value) -> Result<(), String> {
     let executable = command.first().ok_or("Missing card handler executable")?;
@@ -39,6 +45,16 @@ pub(super) async fn run(command: &[String], payload: &Value) -> Result<(), Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dismissal_callbacks_require_opt_in_and_skip_answered_cards() {
+        let mut card = serde_json::json!({"data":{"outreach":{"record_rejection":true}}});
+        assert!(should_run(&card, false));
+        card["handled_at"] = serde_json::json!("2026-11-13T00:00:00Z");
+        assert!(!should_run(&card, false));
+        assert!(!should_run(&serde_json::json!({}), false));
+        assert!(should_run(&serde_json::json!({}), true));
+    }
 
     #[tokio::test]
     async fn handler_receives_json_and_propagates_failure() {
