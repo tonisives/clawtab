@@ -11,7 +11,7 @@ _cwt_jobs() {
     }
   ' | sort -u)"})
   groups=(${jobs%%/*})
-  compadd -a jobs
+  compadd -M 'l:|=*' -a jobs
   compadd -a groups
 }
 
@@ -26,7 +26,7 @@ _cwt_jobs_for_group() {
       if (group == wanted && name != "") print name
     }
   ' | sort -u)"})
-  compadd -a jobs
+  compadd -M 'l:|=*' -a jobs
 }
 
 _cwt_panes() {
