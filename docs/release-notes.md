@@ -1,3 +1,22 @@
+# ClawTab 0.7.1
+
+## Copy a passage from a message
+
+Selecting message text copies the selected passage automatically. A small copied notice confirms success. Reply fields keep their normal editing behavior. This release includes the host and desktop implementation; native mobile distribution and Web Remote are separate.
+
+## Record a card action before completing it
+
+Configure `card_handle_commands` in `notifications.yaml`, keyed by the job that produced a card. The local handler receives the card, source, message ID and action as JSON. A failed handler or 28-second timeout leaves the card available for retry. Already handled cards skip the handler. Use an idempotent integration for retries.
+
+Dismissal callbacks run only for cards explicitly opting in with `data.outreach.record_rejection`. Other dismissals keep their existing behavior. No handler is enabled by default.
+
+## Smaller fixes
+
+- Find job names by a substring when using Zsh completion, including within a selected group.
+- Resolve BMUX and Node from GUI launch environments when opening a browser message.
+
+[Message handler setup](https://clawtab.cc/docs#messages) · [Full changelog](https://github.com/tonisives/clawtab/compare/v0.7.0...v0.7.1)
+
 # ClawTab 0.7.0
 
 ## Check job creation scripts before upgrading
