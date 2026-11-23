@@ -47,8 +47,7 @@ pub(crate) async fn terminal_after(
                 },
             )
         }
-        ProcessProvider::Claude => claude_path(&event)
-            .and_then(|path| claude_terminal(&path, &event.session_id, event.occurred_at_ms)),
+        ProcessProvider::Claude => claude_terminal_after(&claude_root(), &event),
         ProcessProvider::Opencode => open_db(&opencode_path())
             .and_then(|conn| opencode_terminal(&conn, &event.session_id, event.occurred_at_ms)),
         ProcessProvider::Hermes => {
@@ -81,7 +80,7 @@ fn claude_root() -> PathBuf {
         .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".claude"))
 }
 
-fn claude_path(event: &HookEventV1) -> Option<PathBuf> {
+fn claude_terminal_after(root: &Path, event: &HookEventV1) -> Option<Terminal> {
     if !event
         .session_id
         .chars()
@@ -89,24 +88,34 @@ fn claude_path(event: &HookEventV1) -> Option<PathBuf> {
     {
         return None;
     }
-    let root = claude_root();
-    // Hook cwd can change during a session. The PID record retains the original
-    // project directory, including sessions resumed in a different directory.
     let record = event
         .process_id
         .and_then(|pid| std::fs::read(root.join("sessions").join(format!("{pid}.json"))).ok())
-        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok());
-    let original = record
-        .as_ref()
-        .filter(|record| record["sessionId"].as_str() == Some(&event.session_id))
-        .and_then(|record| record["cwd"].as_str());
+        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+        .filter(|record| record["sessionId"].as_str() == Some(&event.session_id));
+    // Interrupting Claude can leave a prompt or permission hook as the last
+    // event. Claude's live session record still timestamps the return to idle.
+    let status = record.as_ref().and_then(|record| {
+        Some((
+            record["status"].as_str()?,
+            record["statusUpdatedAt"].as_u64()?,
+        ))
+    });
+    if let Some((status, at_ms)) = status.filter(|&(_, at_ms)| at_ms > event.occurred_at_ms) {
+        return (status == "idle").then_some(Terminal {
+            at_ms,
+            event: "reconciled_idle",
+        });
+    }
+    // The PID record retains the original project directory when hook cwd changes.
+    let original = record.as_ref().and_then(|record| record["cwd"].as_str());
     let cwd = original.or(event.cwd.as_deref())?;
     let project = cwd.replace(['/', '~'], "-").replace('.', "");
-    Some(
-        root.join("projects")
-            .join(project)
-            .join(format!("{}.jsonl", event.session_id)),
-    )
+    let path = root
+        .join("projects")
+        .join(project)
+        .join(format!("{}.jsonl", event.session_id));
+    claude_terminal(&path, &event.session_id, event.occurred_at_ms)
 }
 
 fn timestamp_ms(value: &Value) -> Option<u64> {
@@ -338,6 +347,44 @@ mod tests {
             .unwrap()
             .extend(extra.as_object().unwrap().clone());
         value
+    }
+
+    #[test]
+    fn claude_live_idle_status_must_match_the_session_and_follow_the_hook() {
+        let root = tempfile::tempdir().unwrap();
+        let sessions = root.path().join("sessions");
+        std::fs::create_dir(&sessions).unwrap();
+        let path = sessions.join("42.json");
+        let mut hook = HookEventV1::from_provider_payload(
+            ProcessProvider::Claude,
+            "permission_request",
+            &json!({"session_id": "one"}),
+            None,
+            Some(42),
+        )
+        .unwrap();
+        hook.occurred_at_ms = 1000;
+
+        for (session, status, at_ms, expected) in [
+            ("one", "idle", 1100, Some(1100)),
+            ("one", "idle", 1000, None),
+            ("one", "idle", 900, None),
+            ("one", "working", 1100, None),
+            ("other", "idle", 1100, None),
+        ] {
+            std::fs::write(
+                &path,
+                json!({"sessionId": session, "status": status, "statusUpdatedAt": at_ms,
+                    "updatedAt": 1200})
+                .to_string(),
+            )
+            .unwrap();
+            let result = claude_terminal_after(root.path(), &hook);
+            assert_eq!(result.as_ref().map(|result| result.at_ms), expected);
+            if let Some(result) = result {
+                assert_eq!(result.event, "reconciled_idle");
+            }
+        }
     }
 
     #[test]
