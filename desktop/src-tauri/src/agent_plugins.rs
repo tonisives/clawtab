@@ -1982,28 +1982,41 @@ fn codex_active_model_dialog(screen: &str) -> bool {
 }
 
 fn codex_dialog_after_composer(screen: &str, is_dialog_marker: impl Fn(&str) -> bool) -> bool {
-    let mut latest_composer = None;
-    let mut latest_dialog = None;
-    for (index, line) in screen.lines().enumerate() {
-        if codex_composer_line(line) {
-            latest_composer = Some(index);
-        }
-        if is_dialog_marker(line) {
-            latest_dialog = Some(index);
+    let mut dialog_open = false;
+    let mut previous_option_row = false;
+    for line in screen.lines() {
+        let composer = codex_composer_line(line);
+        if !composer && is_dialog_marker(line) {
+            dialog_open = true;
+            previous_option_row = false;
+        } else if dialog_open {
+            let trimmed = line.trim_start();
+            let option = trimmed.trim_start_matches(['›', '>']).trim_start();
+            // The picker only assigns digit shortcuts to its first nine rows.
+            // Later rows keep the same indentation and selection marker.
+            let option_row = codex_numbered_option(option)
+                || (previous_option_row
+                    && (trimmed.starts_with("›     ") || line.starts_with("      ")));
+            if composer && !option_row {
+                dialog_open = false;
+            }
+            previous_option_row = option_row;
         }
     }
-    latest_dialog.is_some_and(|dialog| latest_composer.is_none_or(|composer| dialog > composer))
+    dialog_open
+}
+
+fn codex_numbered_option(value: &str) -> bool {
+    value.split_once('.').is_some_and(|(ordinal, _)| {
+        !ordinal.is_empty() && ordinal.chars().all(|character| character.is_ascii_digit())
+    })
 }
 
 fn codex_composer_line(line: &str) -> bool {
     let Some(value) = line.trim_start().strip_prefix('›') else {
         return false;
     };
-    let value = value.trim_start();
-    let menu_ordinal = value.split_once('.').is_some_and(|(ordinal, _)| {
-        !ordinal.is_empty() && ordinal.chars().all(|character| character.is_ascii_digit())
-    });
-    !menu_ordinal
+    !codex_numbered_option(value.trim_start())
 }
 
 fn codex_composer_draft(screen: &str) -> Option<String> {
@@ -2629,6 +2642,23 @@ actions:
 
         assert!(!codex_active_model_dialog(stale_menu));
         assert!(codex_active_model_dialog(active_menu));
+    }
+
+    #[test]
+    fn codex_model_picker_stays_open_on_rows_without_digit_shortcuts() {
+        let picker = "  Select Model and Effort\n\n  9. GPT-5.6-Terra  Legacy model\n›     GPT-5.6-Luna  Legacy fast model";
+
+        assert!(codex_active_model_dialog(picker));
+        assert!(selected_option_matches(
+            "›     GPT-5.6-Luna  Legacy fast model",
+            "gpt-5.6-luna"
+        ));
+        assert!(codex_active_model_dialog(&format!(
+            "{picker}\n      GPT-5.5  Legacy model\n›     GPT-5.4  Legacy model"
+        )));
+        assert!(!codex_active_model_dialog(&format!(
+            "{picker}\n\n›     A new indented draft"
+        )));
     }
 
     #[test]
