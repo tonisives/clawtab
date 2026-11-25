@@ -184,6 +184,18 @@ pub fn parse_numbered_options(text: &str) -> Vec<QuestionOption> {
     options
 }
 
+fn parse_live_numbered_options(text: &str, provider: Option<ProcessProvider>) -> Vec<QuestionOption> {
+    let options = parse_numbered_options(text);
+    // A short Claude pane can show the prompt heading, one choice and its
+    // keyboard hint while the rest of the menu is clipped.
+    if provider == Some(ProcessProvider::Claude)
+        && !matches!(options.as_slice(), [first, second, ..] if first.number == "1" && second.number == "2")
+    {
+        return Vec::new();
+    }
+    options
+}
+
 /// Check whether the terminal output contains indicators of an interactive prompt.
 /// Claude/Codex use two common kinds of numbered prompts:
 ///   Option menus: "Enter to select · ↑/↓ to navigate · Esc to cancel"
@@ -625,7 +637,10 @@ fn validate_question_screen(
     } else if question.input_mode == "select" {
         parse_opencode_buttons(screen)
     } else {
-        (parse_numbered_options(screen), 0)
+        (
+            parse_live_numbered_options(screen, provider.and_then(ProcessProvider::from_name)),
+            0,
+        )
     };
     let same_options = options.len() == question.options.len()
         && options
@@ -1119,6 +1134,7 @@ fn update_question_cache_with_hooks(
             tmux_session,
             window_name,
             log_lines,
+            *provider,
             matched_group,
             matched_job,
             &mut detected,
@@ -1233,12 +1249,13 @@ fn try_numbered_question(
     tmux_session: &str,
     window_name: &str,
     log_lines: &str,
+    provider: ProcessProvider,
     matched_group: &Option<String>,
     matched_job: &Option<String>,
     detected: &mut HashSet<String>,
     cache: &mut HashMap<String, CachedQuestion>,
 ) -> bool {
-    let options = parse_numbered_options(log_lines);
+    let options = parse_live_numbered_options(log_lines, Some(provider));
     if options.is_empty() {
         return false;
     }
@@ -3190,6 +3207,25 @@ Enter to select · Esc to cancel
         assert_eq!(options[0].label, "Yes");
         assert_eq!(options[1].number, "2");
         assert_eq!(options[1].label, "No");
+    }
+
+    #[test]
+    fn clipped_claude_approval_does_not_keep_a_question_pending() {
+        let full = "Do you want to proceed?\n ❯ 1. Yes\n   2. No\nEsc to cancel";
+        let clipped = "Do you want to proceed?\n ❯ 1. Yes\n ↑ 11 more lines\nEsc to cancel";
+        let mut pane = agent("%1", full);
+        pane.12 = ProcessProvider::Claude;
+        let mut cache = std::collections::HashMap::new();
+        update_question_cache(std::slice::from_ref(&pane), &mut cache);
+        let question = &cache["%1"].question;
+        assert_eq!(question.options.len(), 2);
+        assert!(super::validate_question_screen(question, Some("claude"), full).is_ok());
+
+        record_pane_capture(&mut pane, clipped, 1);
+        let panes = [pane];
+        let detected = update_question_cache(&panes, &mut cache);
+        evict_stale_cache_entries(&mut cache, &detected, &panes);
+        assert!(cache.is_empty());
     }
 
     #[test]
