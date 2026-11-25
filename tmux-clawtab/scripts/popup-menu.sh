@@ -991,12 +991,15 @@ start_usage_load
 trim_for_row() {
     local text="$1"
     local reserved_cols="${2:-16}"
+    local min_len="${3:-10}"
     local max_len=$((TERM_COLS - reserved_cols))
-    [ $max_len -lt 10 ] && max_len=10
-    if [ ${#text} -gt $max_len ]; then
-        printf "%s..." "${text:0:$((max_len - 3))}"
+    [ "$max_len" -lt "$min_len" ] && max_len=$min_len
+    if [ ${#text} -le "$max_len" ]; then
+        printf '%s' "$text"
+    elif [ "$max_len" -le 3 ]; then
+        printf '%s' "${text:0:$max_len}"
     else
-        printf "%s" "$text"
+        printf "%s..." "${text:0:$((max_len - 3))}"
     fi
 }
 
@@ -1008,6 +1011,43 @@ draw_section_header() {
     move_to $row 1
     clear_line
     printf "${C_BORDER}${BOX_ML}${BOX_H}${C_HEADER} %s ${C_BORDER}%s${BOX_MR}${C_RESET}" "$label" "$(hfill $fill)" >&3
+}
+
+draw_session_summary() {
+    local row=$1
+    local model="$SESSION_MODEL" effort_suffix="" started=""
+    local reserved=4 model_cols=0
+
+    if [ -z "$model" ]; then
+        model="${SESSION_EFFORT:+Effort: $SESSION_EFFORT}"
+    elif [ -n "$SESSION_EFFORT" ]; then
+        effort_suffix=" · $SESSION_EFFORT"
+    fi
+    [ -z "$model" ] || model_cols=$((${#model} + ${#effort_suffix} + 2))
+
+    if [ -n "$SESSION_STARTED_AT" ]; then
+        started="Started: $SESSION_STARTED_AT"
+        local relative="${SESSION_RELATIVE_TIME:+  ($SESSION_RELATIVE_TIME)}"
+        if [ $((${#started} + ${#relative} + model_cols)) -le $((TERM_COLS - 4)) ]; then
+            started+="$relative"
+        elif [ -n "$SESSION_RELATIVE_TIME" ] && [ $((${#started} + model_cols)) -gt $((TERM_COLS - 4)) ]; then
+            started="Started: $SESSION_RELATIVE_TIME"
+        fi
+        started=$(trim_for_row "$started" 4 0)
+        reserved=$((reserved + ${#started} + 2))
+    fi
+
+    if [ $((reserved + ${#effort_suffix})) -ge "$TERM_COLS" ]; then
+        effort_suffix=""
+    fi
+    model=$(trim_for_row "$model" "$((reserved + ${#effort_suffix}))" 0)
+    draw_row_start "$row"
+    printf "${C_NORMAL}%s%s${C_RESET}" "$model" "$effort_suffix" >&3
+    if [ -n "$started" ]; then
+        move_to "$row" "$((TERM_COLS - ${#started} - 1))"
+        printf "${C_DIM}%s${C_RESET}" "$started" >&3
+    fi
+    draw_row_end "$row"
 }
 
 draw_usage_line() {
@@ -1206,20 +1246,6 @@ draw_shortcuts() {
 
     draw_empty_row 2
     row=3
-    if [ -n "$SESSION_MODEL" ] || [ -n "$SESSION_EFFORT" ]; then
-        local selection=""
-        if [ -n "$SESSION_MODEL" ]; then
-            local effort_suffix=""
-            [ -n "$SESSION_EFFORT" ] && effort_suffix=" · $SESSION_EFFORT"
-            selection="Model: $(trim_for_row "$SESSION_MODEL" "$((11 + ${#effort_suffix}))")$effort_suffix"
-        else
-            selection=$(trim_for_row "Effort: $SESSION_EFFORT" 4)
-        fi
-        draw_row_start "$row"
-        printf "${C_NORMAL}%s${C_RESET}" "$selection" >&3
-        draw_row_end "$row"
-        ((row++))
-    fi
     if [ -n "$USAGE_LINE" ]; then
         draw_usage_line "$row"
         ((row++))
@@ -1296,20 +1322,16 @@ draw_shortcuts() {
     fi
 
     # Session info
-    if [ -n "$SESSION_ID" ] || [ -n "$SESSION_STARTED_AT" ] || [ -n "$SESSION_FIRST_QUERY" ] || [ -n "$SESSION_LAST_QUERY" ]; then
+    local session_summary="$SESSION_MODEL$SESSION_EFFORT$SESSION_STARTED_AT"
+    if [ -n "$session_summary$SESSION_ID$SESSION_FIRST_QUERY$SESSION_LAST_QUERY" ]; then
         draw_section_header $row "Session"
         ((row++))
 
         draw_empty_row $row
         ((row++))
 
-        if [ -n "$SESSION_STARTED_AT" ]; then
-            draw_row_start $row
-            printf "${C_DIM}Started:${C_RESET} ${C_NORMAL}%s${C_RESET}" "$SESSION_STARTED_AT" >&3
-            if [ -n "$SESSION_RELATIVE_TIME" ]; then
-                printf "  ${C_DIM}(%s)${C_RESET}" "$SESSION_RELATIVE_TIME" >&3
-            fi
-            draw_row_end $row
+        if [ -n "$session_summary" ]; then
+            draw_session_summary "$row"
             ((row++))
         fi
 
