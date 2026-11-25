@@ -416,6 +416,8 @@ finish_agent_actions_load() {
 # Session info (loaded once)
 SESSION_ID=""
 SESSION_PROVIDER=""
+SESSION_MODEL=""
+SESSION_EFFORT=""
 SESSION_DISPLAY_NAME=""
 SESSION_FIRST_QUERY=""
 SESSION_LAST_QUERY=""
@@ -481,6 +483,8 @@ load_session_info() {
 
     SESSION_ID=""
     SESSION_PROVIDER=""
+    SESSION_MODEL=""
+    SESSION_EFFORT=""
     SESSION_DISPLAY_NAME=""
     SESSION_FIRST_QUERY=""
     SESSION_LAST_QUERY=""
@@ -495,6 +499,8 @@ load_session_info() {
         SESSION_ALERT=$(echo "$raw" | grep '^alert=' | cut -d= -f2-)
         SESSION_ID=$(echo "$raw" | grep '^session_id=' | cut -d= -f2-)
         SESSION_PROVIDER=$(echo "$raw" | grep '^provider=' | cut -d= -f2-)
+        SESSION_MODEL=$(printf '%s\n' "$raw" | sed -n 's/^model_id=//p' | tr -d '[:cntrl:]')
+        SESSION_EFFORT=$(printf '%s\n' "$raw" | sed -n 's/^agent_effort=//p' | tr -d '[:cntrl:]')
         SESSION_STARTED_AT=$(echo "$raw" | grep '^started_at=' | cut -d= -f2-)
         SESSION_DISPLAY_NAME=$(echo "$raw" | grep '^display_name=' | cut -d= -f2-)
         SESSION_FIRST_QUERY=$(echo "$raw" | grep '^first_query=' | cut -d= -f2-)
@@ -548,8 +554,6 @@ cache_session_info() {
     [ -n "$SESSION_CACHE_FILE" ] || return 0
     [ -n "$SESSION_CACHE_PANE_PID" ] || return 0
     [ -s "$DATA_SESSION_FILE" ] || return 0
-    grep -qE '^(session_id|started_at|first_query|last_query|display_name)=' "$DATA_SESSION_FILE" || return 0
-
     SESSION_CACHE_TMP_FILE=$(mktemp "$SESSION_CACHE_FILE.tmp.XXXXXX" 2>/dev/null || true)
     [ -n "$SESSION_CACHE_TMP_FILE" ] || return 0
     {
@@ -797,11 +801,11 @@ compact_usage_value() {
     if [ -z "$percent" ]; then
         printf "%s" "${value:-n/a}"
     elif [ -n "$absolute" ]; then
-        printf "%s%% / %s(%s)" "$percent" "$duration" "$absolute"
+        printf "%s%% used / %s(%s)" "$percent" "$duration" "$absolute"
     elif [ -n "$duration" ]; then
-        printf "%s%% / %s" "$percent" "$duration"
+        printf "%s%% used / %s" "$percent" "$duration"
     else
-        printf "%s%%" "$percent"
+        printf "%s%% used" "$percent"
     fi
 }
 
@@ -956,7 +960,7 @@ finish_session_load() {
         pane_command=$(<"$DATA_PANE_COMMAND_FILE")
     fi
     set_agent_label "$pane_command"
-    if grep -qE '^(session_id|started_at|first_query|last_query|display_name)=' "$DATA_SESSION_FILE" 2>/dev/null; then
+    if grep -q '^pane_id=' "$DATA_SESSION_FILE" 2>/dev/null; then
         load_session_info "$DATA_SESSION_FILE"
         cache_session_info
     fi
@@ -1202,6 +1206,20 @@ draw_shortcuts() {
 
     draw_empty_row 2
     row=3
+    if [ -n "$SESSION_MODEL" ] || [ -n "$SESSION_EFFORT" ]; then
+        local selection=""
+        if [ -n "$SESSION_MODEL" ]; then
+            local effort_suffix=""
+            [ -n "$SESSION_EFFORT" ] && effort_suffix=" · $SESSION_EFFORT"
+            selection="Model: $(trim_for_row "$SESSION_MODEL" "$((11 + ${#effort_suffix}))")$effort_suffix"
+        else
+            selection=$(trim_for_row "Effort: $SESSION_EFFORT" 4)
+        fi
+        draw_row_start "$row"
+        printf "${C_NORMAL}%s${C_RESET}" "$selection" >&3
+        draw_row_end "$row"
+        ((row++))
+    fi
     if [ -n "$USAGE_LINE" ]; then
         draw_usage_line "$row"
         ((row++))

@@ -15,6 +15,8 @@ const MAX_VISIBLE_ACTIONS = 4;
 export type PaneOverviewData = {
   paneId: string;
   alert?: string;
+  model?: string | null;
+  effort?: string | null;
   startedAt?: string | null;
   cwd?: string | null;
   tmuxSession?: string | null;
@@ -232,6 +234,8 @@ let WebPaneOverview = ({ visible, onClose, actions, ...pane }: PaneOverviewModal
               ) : null}
             </View>
           ) : null}
+          {pane.model ? <DetailRow label="Model" value={pane.model} /> : null}
+          {pane.effort ? <DetailRow label="Effort" value={pane.effort} /> : null}
           <DetailRow label="Started" value={formatStartedAt(pane.startedAt)} />
           {actions?.agentActions?.length ? (
             <View style={styles.agentActions}>

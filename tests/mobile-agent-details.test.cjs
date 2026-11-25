@@ -74,6 +74,22 @@ let details = () => {
   return { ...view, calls, actions, props, render, child };
 };
 
+test('agent details show each reported model setting independently', () => {
+  let view = details();
+  let text = (value) => find(view.render(), (node) => node.type === 'Text' && node.props.children === value);
+  assert.equal(text('Model'), undefined);
+  assert.equal(text('Effort'), undefined);
+  view.props.model = 'claude-opus-5-5';
+  view.props.effort = 'xhigh';
+  assert.ok(text('Model'));
+  assert.ok(text('claude-opus-5-5'));
+  assert.ok(text('Effort'));
+  assert.ok(text('xhigh'));
+  delete view.props.model;
+  assert.equal(text('Model'), undefined);
+  assert.ok(text('Effort'));
+});
+
 test('agent details groups toggles and moves plugin actions into a child page', () => {
   let view = details(), tree = view.render();
   assert.equal(labelled(tree, 'Run Run test'), undefined);

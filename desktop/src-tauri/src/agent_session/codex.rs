@@ -118,20 +118,23 @@ fn resolve_session_info_with_details(
     if let Some(rollout_path) = thread.rollout_path.as_deref() {
         info.session_file_size_bytes = session_file_size(std::path::Path::new(rollout_path));
         info.last_user_message_at = read_last_user_message_at(std::path::Path::new(rollout_path));
+        let rollout_path = PathBuf::from(rollout_path);
         let needs_messages = info.first_query.is_none() || info.last_query.is_none();
         if include_details || needs_messages {
-            let rollout = read_codex_rollout(&PathBuf::from(rollout_path), needs_messages);
+            let rollout = read_codex_rollout(&rollout_path, needs_messages);
             if include_details {
                 info.token_count = rollout.token_count;
-                info.model_id = rollout.model_id;
-                info.agent_effort = rollout.agent_effort;
             }
+            info.model_id = rollout.model_id;
+            info.agent_effort = rollout.agent_effort;
             if info.first_query.is_none() {
                 info.first_query = rollout.first;
             }
             if info.last_query.is_none() {
                 info.last_query = rollout.last;
             }
+        } else {
+            (info.model_id, info.agent_effort) = read_codex_rollout_selection(&rollout_path);
         }
     }
 

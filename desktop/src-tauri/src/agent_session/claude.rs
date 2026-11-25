@@ -39,10 +39,16 @@ struct JsonlMessageContent {
 struct CachedMessages {
     modified: Option<SystemTime>,
     len: u64,
+    messages: SessionMessages,
+}
+
+#[derive(Clone, Default)]
+struct SessionMessages {
     first: Option<String>,
     last: Option<String>,
     token_count: Option<u64>,
     model_id: Option<String>,
+    effort: Option<String>,
     title: Option<String>,
 }
 
@@ -91,30 +97,45 @@ pub(super) fn resolve_session_info(
         info.session_started_at = Some(local.format("%Y-%m-%d %H:%M").to_string());
     }
 
-    // Match Claude Code's project directory convention:
-    // /Users/foo/.bar -> -Users-foo-bar.
-    let project_dir = session
-        .cwd
-        .replace('/', "-")
-        .replace('~', "-")
-        .replace('.', "");
-    let project_path = dirs::home_dir()
+    let projects = dirs::home_dir()
         .unwrap_or_default()
-        .join(".claude/projects")
-        .join(&project_dir);
-    let jsonl_path = project_path.join(format!("{}.jsonl", session.session_id));
+        .join(".claude/projects");
+    let Some(jsonl_path) = session_transcript_paths(&projects, &session.cwd, &session.session_id)
+        .into_iter()
+        .find(|path| path.is_file())
+    else {
+        return info;
+    };
 
-    let (first, last, token_count, model_id, title) = read_session_messages(&jsonl_path);
+    let messages = read_session_messages(&jsonl_path);
     info.last_user_message_at = super::common::last_user_message_at(&jsonl_path, |value| {
         extract_user_text_from_jsonl_line(&value.to_string()).is_some()
     });
-    info.first_query = first;
-    info.last_query = last;
-    info.token_count = token_count;
-    info.model_id = model_id;
-    info.title = title;
+    info.first_query = messages.first;
+    info.last_query = messages.last;
+    info.token_count = messages.token_count;
+    info.model_id = messages.model_id;
+    info.agent_effort = messages.effort;
+    info.title = messages.title;
 
     info
+}
+
+pub(super) fn session_transcript_paths(
+    projects: &std::path::Path,
+    cwd: &str,
+    session_id: &str,
+) -> [PathBuf; 2] {
+    let project: String = cwd
+        .chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '-' })
+        .collect();
+    let filename = format!("{session_id}.jsonl");
+    let legacy = cwd.replace(['/', '~'], "-").replace('.', "");
+    [
+        projects.join(project).join(&filename),
+        projects.join(legacy).join(filename),
+    ]
 }
 
 fn has_session_file(pid: &str) -> bool {
@@ -133,18 +154,10 @@ fn is_claude_command(command: &str) -> bool {
     command.contains("claude") && !command.contains("Claude.app")
 }
 
-type SessionMessages = (
-    Option<String>,
-    Option<String>,
-    Option<u64>,
-    Option<String>,
-    Option<String>,
-);
-
 fn read_session_messages(path: &PathBuf) -> SessionMessages {
     let metadata = match fs::metadata(path) {
         Ok(metadata) => metadata,
-        Err(_) => return (None, None, None, None, None),
+        Err(_) => return SessionMessages::default(),
     };
     let modified = metadata.modified().ok();
     let len = metadata.len();
@@ -153,26 +166,21 @@ fn read_session_messages(path: &PathBuf) -> SessionMessages {
         let cache = jsonl_cache().lock();
         if let Some(cached) = cache.get(path) {
             if cached.len == len && cached.modified == modified {
-                return (
-                    cached.first.clone(),
-                    cached.last.clone(),
-                    cached.token_count,
-                    cached.model_id.clone(),
-                    cached.title.clone(),
-                );
+                return cached.messages.clone();
             }
         }
     }
 
     let first = read_first_user_message(path);
-    let last = read_last_user_message(path);
-    let token_count = read_latest_token_count(path);
-    let model_id = read_latest_model(path);
-    let title = read_session_title(path);
-    let last = if first.is_some() && first == last {
-        None
-    } else {
-        last
+    let last = read_last_user_message(path).filter(|last| first.as_ref() != Some(last));
+    let (model_id, effort) = read_latest_selection(path).unzip();
+    let messages = SessionMessages {
+        first,
+        last,
+        token_count: read_latest_token_count(path),
+        model_id,
+        effort: effort.flatten(),
+        title: read_session_title(path),
     };
 
     {
@@ -183,17 +191,13 @@ fn read_session_messages(path: &PathBuf) -> SessionMessages {
             CachedMessages {
                 modified,
                 len,
-                first: first.clone(),
-                last: last.clone(),
-                token_count,
-                model_id: model_id.clone(),
-                title: title.clone(),
+                messages: messages.clone(),
             },
             SESSION_CACHE_MAX_ENTRIES,
         );
     }
 
-    (first, last, token_count, model_id, title)
+    messages
 }
 
 fn read_session_title(path: &std::path::Path) -> Option<String> {
@@ -394,13 +398,19 @@ fn extract_user_text_from_jsonl_line(line: &str) -> Option<String> {
     (!user_text.is_empty()).then_some(user_text)
 }
 
-fn read_latest_model(path: &std::path::Path) -> Option<String> {
+fn read_latest_selection(path: &std::path::Path) -> Option<(String, Option<String>)> {
     super::common::read_latest_jsonl(path, |value| {
         if value.get("type")?.as_str()? != "assistant" {
             return None;
         }
         let model = value.get("message")?.get("model")?.as_str()?.trim();
-        (!model.is_empty() && model != "<synthetic>").then(|| model.to_string())
+        if model.is_empty() || model == "<synthetic>" {
+            return None;
+        }
+        let effort = ["perTurnEffort", "effort"]
+            .into_iter()
+            .find_map(|key| value.get(key)?.as_str().and_then(super::valid_effort));
+        Some((model.to_string(), effort))
     })
 }
 
@@ -416,7 +426,7 @@ mod tests {
             "{\"type\":\"user\",\"message\":{\"content\":\"initial prompt\"}}\n",
         )
         .expect("session");
-        assert!(super::read_session_messages(&path).4.is_none());
+        assert!(super::read_session_messages(&path).title.is_none());
         let mut file = std::fs::OpenOptions::new()
             .append(true)
             .open(&path)
@@ -428,7 +438,7 @@ mod tests {
         )
         .expect("append");
         assert_eq!(
-            super::read_session_messages(&path).4.as_deref(),
+            super::read_session_messages(&path).title.as_deref(),
             Some("Generated title")
         );
         writeln!(
@@ -444,32 +454,28 @@ mod tests {
         )
         .expect("append");
         assert_eq!(
-            super::read_session_messages(&path).4.as_deref(),
+            super::read_session_messages(&path).title.as_deref(),
             Some("My chosen name")
         );
     }
 
     #[test]
-    fn reads_latest_assistant_model_and_ignores_synthetic_messages() {
+    fn reads_latest_assistant_model_and_effort_ignoring_synthetic_messages() {
         let directory = tempfile::tempdir().expect("tempdir");
         let path = directory.path().join("session.jsonl");
         std::fs::write(
             &path,
             concat!(
-                "{\"type\":\"assistant\",\"message\":{\"model\":\"claude-old\"}}\n",
-                "{\"type\":\"assistant\",\"message\":{\"model\":\"claude-sonnet-5\"}}\n",
-                "{\"type\":\"assistant\",\"message\":{\"model\":\"<synthetic>\"}}\n",
+                "{\"type\":\"assistant\",\"effort\":\"low\",\"message\":{\"model\":\"claude-old\"}}\n",
+                "{\"type\":\"assistant\",\"effort\":\"high\",\"perTurnEffort\":\"xhigh\",\"message\":{\"model\":\"claude-sonnet-5\"}}\n",
+                "{\"type\":\"assistant\",\"effort\":\"max\",\"message\":{\"model\":\"<synthetic>\"}}\n",
                 "{\"type\":\"user\",\"message\":{\"model\":\"ignore\"}}\n"
             ),
         )
         .expect("session");
-        assert_eq!(
-            super::read_session_messages(&path).3.as_deref(),
-            Some("claude-sonnet-5")
-        );
-        assert_eq!(
-            super::read_session_messages(&path).3.as_deref(),
-            Some("claude-sonnet-5")
-        );
+        let messages = super::read_session_messages(&path);
+        assert_eq!(messages.model_id.as_deref(), Some("claude-sonnet-5"));
+        assert_eq!(messages.effort.as_deref(), Some("xhigh"));
+        assert_eq!(super::read_session_messages(&path).effort, messages.effort);
     }
 }

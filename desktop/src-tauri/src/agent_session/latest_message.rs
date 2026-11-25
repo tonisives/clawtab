@@ -15,24 +15,9 @@ pub(crate) fn latest_agent_message(source: &NfnSource) -> Option<String> {
         "codex" => read_jsonl(&super::codex::rollout_path(session)?, "codex"),
         "claude" => {
             let cwd = source.cwd.as_deref()?;
-            let project = claude_project(cwd);
-            read_jsonl(
-                &home
-                    .join(".claude/projects")
-                    .join(project)
-                    .join(format!("{session}.jsonl")),
-                "claude",
-            )
-            .or_else(|| {
-                let legacy = cwd.replace(['/', '~'], "-").replace('.', "");
-                read_jsonl(
-                    &home
-                        .join(".claude/projects")
-                        .join(legacy)
-                        .join(format!("{session}.jsonl")),
-                    "claude",
-                )
-            })
+            super::claude::session_transcript_paths(&home.join(".claude/projects"), cwd, session)
+                .iter()
+                .find_map(|path| read_jsonl(path, "claude"))
         }
         "hermes" => {
             let root = source
@@ -55,12 +40,6 @@ pub(crate) fn latest_agent_message(source: &NfnSource) -> Option<String> {
         _ => None,
     }?;
     (!message.trim().is_empty() && message.len() <= 64 * 1024).then_some(message)
-}
-
-fn claude_project(cwd: &str) -> String {
-    cwd.chars()
-        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '-' })
-        .collect()
 }
 
 fn read_db(path: &Path) -> Option<Connection> {
@@ -152,9 +131,19 @@ mod tests {
 
     #[test]
     fn claude_project_paths_include_worktrees_and_punctuation() {
+        let projects = Path::new("/projects");
+        let [current, legacy] = super::super::claude::session_transcript_paths(
+            projects,
+            "/workspace/.worktrees/My Project",
+            "session",
+        );
         assert_eq!(
-            claude_project("/workspace/.worktrees/my_project"),
-            "-workspace--worktrees-my-project"
+            current,
+            projects.join("-workspace--worktrees-My-Project/session.jsonl")
+        );
+        assert_eq!(
+            legacy,
+            projects.join("-workspace-worktrees-My Project/session.jsonl")
         );
     }
 

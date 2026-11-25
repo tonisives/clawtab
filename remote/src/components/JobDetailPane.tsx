@@ -171,7 +171,17 @@ export function JobDetailPane({ jobName, onClose, embedded = false }: JobDetailP
         hidePath
         mobileDetails={Platform.OS === "web"}
         hideInfoPanels={landscapeHeader.isLandscape && isRunningWithShell}
-        paneOverview={statusPaneId ? { paneId: statusPaneId, tmuxSession: statusTmuxSession, cwd: activeProcess?.cwd ?? job.work_dir, windowName: activeProcess?.window_name, startedAt: activeProcess?.session_started_at, firstQuery: activeProcess?.first_query, lastQuery: activeProcess?.last_query } : undefined}
+        paneOverview={statusPaneId ? {
+          paneId: statusPaneId,
+          tmuxSession: statusTmuxSession,
+          cwd: activeProcess?.cwd ?? job.work_dir,
+          windowName: activeProcess?.window_name,
+          startedAt: activeProcess?.session_started_at,
+          model: activeProcess?.model_id,
+          effort: activeProcess?.agent_effort,
+          firstQuery: activeProcess?.first_query,
+          lastQuery: activeProcess?.last_query,
+        } : undefined}
         paneOverviewActions={{ autoYesActive, onToggleAutoYes: canToggleAutoYes ? handleToggleAutoYes : undefined, ...agentActionControls }}
         paneOverviewVisible={showPaneOverview}
         onPaneOverviewVisibleChange={setShowPaneOverview}

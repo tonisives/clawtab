@@ -323,9 +323,8 @@ pub fn resolve_session_info_for_provider_with_cwd(
     resolve_session_info_for_provider_with_cwd_mode(pane_pid, provider, snapshot, cwd, true)
 }
 
-/// Resolve only the session identity and prompt metadata needed by lightweight
-/// clients such as the tmux modal. Provider-specific rollout details can be
-/// much larger than the session fields and are intentionally skipped here.
+/// Resolve session, prompt, and model metadata for lightweight clients such as
+/// the tmux modal, skipping the extra Codex token usage lookup.
 pub fn resolve_session_info_for_provider_with_cwd_fast(
     pane_pid: &str,
     provider: Option<ProcessProvider>,
@@ -388,15 +387,13 @@ fn resolve_session_info_for_provider_with_cwd_mode(
             .and_then(|snapshot| snapshot.managed.get(pane_pid))
             .and_then(|launch| launch.conversation_id.clone());
     }
-    if include_details {
-        if info.model_id.is_none() {
-            info.model_id = provider
-                .and_then(|provider| detect_model_from_process_tree(pane_pid, provider, snapshot));
-        }
-        if info.agent_effort.is_none() {
-            info.agent_effort = provider
-                .and_then(|provider| detect_effort_from_process_tree(pane_pid, provider, snapshot));
-        }
+    if info.model_id.is_none() {
+        info.model_id = provider
+            .and_then(|provider| detect_model_from_process_tree(pane_pid, provider, snapshot));
+    }
+    if info.agent_effort.is_none() {
+        info.agent_effort = provider
+            .and_then(|provider| detect_effort_from_process_tree(pane_pid, provider, snapshot));
     }
     info
 }
@@ -458,7 +455,11 @@ fn detect_effort_from_process_tree(
 fn effort_from_command(command: &str) -> Option<String> {
     let parts = command.split_whitespace().collect::<Vec<_>>();
     for (index, part) in parts.iter().enumerate() {
-        if let Some(effort) = part.strip_prefix("model_reasoning_effort=") {
+        if let Some(effort) = part
+            .strip_prefix("model_reasoning_effort=")
+            .or_else(|| part.strip_prefix("--effort="))
+            .or_else(|| part.strip_prefix("--reasoning="))
+        {
             return valid_effort(effort.trim_matches(['\'', '"']));
         }
         if (*part == "--effort" || *part == "--reasoning" || *part == "-c")
@@ -477,7 +478,11 @@ fn effort_from_command(command: &str) -> Option<String> {
 }
 
 fn valid_effort(value: &str) -> Option<String> {
-    matches!(value, "low" | "medium" | "high" | "xhigh" | "max").then(|| value.to_string())
+    matches!(
+        value,
+        "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "auto"
+    )
+    .then(|| value.to_string())
 }
 
 pub fn detect_process_provider(

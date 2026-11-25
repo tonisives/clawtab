@@ -75,6 +75,10 @@ pub(super) fn resolve_session_info(
         ).ok().flatten()
     });
     info.token_count = read_opencode_token_count(&session.id);
+    if let Some((model, variant)) = read_opencode_selection(&session.id) {
+        info.model_id = Some(model);
+        info.agent_effort = variant;
+    }
 
     if info
         .first_query
@@ -293,6 +297,28 @@ fn read_opencode_token_count(session_id: &str) -> Option<u64> {
     }
 
     None
+}
+
+fn read_opencode_selection(session_id: &str) -> Option<(String, Option<String>)> {
+    let conn = Connection::open(opencode_db_path()).ok()?;
+    let (provider, model, variant): (Option<String>, String, Option<String>) = conn
+        .query_row(
+            "select json_extract(data, '$.providerID'), json_extract(data, '$.modelID'),
+                    json_extract(data, '$.variant')
+             from message
+             where session_id = ?1 and json_extract(data, '$.role') = 'assistant'
+               and json_type(data, '$.modelID') = 'text' and json_extract(data, '$.modelID') != ''
+             order by time_created desc, id desc
+             limit 1",
+            [session_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .ok()?;
+    let model = match provider.and_then(normalize_optional_owned) {
+        Some(provider) => format!("{provider}/{model}"),
+        None => model,
+    };
+    Some((model, variant.and_then(normalize_optional_owned)))
 }
 
 fn find_opencode_child(parent_pid: &str, snapshot: Option<&ProcessSnapshot>) -> Option<String> {

@@ -88,11 +88,11 @@ let PaneDetailsPage = () => {
       <InsetList><MachineSettingsPageButton title="Agent actions"><AgentActionsPage /></MachineSettingsPageButton></InsetList>
       {actions.agentActionRun && <Text style={styles.hint}>{actions.agentActionRun.error ?? actions.agentActionRun.progress}</Text>}
     </View>}
-    <QueryCard title="First command" query={pane.firstQuery} />
-    <QueryCard title="Latest command" query={pane.lastQuery?.trim() ? pane.lastQuery : pane.firstQuery} />
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>Session details</Text>
       <InsetList>
+        {!!pane.model && <InsetListRow title="Model" description={pane.model} selectable />}
+        {!!pane.effort && <InsetListRow title="Effort" description={pane.effort} selectable />}
         {!!pane.cwd && <InsetListRow title="Folder" description={pane.cwd} selectable />}
         <InsetListRow title="Started" description={started} selectable />
         <InsetListRow title="Session" description={pane.tmuxSession || "-"} selectable />
@@ -100,6 +100,8 @@ let PaneDetailsPage = () => {
         <InsetListRow title="Pane" description={resourceLabel(pane.paneId)} selectable />
       </InsetList>
     </View>
+    <QueryCard title="First command" query={pane.firstQuery} />
+    <QueryCard title="Latest command" query={pane.lastQuery?.trim() ? pane.lastQuery : pane.firstQuery} />
   </View>;
 };
 

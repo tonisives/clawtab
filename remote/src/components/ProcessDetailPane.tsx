@@ -281,7 +281,7 @@ export function ProcessDetailPane({ paneId, onClose, embedded = false }: Process
         runsLoading={false}
         onBack={onClose}
         showBackButton={false}
-        showHeaderAgent={!!activeProcess.model_id}
+        showHeaderAgent={!!(activeProcess.model_id || activeProcess.agent_effort)}
         headerAgentLabel={[activeProcess.model_id, activeProcess.agent_effort].filter(Boolean).join(" · ")}
         hideRuns
         hidePath
@@ -295,6 +295,8 @@ export function ProcessDetailPane({ paneId, onClose, embedded = false }: Process
         paneOverview={{
           paneId,
           alert: activeProcess?._agent_alert,
+          model: activeProcess.model_id,
+          effort: activeProcess.agent_effort,
           startedAt: activeProcess?.session_started_at,
           cwd: activeProcess?.cwd,
           tmuxSession: activeProcess?.tmux_session,
