@@ -714,18 +714,35 @@ async fn main() {
     {
         let mut message_args = raw_args[2..].to_vec();
         if raw_args[1] == "telegram" {
-            if message_args.first().map(String::as_str) != Some("send") || message_args.len() < 2 {
-                exit_error(
-                    "Usage: cwt telegram send TEXT (alias of message send --channel telegram)",
-                );
+            const USAGE: &str =
+                "Usage: cwt telegram send [--] TEXT (alias of message send --channel telegram)";
+            let text = match message_args.as_slice() {
+                [help] if matches!(help.as_str(), "help" | "-h" | "--help") => {
+                    println!("{USAGE}");
+                    return;
+                }
+                [send, help] if send == "send" && matches!(help.as_str(), "-h" | "--help") => {
+                    println!("{USAGE}");
+                    return;
+                }
+                [send, separator, rest @ ..] if send == "send" && separator == "--" => rest,
+                [send, rest @ ..] if send == "send" && !rest.is_empty() => rest,
+                _ => exit_error(USAGE),
+            };
+            if text.is_empty() {
+                exit_error(USAGE);
             }
             message_args = vec![
                 "send".into(),
                 "--channel".into(),
                 "telegram".into(),
                 "--".into(),
-                message_args[1..].join(" "),
+                text.join(" "),
             ];
+        } else if matches!(message_args.as_slice(), [action, help]
+            if matches!(action.as_str(), "send" | "schedule") && matches!(help.as_str(), "-h" | "--help"))
+        {
+            message_args.clear();
         }
         match clawtab_lib::nfn::cli::message(&message_args).await {
             Ok(value) => println!("{value}"),
