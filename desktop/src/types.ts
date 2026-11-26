@@ -187,6 +187,7 @@ export interface EnhancedNotificationSettings {
   menu_bar_icon: boolean;
   mobile_when_idle: boolean;
   idle_seconds: number;
+  silence?: { preset: "15m" | "1h" | "today"; until: number } | null;
 }
 
 export type InstalledPluginSummary = {

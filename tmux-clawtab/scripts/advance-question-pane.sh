@@ -2,13 +2,15 @@
 
 # Select the first remaining question or alert after the active pane's
 # attention state clears. Only advance while the answered pane is still selected, so manual
-# pane navigation cancels the automatic focus change.
+# pane navigation cancels the automatic focus change. A zoomed window keeps its
+# pane, since selecting another one would unzoom it.
 set -u
 
 window_id="${1:-}"
 answered_pane="${2:-}"
 [ -n "$window_id" ] || exit 0
 [ -n "$answered_pane" ] || exit 0
+[ "$(tmux display-message -p -t "$window_id" '#{window_zoomed_flag}' 2>/dev/null)" = "1" ] && exit 0
 
 target_pane="$({
     tmux list-panes -t "$window_id" \

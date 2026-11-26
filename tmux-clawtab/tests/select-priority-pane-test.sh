@@ -10,6 +10,9 @@ trap 'rm -rf "$TEST_DIR"' EXIT
 cat >"$TEST_DIR/tmux" <<'EOF'
 #!/usr/bin/env bash
 case "${1:-}" in
+    display-message)
+        printf '%s\n' "${TMUX_TEST_ZOOMED:-0}"
+        ;;
     list-panes)
         printf '%b' "${TMUX_TEST_PANES:-}"
         ;;
@@ -52,5 +55,6 @@ assert_selection '%2' $'%1|||0|||1\n%2|||1|||0\n%3|||0|||0\n'
 assert_selection '%3' $'%1|||1|||0\n%2|||0|||0\n%3|||1|||1\n'
 assert_selection '%1' $'%1|||1|||0\n%2|||0|||1\n%3|||1|||0\n'
 assert_no_selection $'%1|||0|||0\n%2|||0|||1\n'
+TMUX_TEST_ZOOMED=1 assert_no_selection $'%1|||0|||1\n%2|||1|||0\n%3|||0|||0\n'
 
 printf 'select-priority-pane tests passed\n'

@@ -2369,8 +2369,18 @@
     try {
       const result = await call({ op: "save_settings", patch });
       if (result.settings) snapshot.settings = result.settings;
-    } catch (error) { view._notice.textContent = String(error.message || error); }
+      return true;
+    } catch (error) { view._notice.textContent = String(error.message || error); return false; }
     finally { settingsBusy = false; view.setAttribute("aria-busy", "false"); render(); }
+  }
+  function activeSilence() {
+    const silence = snapshot.settings?.silence;
+    return silence && silence.until > Date.now() ? silence : null;
+  }
+  async function toggleSilence(preset, view) {
+    if (activeSilence()?.preset === preset) { await saveSettings({ silence: null }, view); return; }
+    const until = preset === "today" ? new Date().setHours(24, 0, 0, 0) : Date.now() + (preset === "1h" ? 60 : 15) * 60000;
+    if (await saveSettings({ silence: { preset, until } }, view)) hideBar();
   }
   function renderSettings() {
     let view = host.querySelector(".notification-settings");
@@ -2381,6 +2391,12 @@
         const back = button("‹", closeSettings, "utility nav-step"); back.setAttribute("aria-label", "Back to options"); heading.append(back);
       }
       heading.append(el("h1", "", "Notifications"), button("Close bar", hideBar, "utility close-bar")); view.append(heading);
+      const silence = el("div", "setting-row silence-row"), presets = el("div", "segments silence-presets");
+      presets.setAttribute("role", "group"); presets.setAttribute("aria-label", "Silence messages");
+      for (const [preset, title] of [["15m", "15m"], ["1h", "1h"], ["today", "Today"]]) {
+        const choice = button(title, () => toggleSilence(preset, view)); choice.dataset.silence = preset; presets.append(choice);
+      }
+      view._silenceLabel = el("span", "", "Silence"); silence.append(view._silenceLabel, presets); view.append(silence);
       const tabs = el("div", "segments settings-tabs segmented-control"); tabs.setAttribute("role", "tablist"); tabs.setAttribute("aria-label", "Settings sections");
       const panels = new Map(); view.append(tabs);
       for (const [id, title] of [["appearance", "Appearance"], ["delivery", "Delivery"], ["shortcuts", "Shortcuts"]]) {
@@ -2482,6 +2498,12 @@
       if (!settingsBusy && document.activeElement !== input) {
         if (input.type === "checkbox") input.checked = Boolean(values[input.dataset.setting]); else input.value = values[input.dataset.setting];
       }
+    }
+    const silence = activeSilence();
+    view._silenceLabel.textContent = !silence ? "Silence" : silence.preset === "today" ? "Silenced today"
+      : `Silenced until ${new Date(silence.until).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+    for (const choice of view.querySelectorAll("[data-silence]")) {
+      choice.disabled = settingsBusy; choice.setAttribute("aria-pressed", String(silence?.preset === choice.dataset.silence));
     }
     view._position.hidden = values.placement !== "custom";
     for (const input of view.querySelectorAll("[data-position]")) {
@@ -2832,6 +2854,8 @@
         !records.has(record.id) && pending(record) && !record.dismissed_at && !record.ignored)) mobileArrival++;
       receivedMobileSnapshot = true;
     }
+    // Ending a silence brings back the bar it hid.
+    if (snapshot.settings?.silence && !value.settings?.silence) hiddenByUser = false;
     snapshot = value; preview = Boolean(value.preview);
     if (value.todos) todoData = value.todos;
     const incoming = new Set();

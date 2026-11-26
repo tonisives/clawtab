@@ -351,13 +351,21 @@ static OSStatus focusHotKeyHandler(EventHandlerCallRef next, EventRef event, voi
         self.statusItem = nil;
         return;
     }
-    if (self.statusItem) return;
-    self.statusItem = [NSStatusBar.systemStatusBar statusItemWithLength:NSSquareStatusItemLength];
-    self.statusItem.button.image = self.statusIcon;
-    self.statusItem.button.toolTip = @"ClawTab notifications";
-    self.statusItem.button.accessibilityLabel = @"ClawTab notifications";
-    self.statusItem.button.target = self;
-    self.statusItem.button.action = @selector(openNotifications:);
+    if (!self.statusItem) {
+        self.statusItem = [NSStatusBar.systemStatusBar statusItemWithLength:NSSquareStatusItemLength];
+        self.statusItem.button.image = self.statusIcon;
+        self.statusItem.button.accessibilityLabel = @"ClawTab notifications";
+        self.statusItem.button.target = self;
+        self.statusItem.button.action = @selector(openNotifications:);
+    }
+    NSDictionary *silence = [self.settings[@"silence"] isKindOfClass:NSDictionary.class] ? self.settings[@"silence"] : nil;
+    double until = [silence[@"until"] doubleValue];
+    BOOL silenced = until > NSDate.date.timeIntervalSince1970 * 1000;
+    self.statusItem.button.appearsDisabled = silenced;
+    if (silenced) {
+        NSDateFormatter *formatter = [NSDateFormatter new]; formatter.timeStyle = NSDateFormatterShortStyle; formatter.dateStyle = NSDateFormatterNoStyle;
+        self.statusItem.button.toolTip = [NSString stringWithFormat:@"ClawTab messages silenced until %@", [formatter stringFromDate:[NSDate dateWithTimeIntervalSince1970:until / 1000]]];
+    } else self.statusItem.button.toolTip = @"ClawTab notifications";
 }
 - (void)openNotifications:(id)sender { [self push:@{@"type":@"toggle_notifications"}]; }
 - (void)screensChanged:(NSNotification *)notification {

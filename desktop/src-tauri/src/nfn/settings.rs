@@ -169,6 +169,25 @@ mod tests {
     }
 
     #[test]
+    fn silence_patches_set_and_clear() {
+        let silenced = parse(
+            r#"{"silence":{"preset":"1h","until":4102444800000}}"#,
+            &NfnSettings::default(),
+        )
+        .unwrap();
+        assert!(silenced.silenced(0));
+        assert!(!silenced.silenced(4102444800000));
+        assert_eq!(parse(r#"{"silence":null}"#, &silenced).unwrap().silence, None);
+        for yaml in [
+            "silence: {preset: 2h, until: 1}",
+            "silence: {preset: 1h, until: 0}",
+            "silence: {preset: 1h}",
+        ] {
+            assert!(parse(yaml, &NfnSettings::default()).is_err(), "{yaml}");
+        }
+    }
+
+    #[test]
     fn dragged_position_round_trips_and_requires_valid_coordinates() {
         let settings = parse(
             "placement: custom\nposition: {right: 100.5, top: 40}\n",

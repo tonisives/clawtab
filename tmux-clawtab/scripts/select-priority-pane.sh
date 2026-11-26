@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 
 # Select a pane with an active question or alert when entering a window.
-# Otherwise leave tmux's remembered active pane untouched.
+# Otherwise leave tmux's remembered active pane untouched, as in a zoomed window.
 set -u
 
 window_id="${1:-}"
 [ -n "$window_id" ] || exit 0
+[ "$(tmux display-message -p -t "$window_id" '#{window_zoomed_flag}' 2>/dev/null)" = "1" ] && exit 0
 
 target_pane="$({
     tmux list-panes -t "$window_id" \

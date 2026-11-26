@@ -151,8 +151,14 @@ impl Service {
             }
             let current_settings = self.ctx.settings.lock().enhanced_notifications.clone();
             match super::settings::load(&current_settings) {
-                Ok(value) => {
+                Ok(mut value) => {
                     settings_error = None;
+                    if value.silence.is_some() && !value.silenced(now()) {
+                        value.silence = None;
+                        if let Err(error) = super::settings::save(&value) {
+                            log::warn!("[nfn] Could not end message silence: {error}");
+                        }
+                    }
                     if value != current_settings {
                         self.ctx.settings.lock().enhanced_notifications = value;
                         self.changed();
@@ -501,6 +507,7 @@ impl Service {
             .as_array()
             .is_some_and(|items| !items.is_empty());
         let visible = settings.enhanced_notifications.delivery != "native"
+            && !settings.enhanced_notifications.silenced(now())
             && (!records.is_empty() || has_todos)
             && (settings.enhanced_notifications.focus == "independent"
                 || (platform.focused == Some(false) && platform.authorized == Some(true)));

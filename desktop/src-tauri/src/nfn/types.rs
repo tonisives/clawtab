@@ -20,6 +20,7 @@ pub struct NfnSettings {
     pub menu_bar_icon: bool,
     pub mobile_when_idle: bool,
     pub idle_seconds: u32,
+    pub silence: Option<NfnSilence>,
 }
 
 impl Default for NfnSettings {
@@ -41,11 +42,16 @@ impl Default for NfnSettings {
             menu_bar_icon: true,
             mobile_when_idle: true,
             idle_seconds: 60,
+            silence: None,
         }
     }
 }
 
 impl NfnSettings {
+    pub fn silenced(&self, at: i64) -> bool {
+        self.silence.as_ref().is_some_and(|silence| silence.until > at)
+    }
+
     pub fn validate(&self) -> Result<(), String> {
         for (job, command) in &self.card_handle_commands {
             if job.trim().is_empty()
@@ -98,6 +104,9 @@ impl NfnSettings {
                 !p.right.is_finite() || !p.top.is_finite() || p.right < 0.0 || p.top < 0.0
             })
             || (self.placement == "custom" && self.position.is_none())
+            || self.silence.as_ref().is_some_and(|silence| {
+                !["15m", "1h", "today"].contains(&silence.preset.as_str()) || silence.until <= 0
+            })
         {
             return Err("Invalid notification settings".into());
         }
@@ -110,6 +119,14 @@ impl NfnSettings {
 pub struct NfnPosition {
     pub right: f64,
     pub top: f64,
+}
+
+/// Hides the desktop bar and mutes desktop delivery until `until` (ms since epoch).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct NfnSilence {
+    pub preset: String,
+    pub until: i64,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -775,7 +792,7 @@ pub fn delivery(
     enabled: bool,
     viewed: bool,
 ) -> Delivery {
-    if !enabled || viewed {
+    if !enabled || viewed || settings.silenced(now()) {
         return Delivery {
             overlay: false,
             native: false,
@@ -866,5 +883,20 @@ mod tests {
             ..settings
         };
         assert!(delivery(&independent, &platform, true, false).overlay);
+        let silenced = NfnSettings {
+            silence: Some(NfnSilence {
+                preset: "1h".into(),
+                until: now() + 60_000,
+            }),
+            ..independent
+        };
+        assert_eq!(
+            delivery(&silenced, &platform, true, false),
+            Delivery {
+                overlay: false,
+                native: false,
+                sound: false
+            }
+        );
     }
 }
