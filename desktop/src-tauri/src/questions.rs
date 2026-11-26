@@ -597,7 +597,7 @@ fn make_question_id(pane_id: &str, options: &[QuestionOption]) -> String {
 }
 
 pub(crate) fn prompt_context_key(text: &str) -> String {
-    strip_ansi(text)
+    let mut context = strip_ansi(text)
         .lines()
         .map(|line| {
             line.trim()
@@ -608,7 +608,24 @@ pub(crate) fn prompt_context_key(text: &str) -> String {
         .join(" ")
         .split_whitespace()
         .collect::<Vec<_>>()
-        .join(" ")
+        .join(" ");
+    // Claude redraws the approval countdown every second while the request stays the same.
+    const COUNTDOWN_PREFIX: &str = "\u{26a0} Claude Code will automatically block this request in ";
+    const COUNTDOWN_SUFFIX: &str = ", to avoid holding up an unattended session";
+    if let Some(start) = context.rfind(COUNTDOWN_PREFIX) {
+        let start = start + COUNTDOWN_PREFIX.len();
+        if let Some((duration, _)) = context[start..].split_once(COUNTDOWN_SUFFIX) {
+            if duration.split_once(':').is_some_and(|(minutes, seconds)| {
+                !minutes.is_empty()
+                    && minutes.bytes().all(|byte| byte.is_ascii_digit())
+                    && seconds.len() == 2
+                    && seconds.bytes().all(|byte| byte.is_ascii_digit())
+            }) {
+                context.replace_range(start..start + duration.len(), "MM:SS");
+            }
+        }
+    }
+    context
 }
 
 fn make_context_question_id(pane_id: &str, options: &[QuestionOption], screen: &str) -> String {
@@ -3207,6 +3224,38 @@ Enter to select · Esc to cancel
         assert_eq!(options[0].label, "Yes");
         assert_eq!(options[1].number, "2");
         assert_eq!(options[1].label, "No");
+    }
+
+    #[test]
+    fn claude_approval_countdown_keeps_the_same_question() {
+        let initial = concat!(
+            "Earlier output\n",
+            "Bash command\n",
+            "  printf '12:34'\n",
+            "\x1b[33m\u{26a0} Claude Code will automatically block this request in 1:00, ",
+            "to avoid holding up an\n  unattended session\x1b[0m\n",
+            "Do you want to proceed?\n",
+            " \u{276f} 1. Yes\n",
+            "   2. No\n",
+            "Esc to cancel · Tab to amend",
+        );
+        let tick = initial.replace("1:00,", "0:59,");
+        let new_command = tick.replace("12:34", "12:35");
+        let mut pane = agent("%1", initial);
+        pane.12 = ProcessProvider::Claude;
+        let mut cache = std::collections::HashMap::new();
+        update_question_cache(std::slice::from_ref(&pane), &mut cache);
+        let first = cache["%1"].question.clone();
+
+        record_pane_capture(&mut pane, &tick, 8);
+        update_question_cache(std::slice::from_ref(&pane), &mut cache);
+        assert_eq!(cache["%1"].question.question_id, first.question_id);
+        assert!(super::validate_question_screen(&first, Some("claude"), &tick).is_ok());
+
+        record_pane_capture(&mut pane, &new_command, 8);
+        update_question_cache(&[pane], &mut cache);
+        assert_ne!(cache["%1"].question.question_id, first.question_id);
+        assert!(super::validate_question_screen(&first, Some("claude"), &new_command).is_err());
     }
 
     #[test]
