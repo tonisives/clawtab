@@ -597,12 +597,33 @@ fn make_question_id(pane_id: &str, options: &[QuestionOption]) -> String {
 }
 
 pub(crate) fn prompt_context_key(text: &str) -> String {
-    let mut context = strip_ansi(text)
+    let plain = strip_ansi(text);
+    // Claude redraws the command box at the new width when the pane resizes.
+    let command_frame = plain
         .lines()
-        .map(|line| {
-            line.trim()
-                .trim_start_matches(['›', '❯', '▸', '▶', '>'])
-                .trim()
+        .find(|line| !line.trim().is_empty())
+        .filter(|line| line.trim() == "Bash command")
+        .and_then(|_| {
+            let mut rules = plain
+                .lines()
+                .enumerate()
+                .filter_map(|(index, line)| horizontal_rule(line.trim(), '╌').then_some(index));
+            Some((rules.next()?, rules.next()?))
+        });
+    let mut context = plain
+        .lines()
+        .enumerate()
+        .filter_map(|(index, line)| {
+            let line = line.trim();
+            if let Some((top, bottom)) = command_frame {
+                if index == top || index == bottom {
+                    return None;
+                }
+                if (top..bottom).contains(&index) {
+                    return Some(line.strip_prefix('│').unwrap_or(line).trim());
+                }
+            }
+            Some(line.trim_start_matches(['›', '❯', '▸', '▶', '>']).trim())
         })
         .collect::<Vec<_>>()
         .join(" ")
@@ -628,10 +649,10 @@ pub(crate) fn prompt_context_key(text: &str) -> String {
     context
 }
 
-fn make_context_question_id(pane_id: &str, options: &[QuestionOption], screen: &str) -> String {
+fn make_context_question_id(pane_id: &str, options: &[QuestionOption], context: &str) -> String {
     use std::hash::{Hash, Hasher};
     let mut hash = std::collections::hash_map::DefaultHasher::new();
-    prompt_context_key(&last_context_lines(screen)).hash(&mut hash);
+    prompt_context_key(context).hash(&mut hash);
     format!("{}:{:x}", make_question_id(pane_id, options), hash.finish())
 }
 
@@ -1110,6 +1131,7 @@ fn update_question_cache_with_hooks(
                 continue;
             }
             if let Some(options) = parse_hermes_options(log_lines) {
+                let context_lines = last_context_lines(log_lines);
                 let question = ClaudeQuestion {
                     pane_id: pane_id.clone(),
                     cwd: cwd.clone(),
@@ -1117,12 +1139,12 @@ fn update_question_cache_with_hooks(
                     window_name: window_name.clone(),
                     question_id: format!(
                         "{}:{}",
-                        make_context_question_id(pane_id, &options, log_lines),
+                        make_context_question_id(pane_id, &options, &context_lines),
                         hooks
                             .pane_state(pane_id, *provider)
                             .map_or(0, |state| state.updated_at_ms)
                     ),
-                    context_lines: last_context_lines(log_lines),
+                    context_lines,
                     options,
                     requires_manual_answer: requires_manual_answer(log_lines),
                     input_mode: "command".into(),
@@ -1283,14 +1305,15 @@ fn try_numbered_question(
         options.len()
     );
     detected.insert(pane_id.to_string());
-    let question_id = make_context_question_id(pane_id, &options, log_lines);
+    let context_lines = last_context_lines(log_lines);
+    let question_id = make_context_question_id(pane_id, &options, &context_lines);
     let q = ClaudeQuestion {
         pane_id: pane_id.to_string(),
         cwd: cwd.to_string(),
         tmux_session: tmux_session.to_string(),
         window_name: window_name.to_string(),
         question_id,
-        context_lines: last_context_lines(log_lines),
+        context_lines,
         options,
         requires_manual_answer: requires_manual_answer(log_lines),
         input_mode: String::new(),
@@ -1343,14 +1366,15 @@ fn try_opencode_question(
         button_line_idx
     );
     detected.insert(pane_id.to_string());
-    let question_id = make_context_question_id(pane_id, &buttons, log_lines);
+    let context_lines = last_context_lines(log_lines);
+    let question_id = make_context_question_id(pane_id, &buttons, &context_lines);
     let q = ClaudeQuestion {
         pane_id: pane_id.to_string(),
         cwd: cwd.to_string(),
         tmux_session: tmux_session.to_string(),
         window_name: window_name.to_string(),
         question_id,
-        context_lines: last_context_lines(log_lines),
+        context_lines,
         options: buttons,
         requires_manual_answer: requires_manual_answer(log_lines),
         input_mode: "select".to_string(),
@@ -1579,28 +1603,50 @@ fn pick_sleep_ms(
     }
 }
 
-/// Extract the last visible lines from terminal output for the notification card.
+fn horizontal_rule(line: &str, glyph: char) -> bool {
+    line.starts_with(glyph) && line.chars().all(|character| character == glyph)
+}
+
+fn claude_bash_approval(lines: &[String]) -> Option<(usize, usize)> {
+    let question = lines
+        .iter()
+        .rposition(|line| line.trim() == "Do you want to proceed?")?;
+    let start = lines[..question]
+        .iter()
+        .rposition(|line| horizontal_rule(line.trim(), '─'))
+        .map_or(0, |index| index + 1);
+    let heading = (start..question).find(|&index| !lines[index].trim().is_empty())?;
+    (lines[heading].trim() == "Bash command").then_some((heading, question))
+}
+
+/// Extract the prompt from terminal output for the notification card.
 /// Includes numbered options and their descriptions so the card mirrors the terminal.
 /// Strips terminal instruction lines but preserves bottom padding so the last
 /// option is not visually flush against the edge.
 fn last_context_lines(text: &str) -> String {
     let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
     let lines: Vec<&str> = normalized.lines().collect();
-    let start = lines.len().saturating_sub(30);
-    let keep: Vec<bool> = lines
+    let plain_lines: Vec<String> = lines.iter().map(|line| strip_ansi(line)).collect();
+    // The transcript above a Claude approval can animate while the command
+    // and choices are unchanged. Start at the approval panel's heading.
+    let (start, hint_start) =
+        claude_bash_approval(&plain_lines).unwrap_or((lines.len().saturating_sub(30), 0));
+    let keep: Vec<bool> = plain_lines
         .iter()
         .enumerate()
         .map(|(index, line)| {
-            let plain = strip_ansi(line);
-            let lower = plain.trim().to_lowercase();
-            index >= start
-                && !(lower.contains("enter to select")
+            if index < start {
+                return false;
+            }
+            let lower = line.trim().to_lowercase();
+            index < hint_start
+                || !(lower.contains("enter to select")
                     || lower.contains("to navigate")
                     || lower.contains("esc to cancel")
                     || lower.contains("enter confirm"))
         })
         .collect();
-    let meaningful = |index: &usize| keep[*index] && !strip_ansi(lines[*index]).trim().is_empty();
+    let meaningful = |index: &usize| keep[*index] && !plain_lines[*index].trim().is_empty();
     let Some(first) = (0..lines.len()).find(meaningful) else {
         return String::new();
     };
@@ -2267,10 +2313,10 @@ fn record_pane_capture(process: &mut DetectedAgent, visible: &str, cursor_y: u16
 mod tests {
     #[test]
     fn notification_identity_tracks_the_command_and_ignores_selection_styling() {
-        let first = "Run cargo check?\n› 1. Yes\n  2. No\nEnter to select";
-        let restyled = "\x1b[32mRun cargo check?\x1b[0m\n  1. Yes\n› 2. No\nEnter to select";
-        let changed = "Run cargo build?\n› 1. Yes\n  2. No\nEnter to select";
-        let options = super::parse_numbered_options(first);
+        let first = "Run cargo check?\n› 1. Yes\n  2. No";
+        let restyled = "\x1b[32mRun cargo check?\x1b[0m\n  1. Yes\n› 2. No";
+        let changed = "Run cargo build?\n› 1. Yes\n  2. No";
+        let options = super::parse_numbered_options(&format!("{first}\nEnter to select"));
         assert_eq!(
             super::make_context_question_id("%1", &options, first),
             super::make_context_question_id("%1", &options, restyled)
@@ -3227,9 +3273,52 @@ Enter to select · Esc to cancel
     }
 
     #[test]
+    fn claude_bash_approval_ignores_transcript_redraw_and_command_box_reflow() {
+        let initial = concat!(
+            "\x1b[90m\u{23fa} Searching for 1 pattern… (ctrl+o to expand)\x1b[0m\n\n",
+            "────────────────────────────────────\n",
+            " Bash command\n",
+            " Check how tests load the module\n",
+            "╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n",
+            " │ rg -n module tests | head -10\n",
+            "╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n",
+            " Rule from user settings overrides auto mode.\n\n",
+            " Do you want to proceed?\n",
+            " ❯ 1. Yes\n",
+            "   2. No\n\n",
+            " Esc to cancel · Tab to amend",
+        );
+        let redraw = initial.replace("\u{23fa} Searching", "Searching");
+        let resize = redraw
+            .replace("──────────────────", "────────────")
+            .replace("╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌", "╌╌╌╌╌╌╌╌╌╌╌╌")
+            .replace("tests | head", "tests\n │ | head");
+        let next_request = resize.replace("head -10", "head -20");
+        let mut pane = agent("%1", initial);
+        pane.12 = ProcessProvider::Claude;
+        let mut cache = std::collections::HashMap::new();
+        update_question_cache(std::slice::from_ref(&pane), &mut cache);
+        let first = cache["%1"].question.clone();
+        assert!(!first.context_lines.contains("Searching for"));
+
+        for screen in [redraw, resize] {
+            record_pane_capture(&mut pane, &screen, 10);
+            update_question_cache(std::slice::from_ref(&pane), &mut cache);
+            assert_eq!(cache["%1"].question.question_id, first.question_id);
+            assert!(super::validate_question_screen(&first, Some("claude"), &screen).is_ok());
+        }
+
+        record_pane_capture(&mut pane, &next_request, 10);
+        update_question_cache(&[pane], &mut cache);
+        assert_ne!(cache["%1"].question.question_id, first.question_id);
+        assert!(super::validate_question_screen(&first, Some("claude"), &next_request).is_err());
+    }
+
+    #[test]
     fn claude_approval_countdown_keeps_the_same_question() {
         let initial = concat!(
             "Earlier output\n",
+            "───────────────────────\n",
             "Bash command\n",
             "  printf '12:34'\n",
             "\x1b[33m\u{26a0} Claude Code will automatically block this request in 1:00, ",
